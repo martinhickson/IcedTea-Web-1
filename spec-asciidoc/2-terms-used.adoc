@@ -1,0 +1,36 @@
+== 2 Terms Used
+
+.Table Title
+|===
+|Term
+|Description
+
+|JRE
+|Java Platform, Standard Edition Runtime Environment
+
+|JVM
+|Java Virtual Machine
+
+|JNLP Client
+|A software application or service that implements this
+specification.
+
+|Application
+|The term application refers to the Java application or
+Java Applet that is launched by a JNLP Client.
+
+|Extension
+|The term extension denotes a JNLP file that encapsulates a set
+of code resources, such as a optional package or a JRE itself.
+
+|Version-id
+|A specification of an exact version, e.g., 1.6.0. See also
+Appendix A.
+
+|Version string
+|A specification of a key that is used to match the version-ids.
+For example, "1.5.0* 1.6.0" is a Version string that will match
+the version-ids 1.5.0, 1.5.0_01, 1.5.0_02, ..., and 1.6.0.
+See also Appendix A.
+
+|===

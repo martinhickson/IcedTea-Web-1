@@ -1,0 +1,269 @@
+== 0 Preface
+
+This document, the Java™ Network Launching Protocol and API Specification, v9, is also
+known as the JNLP Specification. In addition to this specification, the Java Network
+Launching API has Javadoc documentation (referred to as the JNLP API Reference, v9)
+and a reference implementation for public download at the following location:
+
+http://www.oracle.com/technetwork/java
+
+The reference implementation provides a behavioral benchmark. In the case of a discrepancy,
+the order of resolution is this specification, then the JNLP API Reference, v9, and finally
+the reference implementation.
+
+=== 0.1 Who Should Read This Specification
+
+This document is intended for consumption by:
+
+* Software vendors that want to provide an application or utility that conforms with
+this specification.
+* Web Authoring Tool developers and Application Tool developers that want to provide
+tool support that conforms to this specification.
+* Sophisticated Web authors and Web site administrators who want to understand the
+underlying mechanisms of the Java Network Launching technology.
+
+Please note that this specification is not a User's Guide and is not intended to be used as such.
+
+=== 0.2 API Reference
+
+The JNLP API Reference, v9, provides the complete description of all the interfaces,
+classes, exceptions, and methods that compose the JNLP API. Simplified method signatures
+are provided throughout this specification. Please refer to the API Reference for the
+complete method signatures.
+
+=== 0.3 Other Java Specifications
+
+The following Java API Specifications are referenced throughout this specification:
+
+* Java Platform, Standard Edition. The specifications can be found at:
+http://www.oracle.com/technetwork/java/javase/
+* Java Platform, Enterprise Edition. The specification can be found at:
+http://www.oracle.com/technetwork/java/javaee/
+
+=== 0.4 Other Important References
+
+The following Internet Specifications provide relevant information to the development and
+implementation of the JNLP Specification and tools that support the specification:
+
+* RFC 1630 Uniform Resource Identifiers (URI)
+* RFC 1738 Uniform Resource Locators (URL)
+* RFC 1808 Relative Uniform Resource Locators
+* RFC 1945 Hypertext Transfer Protocol (HTTP/1.0)
+* RFC 2045 MIME Part One: Format of Internet Message Bodies
+* RFC 2046 MIME Part Two: Media Types
+* RFC 2047 MIME Part Three: Message Header Extensions for non-ASCII text
+* RFC 2048 MIME Part Four: Registration Procedures
+* RFC 2049 MIME Part Five: Conformance Criteria and Examples
+* RFC 2616 Hypertext Transfer Protocol (HTTP/1.1)
+
+You can locate the online versions of any of these RFCs at: http://www.rfc-editor.org/
+
+The World Wide Web Consortium (http://www.w3c.org) is a definitive source of HTTP related
+information that affects this specification and its implementations.
+
+The Extensible Markup Language (XML) is utilized by the JNLP Descriptor described in this
+specification. More information about XML can be found at the following websites:
+
+* http://www.w3.org/
+* http://www.xml.org/
+
+=== 0.5 Providing Feedback
+
+The success of the Java Community Process depends on your participation in the community.
+We welcome any and all feedback about this specification. Please e-mail your comments to:
+jnlp-comments@eng.sun.com
+
+Please note that due to the volume of feedback that we receive, you will not normally
+receive a reply. However, each and every comment is read, evaluated, and archived by
+the specification team.
+
+=== 0.6 Acknowledgments
+
+The success of the Java Platform depends on the process used to define and refine it.
+This open process permits the development of high quality specifications in internet
+time and involves many individuals and corporations.
+
+Many people have contributed to this specification and the reference implementation.
+Thanks to:
+
+* The following people at Sun Microsystems: Georges Saab, Lars Bak, Tim Lindholm,
+Tom Ball, Phil Milne, Brian Beck, Norbert Lindenberg, and Stanley Man-Kit Ho.
+* The members of the JCP expert group (in particular Alex Rosen of SilverStream Software)
+and participants who reviewed this document.
+* The people on the Internet that reviewed the first public draft of this specification.
+* A special thanks to my friends in the JNLP team at the Java Software Division at
+Sun Microsystems, Steve Bohne, Andrey Chernyshev, Andy Herrick, Hans Muller,
+Kumar Srinivasan, Scott Violet, and Nathan Wang, who did most of the hard work
+to get this project started, shaped, and delivered.
+
+=== 0 0.7 Revision History
+
+==== 0.7.1 Changes since release 1.0
+
+This is a minor update of the version 1.0 specification. This specification update
+contains no changes nor additions to the JNLP file or the JNLP API. This update
+addresses several inconsistencies and typos in the original specification, as well
+as one Applet compatibility issue. The major changes are described below:
+
+Update the untrusted environment to include the AWT permission accessEventQueue.
+This is to comply with the Applet sandbox model.
+
+Clarified the use of encoded/unencoded URLs in a JNLP file.
+
+Clarified that the JARDiff index file uses the remove command and not the delete command
+
+Fixed minor typos and inconsistencies in the examples.
+
+This revision does not introduce new version numbers for the JNLP file nor
+the JNLP API. A JNLP Client implementing this specification must be able to run
+a JNLP file which requires 1.0, i.e., the spec attribute in the jnlp element is
+set to 1.0.
+
+==== 0.7.2 Changes since release 1.0.1
+
+This is a minor update of the version 1.0.1 specification. This specification update
+contains several additions to the JNLP file and to the JNLP API. This update also
+addresses several inconsistencies and typographical errors in the original specification.
+The major changes are described below:
+
+* Added SingleInstanceService and ExtendedService to the JNLP API;
+* Added <shortcut>, <associations>, and <related-content> elements to the information
+block in the jnlp file;
+* Added "java-vm-args" attribute to the <j2se> element in the jnlp file;
+
+* dded os, arch, and platform attributes to the <information> element in the jnlp file;
+* Added ampersand (&) modifier to the version-range argument to allow compound versions;
+* Clarified several sections and fixed typographical errors in the previous version.
+* This revision does introduces the version number (1.5) for the JNLP file and the
+JNLP API. Version 1.5 is a proper superset of 1.0. A JNLP Client implementing this
+specification must be able to run a JNLP file which requires either 1.0 or 1.5; i.e.,
+the spec attribute in the jnlp element is set to either 1.0 or 1.5.
+
+A complete list of changes for v1.5 can be found at:
+http://jcp.org/aboutJava/communityprocess/maintenance/jsr056/jnlp_spec.html
+
+==== 0.7.3 Changes since release 1.5
+
+This is a minor update of the version 1.5 specification. This specification update
+contains several additions to the JNLP file and no changes to the JNLP API. This
+update also addresses several inconsistencies and typographical errors in the
+original specification. The major changes are described below:
+* Added “update” element, and its args “check” and “policy” to allow application to
+specify its preferences for updating, and to relieve overloading of “offline-allowed”
+element.
+* Added “description” and “icon” elements to the “association” element to allow
+application to better describe an association.
+* Added “java” element to eventually replace “j2se” element for describing java
+versions and attributes.
+* Modified description of the DownloadService API to allow downloading resources
+not listed in the jnlp file in several cases.
+* Clarified several sections and fixed typographical errors in the previous
+version.
+* This revision introduces the version number (6.0) for the JNLP file and the JNLP API.
+Version 6.0 is a proper superset of 1.0, and of version 1.5. A JNLP Client implementing
+this specification must be able to run a JNLP file which requires 1.0, 1.5, or 6.0;
+i.e., the spec attribute in the jnlp element is set to any of 1.0, 1.5, or 6.0.
+
+A complete list of changes for v6.0 can be found at:
+http://jcp.org/aboutJava/communityprocess/maintenance/jsr056/jnlp_spec6.0.html
+
+==== 0.7.4 Changes since release 6.0
+
+This is a minor update of the version 6.0 specification.
+The major changes are described below:
+
+* Modify section 5.5 to allow untrusted content to include untrusted
+(as well as trusted) extensions from any host. (no longer restrict to the download host).
+* Modify section 3.7 to allow implementations to implement a subset of the descriptor types.
+* Modify section 3.7.2 to allow implementation to override jnlp applet parameters,
+and use relative codebases.
+* Modify section 5.5 yo allow implementation to optionally allow exitVM permission
+depending on model.
+* Modify Appendix C, the DTD,to fix existing typos and inconsistancys.
+* This revision introduces the version number (6.0.10) for the JNLP file and the JNLP API.
+Version 6.0.10 is a proper superset of 1.0, and of version 6.0. A JNLP Client
+implementing this specification must be able to run a JNLP file which requires 1.0,
+1.5, 6.0, or 6.0.10; i.e., the spec attribute in the jnlp element is set to any of
+1.0, 1.5, 6.0, or 6.0.10
+
+A complete list of changes for v6.0 can be found at:
+http://jcp.org/aboutJava/communityprocess/maintenance/jsr056/jnlp_spec6.0.10.html
+
+==== 0.7.5 Changes since release 6.0.10
+
+This is a minor update of the version 6.0.10 specification.
+The change are described below:
+
+* Modify section 3.7.1, 3.7.2, and 3.8.1 to add the “progress-class” attribute to
+the “application-desc”, “applet-desc”, and “component-desc” elements.
+* Modify section 4.4 to describe the “progress” value to the “download” attribute
+for jar resources.
+* Modify section 7 to include the new DownloadService2, and IntegrationService APIs.
+* Modify Appendix C, the DTD, to include the new “progress-class” attribute
+and “progress” attribute value above.
+* Modify Appendix D, the JNLP API, to include the new DownloadService2,
+and IntegrationService APIs.
+* This revision introduces the version number (6.0.18) for the JNLP file and the JNLP API.
+Version 6.0.18 is a proper superset of 1.0, and of version 6.0.10. A JNLP Client
+implementing this specification must be able to run a JNLP file which requires 1.0,
+1.5, 6.0, 6.0.10, or 6.0.18; i.e., the spec attribute in the jnlp element is set
+to any of 1.0, 1.5, 6.0, 6.0.10, or 6.0.18.
+
+A complete list of changes for v6.0.18 can be found at:
+http://jcp.org/aboutJava/communityprocess/maintenance/jsr056/jnlp_spec6.0.18.htm
+
+==== 0.7.6 Changes since release 6.0.18
+
+This is a minor update of the version 6.0.18 specification. The change are described below:
+
+* Modify section 5.4.1 to allow signed jnlp files using APPLICATION_TEMPLATE.jnlp
+* Modify section 7.7 to allow trusted applications to access any PersistenceService entries.
+* Modify section 3.5, and the DTD in section Appendix C to add attribute “install”
+to the shortcut element.
+* This revision introduces the version number (7.0) for the JNLP file and the JNLP API.
+Version 7.0 is a proper superset of version 1.0, and of version 6.0.18. A JNLP Client
+implementing this specification must be able to run a JNLP file which requires 1.0,
+1.5, 6.0, 6.0.10, 6.0.18, or 7.0; i.e., the spec attribute in the jnlp element is set
+to any of 1.0, 1.5, 6.0, 6.0.10, 6.0.18 or 7.0.
+
+A complete list of changes for v7.0 can be found at:
+http://jcp.org/aboutJava/communityprocess/maintenance/jsr056/jnlp_spec7.0.html
+
+==== 0.7.7 Changes since release 7.0
+
+This is a minor update of the version 7.0 specification. The changes are described below:
+
+* Modify section 5.5 to clarify use of Manifest attributes in sihned jars.
+* Modify the DTD in section Appendix C to remove requirement that all information
+elements contain a vendor sub-element..
+* Modify section 3.5, and the DTD in section Appendix C to remove obsolete
+“platform” attribute
+* This revision introduces the version number (8.2) for the JNLP file and the JNLP API.
+Version 8.2 is a proper superset of version 1.0, and of version 7.0. A JNLP Client
+implementing this specification must be able to run a JNLP file which requires 1.0,
+1.5, 6.0, 6.0.10, 6.0.18, 7.0, or 8.2; i.e., the spec attribute in the jnlp element
+is set to any of 1.0, 1.5, 6.0, 6.0.10, 6.0.18, 7.0 or 8.2.
+
+A complete list of changes for v7.0 can be found at:
+http://jcp.org/aboutJava/communityprocess/maintenance/jsr056/jnlp_spec8.2.html
+
+==== 0.7.8 Changes since release 8.20
+
+This is a minor update of the version 8.20 specification. The changes are described below:
+* Modify Appendix A to avoid the non-transitive definition of version comparisons when
+only one of two versions can be parsed as a Java int.
+* Modify section 3.8.1 to clarify use of "java" resource elements with nested resources
+in extension descriptors.
+* Modify section 3.4 and Appendix A to conform to XML specification by requiring
+"&" version-range combiner be expressed as "&amp;"
+* Modify sections 4 and 5, and Appendix C, to introduce the new attribute "type" to
+the "application-desc" , and to add the "param" sub element.
+* This revision introduces the version number (9) for the JNLP file and the JNLP API.
+Version 9 is a proper super set of version 1.0, and of version 8.20. A JNLP Client
+implementing this specification must be able to run a JNLP file which requires 1.0,
+1.5, 6.0, 6.0.10, 6.0.18, 7.0, 8.20, or 9; i.e., the spec attribute in the jnlp element
+is set to any of 1.0, 1.5, 6.0, 6.0.10, 6.0.18, 7.0, 8.20 or 9.
+
+A complete list of changes for v9 can be found at:
+http://jcp.org/aboutJava/communityprocess/maintenance/jsr056/9.html
+
