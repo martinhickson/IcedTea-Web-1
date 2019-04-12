@@ -1,0 +1,1222 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN">
+<HTML>
+<HEAD>
+	<META HTTP-EQUIV="CONTENT-TYPE" CONTENT="text/html; charset=windows-1252">
+	<TITLE>Launching and Application Environment</TITLE>
+	<META NAME="GENERATOR" CONTENT="OpenOffice 4.0.0  (Win32)">
+	<META NAME="CREATED" CONTENT="0;0">
+	<META NAME="CHANGEDBY" CONTENT="Andrew Herrick">
+	<META NAME="CHANGED" CONTENT="20150831;14023103">
+	<META NAME="Originator" CONTENT="Microsoft Word 12">
+	<META NAME="ProgId" CONTENT="Word.Document">
+	<META NAME="CHANGEDBY" CONTENT="Andrew Herrick">
+	<!--[if !mso]>
+<style>
+v\:* {behavior:url(#default#VML);}
+o\:* {behavior:url(#default#VML);}
+w\:* {behavior:url(#default#VML);}
+.shape {behavior:url(#default#VML);}
+</style>
+<![endif]-->
+	<!--[if gte mso 9]><xml>
+ <o:DocumentProperties>
+  <o:Author>aherrick</o:Author>
+  <o:Template>Normal</o:Template>
+  <o:LastAuthor>aherrick</o:LastAuthor>
+  <o:Revision>2</o:Revision>
+  <o:TotalTime>1</o:TotalTime>
+  <o:Created>2014-03-26T14:15:00Z</o:Created>
+  <o:LastSaved>2014-03-26T14:16:00Z</o:LastSaved>
+  <o:Pages>5</o:Pages>
+  <o:Words>2855</o:Words>
+  <o:Characters>16863</o:Characters>
+  <o:Company>Oracle Corporation</o:Company>
+  <o:Lines>140</o:Lines>
+  <o:Paragraphs>39</o:Paragraphs>
+  <o:CharactersWithSpaces>19679</o:CharactersWithSpaces>
+  <o:Version>12.00</o:Version>
+ </o:DocumentProperties>
+</xml><![endif]-->
+	<!--[if gte mso 9]><xml>
+ <w:WordDocument>
+  <w:SpellingState>Clean</w:SpellingState>
+  <w:GrammarState>Clean</w:GrammarState>
+  <w:TrackMoves/>
+  <w:TrackFormatting/>
+  <w:ValidateAgainstSchemas/>
+  <w:SaveIfXMLInvalid>false</w:SaveIfXMLInvalid>
+  <w:IgnoreMixedContent>false</w:IgnoreMixedContent>
+  <w:AlwaysShowPlaceholderText>false</w:AlwaysShowPlaceholderText>
+  <w:DoNotPromoteQF/>
+  <w:LidThemeOther>EN-US</w:LidThemeOther>
+  <w:LidThemeAsian>X-NONE</w:LidThemeAsian>
+  <w:LidThemeComplexScript>X-NONE</w:LidThemeComplexScript>
+  <w:Compatibility>
+   <w:BreakWrappedTables/>
+   <w:SnapToGridInCell/>
+   <w:WrapTextWithPunct/>
+   <w:UseAsianBreakRules/>
+   <w:DontGrowAutofit/>
+   <w:SplitPgBreakAndParaMark/>
+   <w:DontVertAlignCellWithSp/>
+   <w:DontBreakConstrainedForcedTables/>
+   <w:DontVertAlignInTxbx/>
+   <w:Word11KerningPairs/>
+   <w:CachedColBalance/>
+  </w:Compatibility>
+  <w:BrowserLevel>MicrosoftInternetExplorer4</w:BrowserLevel>
+  <m:mathPr>
+   <m:mathFont m:val="Cambria Math"/>
+   <m:brkBin m:val="before"/>
+   <m:brkBinSub m:val="&#45;-"/>
+   <m:smallFrac m:val="off"/>
+   <m:dispDef/>
+   <m:lMargin m:val="0"/>
+   <m:rMargin m:val="0"/>
+   <m:defJc m:val="centerGroup"/>
+   <m:wrapIndent m:val="1440"/>
+   <m:intLim m:val="subSup"/>
+   <m:naryLim m:val="undOvr"/>
+  </m:mathPr></w:WordDocument>
+</xml><![endif]-->
+	<!--[if gte mso 9]><xml>
+ <w:LatentStyles DefLockedState="false" DefUnhideWhenUsed="true"
+  DefSemiHidden="true" DefQFormat="false" DefPriority="99"
+  LatentStyleCount="267">
+  <w:LsdException Locked="false" Priority="0" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Normal"/>
+  <w:LsdException Locked="false" Priority="9" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="heading 1"/>
+  <w:LsdException Locked="false" Priority="9" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="heading 2"/>
+  <w:LsdException Locked="false" Priority="9" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="heading 3"/>
+  <w:LsdException Locked="false" Priority="9" QFormat="true" Name="heading 4"/>
+  <w:LsdException Locked="false" Priority="9" QFormat="true" Name="heading 5"/>
+  <w:LsdException Locked="false" Priority="9" QFormat="true" Name="heading 6"/>
+  <w:LsdException Locked="false" Priority="9" QFormat="true" Name="heading 7"/>
+  <w:LsdException Locked="false" Priority="9" QFormat="true" Name="heading 8"/>
+  <w:LsdException Locked="false" Priority="9" QFormat="true" Name="heading 9"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 1"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 2"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 3"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 4"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 5"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 6"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 7"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 8"/>
+  <w:LsdException Locked="false" Priority="39" Name="toc 9"/>
+  <w:LsdException Locked="false" Priority="35" QFormat="true" Name="caption"/>
+  <w:LsdException Locked="false" Priority="10" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Title"/>
+  <w:LsdException Locked="false" Priority="1" Name="Default Paragraph Font"/>
+  <w:LsdException Locked="false" Priority="11" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Subtitle"/>
+  <w:LsdException Locked="false" Priority="22" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Strong"/>
+  <w:LsdException Locked="false" Priority="20" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Emphasis"/>
+  <w:LsdException Locked="false" Priority="59" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Table Grid"/>
+  <w:LsdException Locked="false" UnhideWhenUsed="false" Name="Placeholder Text"/>
+  <w:LsdException Locked="false" Priority="1" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="No Spacing"/>
+  <w:LsdException Locked="false" Priority="60" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Shading"/>
+  <w:LsdException Locked="false" Priority="61" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light List"/>
+  <w:LsdException Locked="false" Priority="62" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Grid"/>
+  <w:LsdException Locked="false" Priority="63" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 1"/>
+  <w:LsdException Locked="false" Priority="64" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 2"/>
+  <w:LsdException Locked="false" Priority="65" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 1"/>
+  <w:LsdException Locked="false" Priority="66" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 2"/>
+  <w:LsdException Locked="false" Priority="67" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 1"/>
+  <w:LsdException Locked="false" Priority="68" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 2"/>
+  <w:LsdException Locked="false" Priority="69" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 3"/>
+  <w:LsdException Locked="false" Priority="70" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Dark List"/>
+  <w:LsdException Locked="false" Priority="71" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Shading"/>
+  <w:LsdException Locked="false" Priority="72" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful List"/>
+  <w:LsdException Locked="false" Priority="73" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Grid"/>
+  <w:LsdException Locked="false" Priority="60" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Shading Accent 1"/>
+  <w:LsdException Locked="false" Priority="61" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light List Accent 1"/>
+  <w:LsdException Locked="false" Priority="62" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Grid Accent 1"/>
+  <w:LsdException Locked="false" Priority="63" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 1 Accent 1"/>
+  <w:LsdException Locked="false" Priority="64" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 2 Accent 1"/>
+  <w:LsdException Locked="false" Priority="65" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 1 Accent 1"/>
+  <w:LsdException Locked="false" UnhideWhenUsed="false" Name="Revision"/>
+  <w:LsdException Locked="false" Priority="34" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="List Paragraph"/>
+  <w:LsdException Locked="false" Priority="29" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Quote"/>
+  <w:LsdException Locked="false" Priority="30" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Intense Quote"/>
+  <w:LsdException Locked="false" Priority="66" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 2 Accent 1"/>
+  <w:LsdException Locked="false" Priority="67" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 1 Accent 1"/>
+  <w:LsdException Locked="false" Priority="68" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 2 Accent 1"/>
+  <w:LsdException Locked="false" Priority="69" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 3 Accent 1"/>
+  <w:LsdException Locked="false" Priority="70" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Dark List Accent 1"/>
+  <w:LsdException Locked="false" Priority="71" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Shading Accent 1"/>
+  <w:LsdException Locked="false" Priority="72" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful List Accent 1"/>
+  <w:LsdException Locked="false" Priority="73" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Grid Accent 1"/>
+  <w:LsdException Locked="false" Priority="60" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Shading Accent 2"/>
+  <w:LsdException Locked="false" Priority="61" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light List Accent 2"/>
+  <w:LsdException Locked="false" Priority="62" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Grid Accent 2"/>
+  <w:LsdException Locked="false" Priority="63" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 1 Accent 2"/>
+  <w:LsdException Locked="false" Priority="64" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 2 Accent 2"/>
+  <w:LsdException Locked="false" Priority="65" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 1 Accent 2"/>
+  <w:LsdException Locked="false" Priority="66" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 2 Accent 2"/>
+  <w:LsdException Locked="false" Priority="67" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 1 Accent 2"/>
+  <w:LsdException Locked="false" Priority="68" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 2 Accent 2"/>
+  <w:LsdException Locked="false" Priority="69" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 3 Accent 2"/>
+  <w:LsdException Locked="false" Priority="70" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Dark List Accent 2"/>
+  <w:LsdException Locked="false" Priority="71" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Shading Accent 2"/>
+  <w:LsdException Locked="false" Priority="72" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful List Accent 2"/>
+  <w:LsdException Locked="false" Priority="73" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Grid Accent 2"/>
+  <w:LsdException Locked="false" Priority="60" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Shading Accent 3"/>
+  <w:LsdException Locked="false" Priority="61" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light List Accent 3"/>
+  <w:LsdException Locked="false" Priority="62" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Grid Accent 3"/>
+  <w:LsdException Locked="false" Priority="63" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 1 Accent 3"/>
+  <w:LsdException Locked="false" Priority="64" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 2 Accent 3"/>
+  <w:LsdException Locked="false" Priority="65" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 1 Accent 3"/>
+  <w:LsdException Locked="false" Priority="66" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 2 Accent 3"/>
+  <w:LsdException Locked="false" Priority="67" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 1 Accent 3"/>
+  <w:LsdException Locked="false" Priority="68" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 2 Accent 3"/>
+  <w:LsdException Locked="false" Priority="69" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 3 Accent 3"/>
+  <w:LsdException Locked="false" Priority="70" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Dark List Accent 3"/>
+  <w:LsdException Locked="false" Priority="71" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Shading Accent 3"/>
+  <w:LsdException Locked="false" Priority="72" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful List Accent 3"/>
+  <w:LsdException Locked="false" Priority="73" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Grid Accent 3"/>
+  <w:LsdException Locked="false" Priority="60" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Shading Accent 4"/>
+  <w:LsdException Locked="false" Priority="61" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light List Accent 4"/>
+  <w:LsdException Locked="false" Priority="62" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Grid Accent 4"/>
+  <w:LsdException Locked="false" Priority="63" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 1 Accent 4"/>
+  <w:LsdException Locked="false" Priority="64" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 2 Accent 4"/>
+  <w:LsdException Locked="false" Priority="65" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 1 Accent 4"/>
+  <w:LsdException Locked="false" Priority="66" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 2 Accent 4"/>
+  <w:LsdException Locked="false" Priority="67" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 1 Accent 4"/>
+  <w:LsdException Locked="false" Priority="68" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 2 Accent 4"/>
+  <w:LsdException Locked="false" Priority="69" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 3 Accent 4"/>
+  <w:LsdException Locked="false" Priority="70" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Dark List Accent 4"/>
+  <w:LsdException Locked="false" Priority="71" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Shading Accent 4"/>
+  <w:LsdException Locked="false" Priority="72" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful List Accent 4"/>
+  <w:LsdException Locked="false" Priority="73" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Grid Accent 4"/>
+  <w:LsdException Locked="false" Priority="60" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Shading Accent 5"/>
+  <w:LsdException Locked="false" Priority="61" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light List Accent 5"/>
+  <w:LsdException Locked="false" Priority="62" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Grid Accent 5"/>
+  <w:LsdException Locked="false" Priority="63" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 1 Accent 5"/>
+  <w:LsdException Locked="false" Priority="64" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 2 Accent 5"/>
+  <w:LsdException Locked="false" Priority="65" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 1 Accent 5"/>
+  <w:LsdException Locked="false" Priority="66" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 2 Accent 5"/>
+  <w:LsdException Locked="false" Priority="67" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 1 Accent 5"/>
+  <w:LsdException Locked="false" Priority="68" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 2 Accent 5"/>
+  <w:LsdException Locked="false" Priority="69" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 3 Accent 5"/>
+  <w:LsdException Locked="false" Priority="70" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Dark List Accent 5"/>
+  <w:LsdException Locked="false" Priority="71" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Shading Accent 5"/>
+  <w:LsdException Locked="false" Priority="72" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful List Accent 5"/>
+  <w:LsdException Locked="false" Priority="73" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Grid Accent 5"/>
+  <w:LsdException Locked="false" Priority="60" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Shading Accent 6"/>
+  <w:LsdException Locked="false" Priority="61" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light List Accent 6"/>
+  <w:LsdException Locked="false" Priority="62" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Light Grid Accent 6"/>
+  <w:LsdException Locked="false" Priority="63" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 1 Accent 6"/>
+  <w:LsdException Locked="false" Priority="64" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Shading 2 Accent 6"/>
+  <w:LsdException Locked="false" Priority="65" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 1 Accent 6"/>
+  <w:LsdException Locked="false" Priority="66" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium List 2 Accent 6"/>
+  <w:LsdException Locked="false" Priority="67" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 1 Accent 6"/>
+  <w:LsdException Locked="false" Priority="68" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 2 Accent 6"/>
+  <w:LsdException Locked="false" Priority="69" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Medium Grid 3 Accent 6"/>
+  <w:LsdException Locked="false" Priority="70" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Dark List Accent 6"/>
+  <w:LsdException Locked="false" Priority="71" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Shading Accent 6"/>
+  <w:LsdException Locked="false" Priority="72" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful List Accent 6"/>
+  <w:LsdException Locked="false" Priority="73" SemiHidden="false"
+   UnhideWhenUsed="false" Name="Colorful Grid Accent 6"/>
+  <w:LsdException Locked="false" Priority="19" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Subtle Emphasis"/>
+  <w:LsdException Locked="false" Priority="21" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Intense Emphasis"/>
+  <w:LsdException Locked="false" Priority="31" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Subtle Reference"/>
+  <w:LsdException Locked="false" Priority="32" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Intense Reference"/>
+  <w:LsdException Locked="false" Priority="33" SemiHidden="false"
+   UnhideWhenUsed="false" QFormat="true" Name="Book Title"/>
+  <w:LsdException Locked="false" Priority="37" Name="Bibliography"/>
+  <w:LsdException Locked="false" Priority="39" QFormat="true" Name="TOC Heading"/>
+ </w:LatentStyles>
+</xml><![endif]-->
+	<!--[if gte mso 10]>
+<style>
+ /* Style Definitions */
+ table.MsoNormalTable
+	{mso-style-name:"Table Normal";
+	mso-tstyle-rowband-size:0;
+	mso-tstyle-colband-size:0;
+	mso-style-noshow:yes;
+	mso-style-priority:99;
+	mso-style-qformat:yes;
+	mso-style-parent:"";
+	mso-padding-alt:0in 5.4pt 0in 5.4pt;
+	mso-para-margin:0in;
+	mso-para-margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:"Times New Roman","serif";}
+</style>
+<![endif]-->
+	<SCRIPT LANGUAGE="JavaScript">
+<!--
+function MM_openBrWindow(theURL,winName,features) { //v2.0
+  window.open(theURL,winName,features);
+}
+//-->
+</SCRIPT>
+	<!--[if gte mso 9]><xml>
+ <o:shapedefaults v:ext="edit" spidmax="1026"/>
+</xml><![endif]-->
+	<!--[if gte mso 9]><xml>
+ <o:shapelayout v:ext="edit">
+  <o:idmap v:ext="edit" data="1"/>
+ </o:shapelayout></xml><![endif]-->
+	<STYLE TYPE="text/css">
+	<!--
+		TD P { color: #000000 }
+		H1 { color: #000000 }
+		P { color: #000000 }
+		H2 { color: #000000 }
+		H2.cjk { font-family: "SimSun" }
+		H2.ctl { font-family: "Mangal" }
+		H3 { color: #000000 }
+		H3.cjk { font-family: "SimSun" }
+		H3.ctl { font-family: "Mangal" }
+		BLOCKQUOTE { color: #000000 }
+		A:link { color: #0000ff }
+		CODE.cjk { font-family: "NSimSun", monospace }
+		A:visited { color: #800080 }
+	-->
+	</STYLE>
+</HEAD>
+<BODY LANG="en-US" TEXT="#000000" LINK="#0000ff" VLINK="#800080" DIR="LTR">
+<P ALIGN=CENTER STYLE="widows: 4"><BR><BR>
+</P>
+<H1>5 Launching and Application Environment</H1>
+<HR SIZE=3>
+<P><BR>This section describes the steps a JNLP Client must take to
+download and launch an application, Applet, library, or extension
+installer/uninstaller, and the environments these applications will
+be run in. 
+</P>
+<H2 CLASS="western"><A NAME="launch"></A>5.1 Launch Sequence</H2>
+<P>A JNLP Client performs the following steps to launch an
+application:</P>
+<OL>
+	<LI><P>Retrieve a JNLP file. The JNLP file might, for example, be
+	supplied as an argument, looked up in a cache managed by the JNLP
+	Client, or downloaded from a URL. 
+	</P>
+</OL>
+<P>The JNLP file can either be an application descriptor or an
+extension descriptor. For an application descriptor, it will describe
+how to launch an Application or Applet. For an extension descriptor,
+it will describe how to launch an installer/uninstaller for the
+extension. 
+</P>
+<OL START=2>
+	<LI><P>Parse the JNLP file. 
+	</P>
+</OL>
+<P>The JNLP Client must abort the launch if the JNLP file could not
+be parsed due to, e.g., syntax errors, missing fields, or fields with
+illegal values.</P>
+<P>There must always be a title and vendor specified based on the
+current locale.</P>
+<OL START=3>
+	<LI><P>Determine the right JRE to use. This might require
+	downloading and installing the appropriate JRE. (See section <A HREF="app-resources.html#selecting">4.6.2</A>.)
+		</P>
+	<LI><P>Download extension descriptors for all the extensions used in
+	the JNLP file. This step continues recursively with the extensions
+	specified in the downloaded extension descriptors. Section <A HREF="download.html">6</A>
+	specifies how extension descriptors are downloaded and cached. 
+	</P>
+	<LI><P>Run the installer for any required extension for which the
+	installer has not yet been run. This is explained in section <A HREF="#trusted">5.6</A>.
+		</P>
+	<LI><P>Download all eager JAR files (<CODE CLASS="western"><FONT SIZE=2>jar</FONT></CODE>
+	and <CODE CLASS="western"><FONT SIZE=2>nativelib</FONT></CODE>
+	elements) specified in the JNLP file from Step 1 (i.e., defined by
+	the <CODE CLASS="western"><FONT SIZE=2>resources</FONT></CODE>
+	sub-element of the <CODE CLASS="western"><FONT SIZE=2>jnlp</FONT></CODE>
+	element), and recursively defined by extension descriptors. Section
+	<A HREF="app-resources.html">4</A> describes which resources are
+	eager. 
+	</P>
+	<LI><P>Verify the signing and security requirements. 
+	</P>
+</OL>
+<P>This is explained in detail in section <A HREF="#application">5.3</A>.</P>
+<OL START=8>
+	<LI><P>Setup the JNLP Services. 
+	</P>
+</OL>
+<P>This is explained in detail in section <A HREF="jnlp-api.html">7</A>.</P>
+<OL START=9>
+	<LI><P>Launch the application/Applet/installer/uninstaller. 
+	</P>
+</OL>
+<P>This is explained in detail in section <A HREF="#launching">5.2</A>.</P>
+<H3 CLASS="western">5.1.1 Launch Offline</H3>
+<P>An application can be launched offline if the launch sequence
+described above can be completed without the need to download any
+resources, i.e., all JAR resources in Step 6 must already be
+downloaded and cached, all JNLP files must be cached locally, and the
+JRE must be available locally.</P>
+<P>The application itself might not support offline operation. See
+the description of the <CODE CLASS="western"><FONT SIZE=2>offline-allowed</FONT></CODE>
+element in section <A HREF="jnlp-file.html#descriptor">3.5</A>.</P>
+<H2 CLASS="western"><A NAME="launching"></A>5.2 Launching Details</H2>
+<H3 CLASS="western">5.2.1 Launching an Application</H3>
+<P>If the JNLP file contains the <CODE CLASS="western">application-desc</CODE>
+element, and the type attribute is &quot;Java&quot; then a Java
+application must be launched.</P>
+<P>The main class for the application is by default determined by the
+main-class attribute of the <CODE CLASS="western">application-desc</CODE>
+element. If this is not specified, then the Main-Class manifest entry
+for the main JAR file is used. If neither is specified, then the
+launch must be aborted.</P>
+<P>The application is launched by invoking the static public void
+main(String[] argv) method of the main class. The argv argument is
+constructed from the <CODE CLASS="western">argument</CODE> elements
+of the application-descriptor element.</P>
+<P>It is not the intent of this specification to define the behavior
+for launching an application of any other type, only to provide the
+syntax of the jnlp file for jnlp clients that chose to support other
+application types.</P>
+<H3 CLASS="western">5.2.2 Launching an Applet</H3>
+<P>If the JNLP file contains the <CODE CLASS="western"><FONT SIZE=2>applet-desc</FONT></CODE>
+element, then an applet must be launched.</P>
+<P>The main class for the Applet is by determined by the main-class
+attribute of the <CODE CLASS="western"><FONT SIZE=2>applet-desc</FONT></CODE>
+elements.</P>
+<P>Launching an Applet requires setting up an Applet containter,
+instantiating the Applet, and invoking the init and start methods.</P>
+<H3 CLASS="western">5.2.3 Launching an Extension
+Installer/Uninstaller</H3>
+<P>If the JNLP file contains the <CODE CLASS="western"><FONT SIZE=2>installer-desc</FONT></CODE>
+element, then the JNLP file defines an extension
+installer/uninstaller. This section describes how the
+installer/uninstaller gets invoked. 
+</P>
+<P>The main class for the extension installer/uninstaller is by
+default determined by the main-class attribute of the <CODE CLASS="western"><FONT SIZE=2>installer-desc</FONT></CODE>
+element. If this is not specified, then the <CODE CLASS="western"><FONT SIZE=2>Main-Class</FONT></CODE>
+manifest entry for the main JAR file is used. If neither is
+specified, then the the launch must be aborted.</P>
+<P>The extension installer must be executed before the application
+that depends on it is launched. Furthermore, the installer must only
+be run once, the first time the installer extension is downloaded.
+However, if the uninstaller is later executed, the JNLP Client must
+ensure that the extension is installed again before it is used the
+next time.</P>
+<P>For installation, the JNLP Client must invoke the public static
+void main(String[]) method in the specified class with the String
+array {&quot;install&quot;} as an argument. 
+</P>
+<P>For uninstallation, the JNLP Client must invoke the public static
+void main(String[]) method in the specified class with the String
+array {&quot;uninstall&quot;} as an argument. 
+</P>
+<P>An installer is launched through an extension descriptor just like
+an application is launched through an application descriptor. Thus,
+an extension installer is by default run in a restricted environment.
+The <CODE CLASS="western"><FONT SIZE=2>all-permissions</FONT></CODE>
+element can be specified in the security section to request
+unrestricted access. An extension with an installer will typically
+need to be signed, so the installer can gain access to the local file
+system.</P>
+<H2 CLASS="western"><A NAME="application"></A>5.3 Application
+Environment</H2>
+<P>An application launched with a JNLP Client must be run in an
+environment according to the specification below. 
+</P>
+<P>At the core of the environment is the Java 2 SE platform standard
+environment, i.e., the environment provided by the Java 2 SE JRE for
+all Java Technology-based applications. On top of this core
+environment, this specification defines the following additional
+requirements:</P>
+<UL TYPE=DISC>
+	<LI><P>A preconfigured set of proxies for HTTP, so basic
+	communication with HTTP through the java.net.URL class works
+	correctly. 
+	</P>
+	<LI><P>A restricted execution environment (aka. sandbox) for
+	untrusted applications, and two execution environments for trusted
+	applications. The trusted environments are the all-permissions and
+	j2ee-application-client environments. 
+	</P>
+	<LI><P>A basic set of services that are available through the
+	javax.jnlp package. 
+	</P>
+	<LI><P>The ability to download application resources (such as JAR
+	files) lazily as the application executes. This download will
+	typically be initiated based on a class resolution request in the
+	JVM. 
+	</P>
+	<LI><P>Validating signing of the JAR files. 
+	</P>
+</UL>
+<P>The execution environments are described in more detail in the
+following sections. 
+</P>
+<H2 CLASS="western"><A NAME="signed"></A>5.4 Signed Applications</H2>
+<P>The signing infrastructure for JNLP is built on top of the
+existing signing infrastructure for the Java 2 Platform. The Java 2
+Platform supports signed JAR files. A JAR file can be signed and
+verified using, e.g., the standard jarsigner tool from the Java 2
+SDK.</P>
+<P>An application launched by a JNLP Client is considered to be
+signed, if and only if:</P>
+<UL TYPE=DISC>
+	<LI><P>All the JAR files are signed (both for <CODE CLASS="western"><FONT SIZE=2>jar</FONT></CODE>
+	and <CODE CLASS="western"><FONT SIZE=2>nativelib</FONT></CODE>
+	elements) and can be verified. A JAR file is signed if all the
+	entries (excluding manifest entries, the signature itself, and empty
+	directories) are signed by a single signature. 
+	</P>
+	<LI><P>If a signed version of the JNLP file exists, then it must be
+	verified, and it must match the JNLP file used to launch the
+	application. This is described in the following subsection. 
+	</P>
+	<LI><P>The same certificate is used to sign all JAR files (<CODE CLASS="western"><FONT SIZE=2>jar</FONT></CODE>
+	and <CODE CLASS="western"><FONT SIZE=2>nativelib</FONT></CODE>
+	elements) that are part of a single JNLP file. This simplifies user
+	management since only one certificate needs to be presented to the
+	user during a launch per JNLP file (and hardly restricts the signing
+	process in practice). 
+	</P>
+	<LI><P>The certificate used for signing the JAR files and JNLP file
+	(if signed) must be verified against a set of trusted root
+	certificates. 
+	</P>
+</UL>
+<P>How the set of trusted root certificates are obtained depends on
+the particular JNLP Client implementation. Typically, a JNLP Client
+will be shipped with a set of trusted root certificates for all the
+major Certificate Authorities (CAs).</P>
+<P>The JNLP Client must check a JAR file for signing information
+before it is used, i.e., before a class file or another resource is
+retrieved from it. If a JAR file is signed and the digital signature
+does not verify, the application must be aborted. For a lazily
+downloaded JAR file, i.e., a JAR file that is downloaded after the
+application is launched, this might require aborting an
+already-running application.</P>
+<H3 CLASS="western">5.4.1 Signing of JNLP Files</H3>
+<P>A JNLP file can optionally be signed. A JNLP Client must check if
+a signed version of the JNLP file or JNLP template exist, and if so,
+verify that at least one of them match the JNLP file that is used to
+launch the application. If a match is not found (see below), then the
+launch must be aborted. If no signed JNLP file or JNLP template
+exist, then the JNLP file is not signed, and no check needs to be
+performed. 
+</P>
+<P>A JNLP file is signed either by including a copy of it in the
+signed main JAR file, or by including a matching (see below) template
+file in the signed main JAR file. 
+</P>
+<P>For the first method, the signed copy must be named:
+JNLP-INF/APPLICATION.JNLP. The APPLICATION.JNLP filename should be
+generated in upper case, but should be recognized in either upper or
+lower case. To match, the signed JNLP file must contain exactly the
+same XML elements and attributes, with identical values, as the JNLP
+file used to launch the application. 
+</P>
+<P>For the second method the signed copy must be named
+JNLP-INF/APPLICATION_TEMPLATE.JNLP. The APPLICATION_TEMPLATE.JNLP
+filename should be generated in upper case, but should be recognized
+in either upper or lower case. The template
+(APPLICATION_TEMPLATE.JNLP) may have fields for CDATA arguments or
+values denoted as &quot;*&quot;. The signed template must have
+exactly the same elements and arguments as the JNLP file used to
+launch the app, and the value of each element and attribute must
+&quot;match&quot; as described below. An element value or attribute
+value matches if either the value in the template is identical to the
+value in the JNLP file used to launch the app, or all of the
+following are true: 
+</P>
+<P>1.) The element or attribute is defined (in the DTD in appendix C)
+to be of type CDATA (for attributes) or #PCDATA (for elements).<BR>2.)
+The element or attribute value in the signed template is &quot;*&quot;<BR>3.)
+The element or attribute value is not blacklisted or restricted by
+the JNLP Client.</P>
+<P>It is expected that a JNLP Client will blacklist (or restrict)
+certain jnlp elements and argument values such as &quot;java-vm-args&quot;
+or property &quot;name&quot; and &quot;value&quot; to maintain
+security. The exact list is up to the individual JNLP Client
+implementations. 
+</P>
+<P>As an example, the following APPLICATION_TEMPLATE.JNLP could be
+used to host an application on various hosts with different icons: 
+</P>
+<P><CODE CLASS="western"><FONT SIZE=2>&lt;?xml version=&quot;1.0&quot;
+encoding=&quot;UTF-8&quot;?&gt; </FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;jnlp
+codebase=&quot;*&quot;&gt; </FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;information&gt;
+</FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;title&gt;Draw!&lt;/title&gt;
+</FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;vendor&gt;My
+Web Company&lt;/vendor&gt; </FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;icon
+href=&quot;*&quot;/&gt; </FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;offline-allowed/&gt;
+</FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;/information&gt;
+</FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;resources&gt;
+</FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;java
+version=&quot;1.3+&quot;/&gt; </FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;jar
+href=&quot;draw.jar&quot;/&gt; </FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;/resources&gt;
+</FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;application-desc
+main-class=&quot;com.mysite.Draw&quot;/&gt; </FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;/jnlp&gt;
+</FONT></FONT></CODE>
+</P>
+<P><A NAME="Discussion"></A><A NAME="Discussion_"></A>An Application
+with the above contents in JNLP-INF/APPLICATION_TEMPLATE.JNLP in it's
+main jar could be moved from one server to another, or could change
+it's icon without resigning the main jar. 
+</P>
+<P>As described above, a JNLP file is not required to be signed in
+order for an application to be signed. This is similar to the
+behavior of Applets, where the Applet tags in the HTML pages are not
+signed, even when granting unrestricted access to the Applet.</P>
+<H2 CLASS="western"><A NAME="untrusted"></A>5.5 Untrusted Environment</H2>
+<P>All applications are by default run in an untrusted, or restricted
+environment, by a JNLP Client. The restricted environment is similar
+to the well-known Applet sandbox, and is designed so untrusted
+applications are prevented from intentionally or unintentionally
+harming the local system. For example, the restricted environment
+limits access to local disk and the network.</P>
+<P>When run in the restricted execution environment, the following
+restrictions must be enforced on the application:</P>
+<BLOCKQUOTE><STRONG>Single download host:</STRONG> All JAR files
+specified in the <CODE CLASS="western"><FONT SIZE=2>resources</FONT></CODE>
+elements of the JNLP file must be downloaded from the same host, the
+download host.</BLOCKQUOTE>
+<BLOCKQUOTE><STRONG>Native libraries:</STRONG> No <CODE CLASS="western"><FONT SIZE=2>nativelib</FONT></CODE>
+elements can be used. 
+</BLOCKQUOTE>
+<BLOCKQUOTE><STRONG>Security Manager:</STRONG> The application must
+run with a SecurityManager installed. The following table lists the
+set of permissions that must be granted to the applications
+resources. Other permissions can only be granted if deemed secure by
+the JNLP Client. The permissions that must be granted are: 
+</BLOCKQUOTE>
+<CENTER>
+	<TABLE WIDTH=90% BORDER=1 CELLPADDING=0 CELLSPACING=0>
+		<TR>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=5>Security
+				Permissions</FONT></STRONG></P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=5>Target</FONT></STRONG></P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=5>Action</FONT></STRONG></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.net.SocketPermission</FONT></CODE><CODE CLASS="western">
+				</CODE>
+				</P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>localhost:1024-</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>listen</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.version</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.vendor</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.vendor.url</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.class.version</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>os.name</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>os.version</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>os.arch</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>file.separator</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>path.separator</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>line.separator</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.specification.version</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.specification.vendor</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.specification.name</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.vm.specification.vendor</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.vm.specification.name</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.vm.version</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.vm.vendor</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.vm.name</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.awt.AWTPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>accessEventQueue</FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT>(see
+				below for details)</P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+		</TR>
+	</TABLE>
+</CENTER>
+<BLOCKQUOTE><A NAME="properties"></A><STRONG>Properties:</STRONG> An
+untrusted application has read and write access only to those
+properties considered secure by the JNLP Client. At a minimum the
+JNLP Client will allow read and write access to properties begining
+with &quot;jnlp&quot;.</BLOCKQUOTE>
+<BLOCKQUOTE><STRONG>Event Queue Access:</STRONG> A JNLP Client must
+ensure that an application only has access to its own event queue.
+For example, if a JNLP Client restricts access to the clipboard in
+the ClipboardService by displaying a security advisor dialog, then
+the JNLP Client must ensure that this dialog is on an event queue
+that the launched application does not have access to. This ensures
+that the application cannot programmatically circumvent the security
+measures implemented by a JNLP Client.</BLOCKQUOTE>
+<BLOCKQUOTE>Permission to the event queue can be granted by a JNLP
+Client by overwriting the checkAwtEventQueueAccess on the
+SecurityManager object, instead of explicitly adding the
+java.awt.AWTPermission(&quot;accessEventQueue&quot;) permission.</BLOCKQUOTE>
+<BLOCKQUOTE><STRONG>Extensions:</STRONG> Extensions: The JNLP file
+can request extensions and JREs from any host. Permissions are
+granted to downloaded code based on its origin as well as its signing
+and trust. Unsigned and untrusted code, whether in the application or
+an extension, may only make a socket connection back to the host from
+which it originated, according to the <A HREF="http://java.sun.com/javase/6/docs/technotes/guides/security/">Java
+Security Architecture</A>.</BLOCKQUOTE>
+<BLOCKQUOTE><STRONG>Environment: </STRONG>A JNLP Client may allow
+untrusted code other permissions appropriate to the environment. For
+example, a JNLP Client that implements multiple applications/applets
+in one JVM session will not allow exitVM permission, while one that
+enforces one separate JVM instance per application/applet could.</BLOCKQUOTE>
+<P>This environment is a superset of the Applet sandbox. Since only
+one application is run per JVM for an application launched by a JNLP
+Client, the JNLP sandbox does not have to restrict access to
+System.exit.</P>
+<P>The sandbox environment described above is the default set of
+permissions granted to an untrusted application or applet. The JNLP
+Client may allow the user or system administrator to configure
+alternative permission sets for untrusted applications and applets. 
+</P>
+<P>The sandbox environment described above is also the default
+initial set of permissions granted to an untrusted application or
+applet. The JNLP Client may allow the user to grant additional
+permissions interactivly. For example, the JNLP Client may intercept
+requests for printer access, socket connections, or clipboard access
+in the Security Manager, and display dialogs asking the user to grant
+such additional permissions. 
+</P>
+<H2 CLASS="western"><A NAME="trusted"></A>5.6 Trusted Environments</H2>
+<P>This specification specifies two trusted environments, the
+all-permissions environment and an environment that meets the
+security specifications of the J2EE Application Client environment.
+Both of these environments provide unrestricted access to the network
+and local disk. Thus, an application can intentionally or
+unintentionally harm the local system. An application with
+unrestricted access may only be launched if it is trusted.</P>
+<P>The <CODE CLASS="western"><FONT SIZE=2>security</FONT></CODE>
+element in the JNLP file is used to request the trusted environments:</P>
+<CENTER>
+	<TABLE WIDTH=90% BORDER=1 CELLPADDING=0 CELLSPACING=0>
+		<TR>
+			<TD WIDTH=40%>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=5>All
+				Permissions</FONT></STRONG></P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=5>J2EE
+				Application Client Permissions</FONT></STRONG></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD WIDTH=40%>
+				<P><CODE CLASS="western"><FONT SIZE=2>&lt;security&gt;</FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;
+				</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;all-permissions/&gt;</FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;/security&gt;</FONT></FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>&lt;security&gt;</FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western">&nbsp;&nbsp;&nbsp;</CODE><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;j2ee-application-client-permissions/&gt;</FONT></FONT></CODE><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>&lt;/security&gt;</FONT></FONT></CODE></P>
+			</TD>
+		</TR>
+	</TABLE>
+</CENTER>
+<P>The following requirements must be satisfied before a JNLP Client
+can grant an application these access rights:</P>
+<OL>
+	<LI><P>The application is signed. 
+	</P>
+	<LI><P>The user and/or the JNLP Client trusts the certificate that
+	is used to sign the application. 
+	</P>
+</OL>
+<P>How a JNLP Client decides to trust a certificate is dependent on
+the particular implementation. Typically, a JNLP Client would prompt
+the user to make a decision on whether to launch the application or
+not. The decision can be based on the information stored in the
+certificate. The decision can be cached, so the accept action is only
+required the first time the application is launched.</P>
+<P>The application must be run with a SecurityManager installed. The
+following table lists the exact set of permissions that must be
+granted to the application's resources:</P>
+<CENTER>
+	<TABLE WIDTH=90% BORDER=1 CELLPADDING=0 CELLSPACING=0>
+		<TR>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=5>Security
+				Permissions</FONT></STRONG></P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=5>Target</FONT></STRONG></P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=5>Action</FONT></STRONG></P>
+			</TD>
+		</TR>
+		<TR>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><STRONG><FONT SIZE=3 STYLE="font-size: 13pt">All
+				Permisssions Environment</FONT></STRONG></P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4">&nbsp;</P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4">&nbsp;</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><CODE CLASS="western"><FONT FACE="Courier New"><FONT SIZE=2>java.security.AllPermissions</FONT></FONT></CODE></P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+		</TR>
+		<TR>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4"><FONT FACE="Courier New"><FONT SIZE=2><BR></FONT></FONT><STRONG><FONT SIZE=3 STYLE="font-size: 13pt">J2EE
+				Application Client Environment</FONT></STRONG></P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4">&nbsp;</P>
+			</TD>
+			<TD>
+				<P ALIGN=CENTER STYLE="widows: 4">&nbsp;</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.awt.AWTPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>accessClipboard</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.awt.AWTPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>accessEventQueue</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.awt.AWTPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>showWindowWithoutWarningBanner</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.lang.RuntimePermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>exitVM</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.lang.RuntimePermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>loadLibrary</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.lang.RuntimePermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>queuePrintJob</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P>&nbsp;</P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.net.SocketPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>*</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>connect</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.net.SocketPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>localhost:1024-</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>accept, listen</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.io.FilePermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>*</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read, write</FONT></CODE></P>
+			</TD>
+		</TR>
+		<TR VALIGN=TOP>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>java.util.PropertyPermission</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>*</FONT></CODE></P>
+			</TD>
+			<TD>
+				<P><CODE CLASS="western"><FONT SIZE=2>read</FONT></CODE></P>
+			</TD>
+		</TR>
+	</TABLE>
+</CENTER>
+<P>An application running with all-permissions can create its own
+classloader to, e.g., install code downloaded from the network. Note
+that when using custom classloader, the application might circumvent
+the caching mechanisms provided by the JNLP Client and thereby
+degrade the performance of the application.</P>
+<P>The two permission sets described above are the default set of
+permissions granted to a trusted application or applet requesting
+all-permissions or j2ee-application-client-permissions. The JNLP
+Client may allow the user or system administrator to configure
+alternative permission sets for trusted applications and applets.</P>
+<H2 CLASS="western"><A NAME="execution"></A>5.7 Execution Environment
+for Component Extensions</H2>
+<P>All the JAR files specified in the <CODE CLASS="western"><FONT SIZE=2>resources</FONT></CODE>
+elements for a component extension become part of the application's
+resources. JAR files for an extension must execute with the set of
+permissions specified in the extension descriptor, which is not
+necessarily the same set as the application.</P>
+<P>By default, the component extension resources are executed in the
+untrusted execution environment. However, by using the <CODE CLASS="western"><FONT SIZE=2>security</FONT></CODE>
+element, either of the trusted environments can be requested. Just as
+for an application, the resources must be signed and the user must
+trust the extension before it can be run in a trusted environment. An
+extension that contains native code will always need to request
+trusted access to the system.</P>
+</BODY>
+</HTML>
