@@ -34,8 +34,6 @@ public class SimpleAction implements Action, LocaleObserver {
     private String descriptionKey;
     private Consumer<SimpleAction> actionTask;
 
-
-
     public SimpleAction(final String nameKey, final String descriptionKey, final Ikon icon, final Consumer<SimpleAction> actionTask, final Translator translator) {
         this.nameKey = Objects.requireNonNull(nameKey);
         this.descriptionKey = Objects.requireNonNull(descriptionKey);
@@ -45,7 +43,6 @@ public class SimpleAction implements Action, LocaleObserver {
         updateTranslation();
         EditorInternationalization.getInstance().addObserver(this);
     }
-
 
     public String getNameKey() {
         return nameKey;
