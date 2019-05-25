@@ -8,17 +8,39 @@
     -fx-border-color: transparent;
     -fx-border-width: 2px;
     -fx-border-style: solid;
-}
-
-.action-button:hover {
-    -fx-border-color: lightblue;
+    -fx-border-radius: 8px;
 }
 
 .action-icon {
     -fx-font-size: 24px;
 }
 
+.action-popup {
+    -fx-background-color: white;
+    -fx-border-style: solid;
+    -fx-border-color: black;
+    -fx-padding: 4px
+}
+
+.action-popup .action-button:hover {
+    -fx-text-fill: rgb(32, 102, 162);
+}
+
+.action-popup .action-button:hover .action-icon {
+    -fx-fill: rgb(32, 102, 162);
+}
+
+
+.simple-media-cell-action-button:hover {
+    -fx-border-color: rgb(32, 102, 162);
+}
+
 .simple-media-cell-action-button .action-icon {
     -fx-font-size: 32px;
-    -fx-fill: lightblue;
+    -fx-fill: rgb(32, 102, 162);
+}
+
+.webstart-view {
+    -fx-padding: 32px;
+    -fx-background-color: rgb(17, 49, 61);
 }

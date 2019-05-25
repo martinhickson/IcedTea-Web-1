@@ -10,12 +10,14 @@ public class ActionPopup extends Popup {
 
     public ActionPopup(List<Action> actions) {
         final VBox box = new VBox();
-        box.setStyle("-fx-background-color: white; -fx-border-style: solid; -fx-border-color: black; -fx-padding: 4px");
+        box.getStyleClass().add("action-popup");
         getContent().add(box);
 
         for (Action action : actions) {
             action.addActionTriggeredListener(a -> hide());
-            box.getChildren().add(new ActionButton(action));
+            final ActionButton button = new ActionButton(action);
+            button.getStyleClass().add("action-popup-action-button");
+            box.getChildren().add(button);
             setAutoHide(true);
         }
     }
