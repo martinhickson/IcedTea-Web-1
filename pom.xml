@@ -29,6 +29,7 @@
         <module>core</module>
         <module>integration</module>
         <module>clients</module>
+        <module>client-fx</module>
         <module>jnlp-servlet</module>
         <module>launchers</module>
     </modules>

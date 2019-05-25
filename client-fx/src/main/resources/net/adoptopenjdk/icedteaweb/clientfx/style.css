@@ -1,0 +1,24 @@
+.media-cell-title {
+    -fx-font-size: 18px;
+    -fx-font-weight: bold;
+}
+
+.action-button {
+    -fx-background-color: transparent;
+    -fx-border-color: transparent;
+    -fx-border-width: 2px;
+    -fx-border-style: solid;
+}
+
+.action-button:hover {
+    -fx-border-color: lightblue;
+}
+
+.action-icon {
+    -fx-font-size: 24px;
+}
+
+.simple-media-cell-action-button .action-icon {
+    -fx-font-size: 32px;
+    -fx-fill: lightblue;
+}
