@@ -1,5 +1,6 @@
 /* UpdateDesc.java
    Copyright (C) 2010 Red Hat, Inc.
+   Copyright (C) 2019 Karakun AG
 
 This file is part of IcedTea.
 
@@ -47,9 +48,9 @@ package net.adoptopenjdk.icedteaweb.jnlp.element.update;
  *    &lt;update check="always" policy="prompt-update"&gt;
  * </pre>
  * <p/>
+ *
  * @implSpec See <b>JSR-56, Section 3.6 Application Update</b>
  * for a detailed specification of this class.
- *
  * @see UpdateCheck
  * @see UpdatePolicy
  */
@@ -66,12 +67,30 @@ public class UpdateDesc {
         this.policy = policy;
     }
 
+    /**
+     * The check attribute indicates the preference for when the JNLP Client should check for updates, and can have
+     * one of the three values: "always", "timeout", and "background".
+     * <p/>
+     *
+     * @return the preference for when the JNLP Client should check for updates
+     * @implSpec See <b>JSR-56, Section 3.6 Application Update</b>
+     * for a detailed specification of this class.
+     */
     public UpdateCheck getCheck() {
         return this.check;
     }
 
+    /**
+     * The policy attribute indicates the preference for how the JNLP Client should handle an application
+     * update when it is known an update is available before the application is launched, and can have
+     * one of the following three values: "always", "prompt-update", and "prompt-run".
+     * <p/>
+     *
+     * @return The policy how the JNLP Client should handle an application update
+     * @implSpec See <b>JSR-56, Section 3.6 Application Update</b>
+     * for a detailed specification of this class.
+     */
     public UpdatePolicy getPolicy() {
         return this.policy;
     }
-
 }

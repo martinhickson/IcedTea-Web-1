@@ -155,7 +155,7 @@ public class ResourceTracker {
         // should really be synchronized on resources, but the worst
         // case should be that the resource will be updated once even
         // if unnecessary.
-        boolean downloaded = checkCache(resource, updatePolicy);
+        boolean downloaded = checkCache(resource);
 
         if (!downloaded) {
             if (prefetch) {
@@ -190,10 +190,9 @@ public class ResourceTracker {
      * Check the cache for a resource, and initialize the resource
      * as already downloaded if found.
      *
-     * @param updatePolicy whether to check for updates if already in cache
      * @return whether the resource are already downloaded
      */
-    private boolean checkCache(final Resource resource, final UpdatePolicy updatePolicy) {
+    private boolean checkCache(final Resource resource) {
         if (!CacheUtil.isCacheable(resource.getLocation())) {
             // pretend that they are already downloaded; essentially
             // they will just 'pass through' the tracker as if they were
@@ -204,6 +203,8 @@ public class ResourceTracker {
             fireDownloadEvent(resource);
             return true;
         }
+
+        final UpdatePolicy updatePolicy = resource.getUpdatePolicy();
 
         if (updatePolicy != UpdatePolicy.ALWAYS && updatePolicy != UpdatePolicy.FORCE) { // save loading entry props file
             CacheEntry entry = new CacheEntry(resource.getLocation(), resource.getDownloadVersion());
