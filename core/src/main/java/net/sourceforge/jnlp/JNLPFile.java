@@ -31,6 +31,7 @@ import net.adoptopenjdk.icedteaweb.jnlp.element.resource.ResourcesDesc;
 import net.adoptopenjdk.icedteaweb.jnlp.element.security.AppletPermissionLevel;
 import net.adoptopenjdk.icedteaweb.jnlp.element.security.ApplicationPermissionLevel;
 import net.adoptopenjdk.icedteaweb.jnlp.element.security.SecurityDesc;
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateDesc;
 import net.adoptopenjdk.icedteaweb.jnlp.version.VersionString;
 import net.adoptopenjdk.icedteaweb.logging.Logger;
@@ -41,6 +42,7 @@ import net.adoptopenjdk.icedteaweb.xmlparser.ParseException;
 import net.adoptopenjdk.icedteaweb.xmlparser.XMLParser;
 import net.adoptopenjdk.icedteaweb.xmlparser.XmlParserFactory;
 import net.sourceforge.jnlp.cache.ResourceTracker;
+import net.sourceforge.jnlp.cache.UpdateOptions;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.LocaleUtils;
@@ -251,7 +253,7 @@ public class JNLPFile {
      * @throws ParseException if the JNLP file was invalid
      */
     public JNLPFile(final URL location, final ParserSettings settings) throws IOException, ParseException {
-        this(location, (VersionString) null, settings, JNLPRuntime.getDefaultUpdatePolicy());
+        this(location, (VersionString) null, settings, JNLPRuntime.getDefaultUpdatePolicy(), new UpdateOptions(UpdateCheck.ALWAYS, true));
     }
 
     /**
@@ -265,8 +267,8 @@ public class JNLPFile {
      * @throws IOException    if an IO exception occurred
      * @throws ParseException if the JNLP file was invalid
      */
-    public JNLPFile(final URL location, final VersionString version, final ParserSettings settings, UpdatePolicy policy) throws IOException, ParseException {
-        this(location, version, settings, policy, null);
+    public JNLPFile(final URL location, final VersionString version, final ParserSettings settings, UpdatePolicy policy, final UpdateOptions updateOptions) throws IOException, ParseException {
+        this(location, version, settings, policy, updateOptions, null);
     }
 
     /**
@@ -281,8 +283,8 @@ public class JNLPFile {
      * @throws IOException    if an IO exception occurred
      * @throws ParseException if the JNLP file was invalid
      */
-    protected JNLPFile(final URL location, final VersionString version, final ParserSettings settings, final UpdatePolicy policy, final URL forceCodebase) throws IOException, ParseException {
-        InputStream input = openURL(location, version, policy);
+    protected JNLPFile(final URL location, final VersionString version, final ParserSettings settings, final UpdatePolicy policy, final UpdateOptions updateOptions, final URL forceCodebase) throws IOException, ParseException {
+        InputStream input = openURL(location, version, policy, updateOptions);
         this.parserSettings = settings;
         parse(input, location, forceCodebase);
 
@@ -291,7 +293,7 @@ public class JNLPFile {
         //originated from a website, then download the one from the website
         //into the cache).
         if (sourceLocation != null && "file".equals(location.getProtocol())) {
-            openURL(sourceLocation, version, policy);
+            openURL(sourceLocation, version, policy,updateOptions);
         }
 
         this.fileLocation = location;
@@ -315,8 +317,8 @@ public class JNLPFile {
      * @throws IOException    if an IO exception occurred
      * @throws ParseException if the JNLP file was invalid
      */
-    public JNLPFile(final URL location, final String uniqueKey, final VersionString version, final ParserSettings settings, final UpdatePolicy policy) throws IOException, ParseException {
-        this(location, version, settings, policy);
+    public JNLPFile(final URL location, final String uniqueKey, final VersionString version, final ParserSettings settings, final UpdatePolicy policy, final UpdateOptions updateOptions) throws IOException, ParseException {
+        this(location, version, settings, policy, updateOptions);
         this.uniqueKey = uniqueKey;
 
         LOG.warn("UNIQUEKEY (override) =" + this.uniqueKey);
@@ -329,7 +331,7 @@ public class JNLPFile {
      * @param settings settings of parser
      * @throws ParseException if the JNLP file was invalid
      */
-    public JNLPFile(final InputStream input, final ParserSettings settings) throws ParseException {
+    public JNLPFile(final InputStream input, final ParserSettings settings, final UpdateOptions updateOptions) throws ParseException {
         this.parserSettings = settings;
         parse(input, null, null);
     }
@@ -342,7 +344,7 @@ public class JNLPFile {
      * @param settings the {@link ParserSettings} to use when parsing
      * @throws ParseException if the JNLP file was invalid
      */
-    public JNLPFile(final InputStream input, final URL codebase, final ParserSettings settings) throws ParseException {
+    public JNLPFile(final InputStream input, final URL codebase, final ParserSettings settings, final UpdateOptions updateOptions) throws ParseException {
         this.parserSettings = settings;
         parse(input, null, codebase);
     }
@@ -360,13 +362,13 @@ public class JNLPFile {
      * @return opened stream from given url
      * @throws java.io.IOException if something goes wrong
      */
-    public static InputStream openURL(URL location, VersionString version, UpdatePolicy policy) throws IOException {
+    public static InputStream openURL(URL location, VersionString version, UpdatePolicy policy, final UpdateOptions updateOptions) throws IOException {
         if (location == null || policy == null)
             throw new IllegalArgumentException("Null parameter");
 
         try {
             ResourceTracker tracker = new ResourceTracker(false); // no prefetch
-            tracker.addResource(location, version, null, policy);
+            tracker.addResource(location, version, null, policy, updateOptions);
             File f = tracker.getCacheFile(location);
             return new FileInputStream(f);
         }

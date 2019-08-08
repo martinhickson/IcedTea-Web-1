@@ -129,7 +129,7 @@ public class ResourceTracker {
      * @param options options to control download
      * @param updatePolicy whether to check for updates if already in cache
      */
-    public void addResource(URL location, final VersionString version, final DownloadOptions options, final UpdatePolicy updatePolicy) {
+    public void addResource(URL location, final VersionString version, final DownloadOptions options, final UpdatePolicy updatePolicy, final UpdateOptions updateOptions) {
         if (location == null) {
             throw new IllegalResourceDescriptorException("location==null");
         }
@@ -140,7 +140,7 @@ public class ResourceTracker {
             LOG.error("Normalization of " + location.toString() + " has failed", ex);
         }
 
-        Resource resource = Resource.createResource(location, version, updatePolicy);
+        Resource resource = Resource.createResource(location, version, updatePolicy, updateOptions);
 
         synchronized (resources) {
             if (resources.contains(resource))
@@ -206,10 +206,12 @@ public class ResourceTracker {
 
         final UpdatePolicy updatePolicy = resource.getUpdatePolicy();
 
-        if (updatePolicy != UpdatePolicy.ALWAYS && updatePolicy != UpdatePolicy.FORCE) { // save loading entry props file
+        //  if (updatePolicy != UpdatePolicy.ALWAYS && updatePolicy != UpdatePolicy.FORCE) { // save loading entry props file
+        if (!resource.getUpdateOptions().alwaysDownloadUpdates()) {
             CacheEntry entry = new CacheEntry(resource.getLocation(), resource.getDownloadVersion());
 
-            if (entry.isCached() && !updatePolicy.shouldUpdate(entry)) {
+            // if (entry.isCached() && !updatePolicy.shouldUpdate(entry)) {
+            if (entry.isCached() && resource.getUpdateOptions().launchCachedVersion()) {
                 LOG.info("not updating: {}", resource.getLocation());
 
                 synchronized (resource) {
@@ -223,10 +225,10 @@ public class ResourceTracker {
             }
         }
 
-        if (updatePolicy == UpdatePolicy.FORCE) { // ALWAYS update
+        //if (updatePolicy == UpdatePolicy.FORCE) { // ALWAYS update
             // When we are "always" updating, we update for each instance. Reset resource status.
             resource.resetStatus();
-        }
+        //}
 
         // may or may not be cached, but check update when connection
         // is open to possibly save network communication time if it

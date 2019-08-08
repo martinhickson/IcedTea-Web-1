@@ -30,6 +30,7 @@ import net.adoptopenjdk.icedteaweb.jnlp.element.security.AppletPermissionLevel;
 import net.adoptopenjdk.icedteaweb.jnlp.version.VersionString;
 import net.adoptopenjdk.icedteaweb.xmlparser.ParseException;
 import net.sourceforge.jnlp.cache.CacheUtil;
+import net.sourceforge.jnlp.cache.UpdateOptions;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
@@ -64,7 +65,7 @@ public class PluginBridgeTest extends NoStdOutErrTest{
 
         @Override
         public JNLPFile create(final URL location, final VersionString version, final ParserSettings settings,
-                               final UpdatePolicy policy, final URL forceCodebase) throws IOException, ParseException {
+                               final UpdatePolicy policy, final UpdateOptions updateOptions, final URL forceCodebase) throws IOException, ParseException {
             JNLPHref = location;
             return new MockJNLPFile();
         }

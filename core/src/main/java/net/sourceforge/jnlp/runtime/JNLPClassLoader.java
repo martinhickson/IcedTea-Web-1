@@ -26,6 +26,8 @@ import net.adoptopenjdk.icedteaweb.jnlp.element.resource.JARDesc;
 import net.adoptopenjdk.icedteaweb.jnlp.element.resource.ResourcesDesc;
 import net.adoptopenjdk.icedteaweb.jnlp.element.security.AppletPermissionLevel;
 import net.adoptopenjdk.icedteaweb.jnlp.element.security.SecurityDesc;
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateDesc;
 import net.adoptopenjdk.icedteaweb.jnlp.version.VersionString;
 import net.adoptopenjdk.icedteaweb.logging.Logger;
 import net.adoptopenjdk.icedteaweb.logging.LoggerFactory;
@@ -43,6 +45,7 @@ import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.cache.IllegalResourceDescriptorException;
 import net.sourceforge.jnlp.cache.NativeLibraryStorage;
 import net.sourceforge.jnlp.cache.ResourceTracker;
+import net.sourceforge.jnlp.cache.UpdateOptions;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.config.ConfigurationConstants;
 import net.sourceforge.jnlp.security.AppVerifier;
@@ -544,7 +547,7 @@ public class JNLPClassLoader extends URLClassLoader {
             loader = uniqueKeyToLoader.get(uniqueKey);
 
             if (loader == null || !location.equals(loader.getJNLPFile().getFileLocation())) {
-                final JNLPFile jnlpFile = new JNLPFile(location, uniqueKey, version, settings, policy);
+                final JNLPFile jnlpFile = new JNLPFile(location, uniqueKey, version, settings, policy, new UpdateOptions(UpdateCheck.ALWAYS, true));
 
                 loader = getInstance(jnlpFile, policy, mainName, enableCodeBase);
             }
@@ -691,6 +694,8 @@ public class JNLPClassLoader extends URLClassLoader {
 
         List<JARDesc> initialJars = new ArrayList<>();
 
+        final UpdateOptions updateOptions = getUpdateOptions(getJNLPFile());
+
         for (JARDesc jar : jars) {
 
             available.add(jar);
@@ -700,7 +705,7 @@ public class JNLPClassLoader extends URLClassLoader {
             }
             tracker.addResource(jar.getLocation(),
                     jar.getVersion(), file.getDownloadOptions(),
-                    jar.isCacheable() ? JNLPRuntime.getDefaultUpdatePolicy() : UpdatePolicy.FORCE);
+                    jar.isCacheable() ? JNLPRuntime.getDefaultUpdatePolicy() : UpdatePolicy.FORCE, updateOptions);
         }
 
         //If there are no eager jars, initialize the first jar
@@ -858,6 +863,30 @@ public class JNLPClassLoader extends URLClassLoader {
         }
 
         activateJars(initialJars);
+    }
+
+    private static UpdateOptions getUpdateOptions(final JNLPFile jnlpFile) {
+        UpdateDesc updateDesc = jnlpFile.getUpdate();
+        if(updateDesc ==  null) {
+            updateDesc = new UpdateDesc(UpdateCheck.BACKGROUND, net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdatePolicy.ALWAYS);
+        }
+
+        final UpdateCheck updateCheck = updateDesc.getCheck();
+        final net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdatePolicy updatePolicy = updateDesc.getPolicy();
+
+        UpdateOptions updateOptions = new UpdateOptions(updateCheck, updatePolicy);
+
+        switch (updatePolicy) {
+            case PROMPT_UPDATE:
+                // TODO: get user option for update policy, set default in headless situation? -> default update
+                return new UpdatePolicyDialog(updateOptions).showAndWait();
+            case PROMPT_RUN:
+                // TODO: get user option for update policy, set default in headless situation? -> default update
+                return new UpdatePolicyDialog(updateOptions).showAndWait();
+            case ALWAYS:
+                return updateOptions;
+        }
+        return updateOptions;
     }
 
     private void initializeManifestAttributesChecker() throws LaunchException {
@@ -1282,7 +1311,7 @@ public class JNLPClassLoader extends URLClassLoader {
                                             continue;
                                         }
 
-                                        tracker.addResource(new File(extractedJarLocation).toURL(), null, null, null);
+                                        tracker.addResource(new File(extractedJarLocation).toURL(), null, null, null, null);
 
                                         URL codebase = file.getCodeBase();
                                         if (codebase == null) {
@@ -1570,7 +1599,7 @@ public class JNLPClassLoader extends URLClassLoader {
      * @param desc the JARDesc for the new jar
      */
     private void addNewJar(final JARDesc desc) {
-        this.addNewJar(desc, JNLPRuntime.getDefaultUpdatePolicy());
+        this.addNewJar(desc, JNLPRuntime.getDefaultUpdatePolicy(), new UpdateOptions(UpdateCheck.ALWAYS, true));
     }
 
     /**
@@ -1579,14 +1608,15 @@ public class JNLPClassLoader extends URLClassLoader {
      * @param desc the JARDesc for the new jar
      * @param updatePolicy the UpdatePolicy for the resource
      */
-    private void addNewJar(final JARDesc desc, UpdatePolicy updatePolicy) {
+    private void addNewJar(final JARDesc desc, UpdatePolicy updatePolicy, final UpdateOptions updateOptions) {
 
         available.add(desc);
 
         tracker.addResource(desc.getLocation(),
                 desc.getVersion(),
                 null,
-                updatePolicy
+                updatePolicy,
+                updateOptions
         );
 
         // Give read permissions to the cached jar file
@@ -2109,7 +2139,7 @@ public class JNLPClassLoader extends URLClassLoader {
         for (JARDesc eachJar : jars) {
             LOG.info("Downloading and initializing jar: {}", eachJar.getLocation().toString());
 
-            this.addNewJar(eachJar, UpdatePolicy.FORCE);
+            this.addNewJar(eachJar, UpdatePolicy.FORCE, new UpdateOptions(UpdateCheck.ALWAYS, true));
         }
     }
 
@@ -2144,7 +2174,7 @@ public class JNLPClassLoader extends URLClassLoader {
                 JARDesc jarToCache = new JARDesc(ref, resourceVersion, null, false, true, false, true);
                 LOG.info("Downloading and initializing jar: {}", ref.toString());
 
-                foundLoader.addNewJar(jarToCache, UpdatePolicy.FORCE);
+                foundLoader.addNewJar(jarToCache, UpdatePolicy.FORCE, new UpdateOptions(UpdateCheck.ALWAYS, true));
 
             } else if (action == DownloadAction.REMOVE_FROM_CACHE) {
                 JARDesc[] jarToRemove = {new JARDesc(ref, resourceVersion, null, false, true, false, true)};

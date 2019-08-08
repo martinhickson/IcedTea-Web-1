@@ -23,6 +23,7 @@ package net.sourceforge.jnlp.cache;
  * @author <a href="mailto:jmaxwell@users.sourceforge.net">Jon A. Maxwell (JAM)</a> - initial author
  * @version $Revision: 1.3 $
  */
+@Deprecated
 public class UpdatePolicy {
 
     // todo: implement session updating
@@ -37,16 +38,10 @@ public class UpdatePolicy {
     public static UpdatePolicy ALWAYS = new UpdatePolicy(0);
     public static UpdatePolicy SESSION = new UpdatePolicy(-1);
     public static UpdatePolicy FORCE = new UpdatePolicy(Long.MIN_VALUE);
+
     public static UpdatePolicy NEVER = new UpdatePolicy(Long.MAX_VALUE);
 
-    private long timeDiff = -1;
-
-    /**
-     * Create a new update policy; this policy always updates the
-     * entry unless the shouldUpdate method is overridden.
-     */
-    public UpdatePolicy() {
-    }
+    private final long timeDiff;
 
     /**
      * Create an update policy that only checks a file for being

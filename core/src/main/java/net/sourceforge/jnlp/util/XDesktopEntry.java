@@ -21,6 +21,7 @@ import net.adoptopenjdk.icedteaweb.IcedTeaWebConstants;
 import net.adoptopenjdk.icedteaweb.StreamUtils;
 import net.adoptopenjdk.icedteaweb.commandline.CommandLineOptions;
 import net.adoptopenjdk.icedteaweb.jnlp.element.information.IconKind;
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.jvm.JvmUtils;
 import net.adoptopenjdk.icedteaweb.logging.Logger;
 import net.adoptopenjdk.icedteaweb.logging.LoggerFactory;
@@ -29,7 +30,7 @@ import net.adoptopenjdk.icedteaweb.ui.swing.dialogresults.AccessWarningPaneCompl
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.PluginBridge;
 import net.sourceforge.jnlp.cache.CacheUtil;
-import net.sourceforge.jnlp.cache.UpdatePolicy;
+import net.sourceforge.jnlp.cache.UpdateOptions;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -393,7 +394,12 @@ public class XDesktopEntry implements GenericDesktopEntry {
         String location = null;
         if (uiconLocation != null) {
             //this throws npe, if url (specified in jnlp) points to 404
-            URL urlLocation = CacheUtil.getCachedResourceURL(uiconLocation, null, UpdatePolicy.SESSION);
+
+            final UpdateCheck check = file.getUpdate().getCheck();
+            final net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdatePolicy policy = file.getUpdate().getPolicy();
+
+
+            URL urlLocation = CacheUtil.getCachedResourceURL(uiconLocation, null, new UpdateOptions(UpdateCheck.ALWAYS, true));
             if (urlLocation == null) {
                 cantCache();
             }
@@ -562,7 +568,7 @@ public class XDesktopEntry implements GenericDesktopEntry {
                 //JNLPFile.openURL(favico, null, UpdatePolicy.ALWAYS);
                 //this MAY throw npe, if url (specified in jnlp) points to 404
                 //the below works just fine
-                URL urlLocation = CacheUtil.getCachedResourceURL(favico, null, UpdatePolicy.SESSION);
+                URL urlLocation = CacheUtil.getCachedResourceURL(favico, null, new UpdateOptions(UpdateCheck.ALWAYS, true));
                 if (urlLocation != null) {
                     return urlLocation;
                 }
@@ -571,7 +577,7 @@ public class XDesktopEntry implements GenericDesktopEntry {
             //So rather duplicating the code here, then wait double time if the icon will be at the start of the path
             for (String path : possibleFavIconLocations(file.getNotNullProbableCodeBase().getPath())) {
                 URL favico = favUrl("\\", path, file);
-                URL urlLocation = CacheUtil.getCachedResourceURL(favico, null, UpdatePolicy.SESSION);
+                URL urlLocation = CacheUtil.getCachedResourceURL(favico, null, new UpdateOptions(UpdateCheck.ALWAYS, true));
                 if (urlLocation != null) {
                     return urlLocation;
                 }

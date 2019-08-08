@@ -37,6 +37,7 @@
 
 package net.sourceforge.jnlp.cache;
 
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.jnlp.version.VersionString;
 import org.junit.Test;
 
@@ -167,7 +168,7 @@ public class ResourceTest {
 
     private static Resource createResource(String testName) throws MalformedURLException {
         final URL dummyUrl = new URL("http://example.com/applet" + testName + ".jar");
-        return Resource.createResource(dummyUrl, VersionString.fromString("1.0"), UpdatePolicy.ALWAYS);
+        return Resource.createResource(dummyUrl, VersionString.fromString("1.0"), UpdatePolicy.ALWAYS, new UpdateOptions(UpdateCheck.ALWAYS, true));
     }
 
     private static void setStatus(Resource resource, Collection<Resource.Status> flags) {

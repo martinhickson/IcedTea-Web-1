@@ -37,6 +37,7 @@
 package net.sourceforge.jnlp.runtime.html;
 
 import net.adoptopenjdk.icedteaweb.commandline.CommandLineOptions;
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.logging.Logger;
 import net.adoptopenjdk.icedteaweb.logging.LoggerFactory;
 import net.adoptopenjdk.icedteaweb.xmlparser.MalformedXMLParser;
@@ -44,6 +45,7 @@ import net.adoptopenjdk.icedteaweb.xmlparser.ParseException;
 import net.adoptopenjdk.icedteaweb.xmlparser.XmlStreamReader;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.ParserSettings;
+import net.sourceforge.jnlp.cache.UpdateOptions;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import org.w3c.dom.Document;
@@ -109,7 +111,7 @@ public class AppletExtractor {
 
     public List<Element> findAppletsOnPage() {
         try{
-            final Reader reader = cleanStreamIfPossible(JNLPFile.openURL(html, null, UpdatePolicy.ALWAYS));
+            final Reader reader = cleanStreamIfPossible(JNLPFile.openURL(html, null, UpdatePolicy.ALWAYS, new UpdateOptions(UpdateCheck.ALWAYS, true)));
             final String input = readAll(reader);
             return findAppletsOnPageImpl(openDocument(input));
         } catch (SAXException sex) {

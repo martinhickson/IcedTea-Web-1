@@ -31,9 +31,11 @@ import net.adoptopenjdk.icedteaweb.jnlp.element.resource.JARDesc;
 import net.adoptopenjdk.icedteaweb.jnlp.element.resource.ResourcesDesc;
 import net.adoptopenjdk.icedteaweb.jnlp.element.security.AppletPermissionLevel;
 import net.adoptopenjdk.icedteaweb.jnlp.element.security.SecurityDesc;
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.jnlp.version.VersionString;
 import net.adoptopenjdk.icedteaweb.logging.Logger;
 import net.adoptopenjdk.icedteaweb.logging.LoggerFactory;
+import net.sourceforge.jnlp.cache.UpdateOptions;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.AppletUtils;
@@ -133,7 +135,7 @@ public final class PluginBridge extends JNLPFile {
 
                 if (params.getJNLPEmbedded() != null) {
                     InputStream jnlpInputStream = new ByteArrayInputStream(decodeBase64String(params.getJNLPEmbedded()));
-                    jnlpFile = new JNLPFile(jnlpInputStream, codeBase, defaultSettings);
+                    jnlpFile = new JNLPFile(jnlpInputStream, codeBase, defaultSettings, new UpdateOptions(UpdateCheck.ALWAYS, true));
                     debugJnlp = new StreamProvider() {
 
                         @Override
@@ -146,12 +148,12 @@ public final class PluginBridge extends JNLPFile {
                     // see http://icedtea.classpath.org/bugzilla/show_bug.cgi?id=2746#c3
                     URL codebaseRewriter=UrlUtils.ensureSlashTail(UrlUtils.removeFileName(jnlp));
                     this.codeBase = codebaseRewriter;
-                    jnlpFile = factory.create(jnlp, null, defaultSettings, JNLPRuntime.getDefaultUpdatePolicy(), codebaseRewriter);
+                    jnlpFile = factory.create(jnlp, null, defaultSettings, JNLPRuntime.getDefaultUpdatePolicy(), new UpdateOptions(UpdateCheck.ALWAYS, true), codebaseRewriter);
                     debugJnlp = new StreamProvider() {
 
                         @Override
                         InputStream getStream() throws Exception {
-                            return JNLPFile.openURL(jnlp, null, UpdatePolicy.ALWAYS);
+                            return JNLPFile.openURL(jnlp, null, UpdatePolicy.ALWAYS, new UpdateOptions(UpdateCheck.ALWAYS, true));
                         }
                     }.readStream();
                 }

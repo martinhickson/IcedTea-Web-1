@@ -158,8 +158,11 @@ public class ResourceDownloader implements Runnable {
             if (lm == null) {
                 lm = connection.getLastModified();
             }
-            boolean current = CacheUtil.isCurrent(resource.getLocation(), resource.getRequestVersion(), lm) && resource.getUpdatePolicy() != UpdatePolicy.FORCE;
-            if (!current) {
+
+            boolean shouldUpdateAccordingToJnlp = resource.getUpdateOptions().alwaysDownloadUpdates();
+            boolean versionInCacheIsUpToDate = CacheUtil.isCurrent(resource.getLocation(), resource.getRequestVersion(), lm);
+
+            if (shouldUpdateAccordingToJnlp || !versionInCacheIsUpToDate) {
                 if (entry.isCached()) {
                     entry.markForDelete();
                     entry.store();
@@ -179,13 +182,13 @@ public class ResourceDownloader implements Runnable {
                 resource.changeStatus(EnumSet.of(PRECONNECT, CONNECTING), EnumSet.of(CONNECTED, PREDOWNLOAD));
 
                 // check if up-to-date; if so set as downloaded
-                if (current) {
+                if (!shouldUpdateAccordingToJnlp && versionInCacheIsUpToDate) {
                     resource.changeStatus(EnumSet.of(PREDOWNLOAD, DOWNLOADING), EnumSet.of(DOWNLOADED));
                 }
             }
 
             // update cache entry
-            if (!current) {
+            if (shouldUpdateAccordingToJnlp || !versionInCacheIsUpToDate) {
                 entry.setRemoteContentLength(size);
                 entry.setLastModified(lm);
             }

@@ -38,7 +38,9 @@ exception statement from your version.
 package net.sourceforge.jnlp;
 
 import net.adoptopenjdk.icedteaweb.jnlp.element.information.InformationDesc;
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.xmlparser.ParseException;
+import net.sourceforge.jnlp.cache.UpdateOptions;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
 import org.junit.Test;
 
@@ -58,7 +60,7 @@ public class JnlpInformationElementTest extends NoStdOutErrTest{
     private JNLPFile setUp(final String jnlpContent) throws ParseException, MalformedURLException {
         final URL codeBase = new URL("http://icedtea.classpath.org");
         final InputStream is = new ByteArrayInputStream(jnlpContent.getBytes());
-        return new JNLPFile(is, codeBase, new ParserSettings(false,false,false));
+        return new JNLPFile(is, codeBase, new ParserSettings(false,false,false), new UpdateOptions(UpdateCheck.ALWAYS, true));
     }
 
     @Test

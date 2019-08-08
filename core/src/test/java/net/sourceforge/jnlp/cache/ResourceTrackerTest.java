@@ -36,6 +36,7 @@
  */
 package net.sourceforge.jnlp.cache;
 
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.jnlp.version.VersionString;
 import net.adoptopenjdk.icedteaweb.testing.ServerAccess;
 import net.adoptopenjdk.icedteaweb.testing.ServerLauncher;
@@ -79,7 +80,7 @@ public class ResourceTrackerTest extends NoStdOutErrTest{
 
 
     private static Resource createResource(final String name) throws MalformedURLException {
-        return Resource.createResource(new URL("http://example.com/" + name + ".jar"), VersionString.fromString("1.0"), UpdatePolicy.ALWAYS);
+        return Resource.createResource(new URL("http://example.com/" + name + ".jar"), VersionString.fromString("1.0"), UpdatePolicy.ALWAYS, new UpdateOptions(UpdateCheck.ALWAYS, true));
     }
 
     @Test
@@ -276,7 +277,7 @@ public class ResourceTrackerTest extends NoStdOutErrTest{
         URL url = downloadServer.getUrl("resource");
 
         ResourceTracker rt = new ResourceTracker();
-        rt.addResource(url, null, null, UpdatePolicy.FORCE);
+        rt.addResource(url, null, null, UpdatePolicy.FORCE, new UpdateOptions(UpdateCheck.ALWAYS, true));
         File downloadFile = rt.getCacheFile(url);
 
         assertTrue(downloadFile.exists() && downloadFile.isFile());

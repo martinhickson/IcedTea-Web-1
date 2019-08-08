@@ -37,6 +37,7 @@ exception statement from your version.
 
 package net.sourceforge.jnlp.cache;
 
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.jnlp.version.VersionString;
 import net.adoptopenjdk.icedteaweb.testing.util.FileTestUtils;
 import org.junit.Test;
@@ -83,7 +84,7 @@ public class NativeLibraryStorageTest {
     static NativeLibraryStorage nativeLibraryStorageWithCache(URL... urlsToCache) {
         ResourceTracker tracker = new ResourceTracker();
         for (URL urlToCache : urlsToCache) {
-            tracker.addResource(urlToCache, VersionString.fromString("1.0"), null, UpdatePolicy.ALWAYS);
+            tracker.addResource(urlToCache, VersionString.fromString("1.0"), null, UpdatePolicy.ALWAYS, new UpdateOptions(UpdateCheck.ALWAYS, true));
         }
 
         return new NativeLibraryStorage(tracker);

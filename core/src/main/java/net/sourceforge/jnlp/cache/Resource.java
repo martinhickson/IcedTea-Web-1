@@ -96,19 +96,24 @@ public class Resource {
     private final EnumSet<Status> status = EnumSet.noneOf(Status.class);
     
     /** Update policy for this resource */
+    @Deprecated
     private final UpdatePolicy updatePolicy;
+
+    private UpdateOptions updateOptions;
 
     /** Download options for this resource */
     private DownloadOptions downloadOptions;
 
+
     /**
      * Create a resource.
      */
-    private Resource(final URL location, final VersionString requestVersion, final UpdatePolicy updatePolicy) {
+    private Resource(final URL location, final VersionString requestVersion, final UpdatePolicy updatePolicy, final UpdateOptions updateOptions) {
         this.location = location;
         this.downloadLocation = location;
         this.requestVersion = requestVersion;
         this.updatePolicy = updatePolicy;
+        this.updateOptions = updateOptions;
     }
 
     /**
@@ -119,9 +124,9 @@ public class Resource {
      * @param updatePolicy final policy for updating
      * @return new resource, which is already added in resources list
      */
-    public static Resource createResource(final URL location, final VersionString requestVersion, final UpdatePolicy updatePolicy) {
+    public static Resource createResource(final URL location, final VersionString requestVersion, final UpdatePolicy updatePolicy, final UpdateOptions updateOptions) {
         synchronized (resources) {
-            Resource resource = new Resource(location, requestVersion, updatePolicy);
+            Resource resource = new Resource(location, requestVersion, updatePolicy, updateOptions);
 
             //FIXME - url ignores port during its comparison
             //this may affect test-suites
@@ -430,6 +435,10 @@ public class Resource {
 
     public DownloadOptions getDownloadOptions() {
         return this.downloadOptions;
+    }
+
+    public UpdateOptions getUpdateOptions() {
+        return updateOptions;
     }
 
     public boolean isConnectable() {

@@ -1,5 +1,6 @@
 package net.sourceforge.jnlp.cache;
 
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.jnlp.version.VersionString;
 import net.sourceforge.jnlp.DownloadOptions;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
@@ -19,12 +20,12 @@ public class ResourceUrlCreatorTest extends NoStdOutErrTest{
     private static final DownloadOptions DLOPTS_NOPACK_NOVERSION = new DownloadOptions(false, false);
 
     private URL getResultUrl(final String url, final VersionString version, final boolean usePack /*use pack.gz suffix*/, final boolean useVersion /*use version suffix*/) throws MalformedURLException {
-        final Resource resource = Resource.createResource(new URL(url), version, null);
+        final Resource resource = Resource.createResource(new URL(url), version, null, new UpdateOptions(UpdateCheck.ALWAYS, true));
         return ResourceUrlCreator.getUrl(resource, usePack, useVersion);
     }
 
     private URL getResultUrl(final String url, final VersionString version, final DownloadOptions downloadOptions) throws MalformedURLException {
-        Resource resource = Resource.createResource(new URL(url), version, null);
+        Resource resource = Resource.createResource(new URL(url), version, null, new UpdateOptions(UpdateCheck.ALWAYS, true));
         ResourceUrlCreator ruc = new ResourceUrlCreator(resource, downloadOptions);
         return ruc.getVersionedUrl();
     }

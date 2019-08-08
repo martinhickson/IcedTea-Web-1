@@ -88,12 +88,11 @@ public class CacheUtil {
      *
      * @param location location of the resource
      * @param version  the version, or {@code null}
-     * @param policy   how to handle update
      * @return either the location in the cache or the original location
      */
-    public static URL getCachedResourceURL(final URL location, final VersionString version, final UpdatePolicy policy) {
+    public static URL getCachedResourceURL(final URL location, final VersionString version, final UpdateOptions updateOptions) {
         try {
-            final File f = getCachedResourceFile(location, version, policy);
+            final File f = getCachedResourceFile(location, version, UpdatePolicy.SESSION, updateOptions);
             //url was pointing to nowhere eg 404
             if (f == null) {
                 //originally  f.toUrl was throwing NPE
@@ -115,9 +114,9 @@ public class CacheUtil {
      * @param policy   update policy of resource
      * @return location in ITW cache on filesystem
      */
-    public static File getCachedResourceFile(final URL location, final VersionString version, final UpdatePolicy policy) {
+    public static File getCachedResourceFile(final URL location, final VersionString version, final UpdatePolicy policy, final UpdateOptions updateOptions) {
         final ResourceTracker rt = new ResourceTracker();
-        rt.addResource(location, version, null, policy);
+        rt.addResource(location, version, null, policy, updateOptions);
         return rt.getCacheFile(location);
     }
 

@@ -37,18 +37,21 @@ exception statement from your version. */
 
 package net.adoptopenjdk.icedteaweb.client;
 
-import java.net.URL;
 import net.adoptopenjdk.icedteaweb.client.parts.splashscreen.JNLPSplashScreen;
 import net.adoptopenjdk.icedteaweb.jnlp.element.information.IconKind;
+import net.adoptopenjdk.icedteaweb.jnlp.element.update.UpdateCheck;
 import net.adoptopenjdk.icedteaweb.ui.swing.SwingUtils;
 import net.sourceforge.jnlp.AbstractLaunchHandler;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.LaunchException;
 import net.sourceforge.jnlp.LaunchHandler;
 import net.sourceforge.jnlp.cache.ResourceTracker;
+import net.sourceforge.jnlp.cache.UpdateOptions;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.runtime.ApplicationInstance;
 import net.sourceforge.jnlp.util.logging.OutputController;
+
+import java.net.URL;
 
 /**
  * A {@link LaunchHandler} that gives feedback to the user using GUI elements
@@ -58,7 +61,6 @@ public class GuiLaunchHandler extends AbstractLaunchHandler {
 
     private volatile JNLPSplashScreen splashScreen = null;
     private final Object mutex = new Object();
-    private UpdatePolicy policy = UpdatePolicy.ALWAYS;
 
     public GuiLaunchHandler(OutputController outputStream) {
         super(outputStream);
@@ -116,7 +118,7 @@ public class GuiLaunchHandler extends AbstractLaunchHandler {
 
         final ResourceTracker resourceTracker = new ResourceTracker(true);
         if (splashImageURL != null) {
-            resourceTracker.addResource(splashImageURL, file.getFileVersion(), null, policy);
+            resourceTracker.addResource(splashImageURL, file.getFileVersion(), null, UpdatePolicy.ALWAYS, new UpdateOptions(UpdateCheck.ALWAYS, true));
         }
         synchronized (mutex) {
             SwingUtils.invokeAndWait(new Runnable() {
