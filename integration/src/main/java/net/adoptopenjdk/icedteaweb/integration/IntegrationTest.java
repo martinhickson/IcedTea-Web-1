@@ -28,6 +28,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -141,8 +142,12 @@ public interface IntegrationTest {
     }
 
     default File getCachedFile(TemporaryItwHome tmpItwHome, String fileName) throws IOException {
-        final List<Path> stream = find(Paths.get(tmpItwHome.getCacheHome().getAbsolutePath()), 100,
-                (path, attr) -> path.getFileName().toString().equals(fileName))
+        final List<Path> allFilesInCache = new ArrayList<>();
+
+        final Path cacheDir = Paths.get(tmpItwHome.getCacheHome().getAbsolutePath());
+        final List<Path> stream = find(cacheDir, 100, (path, attr) -> true)
+                .peek(allFilesInCache::add)
+                .filter(path -> path.getFileName().toString().equals(fileName))
                 .collect(Collectors.toList());
 
         final int numHints = stream.size();
@@ -150,7 +155,7 @@ public interface IntegrationTest {
             return stream.get(0).toFile();
         }
 
-        throw new AssertionFailedError("found " + numHints + " cache files with name " + fileName);
+        throw new AssertionFailedError("found " + numHints + " cache files with name " + fileName + "\nCache content:\n" + allFilesInCache);
     }
 
 
