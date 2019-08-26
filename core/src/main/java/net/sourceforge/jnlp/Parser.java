@@ -483,24 +483,32 @@ public final class Parser {
      * @throws ParseException if the JNLP file is invalid
      */
     private JREDesc getJRE(final Node node) throws ParseException {
-        final VersionString version = getVersionString(node, JREDesc.VERSION_ATTRIBUTE, null);
+        // require version attribute
+        final String v = getRequiredAttribute(node, JREDesc.VERSION_ATTRIBUTE, null, strict);
+        final VersionString version = VersionString.fromString(v);
+
         final URL location = getURL(node, JREDesc.HREF_ATTRIBUTE, base, strict);
-        String vmArgs = getAttribute(node, JREDesc.JAVA_VM_ARGS_ATTRIBUTE, null);
-        try {
-            JvmUtils.checkVMArgs(vmArgs);
-        } catch (IllegalArgumentException argumentException) {
-            vmArgs = null;
-        }
+        final String vmArgs = getVmArgs(node);
         final String initialHeap = getAttribute(node, JREDesc.INITIAL_HEAP_SIZE_ATTRIBUTE, null);
         final String maxHeap = getAttribute(node, JREDesc.MAX_HEAP_SIZE_ATTRIBUTE, null);
         final List<ResourcesDesc> resources = getResources(node, true);
 
-        // require version attribute
-        getRequiredAttribute(node, JREDesc.VERSION_ATTRIBUTE, null, strict);
-
         checkJreVersionWithSystemProperty(version, strict);
 
         return new JREDesc(version, location, vmArgs, initialHeap, maxHeap, resources);
+    }
+
+    private String getVmArgs(Node node) {
+        try {
+            final String vmArgs = getAttribute(node, JREDesc.JAVA_VM_ARGS_ATTRIBUTE, null);
+            JvmUtils.checkVMArgs(vmArgs);
+            return vmArgs;
+        } catch (IllegalArgumentException argumentException) {
+            if (strict) {
+                throw argumentException;
+            }
+            return null;
+        }
     }
 
     private static void checkJreVersionWithSystemProperty(final VersionString version, final boolean strict) {
