@@ -48,13 +48,12 @@ public class SplashUtils {
 
     static final String ICEDTEA_WEB_PLUGIN_SPLASH = "ICEDTEA_WEB_PLUGIN_SPLASH";
     static final String ICEDTEA_WEB_SPLASH = "ICEDTEA_WEB_SPLASH";
-    static final String NONE = "none";
     static final String DEFAULT = "default";
 
     /**
      * Indicator whether to show icedtea-web plugin or just icedtea-web
      * For "just icedtea-web" will be done an attempt to show content of
-     * information element 
+     * information element
      */
     public static enum SplashReason {
 
@@ -106,19 +105,19 @@ public class SplashUtils {
         f.replaceSplash(getErrorSplashScreen(f.getSplashWidth(), f.getSplashHeigth(), ex));
     }
 
-    
+
     private static SplashReason getReason() {
         if (JNLPRuntime.isWebstartApplication()) {
             return SplashReason.JAVAWS;
         } else {
             return SplashReason.APPLET;
-        }        
+        }
     }
-    
+
 
     /**
      * Warning - splash should have recieve width and height without borders.
-     * plugin's window have NO border, but javaws window HAVE border. This must 
+     * plugin's window have NO border, but javaws window HAVE border. This must
      * be calcualted prior calling this method
      * @param width
      * @param height
@@ -182,7 +181,7 @@ public class SplashUtils {
         }
         SplashPanel sp = null;
         if (SplashReason.JAVAWS.equals(splashReason)) {
-            if (NONE.equals(splashEnvironmetVar)) {
+            if (!DEFAULT.equals(splashEnvironmetVar)) {
                 return null;
             }
             if (DEFAULT.equals(splashEnvironmetVar)) {
@@ -194,7 +193,7 @@ public class SplashUtils {
             }
         }
         if (SplashReason.APPLET.equals(splashReason)) {
-            if (NONE.equals(pluginSplashEnvironmetVar)) {
+            if (!DEFAULT.equals(pluginSplashEnvironmetVar)) {
                 return null;
             }
             if (DEFAULT.equals(pluginSplashEnvironmetVar)) {
