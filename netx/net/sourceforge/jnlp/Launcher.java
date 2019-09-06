@@ -83,7 +83,7 @@ public class Launcher {
     private ParserSettings parserSettings = new ParserSettings();
 
     private Map<String, List<String>> extra = null;
-    
+
     public static final String KEY_JAVAWS_LOCATION = "icedtea-web.bin.location";
 
     /**
@@ -369,9 +369,9 @@ public class Launcher {
         }
     }
 
-  
+
     /**
-     * Launches the JNLP file in a new JVM instance. 
+     * Launches the JNLP file in a new JVM instance.
      * All streams are properly redirected.
      *
      * @param vmArgs the arguments to pass to the new JVM. Can be empty but
@@ -435,6 +435,7 @@ public class Launcher {
             String[] command = commands.toArray(new String[] {});
 
             ProcessBuilder pb = new ProcessBuilder(command);
+            pb.environment().put("ICEDTEA_WEB_SPLASH", "none");
             pb.inheritIO();
             Process p =pb.start();
             StreamUtils.waitForSafely(p);
@@ -451,7 +452,7 @@ public class Launcher {
     private JNLPFile fromUrl(URL location) throws LaunchException {
         try {
             JNLPFile file = new JNLPFile(location, parserSettings);
-            
+
             boolean isLocal = false;
             boolean haveHref = false;
             if ("file".equalsIgnoreCase(location.getProtocol()) && new File(location.getFile()).exists()) {
@@ -463,7 +464,7 @@ public class Launcher {
             if (!isLocal && haveHref){
                 //this is case when remote file have href to different file
                 if (!location.equals(file.getSourceLocation())){
-                    //mark local true, so the folowing condition will be true and 
+                    //mark local true, so the folowing condition will be true and
                     //new jnlp file will be downlaoded
                     isLocal = true;
                     //maybe this check is to strict, and will force redownlaod to often
@@ -552,7 +553,7 @@ public class Launcher {
             }
 
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "Starting application [" + mainName + "] ...");
-            
+
             Class<?> mainClass = app.getClassLoader().loadClass(mainName);
 
             Method main = mainClass.getMethod("main", new Class<?>[] { String[].class });
@@ -636,7 +637,7 @@ public class Launcher {
         if (!file.isApplet()) {
             throw launchError(new LaunchException(file, null, R("LSFatal"), R("LCClient"), R("LNotApplet"), R("LNotAppletInfo")));
         }
-      
+
         if (JNLPRuntime.getForksAllowed() && file.needsNewVM()) {
             if (!JNLPRuntime.isHeadless()) {
                 SplashScreen sp = SplashScreen.getSplashScreen();
@@ -648,7 +649,7 @@ public class Launcher {
         if (handler != null) {
             handler.launchInitialized(file);
         }
-        
+
         AppletInstance applet = null;
         try {
             ServiceUtil.checkExistingSingleInstance(file);
@@ -738,7 +739,7 @@ public class Launcher {
 
             ThreadGroup group = Thread.currentThread().getThreadGroup();
 
-            // appletInstance is needed by ServiceManager when looking up 
+            // appletInstance is needed by ServiceManager when looking up
             // services. This could potentially be done in applet constructor
             // so initialize appletInstance before creating applet.
             if (cont == null) {
@@ -767,7 +768,7 @@ public class Launcher {
             // Finish setting up appletInstance.
             appletInstance.setApplet(applet);
             appletInstance.getAppletEnvironment().setApplet(applet);
-            
+
             return appletInstance;
         } catch (Exception ex) {
             throw launchError(new LaunchException(file, ex, R("LSFatal"), R("LCInit"), R("LInitApplet"), R("LInitAppletInfo")), appletInstance);
@@ -850,7 +851,7 @@ public class Launcher {
     private LaunchException launchError(LaunchException ex) {
         return launchError(ex, null);
     }
-    
+
     private LaunchException launchError(LaunchException ex, AppletInstance applet) {
         if (applet != null) {
             SplashUtils.showErrorCaught(ex, applet);
