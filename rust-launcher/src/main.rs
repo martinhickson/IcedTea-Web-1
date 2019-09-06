@@ -75,7 +75,7 @@ fn is_splash_forbidden_testable(vars: Vec<(String, String)>) -> bool {
             return true;
         }
     }
-    false
+    true
 }
 
 fn main() {
@@ -312,14 +312,14 @@ pub mod tests_main {
     #[test]
     fn is_splash_forbidden_test() {
         let mut vec: Vec<(String, String)> = Vec::new();
-        assert_eq!(super::is_splash_forbidden_testable(vec), false);
+        assert_eq!(super::is_splash_forbidden_testable(vec), true);
         vec = Vec::new();
         vec.push(("".to_string(), "".to_string()));
-        assert_eq!(super::is_splash_forbidden_testable(vec), false);
+        assert_eq!(super::is_splash_forbidden_testable(vec), true);
         vec = Vec::new();
         vec.push(("-blah".to_string(), "-blah".to_string()));
         vec.push(("-verbose".to_string(), "-blah".to_string()));
-        assert_eq!(super::is_splash_forbidden_testable(vec), false);
+        assert_eq!(super::is_splash_forbidden_testable(vec), true);
         vec = Vec::new();
         vec.push(("-blah".to_string(), "-blah".to_string()));
         vec.push(("ICEDTEA_WEB_SPLASH".to_string(), "".to_string()));
@@ -334,17 +334,17 @@ pub mod tests_main {
         vec.push(("-blah".to_string(), "-blah".to_string()));
         vec.push(("aICEDTEA_WEB_SPLASH".to_string(), "".to_string()));
         vec.push(("---headless".to_string(), "-blah".to_string()));
-        assert_eq!(super::is_splash_forbidden_testable(vec), false);
+        assert_eq!(super::is_splash_forbidden_testable(vec), true);
         vec = Vec::new();
         vec.push(("-blah".to_string(), "-blah".to_string()));
         vec.push(("ICEDTEA_WEB_SPLASHb".to_string(), "".to_string()));
         vec.push(("---headless".to_string(), "-blah".to_string()));
-        assert_eq!(super::is_splash_forbidden_testable(vec), false);
+        assert_eq!(super::is_splash_forbidden_testable(vec), true);
         vec = Vec::new();
         vec.push(("-blah".to_string(), "-blah".to_string()));
         vec.push(("aICEDTEA_WEB_SPLASHb".to_string(), "".to_string()));
         vec.push(("---headless".to_string(), "-blah".to_string()));
-        assert_eq!(super::is_splash_forbidden_testable(vec), false);
+        assert_eq!(super::is_splash_forbidden_testable(vec), true);
         vec = Vec::new();
         vec.push(("ICEDTEA_WEB_SPLASH".to_string(), "value".to_string()));
         vec.push(("---headless".to_string(), "-blah".to_string()));
