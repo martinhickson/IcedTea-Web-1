@@ -17,4 +17,5 @@ public interface IcedTeaWebConstants {
 
     String ICEDTEA_WEB_SPLASH = "ICEDTEA_WEB_SPLASH";
     String NO_SPLASH = "none";
+    String DEFAULT = "default";
 }
