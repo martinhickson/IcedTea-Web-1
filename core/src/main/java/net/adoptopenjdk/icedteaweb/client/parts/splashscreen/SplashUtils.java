@@ -54,7 +54,7 @@ public class SplashUtils {
     static SplashPanel getSplashScreen() {
         SplashPanel splashPanel;
 
-        if (NO_SPLASH.equalsIgnoreCase(getSplashEnvironmentVariable())) {
+        if (!DEFAULT.equalsIgnoreCase(getSplashEnvironmentVariable())) {
             return null;
         }
 
