@@ -65,6 +65,7 @@ public class ItwJvmLauncher implements JvmLauncher {
 
         final ProcessBuilder pb = new ProcessBuilder();
         final Map<String, String> env = pb.environment();
+        env.put("ICEDTEA_WEB_SPLASH", "none");
         env.put(FileLog.LOG_PREFIX_ENV, FileLog.getLogFileNamePrefix());
         env.put(FileLog.LOG_POSTFIX_ENV, FileLog.getLogFileNamePostfix() + "-app");
 
