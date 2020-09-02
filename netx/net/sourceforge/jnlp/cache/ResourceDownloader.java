@@ -42,6 +42,8 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 
 public class ResourceDownloader implements Runnable {
 
+    private static final long[] RETRY_DELAYS = {2000L, 3000L, 5000L, 8000L};
+    private static final int RETRY_COUNT = 5;
     private final Resource resource;
     private final Object lock;
 
@@ -436,7 +438,15 @@ public class ResourceDownloader implements Runnable {
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
                     writeDownloadToFile(downloadLocation, new ByteArrayInputStream(body));
                 } else {
-                    throw ex;
+                    OutputController.getLogger().log(ex);
+                    for (int i=0;i<RETRY_COUNT;i++) {
+                        try {
+                            retryDownload(connection, downloadLocation, downloadEntry, i);
+                            break;
+                        } catch(IOException ex2) {
+                            OutputController.getLogger().log(ex2);
+                        }
+                    }
                 }
             }
         } else {
@@ -444,6 +454,21 @@ public class ResourceDownloader implements Runnable {
         }
 
         storeEntryFields(downloadEntry, connection.getContentLengthLong(), connection.getLastModified());
+    }
+    
+    private void retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry, int count) throws IOException {
+        try {
+            Thread.sleep(RETRY_DELAYS[Math.min(count, RETRY_DELAYS.length-1)]);
+        } catch (InterruptedException e) {
+            //ignore
+        }
+        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Redownloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
+        connection = getDownloadConnection(connection.getURL());
+        try {
+            writeDownloadToFile(downloadLocation, new BufferedInputStream(connection.getInputStream()));
+        } catch (IOException ex2) {
+            throw ex2;
+        }
     }
 
     private void storeEntryFields(CacheEntry entry, long contentLength, long lastModified) {
