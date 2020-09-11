@@ -430,7 +430,16 @@ public class ResourceDownloader implements Runnable {
                     writeDownloadToFile(downloadLocation, new ByteArrayInputStream(body));
                 } else {
                     OutputController.getLogger().log(ex);
-                    for (int i=0;i<RETRY_COUNT;i++) {
+                    int retryCount = RETRY_COUNT;
+                    String retryCountString = System.getProperty("sonata.rda.retry.count");
+                    if (retryCountString != null) {
+                        try {
+                            retryCount = Integer.parseInt(retryCountString);
+                        } catch (NumberFormatException e) {
+                            retryCount = RETRY_COUNT;
+                        }
+                    }
+                    for (int i=0;i<retryCount;i++) {
                         try {
                             retryDownload(connection, downloadLocation, downloadEntry, i);
                             break;
@@ -449,7 +458,16 @@ public class ResourceDownloader implements Runnable {
     
     private void retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry, int count) throws IOException {
         try {
-            Thread.sleep(RETRY_DELAYS[Math.min(count, RETRY_DELAYS.length-1)]);
+            int retryDelay = -1;
+            String retryDelayString = System.getProperty("sonata.rda.retry.delay");
+            if (retryDelayString != null) {
+                try {
+                    retryDelay = Integer.parseInt(retryDelayString);
+                } catch (NumberFormatException e) {
+                    retryDelay = -1;
+                }
+            }
+            Thread.sleep(retryDelay == -1 ? RETRY_DELAYS[Math.min(count, RETRY_DELAYS.length-1)] : retryDelay);
         } catch (InterruptedException e) {
             //ignore
         }
