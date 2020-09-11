@@ -36,12 +36,19 @@
  exception statement from your version. */
 package net.sourceforge.jnlp.cache;
 
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadFactory;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+
 public class CachedDaemonThreadPoolProvider {
+
+    private static final int QUEUE_SIZE = 300;
+    private static final int POOL_SIZE = 8;
 
     /**
      * This is copypasted default factory from java.util.concurrent.Executors.
@@ -81,6 +88,33 @@ public class CachedDaemonThreadPoolProvider {
         }
     }
 
-    public static final ExecutorService DAEMON_THREAD_POOL = Executors.newCachedThreadPool(new DaemonThreadFactory());
-
+    public static final ExecutorService DAEMON_THREAD_POOL = System.getProperty("sonata.rda.default.pool") == null ?
+            createThreadPool() : Executors.newCachedThreadPool(new DaemonThreadFactory());
+    
+    private static ExecutorService createThreadPool() {
+        int size = POOL_SIZE;
+        String sizeString = System.getProperty("sonata.rda.pool.size");
+        if (sizeString != null) {
+            try {
+                size = Integer.parseInt(sizeString);
+            } catch (NumberFormatException e) {
+                size = POOL_SIZE;
+            }
+        }
+        int queueSize = QUEUE_SIZE;
+        String queueSizeString = System.getProperty("sonata.rda.queue.size");
+        if (queueSizeString != null) {
+            try {
+                queueSize = Integer.parseInt(queueSizeString);
+            } catch (NumberFormatException e) {
+                queueSize = QUEUE_SIZE;
+            }
+        }
+        return new ThreadPoolExecutor(size,
+                size,
+                10*60,
+                TimeUnit.SECONDS,
+                new ArrayBlockingQueue<Runnable>(queueSize),
+                new DaemonThreadFactory());
+    }
 }
