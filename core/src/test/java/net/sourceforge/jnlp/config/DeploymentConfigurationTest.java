@@ -39,6 +39,7 @@ import net.adoptopenjdk.icedteaweb.testing.ServerAccess;
 import net.adoptopenjdk.icedteaweb.testing.ServerLauncher;
 import net.adoptopenjdk.icedteaweb.testing.annotations.Remote;
 import net.sourceforge.jnlp.config.DeploymentConfiguration.ConfigType;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
 import org.junit.Assert;
 import org.junit.Ignore;
@@ -144,9 +145,11 @@ public class DeploymentConfigurationTest extends NoStdOutErrTest {
         dc.save();
 
         String s = FileUtils.loadFileAsUtf8String(f);
-        Assert.assertTrue(s.contains("#" + ConfigurationConstants.DEPLOYMENT_COMMENT));
-        String date = new Date().toString().substring(0, 10); //every propertiews file have header and date by default
-        Assert.assertTrue(s.contains("#" + date)); //check day part of date...
+        if (JNLPRuntime.getConfiguration().isTrue(ConfigurationConstants.KEY_DEPLOYMENT_CONFIG_READ_ONLY)) {
+            Assert.assertTrue(s.contains("#" + ConfigurationConstants.DEPLOYMENT_COMMENT));
+            String date = new Date().toString().substring(0, 10); //every propertiews file have header and date by default
+            Assert.assertTrue(s.contains("#" + date)); //check day part of date...
+        }
         Assert.assertTrue(s.contains("#commented1"));
         Assert.assertTrue(s.contains("property2"));
         Assert.assertTrue(s.contains("#commented3"));
