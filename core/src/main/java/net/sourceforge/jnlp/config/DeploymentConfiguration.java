@@ -23,6 +23,7 @@ import net.adoptopenjdk.icedteaweb.icon.IcoReaderSpi;
 import net.adoptopenjdk.icedteaweb.io.FileUtils;
 import net.adoptopenjdk.icedteaweb.logging.Logger;
 import net.adoptopenjdk.icedteaweb.logging.LoggerFactory;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 
 import javax.imageio.spi.IIORegistry;
 import javax.naming.ConfigurationException;
@@ -277,6 +278,10 @@ public final class DeploymentConfiguration {
         return null;
     }
 
+    public boolean isTrue(final String key) {
+        return Boolean.parseBoolean(getProperty(key));
+    }
+
     public List<String> getPropertyAsList(final String key) {
         return splitCombination(getProperty(key));
     }
@@ -510,6 +515,11 @@ public final class DeploymentConfiguration {
     public void save() throws IOException {
         if (userPropertiesFile == null) {
             throw new IllegalStateException("must load() before save()");
+        }
+
+        if (JNLPRuntime.getConfiguration().isTrue(ConfigurationConstants.KEY_DEPLOYMENT_CONFIG_READ_ONLY)) {
+            LOG.debug("Deployment config is read only, not saving");
+            return;
         }
 
         final SecurityManager sm = System.getSecurityManager();

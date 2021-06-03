@@ -554,7 +554,14 @@ public class Defaults {
                     ConfigurationConstants.KEY_SECURITY_SERVER_WHITELIST,
                     null,
                     null
+            ),
+
+            Setting.createDefault(
+                    ConfigurationConstants.KEY_DEPLOYMENT_CONFIG_READ_ONLY,
+                    null,
+                    ValidatorFactory.createBooleanValidator()
             )
+
     );
 
     private static final List<Setting> additionalDefaults = loadServiceAsStream(DefaultsProvider.class)

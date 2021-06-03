@@ -286,4 +286,6 @@ public interface ConfigurationConstants {
      * CSV
      */
     String KEY_SECURITY_SERVER_WHITELIST = "deployment.security.whitelist";
+
+    String KEY_DEPLOYMENT_CONFIG_READ_ONLY = "deployment.config.readonly";
 }
