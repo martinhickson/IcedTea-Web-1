@@ -53,6 +53,8 @@ import net.sourceforge.jnlp.config.DirectoryValidator.DirectoryCheckResults;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import static net.sourceforge.jnlp.runtime.Translator.R;
+import static java.lang.Boolean.parseBoolean;
+import static net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_SECURITY_DISABLE_RESTRICTED_FILES;
 
 /**
  * This class contains a few file-related utility functions.
@@ -232,6 +234,18 @@ public final class FileUtils {
         deleteWithErrMesg(f, null);
     }
 
+    private static void createFileOrDir(File file, boolean isDir) throws IOException {
+        if (isDir) {
+            if (!file.mkdir()) {
+                throw new IOException("Cannot create directory {} " + file);
+            }
+        } else {
+            if (!file.createNewFile()) {
+                throw new IOException("Cannot create file {} " + file);
+            }
+        }
+    }
+
     /**
      * Creates a new file or directory with minimum permissions. The file is not
      * readable or writable by anyone other than the owner. If writeableByOnwer
@@ -241,6 +255,12 @@ public final class FileUtils {
      * @throws IOException
      */
     private static void createRestrictedFile(File file, boolean isDir, boolean writableByOwner) throws IOException {
+
+        final String disableRestrictedFiles = JNLPRuntime.getConfiguration().getProperty(KEY_SECURITY_DISABLE_RESTRICTED_FILES);
+        if (parseBoolean(disableRestrictedFiles)) {
+            createFileOrDir(file, isDir);
+            return;
+        }
 
         File tempFile = new File(file.getCanonicalPath() + ".temp");
 
