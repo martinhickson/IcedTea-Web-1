@@ -153,6 +153,8 @@ public final class DeploymentConfiguration {
 
     /** Boolean. Only install the custom authenticator if true */
     public static final String KEY_SECURITY_ITW_IGNORECERTISSUES = "deployment.security.itw.ignorecertissues";
+
+    public static final String KEY_SECURITY_DISABLE_RESTRICTED_FILES = "deployment.security.itw.disablerestrictedfiles";
     
     public static final String KEY_STRICT_JNLP_CLASSLOADER = "deployment.jnlpclassloader.strict";
     

@@ -235,6 +235,11 @@ public class Defaults {
                         BasicValueValidators.getBooleanValidator(),
                         String.valueOf(true)
                 },
+                {
+                        DeploymentConfiguration.KEY_SECURITY_DISABLE_RESTRICTED_FILES,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
                 /* networking */
                 {
                         DeploymentConfiguration.KEY_PROXY_TYPE,
