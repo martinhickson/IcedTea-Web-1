@@ -92,7 +92,7 @@ if not "%ITW_HOME%" == "" (
   set "NETX_JAR=%ITW_HOME%/share/icedtea-web/javaws.jar"
   set "PLUGIN_JAR=%ITW_HOME%/share/icedtea-web/plugin.jar"
   set "JSOBJECT_JAR=%ITW_HOME%/share/icedtea-web/jsobject.jar"
-  set "LAUNCHER_BOOTCLASSPATH=-Xbootclasspath/a:!NETX_JAR!;!PLUGIN_JAR!;!JSOBJECT_JAR!;%ITW_HOME%/win-deps-runtime/tagsoup.jar;%ITW_HOME%/win-deps-runtime/js.jar;%ITW_HOME%/win-deps-runtime/mslinks.jar"
+  set "LAUNCHER_BOOTCLASSPATH=-Xbootclasspath/a:!NETX_JAR!;!PLUGIN_JAR!;!JSOBJECT_JAR!;%ITW_HOME%/win-deps-runtime/commonscompress.jar;%ITW_HOME%/win-deps-runtime/pack200.jar;%ITW_HOME%/win-deps-runtime/tagsoup.jar;%ITW_HOME%/win-deps-runtime/js.jar;%ITW_HOME%/win-deps-runtime/mslinks.jar"
 )
 
 
