@@ -25,7 +25,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarOutputStream;
-import java.util.jar.Pack200;
 import java.util.zip.GZIPInputStream;
 
 import net.sourceforge.jnlp.DownloadOptions;
@@ -39,6 +38,8 @@ import net.sourceforge.jnlp.security.dialogs.InetSecurity511Panel;
 import net.sourceforge.jnlp.util.HttpUtils;
 import net.sourceforge.jnlp.util.UrlUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
+
+import org.apache.commons.compress.java.util.jar.Pack200;
 
 public class ResourceDownloader implements Runnable {
 

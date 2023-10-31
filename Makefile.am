@@ -179,7 +179,9 @@ endif
 NETX_JAR=$(datadir)/$(PACKAGE_NAME)/javaws.jar
 SPLASH_PNG=$(datadir)/$(PACKAGE_NAME)/javaws_splash.png
 MODULARJDK_ARGS_LOCATION=$(DESTDIR)$(MODULARJDK_ARGS_DIR)/$(MODULARJDK_ARGS_FILE)
-
+$(info VAR is $(TOP_SRC_DIR))
+$(info VAR is $(TOP_BUILD_DIR))
+COMMONS_COMPRESS_JAR=$(TOP_BUILD_DIR)/lib/commons-compress-1.23.0.jar
 
 # Conditional defintions
 if HAVE_TAGSOUP
@@ -217,7 +219,7 @@ export IT_JAVACFLAGS=$(IT_JAVAC_SETTINGS) -source $(IT_LANGUAGE_SOURCE_VERSION) 
 #    IllegalAccessException
 #  - we want full privileges
 #
-export UNIFIED_CLASSPATH_SEGMENTS=$(NETX_JAR) $(PLUGIN_JAR) $(JSOBJECT_JAR) $(RHINO_JAR) $(TAGSOUP_JAR) $(MSLINKS_JAR)
+export UNIFIED_CLASSPATH_SEGMENTS=$(NETX_JAR) $(PLUGIN_JAR) $(JSOBJECT_JAR) $(RHINO_JAR) $(TAGSOUP_JAR) $(MSLINKS_JAR) $(COMMONS_COMPRESS_JAR)
 export UNIFIED_JACOCO_CLASSPATH_SEGMENTS=$(UNIFIED_CLASSPATH_SEGMENTS) $(JACOCO_CLASSPATH)
 export UNIFIED_CLASSPATH=$(call joinsegments, $(UNIFIED_CLASSPATH_SEGMENTS))
 export UNIFIED_JACOCO_CLASSPATH=$(call joinsegments, $(UNIFIED_JACOCO_CLASSPATH_SEGMENTS))
@@ -367,6 +369,7 @@ edit_launcher_script = sed \
   -e "s|[@]MSLINKS_JAR[@]|$(MSLINKS_JAR)|g" \
   -e "s|[@]TAGSOUP_JAR[@]|$(TAGSOUP_JAR)|g" \
   -e "s|[@]RHINO_JAR[@]|$(RHINO_JAR)|g" \
+  -e "s|[@]COMMONS_COMPRESS_JAR[@]|$(COMMONS_COMPRESS_JAR)|g" \
   -e "s|[@]PROGRAM_NAME[@]|$${PROGRAM_NAME}|g" \
   -e "s|[@]MODULARJDK_ARGS_LOCATION[@]|$(MODULARJDK_ARGS_LOCATION)|g"
 
@@ -783,7 +786,7 @@ stamps/liveconnect.stamp: liveconnect-source-files.txt stamps/netx.stamp
 	  mkdir -p $(TOP_BUILD_DIR)/liveconnect && \
 	  $(SYSTEM_JDK_DIR)/bin/javac $(IT_JAVACFLAGS) \
 	      -d $(TOP_BUILD_DIR)/liveconnect \
-	      $(call composeclasspath,$(NETX_DIR) $(MSLINKS_JAR) $(TAGSOUP_JAR) $(RHINO_JAR)) \
+	      $(call composeclasspath,$(NETX_DIR) $(MSLINKS_JAR) $(TAGSOUP_JAR) $(RHINO_JAR) $(COMMONS_COMPRESS_JAR)) \
 	      -sourcepath $(LIVECONNECT_SRCS) \
 	      @liveconnect-source-files.txt ; \
 	fi
@@ -942,7 +945,7 @@ stamps/netx.stamp: netx-source-files.txt stamps/netx-html-gen.stamp
 	$(SYSTEM_JDK_DIR)/bin/javac $(IT_JAVACFLAGS) \
 		-d $(NETX_DIR) \
 		-sourcepath $(NETX_SRCDIR) \
-		$(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(RHINO_JAR)) \
+		$(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(RHINO_JAR) $(COMMONS_COMPRESS_JAR)) \
 	    @netx-source-files.txt
 	(cd $(NETX_RESOURCE_DIR); \
 	 for files in $$(find . -type f); \
@@ -1011,6 +1014,7 @@ launcher.build/$(javaws) launcher.build/$(itweb_settings) launcher.build/$(polic
 	  export JSOBJECT_JAR=$(JSOBJECT_JAR) ; \
 	  export TAGSOUP_JAR=$(TAGSOUP_JAR) ; \
 	  export RHINO_JAR=$(RHINO_JAR) ; \
+	  export COMMONS_COMPRESS_JAR=$(COMMONS_COMPRESS_JAR) ; \
 	  export MSLINKS_JAR=$(MSLINKS_JAR) ; \
 	  export MODULARJDK_ARGS_LOCATION=$(MODULARJDK_ARGS_LOCATION) ; \
 	  unset MAIN_CLASS ; \
@@ -1077,6 +1081,7 @@ rust-code-coverage:
 	  export JSOBJECT_JAR=$(JSOBJECT_JAR) ; \
 	  export TAGSOUP_JAR=$(TAGSOUP_JAR) ; \
 	  export RHINO_JAR=$(RHINO_JAR) ; \
+	  export COMMONS_COMPRESS_JAR=$(COMMONS_COMPRESS_JAR) ; \
 	  export MODULARJDK_ARGS_LOCATION=$(MODULARJDK_ARGS_LOCATION) ; \
 	  export MAIN_CLASS=net.sourceforge.jnlp.runtime.Boot ; \
 	  export BIN_LOCATION=$(bindir)/none ; \
@@ -1188,7 +1193,7 @@ if ENABLE_DOCS
 	 -doctitle 'IcedTea-Web: NetX API Specification' \
 	 -windowtitle 'IcedTea-Web: NetX ' \
 	 -header '<strong>IcedTea-Web<br/>NetX</strong>' \
-	 $(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(RHINO_JAR)) \
+	 $(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(RHINO_JAR) $(COMMONS_COMPRESS_JAR)) \
 	 $(NETX_PKGS)
 endif
 	mkdir -p stamps
@@ -1206,7 +1211,7 @@ if ENABLE_PLUGINJAR
 	 -doctitle 'IcedTea-Web: Plugin API Specification' \
 	 -windowtitle 'IcedTea-Web: Plugin ' \
 	 -header '<strong>IcedTea-Web<br/>Plugin</strong>' \
-	 $(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(RHINO_JAR)) \
+	 $(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(RHINO_JAR) $(COMMONS_COMPRESS_JAR)) \
 	 $(PLUGIN_PKGS)
 endif
 endif
