@@ -16,9 +16,9 @@ import java.util.HashMap;
 import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
-import java.util.jar.Pack200;
 import java.util.zip.GZIPOutputStream;
 
+import org.apache.commons.compress.java.util.jar.Pack200;
 import org.junit.AfterClass;
 import org.junit.Assert;
 import org.junit.BeforeClass;
