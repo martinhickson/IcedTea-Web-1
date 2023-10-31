@@ -497,6 +497,39 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_TAGSOUP],
   AM_CONDITIONAL([HAVE_TAGSOUP], [test x$TAGSOUP_JAR != xno -a x$TAGSOUP_JAR != x ])
 ])
 
+AC_DEFUN_ONCE([IT_CHECK_FOR_COMMONS_COMPRESS],
+[
+  AC_MSG_CHECKING([for commons-compress])
+  AC_ARG_WITH([commons-compress],
+             [AS_HELP_STRING([--with-commons-compress],
+                             [commons-compress.jar])],
+             [
+                COMMONS_COMPRESS_JAR=${withval}
+             ],
+             [
+                COMMONS_COMPRESS=
+             ])
+  if test -z "${COMMONS_COMPRESS_JAR}"; then
+    for dir in /usr/share/java /usr/local/share/java ; do
+      if test -f $dir/commons-compress.jar; then
+        COMMONS_COMPRESS_JAR=$dir/commons-compress.jar
+	    break
+      fi
+    done
+  fi
+  AM_COND_IF([WINDOWS], [
+    COMMONS_COMPRESS_JAR=$(cygpath -m ${COMMONS_COMPRESS_JAR})
+  ])
+  AC_MSG_RESULT(${COMMONS_COMPRESS_JAR})
+  if test -z "${COMMONS_COMPRESS_JAR}"; then
+    AC_MSG_RESULT(***************************************************************)
+    AC_MSG_RESULT(*  Warning you are building without Apache Commons Compress   *)
+    AC_MSG_RESULT(*  Compilation will fail                                      *)
+    AC_MSG_RESULT(***************************************************************)
+  fi
+  AC_SUBST(COMMONS_COMPRESS_JAR)
+  AM_CONDITIONAL([HAVE_COMMONS_COMPRESS], [test x$COMMONS_COMPRESS_JAR != xno -a x$COMMONS_COMPRESS_JAR != x ])
+])
 
 AC_DEFUN_ONCE([IT_CHECK_FOR_MSLINKS],
 [

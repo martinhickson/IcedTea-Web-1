@@ -1,4 +1,4 @@
-AC_INIT([icedtea-web],[1.8.8.5],[distro-pkg-dev@openjdk.java.net], [icedtea-web], [http://icedtea.classpath.org/wiki/IcedTea-Web])
+AC_INIT([icedtea-web],[1.8.8.6],[distro-pkg-dev@openjdk.java.net], [icedtea-web], [http://icedtea.classpath.org/wiki/IcedTea-Web])
 AM_INIT_AUTOMAKE([1.9 tar-pax foreign])
 AC_CONFIG_FILES([Makefile netx.manifest])
 AM_MAINTAINER_MODE([enable])
@@ -220,6 +220,7 @@ IT_FIND_OPTIONAL_JAR([asm], ASM,
     [/usr/share/java/objectweb-asm4/asm-all.jar /usr/share/java/objectweb-asm4/asm-all-4.0.jar /usr/share/java/objectweb-asm/asm-all.jar])
 
 IT_CHECK_FOR_TAGSOUP
+IT_CHECK_FOR_COMMONS_COMPRESS
 IT_CHECK_FOR_MSLINKS
 
 if test "x$build_windows" = xyes ; then

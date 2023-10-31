@@ -16,7 +16,6 @@ import java.util.HashMap;
 import java.util.jar.Attributes;
 import java.util.jar.JarOutputStream;
 import java.util.jar.Manifest;
-import java.util.jar.Pack200;
 import java.util.zip.GZIPOutputStream;
 
 import org.junit.AfterClass;
@@ -474,8 +473,17 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
 
         JarFile jarFile = new JarFile(orig.getAbsolutePath());
         FileOutputStream fos = new FileOutputStream(pack);
-        Pack200.Packer p = Pack200.newPacker();
-        p.pack(jarFile, fos);
+
+        boolean useCommonsCompress = Boolean.parseBoolean(System.getenv("ITW_COMMONS_COMPRESS")) || isJDK14OrLater();
+
+        if (useCommonsCompress) {
+            org.apache.commons.compress.java.util.jar.Pack200.Packer p = java.util.jar.Pack200.newPacker();
+            p.pack(jarFile, fos);
+        } else {
+            java.util.jar.Pack200.Packer p = java.util.jar.Pack200.newPacker();
+            p.pack(jarFile, fos);
+        }
+
         fos.close();
 
         File packgz = new File(downloadDir, fileName + ".jar.pack.gz");
@@ -486,5 +494,18 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         gos.write(Files.readAllBytes(pack.toPath()));
         gos.finish();
         gos.close();
+    }
+
+    //JDK 14 and later doesn't have built-in Pack200 functionality
+    private static boolean isJDK14OrLater() {
+        String[] elements = System.getProperty("java.version").split("\\.");
+        int version;
+        int discard = Integer.parseInt(elements[0]);
+        if (discard == 1) {
+            version = Integer.parseInt(elements[1]);
+        } else {
+            version = discard;
+        }
+        return version >= 14;
     }
 }
