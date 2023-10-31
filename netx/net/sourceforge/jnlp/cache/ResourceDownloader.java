@@ -25,7 +25,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.jar.JarOutputStream;
-import java.util.jar.Pack200;
 import java.util.zip.GZIPInputStream;
 
 import net.sourceforge.jnlp.DownloadOptions;
@@ -46,10 +45,25 @@ public class ResourceDownloader implements Runnable {
     private static final int RETRY_COUNT = 5;
     private final Resource resource;
     private final Object lock;
+    private boolean useCommonsCompress = false;
 
     public ResourceDownloader(Resource resource, Object lock) {
         this.resource = resource;
         this.lock = lock;
+        useCommonsCompress = Boolean.parseBoolean(System.getenv("ITW_COMMONS_COMPRESS")) || isJDK14OrLater();
+    }
+
+    //JDK 14 and later doesn't have built-in Pack200 functionality
+    private static boolean isJDK14OrLater() {
+        String[] elements = System.getProperty("java.version").split("\\.");
+        int version;
+        int discard = Integer.parseInt(elements[0]);
+        if (discard == 1) {
+            version = Integer.parseInt(elements[1]);
+        } else {
+            version = discard;
+        }
+        return version >= 14;
     }
 
     static int getUrlResponseCode(URL url, Map<String, String> requestProperties, ResourceTracker.RequestMethods requestMethod) throws IOException {
@@ -556,8 +570,14 @@ public class ResourceDownloader implements Runnable {
             JarOutputStream outputStream = new JarOutputStream(new FileOutputStream(CacheUtil
                     .getCacheFile(uncompressedLocation, version)));
 
-            Pack200.Unpacker unpacker = Pack200.newUnpacker();
-            unpacker.unpack(inputStream, outputStream);
+            if (useCommonsCompress) {
+                io.pack200.Pack200.Unpacker unpacker =
+                        io.pack200.Pack200.newUnpacker();
+                unpacker.unpack(inputStream, outputStream);
+            } else {
+                java.util.jar.Pack200.Unpacker unpacker = java.util.jar.Pack200.newUnpacker();
+                unpacker.unpack(inputStream, outputStream);
+            }
 
             outputStream.close();
             inputStream.close();

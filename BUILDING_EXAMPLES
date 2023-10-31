@@ -1,0 +1,98 @@
+Cygwin Build Steps on Windows for IcedTea-Web MSI Installer:
+------------------------------------------------------------
+
+Install Chocolatey Software Automation tool from website: https://chocolatey.org/
+
+#Install build tools:
+choco feature enable -n allowGlobalConfirmation
+choco install cygwin git cyg-get wixtoolset corretto8jdk rust maven
+cyg-get git autoconf automake libtool pkg-config m4 zip make unzip
+
+Use Windows Explorer to manually copy C:\Program Files\Amazon Corretto\jdk1.8.0_392 to C:\tools\cygwin\lib\jvm\openjdk
+(or in Cygwin bash use: cp -r /cygdrive/c/Program\ Files/Amazon\ Corretto/jdk1.8.0_* /cygdrive/c/tools/cygwin/lib/jvm/openjdk)
+Download wixgen.jar from GitHub (https://github.com/akashche/wixgen/releases) and place in C:\tools\cygwin\bin manually
+(downloading via curl from there didn't appear to work)
+
+#Obtain required 3rd party components:
+mkdir -p /usr/share/java
+cd /usr/share/java
+curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
+curl -o mslinks.jar https://repo1.maven.org/maven2/com/github/vatbub/mslinks/0.0.2/mslinks-0.0.2.jar  git clone git@github.com:martinhickson/IcedTea-Web-1.git
+curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
+curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
+#curl -o pack200.jar https://github.com/pack200/pack200  #no download URL, so build locally for now:
+mkdir ~/work && cd ~/work && git clone https://github.com/pack200/pack200.git && cd pack200 && mvn install -DskipTests=true \
+&& cp target/pack200*.jar /usr/share/java/pack200.jar
+
+#Edit the Git URL to clone as appropriate
+mkdir ~/work && cd ~/work && git clone https://github.com/martinhickson/IcedTea-Web-1.git
+cd IcedTea-Web-1/
+git checkout 1.8   #1.8 branch, alternatively checkout a specific tag
+autoreconf -i    #N.B. if you need to edit the version number, then edit configure.ac, and rerun this command
+export PATH=/usr/lib/jvm/openjdk/bin/:$PATH
+cp html-gen.sh html-gen-windows-line-endings.sh
+
+#Convert DOS line-endings to Unix
+sed -i 's/\r$//' html-gen.sh
+
+#Duplicate the wix folder in C:\Program Files (x86) and rename it to "wix"
+#(as version numbers may vary and the path is important for the following command)
+
+#Note && is used to join commands so if one build command fails then it exits
+./configure --disable-native-plugin --with-wix=C:/PROGRA~2/wix/bin \
+--with-jre-home=C:/tools/cygwin/lib/jvm/openjdk/jre \
+--with-jdk-home=C:/tools/cygwin/lib/jvm/openjdk \
+--with-tagsoup=C:/tools/cygwin/usr/share/java/tagsoup.jar \
+--with-commons-compress=C:/tools/cygwin/usr/share/java/commonscompress.jar \
+--with-wixgen=/usr/bin/wixgen.jar --with-rhino=C:/tools/cygwin/usr/share/java/rhino.jar \
+--with-mslinks=C:/tools/cygwin/usr/share/java/mslinks.jar \
+&& make && make install && make win-installer
+
+#(if the configure command above fails because it cannot find rust, then install it again via: choco install rust)
+
+You will find the MSI in the folder win-installer.build, e.g. ~/work/IcedTeaWeb-1/win-installer.build/icedtea-web-1.8.8.5.msi
+
+Linux CentOS 7.6 Build Steps:
+-----------------------------
+
+yum -y groupinstall "Development tools"
+yum -y install pkgconfig rust cargo java-1.8.0-openjdk java-1.8.0-openjdk-devel
+curl https://sh.rustup.rs -sSf | bash -s -- -y
+export PATH="/root/.cargo/bin:${PATH}"
+git clone https://github.com/martinhickson/IcedTea-Web-1.git
+cd IcedTea-Web-1 && \ git checkout icedtea-web-1.8.3.2
+sed -i 's/PKG_CHECK_VAR/#PKG_CHECK_VAR/' configure.ac
+sed -i 's/bashcompdir=/bashcompdir="${sysconfdir}\/bash_completion.d" #bashcompdir=/' configure.ac
+autoreconf -i
+./configure --disable-native-plugin --with-itw-libs=DISTRIBUTION
+make
+make install DESTDIR=zip/tmp
+cd zip/tmp
+zip -r icedtea-web-1.8.3.2.linux.bin.zip .
+
+Alternatively, the following Dockerfile can be used with Docker to create the Linux build (edit the proxy URL first):
+FROM centos:7
+
+ENV HTTP_PROXY "http://<host>:<port>"
+ENV HTTPS_PROXY "http://<host>:<port>"
+
+RUN echo "proxy=http:///<host>:<port>" >> /etc/yum.conf && \
+    yum -y --setopt=tsflags=nodocs groupinstall "Development tools" && \
+    yum -y --setopt=tsflags=nodocs install pkgconfig rust cargo java-1.8.0-openjdk java-1.8.0-openjdk-devel && \
+    curl https://sh.rustup.rs -sSf | bash -s -- -y && \
+    export PATH="/root/.cargo/bin:${PATH}" && \
+    git clone https://github.com/martinhickson/IcedTea-Web-1.git && \
+    cd IcedTea-Web-1 && \
+    git checkout icedtea-web-1.8.3.2 && \
+    sed -i 's/PKG_CHECK_VAR/#PKG_CHECK_VAR/' configure.ac && \
+    sed -i 's/bashcompdir=/bashcompdir="${sysconfdir}\/bash_completion.d" #bashcompdir=/' configure.ac && \
+    autoreconf -i && \
+    ./configure --disable-native-plugin --with-itw-libs=DISTRIBUTION && \
+    make && \
+    make install DESTDIR=zip/tmp && \
+    cd zip/tmp && \
+    zip -r icedtea-web-1.8.3.2.linux.bin.zip .
+Use the following commands to copy the built artifact out of the Docker image:
+
+docker create --name icedtea-web icedtea-web:dockerfile
+docker cp icedtea-web:/IcedTea-Web-1/zip/tmp/icedtea-web-1.8.3.2.linux.bin.zip .
