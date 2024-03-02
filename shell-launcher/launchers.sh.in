@@ -19,6 +19,8 @@ PLUGIN_JAR=@PLUGIN_JAR@
 JSOBJECT_JAR=@JSOBJECT_JAR@
 TAGSOUP_JAR=@TAGSOUP_JAR@
 RHINO_JAR=@RHINO_JAR@
+PACK_JAR=@PACK_JAR@
+COMMONSCOMPRESS_JAR=@COMMONSCOMPRESS_JAR@
 # windows only:
 #MSLINKS_JAR=@MSLINKS_JAR@
 
@@ -75,7 +77,7 @@ if [ "x$ITW_LIBS" == "xBUNDLED" -o ! "x$ITW_HOME" = "x" ] ; then
   NETX_JAR="$ITW_HOME/share/icedtea-web/`basename \"$NETX_JAR\"`"
   PLUGIN_JAR="$ITW_HOME/share/icedtea-web/`basename \"$PLUGIN_JAR\"`"
   JSOBJECT_JAR="$ITW_HOME/share/icedtea-web/`basename \"$JSOBJECT_JAR\"`"
-  LAUNCHER_BOOTCLASSPATH="-Xbootclasspath/a:$NETX_JAR:$PLUGIN_JAR:$JSOBJECT_JAR:$ITW_HOME/linux-deps-runtime/`basename \"$COMMONS_COMPRESS_JAR\"`:$ITW_HOME/linux-deps-runtime/`basename \"$PACK200_JAR\"`:$ITW_HOME/linux-deps-runtime/`basename \"$TAGSOUP_JAR\"`:$ITW_HOME/linux-deps-runtime/`basename \"$RHINO_JAR\"`"
+  LAUNCHER_BOOTCLASSPATH="-Xbootclasspath/a:$NETX_JAR:$PLUGIN_JAR:$JSOBJECT_JAR:$ITW_HOME/linux-deps-runtime/`basename \"$COMMONSCOMPRESS_JAR\"`:$ITW_HOME/linux-deps-runtime/`basename \"$PACK_JAR\"`:$ITW_HOME/linux-deps-runtime/`basename \"$TAGSOUP_JAR\"`:$ITW_HOME/linux-deps-runtime/`basename \"$RHINO_JAR\"`"
   echo "warning, using portable itw from $ITW_HOME: $LAUNCHER_BOOTCLASSPATH $BINARY_LOCATION $SPLASH_LOCATION"
 fi
 

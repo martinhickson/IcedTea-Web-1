@@ -497,72 +497,72 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_TAGSOUP],
   AM_CONDITIONAL([HAVE_TAGSOUP], [test x$TAGSOUP_JAR != xno -a x$TAGSOUP_JAR != x ])
 ])
 
-AC_DEFUN_ONCE([IT_CHECK_FOR_PACK200],
+AC_DEFUN_ONCE([IT_CHECK_FOR_PACK],
 [
-  AC_MSG_CHECKING([for pack200])
-  AC_ARG_WITH([pack200],
-             [AS_HELP_STRING([--with-pack200],
-                             [pack200.jar])],
+  AC_MSG_CHECKING([for pack])
+  AC_ARG_WITH([pack],
+             [AS_HELP_STRING([--with-pack],
+                             [pack.jar])],
              [
-                PACK200_JAR=${withval}
+                PACK_JAR=${withval}
              ],
              [
-                PACK200=
+                PACK=
              ])
-  if test -z "${PACK200_JAR}"; then
+  if test -z "${PACK_JAR}"; then
     for dir in /usr/share/java /usr/local/share/java ; do
-      if test -f $dir/pack200.jar; then
-        PACK200_JAR=$dir/pack200.jar
+      if test -f $dir/pack.jar; then
+        PACK_JAR=$dir/pack.jar
 	    break
       fi
     done
   fi
   AM_COND_IF([WINDOWS], [
-    PACK200_JAR=$(cygpath -m ${PACK200_JAR})
+    PACK_JAR=$(cygpath -m ${PACK_JAR})
   ])
-  AC_MSG_RESULT(${PACK200_JAR})
-  if test -z "${PACK200_JAR}"; then
+  AC_MSG_RESULT(${PACK_JAR})
+  if test -z "${PACK_JAR}"; then
     AC_MSG_RESULT(***************************************************************)
     AC_MSG_RESULT(*  Warning you are building without the Pack200 Component     *)
     AC_MSG_RESULT(*  Compilation will fail                                      *)
     AC_MSG_RESULT(***************************************************************)
   fi
-  AC_SUBST(PACK200_JAR)
-  AM_CONDITIONAL([HAVE_PACK200], [test x$PACK200_JAR != xno -a x$PACK200_JAR != x ])
+  AC_SUBST(PACK_JAR)
+  AM_CONDITIONAL([HAVE_PACK], [test x$PACK_JAR != xno -a x$PACK_JAR != x ])
 ])
 
-AC_DEFUN_ONCE([IT_CHECK_FOR_COMMONS_COMPRESS],
+AC_DEFUN_ONCE([IT_CHECK_FOR_COMMONSCOMPRESS],
 [
-  AC_MSG_CHECKING([for commons-compress])
-  AC_ARG_WITH([commons-compress],
-             [AS_HELP_STRING([--with-commons-compress],
-                             [commons-compress.jar])],
+  AC_MSG_CHECKING([for commonscompress])
+  AC_ARG_WITH([commonscompress],
+             [AS_HELP_STRING([--with-commonscompress],
+                             [commonscompress.jar])],
              [
-                COMMONS_COMPRESS_JAR=${withval}
+                COMMONSCOMPRESS_JAR=${withval}
              ],
              [
-                COMMONS_COMPRESS=
+                COMMONSCOMPRESS=
              ])
-  if test -z "${COMMONS_COMPRESS_JAR}"; then
+  if test -z "${COMMONSCOMPRESS_JAR}"; then
     for dir in /usr/share/java /usr/local/share/java ; do
-      if test -f $dir/commons-compress.jar; then
-        COMMONS_COMPRESS_JAR=$dir/commons-compress.jar
+      if test -f $dir/commonscompress.jar; then
+        COMMONSCOMPRESS_JAR=$dir/commonscompress.jar
 	    break
       fi
     done
   fi
   AM_COND_IF([WINDOWS], [
-    COMMONS_COMPRESS_JAR=$(cygpath -m ${COMMONS_COMPRESS_JAR})
+    COMMONSCOMPRESS_JAR=$(cygpath -m ${COMMONSCOMPRESS_JAR})
   ])
-  AC_MSG_RESULT(${COMMONS_COMPRESS_JAR})
-  if test -z "${COMMONS_COMPRESS_JAR}"; then
+  AC_MSG_RESULT(${COMMONSCOMPRESS_JAR})
+  if test -z "${COMMONSCOMPRESS_JAR}"; then
     AC_MSG_RESULT(***************************************************************)
     AC_MSG_RESULT(*  Warning you are building without Apache Commons Compress   *)
     AC_MSG_RESULT(*  Compilation will fail                                      *)
     AC_MSG_RESULT(***************************************************************)
   fi
-  AC_SUBST(COMMONS_COMPRESS_JAR)
-  AM_CONDITIONAL([HAVE_COMMONS_COMPRESS], [test x$COMMONS_COMPRESS_JAR != xno -a x$COMMONS_COMPRESS_JAR != x ])
+  AC_SUBST(COMMONSCOMPRESS_JAR)
+  AM_CONDITIONAL([HAVE_COMMONSCOMPRESS], [test x$COMMONSCOMPRESS_JAR != xno -a x$COMMONSCOMPRESS_JAR != x ])
 ])
 
 AC_DEFUN_ONCE([IT_CHECK_FOR_MSLINKS],

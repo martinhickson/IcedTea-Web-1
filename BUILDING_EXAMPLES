@@ -1,5 +1,14 @@
+-----------
+IDE Setup
+-----------
+Run "sh setup-project.sh" to download the jars required for compilation to your local cache.
+Add the external jars in ~/.cache/itw-coding/ to your IDE's classpath
+Add netx as the only source folder
+Use JDK 1.8 as the compilation source and target version
+
+--------------------------------------------------------------
 Cygwin Build Steps on Windows for IcedTea-Web MSI Installer:
-------------------------------------------------------------
+--------------------------------------------------------------
 
 Install Chocolatey Software Automation tool from website: https://chocolatey.org/
 
@@ -26,9 +35,6 @@ curl -o mslinks.jar https://repo1.maven.org/maven2/com/github/vatbub/mslinks/0.0
 curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
 curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
 curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
-#curl -o pack200.jar https://github.com/pack200/pack200  #no download URL, so build locally for now:
-mkdir ~/work && cd ~/work && git clone https://github.com/pack200/pack200.git && cd pack200 && mvn install -DskipTests=true \
-&& cp target/pack200*.jar /usr/share/java/pack200.jar
 
 #Edit the Git URL to clone as appropriate
 mkdir ~/work && cd ~/work && git clone https://github.com/martinhickson/IcedTea-Web-1.git
@@ -59,25 +65,86 @@ sed -i 's/\r$//' html-gen.sh
 
 You will find the MSI in the folder win-installer.build, e.g. ~/work/IcedTeaWeb-1/win-installer.build/icedtea-web-1.8.8.5.msi
 
-Linux CentOS 7.6 Build Steps:
------------------------------
+-------------------------------
+Oracle Linux 9.2 Build Steps:
+-------------------------------
 
-yum -y groupinstall "Development tools"
-yum -y install pkgconfig rust cargo java-1.8.0-openjdk java-1.8.0-openjdk-devel
+sudo yum -y groupinstall "Development tools"
+sudo yum -y install pkgconfig rust cargo java-1.8.0-openjdk java-1.8.0-openjdk-devel
+#N.B. Ignore the error about rust already being installed:
 curl https://sh.rustup.rs -sSf | bash -s -- -y
-export PATH="/root/.cargo/bin:${PATH}"
+export PATH="~/.cargo/bin:${PATH}"
+#N.B. || (OR) is used here so it will cd even if work already exists
+mkdir ~/work || cd ~/work
 git clone https://github.com/martinhickson/IcedTea-Web-1.git
-cd IcedTea-Web-1 && \ git checkout icedtea-web-1.8.3.2
+cd IcedTea-Web-1 && git checkout 1.8
 sed -i 's/PKG_CHECK_VAR/#PKG_CHECK_VAR/' configure.ac
 sed -i 's/bashcompdir=/bashcompdir="${sysconfdir}\/bash_completion.d" #bashcompdir=/' configure.ac
-autoreconf -i
-./configure --disable-native-plugin --with-itw-libs=DISTRIBUTION
+sudo update-alternatives --config java   #manually select JDK version 1.8
+sudo update-alternatives --config javac  #manually select JDK version 1.8
+cd /usr/share/java
+#Obtain required 3rd party components:
+#Note that the build requires filenames without hyphens or numeric characters
+#Further note that the -L option is required to follow redirects in bash, but should be omitted for Powershell, which
+#follows redirects by default.
+#N.B. the following line is only required if tagsoup isn't already present:
+sudo curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
+sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
+sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
+sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
+cd ~/work/IcedTea-Web-1
+autoreconf -i && ./configure --prefix=/usr/local --disable-native-plugin --with-itw-libs=DISTRIBUTION
 make
 make install DESTDIR=zip/tmp
-cd zip/tmp
-zip -r icedtea-web-1.8.3.2.linux.bin.zip .
+mkdir -p zip/tmp/usr/share/java
+cd zip/tmp/usr/share/java
+sudo curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
+sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
+sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
+sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
+cd ../../..
+zip -r icedtea-web-1.8.8.10.linux.bin.zip .
+
+#N.B. to install the package, use the following commands:
+unzip -d / icedtea-web-1.8.8.10.linux.bin.zip
+
+-------------------------------
+Linux CentOS 7.6 Build Steps:
+-------------------------------
+
+sudo yum -y groupinstall "Development tools"
+sudo yum -y install pkgconfig rust cargo java-1.8.0-openjdk java-1.8.0-openjdk-devel
+curl https://sh.rustup.rs -sSf | bash -s -- -y
+export PATH="~/.cargo/bin:${PATH}"
+#N.B. || (OR) is used here so it will cd even if work already exists
+mkdir ~/work || cd ~/work
+git clone https://github.com/martinhickson/IcedTea-Web-1.git
+cd IcedTea-Web-1 && git checkout 1.8
+sed -i 's/PKG_CHECK_VAR/#PKG_CHECK_VAR/' configure.ac
+sed -i 's/bashcompdir=/bashcompdir="${sysconfdir}\/bash_completion.d" #bashcompdir=/' configure.ac
+sudo update-alternatives --config java   #manually select JDK version 1.8
+sudo update-alternatives --config javac  #manually select JDK version 1.8
+autoreconf -i && ./configure  --prefix=/usr/local --disable-native-plugin --with-itw-libs=DISTRIBUTION
+make
+make install DESTDIR=zip/tmp
+mkdir -p zip/tmp/usr/share/java
+cd zip/tmp/usr/share/java
+sudo curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
+sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
+sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
+sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
+cd ../../..
+zip -r icedtea-web-1.8.8.10.linux.bin.zip .
+
+#N.B. to install the package, use the following commands:
+unzip -d / icedtea-web-1.8.8.10.linux.bin.zip
+
+------------------------------------
+Linux CentOS 7 Sample Dockerfile:
+------------------------------------
 
 Alternatively, the following Dockerfile can be used with Docker to create the Linux build (edit the proxy URL first):
+
 FROM centos:7
 
 ENV HTTP_PROXY "http://<host>:<port>"
@@ -90,16 +157,23 @@ RUN echo "proxy=http:///<host>:<port>" >> /etc/yum.conf && \
     export PATH="/root/.cargo/bin:${PATH}" && \
     git clone https://github.com/martinhickson/IcedTea-Web-1.git && \
     cd IcedTea-Web-1 && \
-    git checkout icedtea-web-1.8.3.2 && \
+    git checkout 1.8 && \
     sed -i 's/PKG_CHECK_VAR/#PKG_CHECK_VAR/' configure.ac && \
     sed -i 's/bashcompdir=/bashcompdir="${sysconfdir}\/bash_completion.d" #bashcompdir=/' configure.ac && \
     autoreconf -i && \
-    ./configure --disable-native-plugin --with-itw-libs=DISTRIBUTION && \
+    ./configure --prefix=/usr/local --disable-native-plugin --with-itw-libs=DISTRIBUTION && \
     make && \
     make install DESTDIR=zip/tmp && \
-    cd zip/tmp && \
-    zip -r icedtea-web-1.8.3.2.linux.bin.zip .
+    mkdir -p zip/tmp/usr/share/java && \
+    cd zip/tmp/usr/share/java && \
+    sudo curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar && \
+    sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar && \
+    sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar && \
+    sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar && \
+    cd ../../.. && \
+    zip -r icedtea-web-1.8.8.10.linux.bin.zip .
+    
 Use the following commands to copy the built artifact out of the Docker image:
 
 docker create --name icedtea-web icedtea-web:dockerfile
-docker cp icedtea-web:/IcedTea-Web-1/zip/tmp/icedtea-web-1.8.3.2.linux.bin.zip .
+docker cp icedtea-web:/IcedTea-Web-1/zip/tmp/icedtea-web-1.8.8.10.linux.bin.zip .

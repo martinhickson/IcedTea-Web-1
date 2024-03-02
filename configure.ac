@@ -220,8 +220,8 @@ IT_FIND_OPTIONAL_JAR([asm], ASM,
     [/usr/share/java/objectweb-asm4/asm-all.jar /usr/share/java/objectweb-asm4/asm-all-4.0.jar /usr/share/java/objectweb-asm/asm-all.jar])
 
 IT_CHECK_FOR_TAGSOUP
-IT_CHECK_FOR_COMMONS_COMPRESS
-IT_CHECK_FOR_PACK200
+IT_CHECK_FOR_PACK
+IT_CHECK_FOR_COMMONSCOMPRESS
 IT_CHECK_FOR_MSLINKS
 
 if test "x$build_windows" = xyes ; then
@@ -245,8 +245,8 @@ else
   fi
 fi
 
-PKG_CHECK_VAR(bashcompdir, [bash-completion], [completionsdir], ,
-     bashcompdir="${sysconfdir}/bash_completion.d")
+#PKG_CHECK_VAR(bashcompdir, [bash-completion], [completionsdir], ,
+     bashcompdir="${sysconfdir}/bash_completion.d" #bashcompdir="${sysconfdir}/bash_completion.d")
 AC_SUBST(bashcompdir)
 
 AC_CONFIG_FILES([jrunscript], [chmod u+x jrunscript])

@@ -1,4 +1,5 @@
 .idea
+bin
 common/target
 core/target
 integration-tests/classloader-integration-tests-module-3/target
