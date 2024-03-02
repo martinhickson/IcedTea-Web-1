@@ -9,17 +9,23 @@ choco install cygwin git cyg-get wixtoolset corretto8jdk rust maven
 cyg-get git autoconf automake libtool pkg-config m4 zip make unzip
 
 Use Windows Explorer to manually copy C:\Program Files\Amazon Corretto\jdk1.8.0_392 to C:\tools\cygwin\lib\jvm\openjdk
-(or in Cygwin bash use: cp -r /cygdrive/c/Program\ Files/Amazon\ Corretto/jdk1.8.0_* /cygdrive/c/tools/cygwin/lib/jvm/openjdk)
-Download wixgen.jar from GitHub (https://github.com/akashche/wixgen/releases) and place in C:\tools\cygwin\bin manually
-(downloading via curl from there didn't appear to work)
+(or in Cygwin bash use: mkdir -p /cygdrive/c/tools/cygwin/lib/jvm/ && \
+cp -r /cygdrive/c/Program\ Files/Amazon\ Corretto/jdk1.8.0_* /cygdrive/c/tools/cygwin/lib/jvm/openjdk)
+(On Linux, backup /usr/lib/jvm/openjdk first if it exists, then copy it to /usr/lib/jvm/openjdk)
 
 #Obtain required 3rd party components:
+#Note that the build requires filenames without hyphens or numeric characters
+#Further note that the -L option is required to follow redirects in bash, but should be omitted for Powershell, which
+#follows redirects by default.
+cd /usr/bin
+curl -L -o wixgen.jar https://github.com/akashche/wixgen/releases/download/1.7/wixgen.jar
 mkdir -p /usr/share/java
 cd /usr/share/java
 curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
 curl -o mslinks.jar https://repo1.maven.org/maven2/com/github/vatbub/mslinks/0.0.2/mslinks-0.0.2.jar  git clone git@github.com:martinhickson/IcedTea-Web-1.git
 curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
 curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
+curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.0/pack200-11.0.0.jar
 #curl -o pack200.jar https://github.com/pack200/pack200  #no download URL, so build locally for now:
 mkdir ~/work && cd ~/work && git clone https://github.com/pack200/pack200.git && cd pack200 && mvn install -DskipTests=true \
 && cp target/pack200*.jar /usr/share/java/pack200.jar
@@ -28,9 +34,9 @@ mkdir ~/work && cd ~/work && git clone https://github.com/pack200/pack200.git &&
 mkdir ~/work && cd ~/work && git clone https://github.com/martinhickson/IcedTea-Web-1.git
 cd IcedTea-Web-1/
 git checkout 1.8   #1.8 branch, alternatively checkout a specific tag
+make clean
 autoreconf -i    #N.B. if you need to edit the version number, then edit configure.ac, and rerun this command
-export PATH=/usr/lib/jvm/openjdk/bin/:$PATH
-cp html-gen.sh html-gen-windows-line-endings.sh
+export PATH=/usr/lib/jvm/openjdk/bin/:$PATH && cp html-gen.sh html-gen-windows-line-endings.sh
 
 #Convert DOS line-endings to Unix
 sed -i 's/\r$//' html-gen.sh
@@ -44,6 +50,7 @@ sed -i 's/\r$//' html-gen.sh
 --with-jdk-home=C:/tools/cygwin/lib/jvm/openjdk \
 --with-tagsoup=C:/tools/cygwin/usr/share/java/tagsoup.jar \
 --with-commons-compress=C:/tools/cygwin/usr/share/java/commonscompress.jar \
+--with-commons-compress=C:/tools/cygwin/usr/share/java/pack200.jar \
 --with-wixgen=/usr/bin/wixgen.jar --with-rhino=C:/tools/cygwin/usr/share/java/rhino.jar \
 --with-mslinks=C:/tools/cygwin/usr/share/java/mslinks.jar \
 && make && make install && make win-installer
