@@ -100,13 +100,13 @@ public class CacheUtil {
             return location;
         }
     }
-    
+
     /**
      * This is returning File object of cached resource originally from URL
      * @param location original location of blob
      * @param version version of resource
      * @param policy update policy of resource
-     * @return location in ITW cache on filesystem 
+     * @return location in ITW cache on filesystem
      */
     public static File  getCachedResourceFile(URL location, Version version, UpdatePolicy policy) {
         ResourceTracker rt = new ResourceTracker();
@@ -132,7 +132,7 @@ public class CacheUtil {
                 // this is what URLClassLoader does
                 URLConnection conn = ConnectionFactory.getConnectionFactory().openConnection(location);
                 result = conn.getPermission();
-                 ConnectionFactory.getConnectionFactory().disconnect(conn);                
+                 ConnectionFactory.getConnectionFactory().disconnect(conn);
             } catch (java.io.IOException ioe) {
                 // should try to figure out the permission
                 OutputController.getLogger().log(ioe);
@@ -293,7 +293,7 @@ public class CacheUtil {
         }
 
     }
-    
+
      public static void listCacheIds(String filter, boolean jnlpPath, boolean domain) {
          List<CacheId> items = getCacheIds(filter, jnlpPath, domain);
          if (JNLPRuntime.isDebug()) {
@@ -317,11 +317,11 @@ public class CacheUtil {
              }
          }
      }
-     
+
      /**
       * This method load all known IDs of applications and  will gather all members, which share the id
      * @param filter - regex to filter keys
-      * @return 
+      * @return
       */
       public static List<CacheId> getCacheIds(final String filter, final boolean jnlpPath, final boolean domain) {
         final List<CacheId> r = new ArrayList<>();
@@ -384,7 +384,7 @@ public class CacheUtil {
         try {
             if (otherJavawsRunning.isFile()) {
                 FileOutputStream fis = new FileOutputStream(otherJavawsRunning);
-                
+
                 FileChannel channel = fis.getChannel();
                 locking  = channel.tryLock();
                 if (locking == null) {
@@ -521,7 +521,7 @@ public class CacheUtil {
 
     /**
      * This will return a File pointing to the location of cache item.
-     * 
+     *
      * @param urlPath Path of cache item within cache directory.
      * @return File if we have searched before, {@code null} otherwise.
      */
@@ -534,11 +534,16 @@ public class CacheUtil {
             for (Entry<String, String> e : entries) {
                 final String key = e.getKey();
                 final String path = e.getValue();
-
-                if (pathToURLPath(path).equals(urlPath.getPath())) { // Match found.
-                    cacheFile = new File(path);
-                    lruHandler.updateEntry(key);
-                    break; // Stop searching since we got newest one already.
+                try {
+                    if (pathToURLPath(path).equals(urlPath.getPath())) { // Match found.
+                        cacheFile = new File(path);
+                        lruHandler.updateEntry(key);
+                        break; // Stop searching since we got newest one already.
+                    }
+                } catch (Exception e2) {
+                    //Fuzzy logic to prevent catastrophic startup failure by effectively downloading
+                    //the jar again if there is a problem obtaining the cached jar
+                    OutputController.getLogger().log(e2);
                 }
             }
             return cacheFile;
@@ -579,7 +584,7 @@ public class CacheUtil {
      * This will create a new entry for the cache item. It is however not
      * initialized but any future calls to getCacheFile with the source and
      * version given to here, will cause it to return this item.
-     * 
+     *
      * @param source the source URL
      * @param version the version id of the local file
      * @return the file location in the cache.
@@ -1024,7 +1029,7 @@ public class CacheUtil {
         @Override
         public String toString() {
             return id;
-        }   
+        }
 
         public List<Object[]> getFiles() {
             return files;
@@ -1033,9 +1038,9 @@ public class CacheUtil {
         public String getId() {
             return id;
         }
-        
-        
-        
+
+
+
 
         @Override
         public boolean equals(Object obj) {

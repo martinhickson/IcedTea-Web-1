@@ -54,7 +54,7 @@ public class ExtensionDesc {
      * Create an extention descriptor.
      *
      * @param name the extension name
-     * @param version the required version of the extention JNLPFile
+     * @param version the required version of the extension JNLPFile
      * @param location the location of the extention JNLP file
      */
     public ExtensionDesc(String name, Version version, URL location) {
@@ -121,7 +121,7 @@ public class ExtensionDesc {
      */
     public void resolve() throws ParseException, IOException {
         if (file == null) {
-            file = new JNLPFile(location);
+            file = new JNLPFile(location, version, new ParserSettings());
 
             OutputController.getLogger().log("Resolve: " + file.getInformation().getTitle());
 
