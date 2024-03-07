@@ -41,6 +41,8 @@ mkdir ~/work && cd ~/work && git clone https://github.com/martinhickson/IcedTea-
 cd IcedTea-Web-1/
 git checkout 1.8   #1.8 branch, alternatively checkout a specific tag
 make clean
+#(if it isn't cleaning properly then run: "git reset --hard && git clean -d -f && git status" [backup any files
+#  that you want to keep first])
 autoreconf -i    #N.B. if you need to edit the version number, then edit configure.ac, and rerun this command
 export PATH=/usr/lib/jvm/openjdk/bin/:$PATH && cp html-gen.sh html-gen-windows-line-endings.sh
 
@@ -55,8 +57,8 @@ sed -i 's/\r$//' html-gen.sh
 --with-jre-home=C:/tools/cygwin/lib/jvm/openjdk/jre \
 --with-jdk-home=C:/tools/cygwin/lib/jvm/openjdk \
 --with-tagsoup=C:/tools/cygwin/usr/share/java/tagsoup.jar \
---with-commons-compress=C:/tools/cygwin/usr/share/java/commonscompress.jar \
---with-commons-compress=C:/tools/cygwin/usr/share/java/pack200.jar \
+--with-commonscompress=C:/tools/cygwin/usr/share/java/commonscompress.jar \
+--with-pack=C:/tools/cygwin/usr/share/java/pack.jar \
 --with-wixgen=/usr/bin/wixgen.jar --with-rhino=C:/tools/cygwin/usr/share/java/rhino.jar \
 --with-mslinks=C:/tools/cygwin/usr/share/java/mslinks.jar \
 && make && make install && make win-installer
@@ -103,10 +105,10 @@ sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/r
 sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
 sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
 cd ../../..
-zip -r icedtea-web-1.8.8.10.linux.bin.zip .
+zip -r icedtea-web-1.8.8.11.linux.bin.zip .
 
 #N.B. to install the package, use the following commands:
-unzip -d / icedtea-web-1.8.8.10.linux.bin.zip
+unzip -d / icedtea-web-1.8.8.11.linux.bin.zip
 
 -------------------------------
 Linux CentOS 7.6 Build Steps:
@@ -134,10 +136,10 @@ sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/r
 sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
 sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
 cd ../../..
-zip -r icedtea-web-1.8.8.10.linux.bin.zip .
+zip -r icedtea-web-1.8.8.11.linux.bin.zip .
 
 #N.B. to install the package, use the following commands:
-unzip -d / icedtea-web-1.8.8.10.linux.bin.zip
+unzip -d / icedtea-web-1.8.8.11.linux.bin.zip
 
 ------------------------------------
 Linux CentOS 7 Sample Dockerfile:
@@ -171,9 +173,9 @@ RUN echo "proxy=http:///<host>:<port>" >> /etc/yum.conf && \
     sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar && \
     sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar && \
     cd ../../.. && \
-    zip -r icedtea-web-1.8.8.10.linux.bin.zip .
+    zip -r icedtea-web-1.8.8.11.linux.bin.zip .
     
 Use the following commands to copy the built artifact out of the Docker image:
 
 docker create --name icedtea-web icedtea-web:dockerfile
-docker cp icedtea-web:/IcedTea-Web-1/zip/tmp/icedtea-web-1.8.8.10.linux.bin.zip .
+docker cp icedtea-web:/IcedTea-Web-1/zip/tmp/icedtea-web-1.8.8.11.linux.bin.zip .
