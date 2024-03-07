@@ -169,8 +169,8 @@ fn get_bootcp_members(jre_path: &std::path::PathBuf, os: &os_access::Os) -> Vec<
     cp_parts.push(resolve_jar(hardcoded_paths::get_netx(), os));
     append_if_exists(hardcoded_paths::get_plugin(), os, &mut cp_parts);
     append_if_exists(hardcoded_paths::get_jsobject(), os, &mut cp_parts);
-    append_if_exists("/usr/share/java/pack.jar", os, &mut cp_parts);
-    append_if_exists("C:\Program Files\IcedTeaWeb\WebStart\win-deps-runtime\pack.jar", os, &mut cp_parts);  
+    append_if_exists(Some(r"/usr/share/java/pack.jar"), os, &mut cp_parts);
+    append_if_exists(Some(r"C:\Program Files\IcedTeaWeb\WebStart\win-deps-runtime\pack.jar"), os, &mut cp_parts);
     append_if_exists(hardcoded_paths::get_rhino(), os, &mut cp_parts);
     append_if_exists(hardcoded_paths::get_pack(), os, &mut cp_parts);
     append_if_exists(hardcoded_paths::get_tagsoup(), os, &mut cp_parts);

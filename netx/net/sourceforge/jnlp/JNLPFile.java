@@ -39,7 +39,6 @@ import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.ClasspathMatcher;
 import net.sourceforge.jnlp.util.UrlUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
-import static net.sourceforge.jnlp.runtime.Translator.R;
 
 /**
  * <p>
@@ -66,7 +65,7 @@ public class JNLPFile {
     public static enum ManifestBoolean {
         TRUE, FALSE, UNDEFINED;
     }
-   
+
 
     // todo: save the update policy, then if file was not updated
     // then do not check resources for being updated.
@@ -137,7 +136,7 @@ public class JNLPFile {
      * List of acceptable properties (not-special)
      */
     final private String[] generalProperties = SecurityDesc.getJnlpRIAPermissions();
-    
+
     /** important manifests' attributes */
     private final ManifestsAttributes manifestsAttributes = new ManifestsAttributes();
 
@@ -297,7 +296,7 @@ public class JNLPFile {
 
     /**
      * Open the jnlp file URL from the cache if there, otherwise
-     * download to the cache. 
+     * download to the cache.
      * Unless file is find in cache, this method blocks until it is downloaded.
      * This is the best way in itw how to download and cache file
      * @param location of resource to open
@@ -323,7 +322,7 @@ public class JNLPFile {
     /**
      * @return the JNLP file's best localized title. This method returns the same
      * value as InformationDesc.getTitle().
-     * 
+     *
      * Since jdk7 u45, also manifest title, and mainclass are taken to consideration;
      * See PluginBridge
      */
@@ -473,12 +472,12 @@ public class JNLPFile {
     public URL getCodeBase() {
         return codeBase;
     }
-    
+
     /**
      * It is not recommended to use this method for internals of itw - use normal getCodeBase rather, as null is expected always except toString calls.
      *
      * If you are not sure, use getCodeBase and chek null as you need. See that this method is used mostly for xtendedAppletSecuriyty dialogs.
-     * 
+     *
      * @return the codebase URL for the JNLP file  or url of location of calling file (jnlp, hreffed jnlp, or directly html)
      */
     public URL getNotNullProbalbeCodeBase() {
@@ -759,7 +758,7 @@ public class JNLPFile {
      * getInformation, getResources, etc.  If unset, the defaults
      * are the properties os.name, os.arch, and the locale returned
      * by Locale.getDefault().
-     * @param os preferred os of resource      
+     * @param os preferred os of resource
      * @param arch preferred arch of resource
      * @param locale preferred locale of resource
      */
@@ -988,8 +987,8 @@ public class JNLPFile {
     public ManifestsAttributes getManifestsAttributes() {
         return manifestsAttributes;
     }
-    
-    
+
+
     public class ManifestsAttributes {
 
         public static final String APP_NAME = "Application-Name";
@@ -1000,7 +999,7 @@ public class JNLPFile {
         public static final String TRUSTED_ONLY = "Trusted-Only";
         public static final String TRUSTED_LIBRARY = "Trusted-Library";
         public static final String ENTRY_POINT="Entry-Point";
-        
+
         private JNLPClassLoader loader;
 
 
@@ -1011,8 +1010,8 @@ public class JNLPFile {
         public boolean isLoader() {
             return loader != null;
         }
-        
-        
+
+
 
         /**
          * main class can be defined outside of manifest.
@@ -1022,11 +1021,11 @@ public class JNLPFile {
         public String getMainClass(){
             if (loader == null) {
                 OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Jars not ready to provide main class");
-                return null;    
+                return null;
             }
             return loader.getMainClass();
         }
-        
+
          /**
          *
          * http://docs.oracle.com/javase/7/docs/technotes/guides/jweb/security/manifest.html#entry_pt
@@ -1035,7 +1034,7 @@ public class JNLPFile {
         public String[] getEntryPoints() {
             return splitEntryPoints(getEntryPointString());
         }
-        
+
         public String getEntryPointString() {
             return getAttribute(ENTRY_POINT);
         }
@@ -1047,7 +1046,7 @@ public class JNLPFile {
         public String getApplicationName(){
             return getAttribute(APP_NAME);
         }
-        
+
         /**
          * http://docs.oracle.com/javase/7/docs/technotes/guides/jweb/manifest.html#caller_allowable
          * @return values of Caller-Allowable-Codebase manifest attribute
@@ -1215,16 +1214,16 @@ public class JNLPFile {
         }
         return getTitle() + " from " + createJnlpTitleValue();
     }
-    
+
     public String createNameForDesktopFile() {
         String basicTitle = getTitle();
         if (basicTitle == null || basicTitle.trim().isEmpty()) {
             return createJnlpTitleValue().replaceAll(".jnlp$","");
         } else {
-            return basicTitle;            
+            return basicTitle;
         }
     }
-    
+
     //not private for testing purposes
     static String[] splitEntryPoints(String entryPointString) {
         if (entryPointString == null || entryPointString.trim().isEmpty()) {
