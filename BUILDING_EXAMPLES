@@ -105,10 +105,10 @@ sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/r
 sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
 sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
 cd ../../..
-zip -r icedtea-web-1.8.8.11.linux.bin.zip .
+zip -r icedtea-web-1.8.8.12.linux.bin.zip .
 
 #N.B. to install the package, use the following commands:
-unzip -d / icedtea-web-1.8.8.11.linux.bin.zip
+unzip -d / icedtea-web-1.8.8.12.linux.bin.zip
 
 -------------------------------
 Linux CentOS 7.6 Build Steps:
@@ -136,10 +136,10 @@ sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/r
 sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
 sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
 cd ../../..
-zip -r icedtea-web-1.8.8.11.linux.bin.zip .
+zip -r icedtea-web-1.8.8.12.linux.bin.zip .
 
 #N.B. to install the package, use the following commands:
-unzip -d / icedtea-web-1.8.8.11.linux.bin.zip
+unzip -d / icedtea-web-1.8.8.12.linux.bin.zip
 
 ------------------------------------
 Linux CentOS 7 Sample Dockerfile:
@@ -173,9 +173,9 @@ RUN echo "proxy=http:///<host>:<port>" >> /etc/yum.conf && \
     sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar && \
     sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar && \
     cd ../../.. && \
-    zip -r icedtea-web-1.8.8.11.linux.bin.zip .
+    zip -r icedtea-web-1.8.8.12.linux.bin.zip .
     
 Use the following commands to copy the built artifact out of the Docker image:
 
 docker create --name icedtea-web icedtea-web:dockerfile
-docker cp icedtea-web:/IcedTea-Web-1/zip/tmp/icedtea-web-1.8.8.11.linux.bin.zip .
+docker cp icedtea-web:/IcedTea-Web-1/zip/tmp/icedtea-web-1.8.8.12.linux.bin.zip .

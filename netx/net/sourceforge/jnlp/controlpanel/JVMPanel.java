@@ -52,7 +52,6 @@ import javax.swing.JLabel;
 import javax.swing.JTextField;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
-import javax.swing.text.Document;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.runtime.Translator;
@@ -65,7 +64,6 @@ public class JVMPanel extends NamedBorderPanel {
     public static class JvmValidationResult {
 
         public static enum STATE {
-
             EMPTY, NOT_DIR, NOT_VALID_DIR, NOT_VALID_JDK, VALID_JDK;
         }
         public final String formattedText;
@@ -140,7 +138,6 @@ public class JVMPanel extends NamedBorderPanel {
                 }
             }
         });
-
         testFieldArgumentsExec.getDocument().addDocumentListener(new DocumentAdapter(config, DeploymentConfiguration.KEY_JRE_DIR));
         testFieldArgumentsExec.setText(config.getProperty(DeploymentConfiguration.KEY_JRE_DIR));
 
@@ -166,7 +163,6 @@ public class JVMPanel extends NamedBorderPanel {
                     }
                     testFieldArgumentsExec.setText(nws);
                 }
-
             }
         });
         final JButton validateJvm = new JButton(Translator.R("CPJVMitwExecValidation"));
@@ -179,7 +175,6 @@ public class JVMPanel extends NamedBorderPanel {
 
             }
         });
-
         // Filler to pack the bottom of the panel.
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.BOTH;
@@ -235,8 +230,8 @@ public class JVMPanel extends NamedBorderPanel {
             validationResult += "<span color=\"red\">" + Translator.R("CPJVMnotDir") + "</span><br />";
             latestOne = JvmValidationResult.STATE.NOT_DIR;
         }
-        File javaFile = new File(cmd + File.separator + "bin" + 
-                                       File.separator + "java" + 
+        File javaFile = new File(cmd + File.separator + "bin" +
+                                       File.separator + "java" +
                                        (JNLPRuntime.isWindows() ? ".exe" : ""));
         if (javaFile.isFile()) {
             validationResult += "<span color=\"green\">" + Translator.R("CPJVMjava") + "</span><br />";
@@ -263,7 +258,6 @@ public class JVMPanel extends NamedBorderPanel {
             processStdOutStream = processStdOutStream.toLowerCase();
         } catch (Exception ex) {;
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);
-
         }
         if (r == null) {
             validationResult += "<span color=\"red\">" + Translator.R("CPJVMnotLaunched") + "</span>";
@@ -272,9 +266,7 @@ public class JVMPanel extends NamedBorderPanel {
             }
             return new JvmValidationResult(validationResult, latestOne, "");
         }
-
         String reportableOutputs = processErrorStream + "\n" + processStdOutStream;
-
         if (r != 0) {
             validationResult += "<span color=\"red\">" + Translator.R("CPJVMnoSuccess") + "</span>";
             if (latestOne != JvmValidationResult.STATE.NOT_DIR) {
@@ -282,7 +274,6 @@ public class JVMPanel extends NamedBorderPanel {
             }
             return new JvmValidationResult(validationResult, latestOne, reportableOutputs);
         }
-
         boolean findRT = false;
         boolean jdk9up = false;
         for (int i = 9; i <= 99; i++) {
@@ -301,7 +292,6 @@ public class JVMPanel extends NamedBorderPanel {
             if (latestOne != JvmValidationResult.STATE.NOT_DIR) {
                 latestOne = JvmValidationResult.STATE.NOT_VALID_JDK;
                 findRT = true;
-
             }
         } else if (processErrorStream.contains("1.6.0") || processStdOutStream.contains("1.6.0")) {
             validationResult += "<span color=\"#EE0000\">" + Translator.R("CPJVMjdk6") + "</span><br />";
@@ -316,7 +306,6 @@ public class JVMPanel extends NamedBorderPanel {
                 findRT = false;
             }
         }
-
         if (findRT) {
             File rtFile = new File(cmd + File.separator + "lib" + File.separator + "rt.jar");
             if (rtFile.isFile()) {
@@ -328,7 +317,6 @@ public class JVMPanel extends NamedBorderPanel {
                 }
             }
         }
-
         if (processErrorStream.contains("openjdk") || processStdOutStream.contains("openjdk")) {
             validationResult += "<span color=\"#00EE00\">" + Translator.R("CPJVMopenJdkFound") + "</span>";
             return new JvmValidationResult(validationResult, JvmValidationResult.STATE.VALID_JDK, reportableOutputs);
@@ -350,14 +338,10 @@ public class JVMPanel extends NamedBorderPanel {
         if (processErrorStream.contains("oracle") || processStdOutStream.contains("oracle")
                 || processErrorStream.contains("java(tm)") || processStdOutStream.contains("java(tm)")) {
             validationResult += "<span color=\"green\">" + Translator.R("CPJVMoracleFound") + "</span>";
-            if (latestOne != JvmValidationResult.STATE.NOT_DIR) {
-                latestOne = JvmValidationResult.STATE.NOT_VALID_JDK;
-            }
-            return new JvmValidationResult(validationResult, latestOne, reportableOutputs);
+            return new JvmValidationResult(validationResult, JvmValidationResult.STATE.VALID_JDK, reportableOutputs);
         }
         validationResult += "<span color=\"orange\">" + Translator.R("CPJVMstrangeProcess") + "</span>";
         return new JvmValidationResult(validationResult, JvmValidationResult.STATE.NOT_VALID_JDK, reportableOutputs);
-
     }
 
     private String resetValidationResult(final String value, String result, String headerKey) {
