@@ -34,7 +34,7 @@ curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsou
 curl -o mslinks.jar https://repo1.maven.org/maven2/com/github/vatbub/mslinks/0.0.2/mslinks-0.0.2.jar  git clone git@github.com:martinhickson/IcedTea-Web-1.git
 curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
 curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
-curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
+curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.3/pack200-11.0.3.jar
 
 #Edit the Git URL to clone as appropriate
 mkdir ~/work && cd ~/work && git clone https://github.com/martinhickson/IcedTea-Web-1.git
@@ -93,7 +93,7 @@ cd /usr/share/java
 sudo curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
 sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
 sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
-sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
+sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.3/pack200-11.0.3.jar
 cd ~/work/IcedTea-Web-1
 autoreconf -i && ./configure --prefix=/usr/local --disable-native-plugin --with-itw-libs=DISTRIBUTION
 make
@@ -103,7 +103,7 @@ cd zip/tmp/usr/share/java
 sudo curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
 sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
 sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
-sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
+sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.3/pack200-11.0.3.jar
 cd ../../..
 zip -r icedtea-web-1.8.8.12.linux.bin.zip .
 
@@ -134,7 +134,7 @@ cd zip/tmp/usr/share/java
 sudo curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
 sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
 sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
-sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar
+sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.3/pack200-11.0.3.jar
 cd ../../..
 zip -r icedtea-web-1.8.8.12.linux.bin.zip .
 
@@ -171,7 +171,7 @@ RUN echo "proxy=http:///<host>:<port>" >> /etc/yum.conf && \
     sudo curl -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar && \
     sudo curl -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar && \
     sudo curl -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar && \
-    sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar && \
+    sudo curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.3/pack200-11.0.3.jar && \
     cd ../../.. && \
     zip -r icedtea-web-1.8.8.12.linux.bin.zip .
     
