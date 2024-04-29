@@ -18,20 +18,41 @@ package net.sourceforge.jnlp.cache;
 
 import static net.sourceforge.jnlp.runtime.Translator.R;
 
-import java.awt.*;
-import java.awt.event.*;
-import java.net.*;
-import java.util.*;
+import java.awt.Color;
+import java.awt.Container;
+import java.awt.Dimension;
+import java.awt.Font;
+import java.awt.Graphics;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.HeadlessException;
+import java.awt.Insets;
+import java.awt.Rectangle;
+import java.awt.Window;
+import java.awt.event.ActionEvent;
+import java.awt.event.ActionListener;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
+import java.net.URL;
+import java.util.ArrayList;
 import java.util.List;
-import javax.swing.*;
-import javax.swing.Timer;
-import javax.jnlp.*;
-import net.sourceforge.swing.SwingUtils;
 
-import net.sourceforge.jnlp.runtime.*;
+import javax.jnlp.DownloadServiceListener;
+import javax.swing.Icon;
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+import javax.swing.JDialog;
+import javax.swing.JFrame;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.Timer;
+
+import net.sourceforge.jnlp.runtime.ApplicationInstance;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.ImageResources;
 import net.sourceforge.jnlp.util.ScreenFinder;
 import net.sourceforge.jnlp.util.logging.OutputController;
+import net.sourceforge.swing.SwingUtils;
 
 /**
  * Show the progress of downloads.
@@ -40,6 +61,8 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  * @version $Revision: 1.3 $
  */
 public class DefaultDownloadIndicator implements DownloadIndicator {
+
+    private static boolean DISABLED = true;
 
     // todo: rewrite this to cut down on size/complexity; smarter
     // panels (JList, renderer) understand resources instead of
@@ -108,6 +131,9 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
      */
     @Override
     public DownloadServiceListener getListener(ApplicationInstance app, final String downloadName, final URL resources[]) {
+        if (DISABLED) {
+            return new NullDownloadServiceListener();
+        }
         final FutureResult<DownloadPanel> result = new FutureResult<DownloadPanel>() {
             @Override
             public void run() {
@@ -127,7 +153,7 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
                     dialog.getContentPane().add(result, vertical);
                     dialog.pack();
                     placeFrameToLowerRight();
-                    
+
                     result.addComponentListener(new ComponentAdapter() {
                         @Override
                         public void componentResized(ComponentEvent e) {
@@ -145,7 +171,7 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
         return result.getRef();
     }
 
-     public static JDialog createDownloadIndicatorWindow(boolean undecorated) throws HeadlessException {
+    private static JDialog createDownloadIndicatorWindow(boolean undecorated) throws HeadlessException {
         JDialog f = new JDialog((JFrame)null, downloading + "...");
         f.setName("DownloadIndicatorDialog");
         SwingUtils.info(f);
@@ -159,7 +185,10 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
      * This places indicator to lower right corner of active monitor.
      */
     private static void placeFrameToLowerRight() throws HeadlessException {
-       Rectangle bounds = ScreenFinder.getCurrentScreenSizeWithoutBounds();
+        if (DISABLED) {
+            return;
+        }
+        Rectangle bounds = ScreenFinder.getCurrentScreenSizeWithoutBounds();
         dialog.setLocation(bounds.width+bounds.x - dialog.getWidth(),
                 bounds.height+bounds.y - dialog.getHeight());
     }
@@ -171,6 +200,9 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
      */
     @Override
     public void disposeListener(final DownloadServiceListener listener) {
+        if (DISABLED) {
+            return;
+        }
         if (!(listener instanceof DownloadPanel))
             return;
 
@@ -198,15 +230,15 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
     /**
      * Groups the url progress in a panel.
      */
-    static class DownloadPanel extends JPanel implements DownloadServiceListener {
+    private static class DownloadPanel extends JPanel implements DownloadServiceListener {
         private final DownloadPanel self;
 
         private static enum States{
             ONE_JAR, COLLAPSED, DETAILED;
          }
-        
+
         private static final String DETAILS=R("ButShowDetails");
-        private static final String HIDE_DETAILS=R("ButHideDetails");   
+        private static final String HIDE_DETAILS=R("ButHideDetails");
         /** the download name */
         private String downloadName;
         /** Downloading part: */
@@ -218,12 +250,12 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
         private static final Icon magnifyGlassIcon = new ImageIcon(magnifyGlassUrl);
         private static final Icon redCrossIcon = new ImageIcon(redCrossUrl);
         /** used  instead of detailsButton button in case of one jar*/
-        private JLabel delimiter = new JLabel("");  
+        private JLabel delimiter = new JLabel("");
         /** all already created progress bars*/
         private List<ProgressPanel> progressPanels = new ArrayList<>();
         private States state=States.ONE_JAR;
         private ProgressPanel mainProgressPanel;
-        
+
         /** list of URLs being downloaded */
         private List<URL> urls = new ArrayList<>();
 
@@ -295,9 +327,9 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
                 }
                 progressPanels.add(panel);
                 urls.add(url);
-                panels.add(panel); 
+                panels.add(panel);
                 //download indicator does not know about added jars
-                //When only one jar is added to downlaod queue then its progress is 
+                //When only one jar is added to downlaod queue then its progress is
                 //shown, and there is no show detail button.
                 //When second one is added, then it already knows that there will
                 //be two or more jars, so it swap to collapsed state in count of two.
@@ -315,7 +347,6 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
                     dialog.pack();
                     placeFrameToLowerRight();
                 }
-
             }
         }
 
@@ -425,7 +456,7 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
             styleGridBagConstraints(gbc);
             add(bar, gbc);
         }
-        
+
         ProgressPanel(URL url, String version) {
             this(" " + url.getHost() + "/" + url.getFile(),version);
         }
@@ -443,7 +474,7 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
             gbc.fill = GridBagConstraints.NONE;
             gbc.gridwidth = GridBagConstraints.RELATIVE;
             add(bar, gbc);
-            
+
             styleGridBagConstraints(gbc);
             add(location, gbc);
         }
