@@ -11,6 +11,7 @@ import static net.sourceforge.jnlp.cache.Resource.Status.PREDOWNLOAD;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -27,6 +28,7 @@ import java.util.Map;
 import java.util.jar.JarOutputStream;
 import java.util.zip.GZIPInputStream;
 
+import io.pack200.Pack200;
 import net.sourceforge.jnlp.DownloadOptions;
 import net.sourceforge.jnlp.OptionsDefinitions;
 import net.sourceforge.jnlp.Version;
@@ -215,14 +217,14 @@ public class ResourceDownloader implements Runnable {
                 entry.setLastModified(lm);
             }
             entry.setLastUpdated(System.currentTimeMillis());
-            try { 
+            try {
                 //do not die here no metter of cost. Just metadata
                 //is the path from user best to store? He can run some jnlp from temp which then be stored
                 //on contrary, this downloads the jnlp, we actually do not have jnlp parsed during first interaction
                 //in addition, downloaded name can be really nasty (some generated has from dynamic servlet.jnlp)
                 //anjother issue is forking. If this (eg local) jnlp starts its second isntance, the url *can* be different
                 //in contrary, usally si no. as fork is reusing all args, and only adding xmx/xms and xnofork.
-                String jnlpPath = Boot.getOptionParser().getMainArg(); //get jnlp from args passed 
+                String jnlpPath = Boot.getOptionParser().getMainArg(); //get jnlp from args passed
                 if (jnlpPath == null || jnlpPath.equals("")) {
                     jnlpPath = Boot.getOptionParser().getParam(OptionsDefinitions.OPTIONS.JNLP);
                     if (jnlpPath == null || jnlpPath.equals("")) {
@@ -378,11 +380,11 @@ public class ResourceDownloader implements Runnable {
             // return ".gz", so if we check gzip first, we would end up
             // treating a pack200 file as a jar file.
             if (packgz) {
-                downloadPackGzFile(connection, downloadFrom, downloadTo);
+                downloadPackGzFileDirectly(connection, downloadFrom, downloadTo);
             } else if (gzip) {
                 downloadGZipFile(connection, downloadFrom, downloadTo);
             } else {
-                downloadFile(connection, downloadTo);
+                downloadFile(connection, downloadTo, false, null);
             }
 
             resource.changeStatus(EnumSet.of(DOWNLOADING), EnumSet.of(DOWNLOADED));
@@ -411,21 +413,39 @@ public class ResourceDownloader implements Runnable {
         return con;
     }
 
+    public InputStream unpack(InputStream input) throws IOException {
+        final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        try (final JarOutputStream outputStream = new JarOutputStream(buffer)) {
+            Pack200.newUnpacker().unpack(new GZIPInputStream(input), outputStream);
+        }
+        return new ByteArrayInputStream(buffer.toByteArray());
+    }
+
     private void downloadPackGzFile(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {
-        if (downloadFrom.equals(downloadTo))
-            downloadFrom = new URL(downloadFrom + ".pack.gz");        
-        downloadFile(connection, downloadFrom);
+        if (downloadFrom.equals(downloadTo)) {
+            downloadFrom = new URL(downloadFrom + ".pack.gz");
+        }
+        downloadFile(connection, downloadFrom, true, null);
 
         uncompressPackGz(downloadFrom, downloadTo, resource.getDownloadVersion());
-        CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion());
+        CacheEntry entry = new CacheEntry(downloadFrom, resource.getDownloadVersion());
         storeEntryFields(entry, entry.getCacheFile().length(), connection.getLastModified());
         markForDelete(downloadFrom);
     }
 
+    private void downloadPackGzFileDirectly(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {
+        if (downloadFrom.equals(downloadTo)) {
+            downloadFrom = new URL(downloadFrom + ".pack.gz");
+        }
+        CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion(), true);
+        downloadFile(connection, downloadFrom, true, entry);
+        storeEntryFields(entry, entry.getCacheFile().length(), connection.getLastModified());
+    }
+
     private void downloadGZipFile(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {
         if (downloadFrom.equals(downloadTo))
-            downloadFrom = new URL(downloadFrom + ".gz");        
-        downloadFile(connection, downloadFrom);
+            downloadFrom = new URL(downloadFrom + ".gz");
+        downloadFile(connection, downloadFrom, false, null);
 
         uncompressGzip(downloadFrom, downloadTo, resource.getDownloadVersion());
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion());
@@ -433,12 +453,19 @@ public class ResourceDownloader implements Runnable {
         markForDelete(downloadFrom);
     }
 
-    private void downloadFile(URLConnection connection, URL downloadLocation) throws IOException {
-        CacheEntry downloadEntry = new CacheEntry(downloadLocation, resource.getDownloadVersion());
+    private void downloadFile(URLConnection connection, URL downloadLocation, boolean packGZ, CacheEntry entry) throws IOException {
+        CacheEntry downloadEntry = entry != null ? entry
+                : new CacheEntry(downloadLocation, resource.getDownloadVersion());
         OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Downloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
         if (!downloadEntry.isCurrent(connection.getLastModified())) {
             try {
-                writeDownloadToFile(downloadLocation, new BufferedInputStream(connection.getInputStream()));
+                InputStream resultInputStream;
+                if (packGZ) {
+                    resultInputStream = unpack(connection.getInputStream());
+                } else {
+                    resultInputStream = new BufferedInputStream(connection.getInputStream());
+                }
+                writeDownloadToFile(downloadEntry.getLocation(), resultInputStream);
             } catch (IOException ex) {
                 String IH = "Invalid Http response";
                 if (ex.getMessage().equals(IH)) {
@@ -450,7 +477,7 @@ public class ResourceDownloader implements Runnable {
                     byte[] body = (byte[]) result[1];
                     OutputController.getLogger().log(head);
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
-                    writeDownloadToFile(downloadLocation, new ByteArrayInputStream(body));
+                    writeDownloadToFile(downloadEntry.getLocation(), new ByteArrayInputStream(body));
                 } else {
                     OutputController.getLogger().log(ex);
                     int retryCount = RETRY_COUNT;
@@ -478,7 +505,7 @@ public class ResourceDownloader implements Runnable {
 
         storeEntryFields(downloadEntry, connection.getContentLengthLong(), connection.getLastModified());
     }
-    
+
     private void retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry, int count) throws IOException {
         try {
             int retryDelay = -1;
@@ -513,9 +540,9 @@ public class ResourceDownloader implements Runnable {
             entry.unlock();
         }
     }
-    
+
     private void markForDelete(URL location) {
-        CacheEntry entry = new CacheEntry(location, 
+        CacheEntry entry = new CacheEntry(location,
                                           resource.getDownloadVersion());
         entry.lock();
         try {
@@ -525,7 +552,7 @@ public class ResourceDownloader implements Runnable {
             entry.unlock();
         }
     }
-    
+
     private void writeDownloadToFile(URL downloadLocation, InputStream in) throws IOException {
         byte buf[] = new byte[1024];
         int rlen;
