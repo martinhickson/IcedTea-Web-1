@@ -19,6 +19,7 @@ package net.sourceforge.jnlp.cache;
 import static net.sourceforge.jnlp.runtime.Translator.R;
 
 import java.io.File;
+import java.net.MalformedURLException;
 import java.net.URL;
 
 import net.sourceforge.jnlp.Version;
@@ -49,6 +50,12 @@ public class CacheEntry {
 
     private File localFile;
 
+    private boolean directPackGz;
+
+    public CacheEntry(URL location, Version version) {
+        this(location, version, false);
+    }
+
     /**
      * Create a CacheEntry for the resources specified as a remote
      * URL.
@@ -56,14 +63,44 @@ public class CacheEntry {
      * @param location the remote resource location
      * @param version the version of the resource
      */
-    public CacheEntry(URL location, Version version) {
+    public CacheEntry(URL location, Version version, boolean directPackGz) {
         this.location = location;
         this.version = version;
-        
-        this.localFile = CacheUtil.getCacheFile(location, version);
+        this.directPackGz = directPackGz;
+
+        this.localFile = directPackGz ? CacheUtil.getCacheFile(removePackGzSuffix(location), version)
+                : CacheUtil.getCacheFile(location, version);
         File infoFile = new File(localFile.getPath() + CacheDirectory.INFO_SUFFIX); // replace with something that can't be clobbered
 
         properties = new PropertiesFile(infoFile, R("CAutoGen"));
+    }
+
+    public static URL removePackGzSuffix(URL url) {
+        String urlString = url.toString();
+        if (urlString.endsWith(".pack.gz")) {
+            String modifiedUrlString = urlString.substring(0, urlString.length() - 8); // Remove the last 8 characters
+            try {
+                return new URL(modifiedUrlString);
+            } catch (MalformedURLException e) {
+                System.err.println("Error creating URL: " + e.getMessage());
+            }
+        }
+        return url; // No change needed
+    }
+
+    public static File removePackGzSuffixFromFile(File file) {
+        if (file == null) {
+            throw new IllegalArgumentException("Input file cannot be null.");
+        }
+
+        String originalName = file.getName();
+        if (originalName.endsWith(".pack.gz")) {
+            String modifiedName = originalName.substring(0, originalName.length() - 8); // Remove the last 8 characters
+            String parentPath = file.getParent(); // Get the parent directory path
+            return new File(parentPath, modifiedName);
+        } else {
+            return file; // No change needed
+        }
     }
 
     /**
@@ -128,7 +165,7 @@ public class CacheEntry {
      * Returns whether there is a version of the URL contents in
      * the cache and it is up to date.
      *
-     * @param lastModified - current time as get from server (in ms). Mostly value of "Last-Modified" http header'? 
+     * @param lastModified - current time as get from server (in ms). Mostly value of "Last-Modified" http header'?
      * @return whether the cache contains the version
      */
     public boolean isCurrent(long lastModified) {
@@ -193,7 +230,7 @@ public class CacheEntry {
      * Seam for testing
      */
     File getCacheFile() {
-        return CacheUtil.getCacheFile(location, version);
+        return CacheUtil.getCacheFile(directPackGz ? removePackGzSuffix(location) : location, version);
     }
 
     /**
