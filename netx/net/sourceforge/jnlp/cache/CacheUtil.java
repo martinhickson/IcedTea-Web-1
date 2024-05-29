@@ -635,7 +635,6 @@ public class CacheUtil {
     public static OutputStream getOutputStream(URL source, Version version) throws IOException {
         File localFile = getCacheFile(source, version);
         OutputStream out = new FileOutputStream(localFile);
-
         return new BufferedOutputStream(out);
     }
 
@@ -679,6 +678,7 @@ public class CacheUtil {
      * @return the file
      */
     public static File urlToPath(URL location, String subdir) {
+        location = CacheEntry.removePackGzSuffix(location);
         if (subdir == null) {
             throw new NullPointerException();
         }
@@ -724,7 +724,6 @@ public class CacheUtil {
             if (location.getQuery() != null && !location.getQuery().trim().isEmpty()) {
                 path.append(".").append(location.getQuery());
             }
-
             File candidate = new File(FileUtils.sanitizePath(path.toString()));
             try {
                 if (candidate.getName().length() > 255) {
