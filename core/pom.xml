@@ -49,7 +49,13 @@
             <artifactId>js</artifactId>
             <version>1.7R1</version>
         </dependency>
-
+        <!-- Add this dependency manually to your local .m2/reepository/io/pack200/pack200/11.0.2 folder if not available
+             remotely -->
+        <dependency>
+            <groupId>io.pack200</groupId>
+            <artifactId>pack200</artifactId>
+            <version>11.0.4</version>
+        </dependency>
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>icedtea-web-test-extensions</artifactId>
@@ -64,12 +70,30 @@
                 <groupId>org.jacoco</groupId>
                 <artifactId>jacoco-maven-plugin</artifactId>
             </plugin>
-
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-javadoc-plugin</artifactId>
             </plugin>
+            <plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-shade-plugin</artifactId>
+				<version>3.2.4</version>
+				<executions>
+					<execution>
+						<phase>package</phase>
+						<goals>
+							<goal>shade</goal>
+						</goals>
+						<configuration>
+							<artifactSet>
+								<includes>
+									<include>io.pack200:pack200</include>
+								</includes>
+							</artifactSet>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
         </plugins>
     </build>
-
 </project>
