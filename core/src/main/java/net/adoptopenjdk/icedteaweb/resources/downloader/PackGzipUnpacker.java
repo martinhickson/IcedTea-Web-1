@@ -21,18 +21,18 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.jar.JarOutputStream;
-import java.util.jar.Pack200;
 import java.util.zip.GZIPInputStream;
 
 /**
  * Unpacker for PACK200 and Gzip streams.
  */
 public class PackGzipUnpacker implements StreamUnpacker {
+
     @Override
     public InputStream unpack(InputStream input) throws IOException {
         final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         try (final JarOutputStream outputStream = new JarOutputStream(buffer)) {
-            Pack200.newUnpacker().unpack(new GZIPInputStream(input), outputStream);
+            io.pack200.Pack200.newUnpacker().unpack(new GZIPInputStream(input), outputStream);
         }
         return new ByteArrayInputStream(buffer.toByteArray());
     }
