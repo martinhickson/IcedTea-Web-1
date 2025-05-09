@@ -281,6 +281,7 @@ jobs:
           export PACK="${PWD}/pack.jar"
           export ACLOCAL_PATH="/usr/local/share/aclocal"
           export WORKSPACE="${PWD}"
+          alias sed="gsed"
           pkg-config --version
           cd icedtea-web
           echo "Invoking autogen.sh"
