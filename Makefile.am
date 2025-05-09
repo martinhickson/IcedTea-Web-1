@@ -845,17 +845,11 @@ clean-liveconnect:
 
 netx-source-files.txt:
 	find $(NETX_SRCDIR) -name '*.java' | sort > $@ ; \
-	if echo "$$(uname)" | grep -qi darwin; then \
-	  SED_COMMAND_PREFIX="sed -i ''" ; \
-	else \
-	  SED_COMMAND_PREFIX="sed -i" ; \
-	fi ; \
-	for src in $(NETX_EXCLUDE_SRCS) ; \
-	do \
-	  $$SED_COMMAND_PREFIX "/$${src}/ d" $@ ; \
+	for src in $(NETX_EXCLUDE_SRCS) ; do \
+	  sed -i "/$${src}/ d" $@ ; \
 	done
 if !WITH_RHINO
-	$$SED_COMMAND_PREFIX '/RhinoBasedPacEvaluator/ d' $@
+	sed -i '/RhinoBasedPacEvaluator/ d' $@
 endif
 
 # if 'sed' will be missing on machine, use old IFS hack as on other places
