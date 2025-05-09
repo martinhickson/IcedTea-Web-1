@@ -28,7 +28,7 @@ jobs:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         tag_name: ${{ github.event.inputs.version }}
-        release_name: 'Official Release of ${{ github.event.inputs.version }}'
+        release_name: 'Enhanced Release of ${{ github.event.inputs.version }}'
         draft: true
         prerelease: false
 
@@ -273,20 +273,29 @@ jobs:
 
       - name: Build
         run: |
+          # Create a local bin directory to override sed
+          mkdir -p "$HOME/local-bin"
+          cp "$(which gsed)" "$HOME/local-bin/sed"  # Override sed safely with gsed
+
           export ICEDTEAWEB_INSTALL="/icedtea-web-image"
-          export PATH="/usr/local/opt/gnu-sed/libexec/gnubin/:/usr/local/opt/coreutils/bin/:$PATH"
+          export PATH="$HOME/local-bin:/usr/local/opt/gnu-sed/libexec/gnubin:/usr/local/opt/coreutils/bin:$PATH"
           export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
           export TAGSOUP="${PWD}/tagsoup.jar"
           export RHINO="${PWD}/js.jar"
           export PACK="${PWD}/pack.jar"
           export ACLOCAL_PATH="/usr/local/share/aclocal"
           export WORKSPACE="${PWD}"
-          alias sed="gsed"
+
+          # Confirm sed is overridden
+          echo "Using sed from: $(which sed)"
+          sed --version
+
+          # Build steps
           pkg-config --version
           cd icedtea-web
           echo "Invoking autogen.sh"
           ./autogen.sh
-          echo "Incoking IcedTea-Web configure"
+          echo "Invoking IcedTea-Web configure"
           ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-jre-home="${JAVA_HOME}/jre"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}"
