@@ -1044,6 +1044,8 @@ launcher.build/$(javaws) launcher.build/$(itweb_settings) launcher.build/$(polic
 	    export BIN_LOCATION=$(bindir)/$(policyeditor) ; \
 	    export PROGRAM_NAME=$(policyeditor) ; \
 	  fi ; \
+	  $(CARGO) install cargo-audit ; \
+	  $(CARGO) audit ; \
 	  $(CARGO) test ; \
 	  r=$$? ; \
 	  $(CARGO) build --release ; \
