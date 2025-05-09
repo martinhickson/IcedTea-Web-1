@@ -1,7 +1,7 @@
-use property_from_file;
-use os_access;
-use dirs_paths_helper;
-use::log_helper;
+use crate::property_from_file;
+use crate::os_access;
+use crate::dirs_paths_helper;
+use crate::log_helper;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
@@ -153,9 +153,9 @@ fn try_key_from_properties_files(logger: &dyn os_access::Os, array: &[Option<std
 #[cfg(test)]
 mod tests {
     use std;
-    use os_access;
-    use utils::tests_utils as tu;
-    use property_from_file;
+    use crate::os_access;
+    use crate::utils::tests_utils as tu;
+    use crate::property_from_file;
     //if you wont to investigate files used for testing
     // use cargo test -- --nocapture to see  files which needs delete
     static DELETE_TEST_FILES: bool = true;

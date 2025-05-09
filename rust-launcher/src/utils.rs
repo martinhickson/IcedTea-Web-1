@@ -1,12 +1,12 @@
 use std;
 use std::ffi::OsString;
-use env;
-use dirs_paths_helper;
-use os_access;
+use std::env;
+use crate::dirs_paths_helper;
+use crate::os_access;
 use std::fmt::Write;
-use hardcoded_paths;
-use property_from_files_resolver;
-use property_from_file;
+use crate::hardcoded_paths;
+use crate::property_from_files_resolver;
+use crate::property_from_file;
 
 pub fn find_jre(os: &dyn os_access::Os) -> std::path::PathBuf {
     let mut info1 = String::new();
@@ -171,13 +171,13 @@ pub mod tests_utils {
     use std::fmt::Write as fmt_write;
     use std::io::Write;
     use std::sync::atomic::{AtomicUsize, Ordering};
-    use property_from_file;
-    use os_access;
+    use crate::property_from_file;
+    use crate::os_access;
     use std::cell::RefCell;
-    use dirs_paths_helper;
-    use hardcoded_paths;
+    use crate::dirs_paths_helper;
+    use crate::hardcoded_paths;
     use std::ffi::OsString as fo;
-    use log_helper;
+    use crate::log_helper;
 
     #[test]
     fn try_none_jre_from_path() {

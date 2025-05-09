@@ -1,7 +1,8 @@
-use os_access;
-use env;
+use std::env;
 use std::string::String;
 use std::str::FromStr;
+
+use crate::os_access;
 
 /*legacy variables*/
 const PROGRAM_NAME: Option<&'static str> = option_env!("PROGRAM_NAME");

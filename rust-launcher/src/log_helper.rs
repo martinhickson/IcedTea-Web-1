@@ -1,13 +1,13 @@
 //this module was created as std::io::Write; and std::fmt::Write; hcat be imoted together
 //adn still, there are different methods. Notably writeln is only in io version. but format! is only in fmt version
-use os_access;
 use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 use std::fs::File;
-use property_from_files_resolver;
+use crate::os_access;
+use crate::property_from_files_resolver;
 
 static mut FIRST: bool = true;
 

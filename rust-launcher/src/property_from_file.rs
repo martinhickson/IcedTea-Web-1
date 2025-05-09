@@ -1,7 +1,7 @@
-use property;
-use hardcoded_paths;
-use dirs_paths_helper as dh;
-use os_access;
+use crate::property;
+use crate::hardcoded_paths;
+use crate::dirs_paths_helper as dh;
+use crate::os_access;
 
 use std;
 use std::string::String;
@@ -138,7 +138,7 @@ fn verify_jdk_string(spath: &str, os: &dyn os_access::Os) -> bool {
 mod tests {
     use std;
     use std::fs::File;
-    use utils::tests_utils as tu;
+    use crate::utils::tests_utils as tu;
     
     fn get_jre_from_file(file: Option<std::path::PathBuf>) -> Option<String> {
         super::get_property_from_file(file, super::JRE_PROPERTY_NAME)

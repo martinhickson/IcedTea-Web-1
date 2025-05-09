@@ -1,11 +1,12 @@
 use std;
-use env;
-use hardcoded_paths;
-use hardcoded_paths::ItwLibSearch;
-use property_from_files_resolver;
-use os_access;
-use dirs_paths_helper;
+use std::env;
 use std::fmt::Write;
+
+use crate::hardcoded_paths;
+use hardcoded_paths::ItwLibSearch;
+use crate::property_from_files_resolver;
+use crate::os_access;
+use crate::dirs_paths_helper;
 
 //order important!
 // TODO verify with EMBEDDED
@@ -229,7 +230,7 @@ pub fn get_bootclasspath(jre_path: &std::path::PathBuf, os: &dyn os_access::Os) 
 /*tests*/
 #[cfg(test)]
 mod tests {
-    use utils::tests_utils as tu;
+    use crate::utils::tests_utils as tu;
 
     #[test]
     fn compose_class_path_test_empty() {

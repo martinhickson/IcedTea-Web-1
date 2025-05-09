@@ -1,8 +1,8 @@
 use std;
-use dirs_paths_helper;
+use crate::dirs_paths_helper;
 use std::env;
 use std::fmt::Write;
-use log_helper;
+use crate::log_helper;
 
 pub fn create_java_cmd(os: &dyn Os,jre_dir: &std::path::PathBuf, args: &Vec<String>) -> std::process::Command {
     let mut bin_java = jre_dir.clone();

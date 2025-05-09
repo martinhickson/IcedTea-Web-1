@@ -1,8 +1,8 @@
-use os_access;
-
 use std;
 use std::io;
 use std::env;
+
+use crate::os_access;
 
 #[cfg(windows)] extern crate dunce;
 
@@ -79,8 +79,8 @@ pub fn canonicalize(full_path: &std::path::PathBuf) -> Result<std::path::PathBuf
 mod tests {
     use std;
     use std::fs;
-    use os_access;
-    use utils::tests_utils as tu;
+    use crate::os_access;
+    use crate::utils::tests_utils as tu;
 
     #[cfg(not(windows))]
     fn get_os() -> os_access::Linux {

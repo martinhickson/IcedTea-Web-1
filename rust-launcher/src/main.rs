@@ -307,7 +307,7 @@ fn include_dashJs_values(srcs: &Vec<std::string::String>, target: &mut Vec<std::
 
 #[cfg(test)]
 pub mod tests_main {
-    use utils::tests_utils as tu;
+    use crate::utils::tests_utils as tu;
 
     #[test]
     fn is_splash_forbidden_test() {
