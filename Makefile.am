@@ -366,7 +366,6 @@ edit_launcher_script = sed \
   -e "s|[@]JSOBJECT_JAR[@]|$(JSOBJECT_JAR)|g" \
   -e "s|[@]MSLINKS_JAR[@]|$(MSLINKS_JAR)|g" \
   -e "s|[@]TAGSOUP_JAR[@]|$(TAGSOUP_JAR)|g" \
-  -e "s|[@]COMMONSCOMPRESS_JAR[@]|$(COMMONSCOMPRESS_JAR)|g" \
   -e "s|[@]PACK_JAR[@]|$(PACK_JAR)|g" \
   -e "s|[@]RHINO_JAR[@]|$(RHINO_JAR)|g" \
   -e "s|[@]PROGRAM_NAME[@]|$${PROGRAM_NAME}|g" \
@@ -469,16 +468,6 @@ if HAVE_TAGSOUP
 	filteredName=`basename $(TAGSOUP_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(TAGSOUP_JAR) $(WIN_RUN_DEPS)/$$filteredName
 endif
-#if HAVE_COMMONSCOMPRESS
-	@if test -n "$(COMMONSCOMPRESS_JAR)"; then \
-	  echo "Using COMMONSCOMPRESS_JAR: $(COMMONSCOMPRESS_JAR)"; \
-	  filteredName=`basename "$(COMMONSCOMPRESS_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
-	  echo "Filtered name: $$filteredName"; \
-	  cp -v "$(COMMONSCOMPRESS_JAR)" "$(WIN_RUN_DEPS)/$$filteredName"; \
-	else \
-	  echo "Warning: COMMONSCOMPRESS_JAR is not set or empty. Skipping."; \
-	fi
-#endif
 if HAVE_PACK
 	filteredName=`basename "$(PACK_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
 	cp -v "$(PACK_JAR)" "$(WIN_RUN_DEPS)/$$filteredName";
@@ -526,10 +515,6 @@ if HAVE_TAGSOUP
 	filteredName=`basename $(TAGSOUP_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(TAGSOUP_JAR) $(MACOS_BIN_DIST_DEPS)/$$filteredName
 endif
-#if HAVE_COMMONSCOMPRESS
-	filteredName=`basename $(COMMONSCOMPRESS_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
-	cp -v $(COMMONSCOMPRESS_JAR) $(MACOS_BIN_DIST_DEPS)/$$filteredName
-#endif
 if HAVE_PACK
 	filteredName=`basename $(PACK_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(PACK_JAR) $(MACOS_BIN_DIST_DEPS)/$$filteredName

@@ -293,6 +293,7 @@ jobs:
           # Build steps
           pkg-config --version
           cd icedtea-web
+          autoreconf -i
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Invoking IcedTea-Web configure"

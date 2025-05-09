@@ -14,4 +14,4 @@ debug = false             # Disable debug symbols
 #panic = "abort"           # Set panic strategy to abort (smaller, faster)
 #codegen-units = 1         # Limit to one codegen unit for better LTO optimization
 strip = "debuginfo"      # Strip debug information in release builds
-#rpath = false             # Disable runtime library search paths in the binary
+rpath = false             # Disable runtime library search paths in the binary
