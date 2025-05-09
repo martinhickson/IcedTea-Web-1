@@ -8,7 +8,7 @@ use hardcoded_paths;
 use property_from_files_resolver;
 use property_from_file;
 
-pub fn find_jre(os: &os_access::Os) -> std::path::PathBuf {
+pub fn find_jre(os: &dyn os_access::Os) -> std::path::PathBuf {
     let mut info1 = String::new();
     write!(&mut info1, "itw-rust-debug: trying jdk over properties ({})", property_from_file::JRE_PROPERTY_NAME).expect("unwrap failed");
     os.log(&info1);
@@ -93,11 +93,11 @@ pub fn find_jre(os: &os_access::Os) -> std::path::PathBuf {
     }
 }
 
-fn get_jdk_from_path_conditionally(os: &os_access::Os) -> Option<std::path::PathBuf> {
+fn get_jdk_from_path_conditionally(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     get_jdk_from_path_conditionally_testable(env::var_os("PATH"), hardcoded_paths::get_libsearch(os), os)
 }
 
-fn get_jdk_from_path_conditionally_testable(system_path: Option<OsString>, libsearch: hardcoded_paths::ItwLibSearch, os: &os_access::Os) -> Option<std::path::PathBuf> {
+fn get_jdk_from_path_conditionally_testable(system_path: Option<OsString>, libsearch: hardcoded_paths::ItwLibSearch, os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     if libsearch == hardcoded_paths::ItwLibSearch::DISTRIBUTION {
         os.log("itw-rust-debug: skipping jdk from path, your build is distribution");
         None
@@ -110,7 +110,7 @@ fn get_jdk_from_path_conditionally_testable(system_path: Option<OsString>, libse
 }
 
 
-fn get_jdk_from_given_path_testable(system_path: Option<OsString>, os: &os_access::Os) -> Option<std::path::PathBuf> {
+fn get_jdk_from_given_path_testable(system_path: Option<OsString>, os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     system_path.and_then(|paths| {
         env::split_paths(&paths).filter_map(|dir| {
             for suffix in os.get_exec_suffixes() {
@@ -170,7 +170,7 @@ pub mod tests_utils {
     use std::fs::OpenOptions;
     use std::fmt::Write as fmt_write;
     use std::io::Write;
-    use std::sync::atomic::{AtomicUsize, Ordering, ATOMIC_USIZE_INIT};
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use property_from_file;
     use os_access;
     use std::cell::RefCell;
@@ -256,7 +256,7 @@ pub mod tests_utils {
 
     impl os_access::Os for TestLogger {
 
-        fn system_log(&self, s: &str){ panic!("not implemented"); }
+        fn system_log(&self, _s: &str){ panic!("not implemented"); }
 
         fn advanced_logging(&self) ->  &log_helper::AdvancedLogging {
             panic!("not implemented");
@@ -321,7 +321,7 @@ pub mod tests_utils {
 
 
     // rand is in separate crate, so using atomic increment instead
-    static TMP_COUNTER: AtomicUsize = ATOMIC_USIZE_INIT;
+    static TMP_COUNTER: AtomicUsize = AtomicUsize::new(0);
     // use cargo test -- --nocapture to see  files which needs delete
     static CLEAN_TMP_FILES: bool = true;
 

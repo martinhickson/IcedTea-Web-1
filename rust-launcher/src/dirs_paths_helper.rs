@@ -10,25 +10,6 @@ use std::env;
 pub static ICEDTEA_WEB: &'static str = "icedtea-web";
 pub static DEPLOYMENT_PROPERTIES: &'static str = "deployment.properties";
 
-
-
-pub fn get_xdg_config_dir(os: &os_access::Os) -> Option<std::path::PathBuf> {
-    match env::var("XDG_CONFIG_HOME") {
-        Ok(war) => {
-            Some(std::path::PathBuf::from(war))
-        }
-        Err(_) => {
-            match os.get_home() {
-                Some(mut p) => {
-                    p.push(".config");
-                    Some(p)
-                }
-                None => None
-            }
-        }
-    }
-}
-
 pub fn append_deployment_file(dir: Option<std::path::PathBuf>) -> Option<std::path::PathBuf> {
     match dir {
         Some(mut p) => {
@@ -40,20 +21,20 @@ pub fn append_deployment_file(dir: Option<std::path::PathBuf>) -> Option<std::pa
 }
 
 
-pub fn get_itw_config_file(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_itw_config_file(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     append_deployment_file(os.get_user_config_dir())
 }
 
-pub fn get_itw_legacy_config_file(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_itw_legacy_config_file(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     append_deployment_file(os.get_legacy_user_config_dir())
 }
 
 
-pub fn get_itw_legacy_global_config_file(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_itw_legacy_global_config_file(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     append_deployment_file(os.get_legacy_system_config_javadir())
 }
 
-pub fn get_itw_global_config_file(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_itw_global_config_file(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     append_deployment_file(os.get_system_config_javadir())
 }
 

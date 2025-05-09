@@ -1,6 +1,7 @@
 //this module was created as std::io::Write; and std::fmt::Write; hcat be imoted together
 //adn still, there are different methods. Notably writeln is only in io version. but format! is only in fmt version
 use os_access;
+use std::fs;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::time::SystemTime;
@@ -13,7 +14,7 @@ static mut FIRST: bool = true;
 //0 critical
 //1 info
 //2 debug only
-pub fn log_impl(level: i32, os: &os_access::Os, s: &str) {
+pub fn log_impl(level: i32, os: &dyn os_access::Os, s: &str) {
     if level == 0 {
         if os.advanced_logging().log_to_stdstreams {
             println!("{}", s);
@@ -38,7 +39,17 @@ pub fn log_impl(level: i32, os: &os_access::Os, s: &str) {
         unsafe {
             if FIRST {
                 FIRST = false;
-                std::fs::create_dir_all(os.advanced_logging().log_target_file.parent().expect("hard to imagine log file without parent"));
+                match os.advanced_logging().log_target_file.parent() {
+                    Some(parent) => {
+                        // Proceed with creating the directory
+                        fs::create_dir_all(parent).expect("Failed to create parent directory");
+                    }
+                    None => {
+                        // Handle the case where the parent directory doesn't exist
+                        eprintln!("Error: Log target file has no parent directory");
+                        // You can also return or exit here if needed
+                    }
+                }
                 let start = SystemTime::now();
                 let t = start.duration_since(UNIX_EPOCH).expect("time should be measureable");
                 let mut file = File::create(&os.advanced_logging().log_target_file).expect("failed to create file log");
@@ -49,7 +60,7 @@ pub fn log_impl(level: i32, os: &os_access::Os, s: &str) {
                 if let Err(e) = write!(&mut file, "itw-rust-debug: file log started: {}:{}:{}\n", h, min, sec) {
                     println!("Couldn't write to file: {}", e);
                 }
-                file.sync_all();
+                file.sync_all().expect("Failed to synchronize file");
             }
         }
         let mut file = OpenOptions::new()
@@ -61,7 +72,7 @@ pub fn log_impl(level: i32, os: &os_access::Os, s: &str) {
         if let Err(e) = writeln!(&mut file, "{}", s) {
             println!("Couldn't write to file: {}", e);
         }
-        file.sync_all();
+        file.sync_all().expect("Failed to synchronize file");
     }
 }
 
@@ -84,7 +95,7 @@ impl Default for AdvancedLogging {
 }
 
 impl AdvancedLogging {
-    pub fn load(os: &os_access::Os) -> AdvancedLogging {
+    pub fn load(os: &dyn os_access::Os) -> AdvancedLogging {
         AdvancedLogging {
             log_to_file: property_from_files_resolver::try_log_to_file_from_properties(os),
             log_to_stdstreams: property_from_files_resolver::try_log_to_streams_from_properties(os),

@@ -22,11 +22,11 @@ const LOCAL_PATHS: &'static [&'static str] = &[
     "bin",
     "../bin"];
 
-pub fn resolve_argsfile(logger: &os_access::Os) -> std::path::PathBuf {
+pub fn resolve_argsfile(logger: &dyn os_access::Os) -> std::path::PathBuf {
     resolve_jar(hardcoded_paths::get_argsfile(), logger)
 }
 
-pub fn resolve_jsobject(logger: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn resolve_jsobject(logger: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     match hardcoded_paths::get_jsobject() {
         Some(js) => {
             Some(resolve_jar(js, logger))
@@ -38,11 +38,11 @@ pub fn resolve_jsobject(logger: &os_access::Os) -> Option<std::path::PathBuf> {
 }
 
 
-pub fn resolve_splash(logger: &os_access::Os) -> std::path::PathBuf {
+pub fn resolve_splash(logger: &dyn os_access::Os) -> std::path::PathBuf {
     resolve_jar(hardcoded_paths::get_splash(), logger)
 }
 
-fn try_jar_in_subdirs(dir: &std::path::PathBuf, name: &std::ffi::OsStr, logger: &os_access::Os) -> Option<std::path::PathBuf> {
+fn try_jar_in_subdirs(dir: &std::path::PathBuf, name: &std::ffi::OsStr, logger: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     for path in LOCAL_PATHS {
         let mut candidate = std::path::PathBuf::from(dir);
         candidate.push(path);
@@ -58,7 +58,7 @@ fn try_jar_in_subdirs(dir: &std::path::PathBuf, name: &std::ffi::OsStr, logger: 
     return None;
 }
 
-fn resolve_jar(full_hardcoded_path: &str, logger: &os_access::Os) -> std::path::PathBuf {
+fn resolve_jar(full_hardcoded_path: &str, logger: &dyn os_access::Os) -> std::path::PathBuf {
     let current_libsearch = hardcoded_paths::get_libsearch(logger);
     let full_path = std::path::PathBuf::from(full_hardcoded_path);
     let name = full_path.file_name().expect("Error obtaining file name form hardcoded jar");
@@ -77,8 +77,10 @@ fn resolve_jar(full_hardcoded_path: &str, logger: &os_access::Os) -> std::path::
                     }
                 }
             } else {
-                let mut info1 = String::new();
-                write!(&mut info1, "custom ITW_HOME provided, but do not exists or is not directory: {}", &(dirs_paths_helper::path_to_string(&custom_dir)));
+                let info1 = format!(
+                    "custom ITW_HOME provided, but do not exist or is not a directory: {}",
+                    dirs_paths_helper::path_to_string(&custom_dir)
+                );
                 logger.important(&info1);
             }
         }
@@ -121,7 +123,7 @@ fn resolve_jar(full_hardcoded_path: &str, logger: &os_access::Os) -> std::path::
     result
 }
 
-fn append_if_exists(value: Option<&'static str>, os: &os_access::Os, vec: &mut Vec<std::path::PathBuf>) {
+fn append_if_exists(value: Option<&'static str>, os: &dyn os_access::Os, vec: &mut Vec<std::path::PathBuf>) {
     match value {
         Some(s) => {
             vec.push(resolve_jar(s, os));
@@ -147,7 +149,7 @@ fn filter_out_val(val: String, vec: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-fn filter_out_key(key: &str, os: &os_access::Os, vec: &mut Vec<std::path::PathBuf>) {
+fn filter_out_key(key: &str, os: &dyn os_access::Os, vec: &mut Vec<std::path::PathBuf>) {
     let val = property_from_files_resolver::try_direct_key_from_properties(key, os);
     filter_out_val(val,  vec);
 }
@@ -158,13 +160,13 @@ fn filter_in_val(val: String, vec: &mut Vec<std::path::PathBuf>) {
     }
 }
 
-fn filter_in_key(key: &str, os: &os_access::Os, vec: &mut Vec<std::path::PathBuf>) {
+fn filter_in_key(key: &str, os: &dyn os_access::Os, vec: &mut Vec<std::path::PathBuf>) {
     let val = property_from_files_resolver::try_direct_key_from_properties(key, os);
     filter_in_val(val, vec)
 }
 
 //TODO what to do with rt.jar, nashorn and javafx.jar with jdk11 and up?
-fn get_bootcp_members(jre_path: &std::path::PathBuf, os: &os_access::Os) -> Vec<std::path::PathBuf> {
+fn get_bootcp_members(jre_path: &std::path::PathBuf, os: &dyn os_access::Os) -> Vec<std::path::PathBuf> {
     let mut cp_parts = Vec::new();
     cp_parts.push(resolve_jar(hardcoded_paths::get_netx(), os));
     append_if_exists(hardcoded_paths::get_plugin(), os, &mut cp_parts);
@@ -187,7 +189,7 @@ fn get_bootcp_members(jre_path: &std::path::PathBuf, os: &os_access::Os) -> Vec<
 
 //can this be buggy? Shouldnt jfxrt.jar be in boot classapth? Copied from shell launchers...
 //see eg: http://mail.openjdk.java.net/pipermail/distro-pkg-dev/2018-November/040492.html
-fn get_cp_members(jre_path: &std::path::PathBuf, os: &os_access::Os) -> Vec<std::path::PathBuf> {
+fn get_cp_members(jre_path: &std::path::PathBuf, os: &dyn os_access::Os) -> Vec<std::path::PathBuf> {
     let mut cp_parts = Vec::new();
     let mut rt_jar = jre_path.clone();
     rt_jar.push("lib");
@@ -203,7 +205,7 @@ fn get_cp_members(jre_path: &std::path::PathBuf, os: &os_access::Os) -> Vec<std:
     cp_parts
 }
 
-fn compose_class_path(members: Vec<std::path::PathBuf>, os: &os_access::Os) -> String {
+fn compose_class_path(members: Vec<std::path::PathBuf>, os: &dyn os_access::Os) -> String {
     let mut result = String::new();
     for (i, mb) in members.iter().enumerate()  {
         result.push_str(&dirs_paths_helper::path_to_string(&mb));
@@ -214,11 +216,11 @@ fn compose_class_path(members: Vec<std::path::PathBuf>, os: &os_access::Os) -> S
     result
 }
 
-pub fn get_classpath(jre_path: &std::path::PathBuf, os: &os_access::Os) -> String {
+pub fn get_classpath(jre_path: &std::path::PathBuf, os: &dyn os_access::Os) -> String {
     compose_class_path(get_cp_members(jre_path, os), os)
 }
 
-pub fn get_bootclasspath(jre_path: &std::path::PathBuf, os: &os_access::Os) -> String {
+pub fn get_bootclasspath(jre_path: &std::path::PathBuf, os: &dyn os_access::Os) -> String {
     let mut result = String::from("-Xbootclasspath/a:");
     result.push_str(&compose_class_path(get_bootcp_members(jre_path, os), os));
     result
@@ -266,7 +268,7 @@ mod tests {
         super::filter_out_val(String::from("   "), &mut vec);
         assert_eq!(vec![std::path::PathBuf::from("b")], vec);
         super::filter_out_val(String::from("b"), &mut vec);
-        let mut empty: Vec<std::path::PathBuf> = Vec::new();
+        let empty: Vec<std::path::PathBuf> = Vec::new();
         assert_eq!(empty, vec);
 
     }
@@ -277,7 +279,7 @@ mod tests {
         super::filter_out_val(String::from("b"), &mut vec);
         assert_eq!(vec![std::path::PathBuf::from("a"), std::path::PathBuf::from("c")], vec);
         super::filter_out_val(String::from("a c"), &mut vec);
-        let mut empty: Vec<std::path::PathBuf> = Vec::new();
+        let empty: Vec<std::path::PathBuf> = Vec::new();
         assert_eq!(empty, vec);
 
     }
