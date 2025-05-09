@@ -1,7 +1,7 @@
 [package]
 name = "launcher"
 version = "1.8.8"
-edition = "2018"
+edition = "2021"
 authors = ["https://icedtea.classpath.org/wiki/IcedTea-Web"]
 
 [dependencies]
@@ -9,10 +9,8 @@ authors = ["https://icedtea.classpath.org/wiki/IcedTea-Web"]
 dunce = "1.0.5"
 
 [profile.release]
-opt-level = "z"           # Optimize for size
-debug = false             # Disable debug symbols
-lto = true                # Enable Link Time Optimization (LTO)
-#panic = "abort"           # Set panic strategy to abort (smaller, faster)
-#codegen-units = 1         # Limit to one codegen unit for better LTO optimization
-strip = "debuginfo"      # Strip debug information in release builds
-rpath = false             # Disable runtime library search paths in the binary
+debug = false
+opt-level = 3
+lto = true
+panic = "abort"
+strip = true 
