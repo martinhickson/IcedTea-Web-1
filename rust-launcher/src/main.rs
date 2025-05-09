@@ -82,11 +82,10 @@ fn main() {
     let os;
     #[cfg(windows)]
     {
-        //use os_access::win;
+        use os_access::win;
         let acr: i32;
-        // unsafe { acr = win::AttachConsole(win::ATTACH_PARENT_PROCESS) };
-        // os = get_os(is_debug_on(), true, acr != 0);
-        os = get_os(is_debug_on(), true, false);
+        unsafe { acr = win::AttachConsole(win::ATTACH_PARENT_PROCESS) };
+        os = get_os(is_debug_on(), true, acr != 0);
     }
     #[cfg(not(windows))]
     {
