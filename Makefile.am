@@ -856,10 +856,10 @@ netx-source-files.txt:
 	fi ; \
 	for src in $(NETX_EXCLUDE_SRCS) ; \
 	do \
-	  eval $$SED_COMMAND_PREFIX "/$${src}/ d" $@ ; \
+	  $SED_COMMAND_PREFIX "/$${src}/ d" $@ ; \
 	done
 if !WITH_RHINO
-	eval $$SED_COMMAND_PREFIX '/RhinoBasedPacEvaluator/ d' $@
+	$SED_COMMAND_PREFIX '/RhinoBasedPacEvaluator/ d' $@
 endif
 
 # if 'sed' will be missing on machine, use old IFS hack as on other places
