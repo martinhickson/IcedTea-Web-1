@@ -396,92 +396,92 @@ pub mod win {
 
     // function declarations
 
-    extern "system" {
-        pub fn AttachConsole(dwProcessId: c_ulong) -> c_int;
+    // extern "system" {
+    //     pub fn AttachConsole(dwProcessId: c_ulong) -> c_int;
         
-        fn MultiByteToWideChar(
-            CodePage: c_uint,
-            dwFlags: c_ulong,
-            lpMultiByteStr: *const c_char,
-            cbMultiByte: c_int,
-            lpWideCharStr: *mut c_ushort,
-            cchWideChar: c_int
-        ) -> c_int;
+    //     fn MultiByteToWideChar(
+    //         CodePage: c_uint,
+    //         dwFlags: c_ulong,
+    //         lpMultiByteStr: *const c_char,
+    //         cbMultiByte: c_int,
+    //         lpWideCharStr: *mut c_ushort,
+    //         cchWideChar: c_int
+    //     ) -> c_int;
 
-        fn WideCharToMultiByte(
-            CodePage: c_uint,
-            dwFlags: c_ulong,
-            lpWideCharStr: *const c_ushort,
-            cchWideChar: c_int,
-            lpMultiByteStr: *mut c_char,
-            cbMultiByte: c_int,
-            lpDefaultChar: *const c_char,
-            lpUsedDefaultChar: *mut c_int
-        ) -> c_int;
+    //     fn WideCharToMultiByte(
+    //         CodePage: c_uint,
+    //         dwFlags: c_ulong,
+    //         lpWideCharStr: *const c_ushort,
+    //         cchWideChar: c_int,
+    //         lpMultiByteStr: *mut c_char,
+    //         cbMultiByte: c_int,
+    //         lpDefaultChar: *const c_char,
+    //         lpUsedDefaultChar: *mut c_int
+    //     ) -> c_int;
 
-        fn GetLastError() -> c_ulong;
+    //     fn GetLastError() -> c_ulong;
 
-        fn FormatMessageW(
-            dwFlags: c_ulong,
-            lpSource: *const c_void,
-            dwMessageId: c_ulong,
-            dwLanguageId: c_ulong,
-            lpBuffer: *mut c_ushort,
-            nSize: c_ulong,
-            Arguments: *mut *mut c_char
-        ) -> c_ulong;
+    //     fn FormatMessageW(
+    //         dwFlags: c_ulong,
+    //         lpSource: *const c_void,
+    //         dwMessageId: c_ulong,
+    //         dwLanguageId: c_ulong,
+    //         lpBuffer: *mut c_ushort,
+    //         nSize: c_ulong,
+    //         Arguments: *mut *mut c_char
+    //     ) -> c_ulong;
 
-        fn LocalFree(
-            hMem: *mut c_void
-        ) -> *mut c_void;
+    //     fn LocalFree(
+    //         hMem: *mut c_void
+    //     ) -> *mut c_void;
 
-        fn RegOpenKeyExW(
-            hKey: *mut c_void,
-            lpSubKey: *const c_ushort,
-            ulOptions: c_ulong,
-            samDesired: c_ulong,
-            phkResult: *mut *mut c_void
-        ) -> c_long;
+    //     fn RegOpenKeyExW(
+    //         hKey: *mut c_void,
+    //         lpSubKey: *const c_ushort,
+    //         ulOptions: c_ulong,
+    //         samDesired: c_ulong,
+    //         phkResult: *mut *mut c_void
+    //     ) -> c_long;
 
-        fn RegQueryInfoKeyW(
-            hKey: *mut c_void,
-            lpClass: *mut c_ushort,
-            lpcchClass: *mut c_ulong,
-            lpReserved: *mut c_ulong,
-            lpcSubKeys: *mut c_ulong,
-            lpcbMaxSubKeyLen: *mut c_ulong,
-            lpcbMaxClassLen: *mut c_ulong,
-            lpcValues: *mut c_ulong,
-            lpcbMaxValueNameLen: *mut c_ulong,
-            lpcbMaxValueLen: *mut c_ulong,
-            lpcbSecurityDescriptor: *mut c_ulong,
-            lpftLastWriteTime: *mut c_void
-        ) -> c_long;
+    //     fn RegQueryInfoKeyW(
+    //         hKey: *mut c_void,
+    //         lpClass: *mut c_ushort,
+    //         lpcchClass: *mut c_ulong,
+    //         lpReserved: *mut c_ulong,
+    //         lpcSubKeys: *mut c_ulong,
+    //         lpcbMaxSubKeyLen: *mut c_ulong,
+    //         lpcbMaxClassLen: *mut c_ulong,
+    //         lpcValues: *mut c_ulong,
+    //         lpcbMaxValueNameLen: *mut c_ulong,
+    //         lpcbMaxValueLen: *mut c_ulong,
+    //         lpcbSecurityDescriptor: *mut c_ulong,
+    //         lpftLastWriteTime: *mut c_void
+    //     ) -> c_long;
 
-        fn RegEnumKeyExW(
-            hKey: *mut c_void,
-            dwIndex: c_ulong,
-            lpName: *mut c_ushort,
-            lpcchName: *mut c_ulong,
-            lpReserved: *mut c_ulong,
-            lpClass: *mut c_ushort,
-            lpcchClass: *mut c_ulong,
-            lpftLastWriteTime: *mut c_void
-        ) -> c_long;
+    //     fn RegEnumKeyExW(
+    //         hKey: *mut c_void,
+    //         dwIndex: c_ulong,
+    //         lpName: *mut c_ushort,
+    //         lpcchName: *mut c_ulong,
+    //         lpReserved: *mut c_ulong,
+    //         lpClass: *mut c_ushort,
+    //         lpcchClass: *mut c_ulong,
+    //         lpftLastWriteTime: *mut c_void
+    //     ) -> c_long;
         
-        fn RegCloseKey(
-            hKey: *mut c_void
-        ) -> c_long;
+    //     fn RegCloseKey(
+    //         hKey: *mut c_void
+    //     ) -> c_long;
 
-        fn RegQueryValueExW(
-            hKey: *mut c_void,
-            lpValueName: *const c_ushort,
-            lpReserved: *mut c_ulong,
-            lpType: *mut c_ulong,
-            lpData: *mut c_uchar,
-            lpcbData: *mut c_ulong
-        ) -> c_long;
-    }
+    //     fn RegQueryValueExW(
+    //         hKey: *mut c_void,
+    //         lpValueName: *const c_ushort,
+    //         lpReserved: *mut c_ulong,
+    //         lpType: *mut c_ulong,
+    //         lpData: *mut c_uchar,
+    //         lpcbData: *mut c_ulong
+    //     ) -> c_long;
+    // }
 
     // windows-specific utilities
 

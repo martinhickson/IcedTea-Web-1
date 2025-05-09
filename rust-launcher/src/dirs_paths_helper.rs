@@ -10,7 +10,7 @@ use crate::os_access;
 pub static ICEDTEA_WEB: &'static str = "icedtea-web";
 pub static DEPLOYMENT_PROPERTIES: &'static str = "deployment.properties";
 
-pub fn get_xdg_config_dir(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_xdg_config_dir(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     match env::var("XDG_CONFIG_HOME") {
         Ok(war) => {
             Some(std::path::PathBuf::from(war))
