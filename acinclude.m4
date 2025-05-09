@@ -513,12 +513,15 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_PACK],
     for dir in /usr/share/java /usr/local/share/java ; do
       if test -f $dir/pack.jar; then
         PACK_JAR=$dir/pack.jar
+        AC_MSG_NOTICE([Found pack.jar at $PACK_JAR]) 
 	    break
       fi
     done
   fi
   AM_COND_IF([WINDOWS], [
+    AC_MSG_NOTICE([Running cygpath on PACK_JAR: cygpath -m ${PACK_JAR}])
     PACK_JAR=$(cygpath -m ${PACK_JAR})
+    AC_MSG_NOTICE([PACK_JAR after cygpath: $PACK_JAR])
   ])
   AC_MSG_RESULT(${PACK_JAR})
   if test -z "${PACK_JAR}"; then

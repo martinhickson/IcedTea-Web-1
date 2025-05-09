@@ -1,6 +1,6 @@
 #!/bin/bash
 export WORKSPACE="${PWD}"
-export RUSTFLAGS="-C target-feature=+crt-static"
+export RUSTFLAGS="-C target-feature=+crt-static -C opt-level=z -C lto -C panic=abort -C debuginfo=0 -C codegen-units=1 -C inline-threshold=0"
 export ICEDTEAWEB_INSTALL="$(cygpath -u "${WORKSPACE}/icedtea-web-image")"
 export WIXPATH="$(cygpath -u "C:/PROGRA~2/WIXTOO~1.14/bin")"
 export WIXGEN="$(cygpath -u "C:/cygwin64/usr/share/java/wixgen.jar")"
