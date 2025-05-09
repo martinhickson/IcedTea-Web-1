@@ -1,6 +1,6 @@
 [package]
 name = "launcher"
-version = "1.8.8.17"
+version = "1.8.8"
 authors = ["https://icedtea.classpath.org/wiki/IcedTea-Web"]
 
 [dependencies]
