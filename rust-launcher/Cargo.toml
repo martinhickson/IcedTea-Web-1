@@ -10,7 +10,7 @@ dunce = "1.0.5"
 
 [profile.release]
 debug = false
-opt-level = 3
+opt-level = 2
 lto = true
 panic = "abort"
 strip = true 
