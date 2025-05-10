@@ -513,12 +513,15 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_PACK],
     for dir in /usr/share/java /usr/local/share/java ; do
       if test -f $dir/pack.jar; then
         PACK_JAR=$dir/pack.jar
+        AC_MSG_NOTICE([Found pack.jar at $PACK_JAR]) 
 	    break
       fi
     done
   fi
   AM_COND_IF([WINDOWS], [
+    AC_MSG_NOTICE([Running cygpath on PACK_JAR: cygpath -m ${PACK_JAR}])
     PACK_JAR=$(cygpath -m ${PACK_JAR})
+    AC_MSG_NOTICE([PACK_JAR after cygpath: $PACK_JAR])
   ])
   AC_MSG_RESULT(${PACK_JAR})
   if test -z "${PACK_JAR}"; then
@@ -529,40 +532,6 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_PACK],
   fi
   AC_SUBST(PACK_JAR)
   AM_CONDITIONAL([HAVE_PACK], [test x$PACK_JAR != xno -a x$PACK_JAR != x ])
-])
-
-AC_DEFUN_ONCE([IT_CHECK_FOR_COMMONSCOMPRESS],
-[
-  AC_MSG_CHECKING([for commonscompress])
-  AC_ARG_WITH([commonscompress],
-             [AS_HELP_STRING([--with-commonscompress],
-                             [commonscompress.jar])],
-             [
-                COMMONSCOMPRESS_JAR=${withval}
-             ],
-             [
-                COMMONSCOMPRESS=
-             ])
-  if test -z "${COMMONSCOMPRESS_JAR}"; then
-    for dir in /usr/share/java /usr/local/share/java ; do
-      if test -f $dir/commonscompress.jar; then
-        COMMONSCOMPRESS_JAR=$dir/commonscompress.jar
-	    break
-      fi
-    done
-  fi
-  AM_COND_IF([WINDOWS], [
-    COMMONSCOMPRESS_JAR=$(cygpath -m ${COMMONSCOMPRESS_JAR})
-  ])
-  AC_MSG_RESULT(${COMMONSCOMPRESS_JAR})
-  if test -z "${COMMONSCOMPRESS_JAR}"; then
-    AC_MSG_RESULT(***************************************************************)
-    AC_MSG_RESULT(*  Warning you are building without Apache Commons Compress   *)
-    AC_MSG_RESULT(*  Compilation will fail                                      *)
-    AC_MSG_RESULT(***************************************************************)
-  fi
-  AC_SUBST(COMMONSCOMPRESS_JAR)
-  AM_CONDITIONAL([HAVE_COMMONSCOMPRESS], [test x$COMMONSCOMPRESS_JAR != xno -a x$COMMONSCOMPRESS_JAR != x ])
 ])
 
 AC_DEFUN_ONCE([IT_CHECK_FOR_MSLINKS],

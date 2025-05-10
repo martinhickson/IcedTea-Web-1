@@ -98,7 +98,7 @@ fn check_file_for_property(file: File, key: &str) -> Option<String> {
 /*tests*/
 #[cfg(test)]
 mod tests {
-    use utils::tests_utils as tu;
+    use crate::utils::tests_utils as tu;
     use std::fs::File;
 
     #[test]
