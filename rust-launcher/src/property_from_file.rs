@@ -1,7 +1,7 @@
-use property;
-use hardcoded_paths;
-use dirs_paths_helper as dh;
-use os_access;
+use crate::property;
+use crate::hardcoded_paths;
+use crate::dirs_paths_helper as dh;
+use crate::os_access;
 
 use std;
 use std::string::String;
@@ -18,7 +18,7 @@ pub static KEY_ENABLE_LOGGING_TOSYSTEMLOG: &'static str  = "deployment.log.syste
 
 
 pub trait Validator {
-    fn validate(&self, s: &str, os: &os_access::Os) -> bool;
+    fn validate(&self, s: &str, os: &dyn os_access::Os) -> bool;
     fn get_fail_message(&self, key: &str, value: &str, file: &Option<std::path::PathBuf>) -> String;
 }
 
@@ -26,7 +26,7 @@ pub struct JreValidator {}
 
 
 impl Validator for JreValidator {
-    fn validate(&self, s: &str, os: &os_access::Os) -> bool {
+    fn validate(&self, s: &str, os: &dyn os_access::Os) -> bool {
         verify_jdk_string(&s, os)
     }
 
@@ -42,7 +42,7 @@ pub struct BoolValidator {}
 
 
 impl Validator for BoolValidator {
-    fn validate(&self, s: &str, _os: &os_access::Os) -> bool {
+    fn validate(&self, s: &str, _os: &dyn os_access::Os) -> bool {
         verify_bool_string(&s.to_string())
     }
 
@@ -57,7 +57,7 @@ pub struct NotMandatoryPathValidator {}
 
 
 impl Validator for NotMandatoryPathValidator {
-    fn validate(&self, _s: &str, _os: &os_access::Os) -> bool {
+    fn validate(&self, _s: &str, _os: &dyn os_access::Os) -> bool {
         true
     }
 
@@ -115,7 +115,7 @@ fn check_file_for_property(file: File, key: &str) -> Option<String> {
 }
 
 
-fn verify_jdk_string(spath: &str, os: &os_access::Os) -> bool {
+fn verify_jdk_string(spath: &str, os: &dyn os_access::Os) -> bool {
     let mut file = std::path::PathBuf::from(spath);
     file.push("bin");
     for suffix in os.get_exec_suffixes() {
@@ -138,7 +138,7 @@ fn verify_jdk_string(spath: &str, os: &os_access::Os) -> bool {
 mod tests {
     use std;
     use std::fs::File;
-    use utils::tests_utils as tu;
+    use crate::utils::tests_utils as tu;
     
     fn get_jre_from_file(file: Option<std::path::PathBuf>) -> Option<String> {
         super::get_property_from_file(file, super::JRE_PROPERTY_NAME)

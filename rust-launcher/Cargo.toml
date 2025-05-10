@@ -1,8 +1,16 @@
 [package]
 name = "launcher"
-version = "1.8.0"
+version = "1.8.8"
+edition = "2021"
 authors = ["https://icedtea.classpath.org/wiki/IcedTea-Web"]
 
 [dependencies]
 [target.'cfg(windows)'.dependencies]
-dunce = "1.0.4"
+dunce = "1.0.5"
+
+[profile.release]
+debug = false
+opt-level = 3
+lto = false
+panic = "unwind"
+strip = true 

@@ -110,7 +110,7 @@ fn main() {
     std::process::exit(code)
 }
 
-fn compose_arguments(java_dir: &std::path::PathBuf, original_args: &std::vec::Vec<String>, os: &os_access::Os) -> Vec<String> {
+fn compose_arguments(java_dir: &std::path::PathBuf, original_args: &std::vec::Vec<String>, os: &dyn os_access::Os) -> Vec<String> {
     let hard_bootcp = hardcoded_paths::get_bootcp();
     let bootcp = jars_helper::get_bootclasspath(&java_dir, os);
     let cp = jars_helper::get_classpath(&java_dir, os);
@@ -179,7 +179,7 @@ fn compose_arguments(java_dir: &std::path::PathBuf, original_args: &std::vec::Ve
     all_args
 }
 
-fn is_modular_jdk(os: &os_access::Os, jre_dir: &std::path::PathBuf) -> bool {
+fn is_modular_jdk(os: &dyn os_access::Os, jre_dir: &std::path::PathBuf) -> bool {
     if jdk_version(os, jre_dir) > 8 {
         os.log("itw-rust-debug: modular jdk");
         true
@@ -189,7 +189,7 @@ fn is_modular_jdk(os: &os_access::Os, jre_dir: &std::path::PathBuf) -> bool {
     }
 }
 
-fn jdk_version(os: &os_access::Os, jre_dir: &std::path::PathBuf) -> i32 {
+fn jdk_version(os: &dyn os_access::Os, jre_dir: &std::path::PathBuf) -> i32 {
     let vec = vec!["-version".to_string()];
     //this of  course fails during tests
     let output_result = os_access::create_java_cmd(os, jre_dir, &vec).output();
@@ -223,7 +223,7 @@ fn jdk_version(os: &os_access::Os, jre_dir: &std::path::PathBuf) -> i32 {
     }
 }
 
-fn resolve_argsfile(os: &os_access::Os) -> String {
+fn resolve_argsfile(os: &dyn os_access::Os) -> String {
     let args_location = dirs_paths_helper::path_to_string(&jars_helper::resolve_argsfile(os));
     let mut owned_string: String = args_location.to_owned();
     let splash_switch: &str = "@";
@@ -233,7 +233,7 @@ fn resolve_argsfile(os: &os_access::Os) -> String {
 }
 
 
-fn get_jsobject_patchmodule(os: &os_access::Os) -> Option<(String, String)> {
+fn get_jsobject_patchmodule(os: &dyn os_access::Os) -> Option<(String, String)> {
     let js_object_candidate = jars_helper::resolve_jsobject(os);
     match js_object_candidate {
         Some(js_object_path) => {
@@ -251,13 +251,13 @@ fn get_jsobject_patchmodule(os: &os_access::Os) -> Option<(String, String)> {
     }
 }
 
-fn get_splash(os: &os_access::Os) -> Option<String> {
+fn get_splash(os: &dyn os_access::Os) -> Option<String> {
     let headless = is_headless_enforced();
     let splash_forbidden = is_splash_forbidden();
     get_splash_testable(headless, splash_forbidden, os)
 }
 
-fn get_splash_testable(headless: bool, splash_forbidden: bool, os: &os_access::Os) -> Option<String> {
+fn get_splash_testable(headless: bool, splash_forbidden: bool, os: &dyn os_access::Os) -> Option<String> {
     if !headless && !splash_forbidden {
         let splash_location = dirs_paths_helper::path_to_string(&jars_helper::resolve_splash(os));
         let mut owned_string: String = splash_location.to_owned();
@@ -292,7 +292,7 @@ fn include_not_dashJs(srcs: &Vec<std::string::String>, target: &mut Vec<std::str
 }
 
 #[allow(non_snake_case)]
-fn include_dashJs_values(srcs: &Vec<std::string::String>, target: &mut Vec<std::string::String>, os: &os_access::Os) {
+fn include_dashJs_values(srcs: &Vec<std::string::String>, target: &mut Vec<std::string::String>, os: &dyn os_access::Os) {
     for f in srcs.iter() {
         if f.to_string().starts_with("-J") {
             let s = String::from(f.to_string().get(2..).expect("-J should be substring-able by 2"));
@@ -307,7 +307,7 @@ fn include_dashJs_values(srcs: &Vec<std::string::String>, target: &mut Vec<std::
 
 #[cfg(test)]
 pub mod tests_main {
-    use utils::tests_utils as tu;
+    use crate::utils::tests_utils as tu;
 
     #[test]
     fn is_splash_forbidden_test() {

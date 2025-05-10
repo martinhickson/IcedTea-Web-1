@@ -1,7 +1,7 @@
-use property_from_file;
-use os_access;
-use dirs_paths_helper;
-use::log_helper;
+use crate::property_from_file;
+use crate::os_access;
+use crate::dirs_paths_helper;
+use crate::log_helper;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
 
@@ -10,7 +10,7 @@ use std::string::String;
 use std::fmt::Write;
 
 
-fn get_basic_array(logger: &os_access::Os) -> [Option<std::path::PathBuf>; 4] {
+fn get_basic_array(logger: &dyn os_access::Os) -> [Option<std::path::PathBuf>; 4] {
     //obviously search in jre dir is missing, when we search for jre
     let array: [Option<std::path::PathBuf>; 4] = [
         dirs_paths_helper::get_itw_config_file(logger),
@@ -21,11 +21,11 @@ fn get_basic_array(logger: &os_access::Os) -> [Option<std::path::PathBuf>; 4] {
     array
 }
 
-pub fn try_jdk_from_properties(logger: &os_access::Os) -> Option<String> {
+pub fn try_jdk_from_properties(logger: &dyn os_access::Os) -> Option<String> {
     try_key_from_properties_files(logger, &get_basic_array(logger), property_from_file::JRE_PROPERTY_NAME, &property_from_file::JreValidator {})
 }
 
-pub fn try_main_verbose_from_properties(logger: &os_access::Os) -> bool {
+pub fn try_main_verbose_from_properties(logger: &dyn os_access::Os) -> bool {
     let str_bool = try_key_from_properties_files(logger, &get_basic_array(logger), property_from_file::VERBOSE_PROPERTY_NAME, &property_from_file::BoolValidator {});
     match str_bool {
         Some(val) => {
@@ -37,7 +37,7 @@ pub fn try_main_verbose_from_properties(logger: &os_access::Os) -> bool {
     }
 }
 
-pub fn try_log_to_file_from_properties(logger: &os_access::Os) -> bool {
+pub fn try_log_to_file_from_properties(logger: &dyn os_access::Os) -> bool {
     let str_bool = try_key_from_properties_files(logger, &get_basic_array(logger), property_from_file::KEY_ENABLE_LOGGING_TOFILE, &property_from_file::BoolValidator {});
     match str_bool {
         Some(val) => {
@@ -49,7 +49,7 @@ pub fn try_log_to_file_from_properties(logger: &os_access::Os) -> bool {
     }
 }
 
-pub fn try_log_to_streams_from_properties(logger: &os_access::Os) -> bool {
+pub fn try_log_to_streams_from_properties(logger: &dyn os_access::Os) -> bool {
     let str_bool = try_key_from_properties_files(logger, &get_basic_array(logger), property_from_file::KEY_ENABLE_LOGGING_TOSTREAMS, &property_from_file::BoolValidator {});
     match str_bool {
         Some(val) => {
@@ -61,7 +61,7 @@ pub fn try_log_to_streams_from_properties(logger: &os_access::Os) -> bool {
     }
 }
 
-pub fn try_log_to_system_from_properties(logger: &os_access::Os) -> bool {
+pub fn try_log_to_system_from_properties(logger: &dyn os_access::Os) -> bool {
     let str_bool = try_key_from_properties_files(logger, &get_basic_array(logger), property_from_file::KEY_ENABLE_LOGGING_TOSYSTEMLOG, &property_from_file::BoolValidator {});
     match str_bool {
         Some(val) => {
@@ -84,7 +84,7 @@ pub fn logfile_name() -> String {
     future_name
 }
 
-pub fn try_logtarget_from_properties(logger: &os_access::Os) ->  std::path::PathBuf {
+pub fn try_logtarget_from_properties(logger: &dyn os_access::Os) ->  std::path::PathBuf {
     let str_candidate = try_key_from_properties_files(logger, &get_basic_array(logger), property_from_file::KEY_USER_LOG_DIR, &property_from_file::NotMandatoryPathValidator {});
     match str_candidate {
         Some(val) => {
@@ -93,7 +93,7 @@ pub fn try_logtarget_from_properties(logger: &os_access::Os) ->  std::path::Path
             future_file
         }
         None => {
-            let mut cfgdir_candidate = logger.get_user_config_dir();
+            let cfgdir_candidate = logger.get_user_config_dir();
             match cfgdir_candidate {
                 Some(mut cfgdir) => {
                     cfgdir.push("log");
@@ -108,7 +108,7 @@ pub fn try_logtarget_from_properties(logger: &os_access::Os) ->  std::path::Path
     }
 }
 
-pub fn try_direct_key_from_properties(key: &str, logger: &os_access::Os) ->  String {
+pub fn try_direct_key_from_properties(key: &str, logger: &dyn os_access::Os) ->  String {
     let str_candidate = try_key_from_properties_files(logger, &get_basic_array(logger), key, &property_from_file::NotMandatoryPathValidator {});
     match str_candidate {
         Some(val) => {
@@ -121,7 +121,7 @@ pub fn try_direct_key_from_properties(key: &str, logger: &os_access::Os) ->  Str
 }
 
 
-fn try_key_from_properties_files(logger: &os_access::Os, array: &[Option<std::path::PathBuf>], key: &str, validator: &property_from_file::Validator) -> Option<String> {
+fn try_key_from_properties_files(logger: &dyn os_access::Os, array: &[Option<std::path::PathBuf>], key: &str, validator: &dyn property_from_file::Validator) -> Option<String> {
     for file in array {
         let mut info1 = String::new();
         write!(&mut info1, "itw-rust-debug: checking {} in: {}", key, file.clone().unwrap_or(std::path::PathBuf::from("None")).display()).expect("unwrap failed");
@@ -153,14 +153,14 @@ fn try_key_from_properties_files(logger: &os_access::Os, array: &[Option<std::pa
 #[cfg(test)]
 mod tests {
     use std;
-    use os_access;
-    use utils::tests_utils as tu;
-    use property_from_file;
+    use crate::os_access;
+    use crate::utils::tests_utils as tu;
+    use crate::property_from_file;
     //if you wont to investigate files used for testing
     // use cargo test -- --nocapture to see  files which needs delete
     static DELETE_TEST_FILES: bool = true;
 
-    fn try_jdk_from_properties_files(logger: &os_access::Os, array: &[Option<std::path::PathBuf>]) -> Option<String> {
+    fn try_jdk_from_properties_files(logger: &dyn os_access::Os, array: &[Option<std::path::PathBuf>]) -> Option<String> {
         super::try_key_from_properties_files(logger, &array, property_from_file::JRE_PROPERTY_NAME, &property_from_file::JreValidator {})
     }
 

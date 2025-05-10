@@ -1,8 +1,8 @@
-use os_access;
-
 use std;
 use std::io;
 use std::env;
+
+use crate::os_access;
 
 #[cfg(windows)] extern crate dunce;
 
@@ -10,9 +10,7 @@ use std::env;
 pub static ICEDTEA_WEB: &'static str = "icedtea-web";
 pub static DEPLOYMENT_PROPERTIES: &'static str = "deployment.properties";
 
-
-
-pub fn get_xdg_config_dir(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_xdg_config_dir(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     match env::var("XDG_CONFIG_HOME") {
         Ok(war) => {
             Some(std::path::PathBuf::from(war))
@@ -39,21 +37,20 @@ pub fn append_deployment_file(dir: Option<std::path::PathBuf>) -> Option<std::pa
     }
 }
 
-
-pub fn get_itw_config_file(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_itw_config_file(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     append_deployment_file(os.get_user_config_dir())
 }
 
-pub fn get_itw_legacy_config_file(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_itw_legacy_config_file(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     append_deployment_file(os.get_legacy_user_config_dir())
 }
 
 
-pub fn get_itw_legacy_global_config_file(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_itw_legacy_global_config_file(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     append_deployment_file(os.get_legacy_system_config_javadir())
 }
 
-pub fn get_itw_global_config_file(os: &os_access::Os) -> Option<std::path::PathBuf> {
+pub fn get_itw_global_config_file(os: &dyn os_access::Os) -> Option<std::path::PathBuf> {
     append_deployment_file(os.get_system_config_javadir())
 }
 
@@ -98,8 +95,8 @@ pub fn canonicalize(full_path: &std::path::PathBuf) -> Result<std::path::PathBuf
 mod tests {
     use std;
     use std::fs;
-    use os_access;
-    use utils::tests_utils as tu;
+    use crate::os_access;
+    use crate::utils::tests_utils as tu;
 
     #[cfg(not(windows))]
     fn get_os() -> os_access::Linux {

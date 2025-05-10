@@ -1,10 +1,10 @@
 use std;
-use dirs_paths_helper;
+use crate::dirs_paths_helper;
 use std::env;
 use std::fmt::Write;
-use log_helper;
+use crate::log_helper;
 
-pub fn create_java_cmd(os: &Os,jre_dir: &std::path::PathBuf, args: &Vec<String>) -> std::process::Command {
+pub fn create_java_cmd(os: &dyn Os,jre_dir: &std::path::PathBuf, args: &Vec<String>) -> std::process::Command {
     let mut bin_java = jre_dir.clone();
     bin_java.push("bin");
     bin_java.push("java");
@@ -25,7 +25,7 @@ pub fn create_java_cmd(os: &Os,jre_dir: &std::path::PathBuf, args: &Vec<String>)
     return cmd;
 }
 
-fn spawn_java_process(os: &Os, jre_dir: &std::path::PathBuf, args: &Vec<String>) -> std::process::Child {
+fn spawn_java_process(os: &dyn Os, jre_dir: &std::path::PathBuf, args: &Vec<String>) -> std::process::Child {
     let mut cmd = create_java_cmd(os, jre_dir, args);
     if os.inside_console() {
         cmd.stdin(std::process::Stdio::inherit());
@@ -223,7 +223,7 @@ impl Windows {
 #[cfg(windows)]
 impl Os for Windows {
 
-    fn system_log(&self, s: &str){/*no go for now*/}
+    fn system_log(&self, _s: &str){/*no go for now*/}
 
     fn advanced_logging(&self) ->  &log_helper::AdvancedLogging {
         return &self.al;
@@ -351,7 +351,7 @@ pub mod win {
         }
     }
 
-    fn errloc_msg<'a>(e: &'a Box<std::any::Any + Send + 'static>) -> &'a str {
+    fn errloc_msg<'a>(e: &'a Box<dyn std::any::Any + Send + 'static>) -> &'a str {
         match e.downcast_ref::<&str>() {
             Some(st) => st,
             None => {
@@ -365,7 +365,7 @@ pub mod win {
 
     // implementation
 
-    use std;
+    use std::{self, process};
     use std::os::raw::*;
     use std::ptr::{null, null_mut};
 
@@ -486,7 +486,7 @@ pub mod win {
     // windows-specific utilities
 
     fn MAKELANGID(p: c_ushort, s: c_ushort) -> c_ushort {
-        (s << 10 | p)
+        s << 10 | p
     }
 
     fn widen(st: &str) -> Vec<u16> {
@@ -499,8 +499,13 @@ pub mod win {
                 null_mut::<u16>(),
                 0);
             if 0 == size_needed {
-                panic!(format!("Error on string widen calculation, \
-                string: [{}], error: [{}]", st, errcode_to_string(GetLastError())));
+                // panic!(format!("Error on string widen calculation, \
+                // string: [{}], error: [{}]", st, errcode_to_string(GetLastError())));
+                eprintln!(
+                    "Error on string widen calculation, string: [{}], error: [{}]",
+                    st,
+                    errcode_to_string(GetLastError()));
+                process::exit(1);
             }
             let mut res: Vec<u16> = Vec::new();
             res.resize((size_needed + 1) as usize, 0);
@@ -512,8 +517,12 @@ pub mod win {
                 res.as_mut_ptr(),
                 size_needed);
             if chars_copied != size_needed {
-                panic!(format!("Error on string widen execution, \
-                string: [{}], error: [{}]", st, errcode_to_string(GetLastError())));
+                eprintln!(
+                    "Error on string widen execution, string: [{}], error: [{}]",
+                    st,
+                    errcode_to_string(GetLastError())
+                );
+                process::exit(1);
             }
             res.resize(size_needed as usize, 0);
             res
@@ -532,8 +541,12 @@ pub mod win {
                 null::<c_char>(),
                 null_mut::<c_int>());
             if 0 == size_needed {
-                panic!(format!("Error on string narrow calculation, \
-                string length: [{}], error code: [{}]", wst.len(), GetLastError()));
+                eprintln!(
+                    "Error on string narrow calculation, string length: [{}], error code: [{}]",
+                    wst.len(),
+                    GetLastError()
+                );
+                process::exit(1);
             }
             let mut vec: Vec<u8> = Vec::new();
             vec.resize(size_needed as usize, 0);
@@ -547,8 +560,12 @@ pub mod win {
                 null::<c_char>(),
                 null_mut::<c_int>());
             if bytes_copied != size_needed {
-                panic!(format!("Error on string narrow execution, \
-                string length: [{}], error code: [{}]", vec.len(), GetLastError()));
+                eprintln!(
+                    "Error on string narrow execution, string length: [{}], error code: [{}]",
+                    vec.len(),
+                    GetLastError()
+                );
+                process::exit(1);
             }
             String::from_utf8(vec).expect(errloc!())
         }
@@ -700,8 +717,13 @@ pub mod win {
                 null_mut::<c_uchar>(),
                 &mut value_len) as u32;
             if ERROR_SUCCESS != err_len || !(value_len > 0) || REG_SZ != value_type {
-                panic!(format!("Error opening registry value len, \
-                    key: [{}], value: [{}], message: [{}]", java_key_name, java_home, errcode_to_string(err_len)));
+                eprintln!(
+                    "Error opening registry value len, key: [{}], value: [{}], message: [{}]",
+                    java_key_name,
+                    java_home,
+                    errcode_to_string(err_len)
+                );
+                process::exit(1);
             }
             // get value
             let mut wvalue: Vec<u16> = Vec::new();
@@ -714,8 +736,13 @@ pub mod win {
                 wvalue.as_mut_ptr() as *mut c_uchar,
                 &mut value_len) as u32;
             if ERROR_SUCCESS != err_val {
-                panic!(format!("Error opening registry value, \
-                    key: [{}], value: [{}], message: [{}]", java_key_name, java_home, errcode_to_string(err_val)));
+                eprintln!(
+                    "Error opening registry value, key: [{}], value: [{}], message: [{}]",
+                    java_key_name,
+                    java_home,
+                    errcode_to_string(err_val)
+                );
+                process::exit(1);
             }
             // format and return path
             let slice = std::slice::from_raw_parts(wvalue.as_ptr(), wvalue.len() - 1 as usize);

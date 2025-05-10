@@ -1,3 +1,6 @@
+N.B. GitHub Actions is now the preferred build solution and supersedes the instructions below:
+N.B. Remember to update the version on the first line of configure.ac
+
 -----------
 IDE Setup
 -----------
@@ -142,12 +145,12 @@ zip -r icedtea-web-1.8.8.12.linux.bin.zip .
 unzip -d / icedtea-web-1.8.8.12.linux.bin.zip
 
 ------------------------------------
-Linux CentOS 7 Sample Dockerfile:
+Linux Oracle Linux 8 Sample Dockerfile:
 ------------------------------------
 
 Alternatively, the following Dockerfile can be used with Docker to create the Linux build (edit the proxy URL first):
 
-FROM centos:7
+FROM oraclelinux:8
 
 ENV HTTP_PROXY "http://<host>:<port>"
 ENV HTTPS_PROXY "http://<host>:<port>"
