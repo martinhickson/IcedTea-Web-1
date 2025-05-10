@@ -9,8 +9,14 @@ authors = ["https://icedtea.classpath.org/wiki/IcedTea-Web"]
 dunce = "1.0.5"
 
 [profile.release]
-debug = false
-opt-level = 3
-lto = false
-panic = "abort"
-strip = true 
+opt-level = 2             # Less aggressive than opt-level = 3 or "z"
+debug = true              # Include debug info for transparency
+debug-assertions = true   # Avoid removing logical safety checks
+overflow-checks = true    # Keep integer overflow checks
+lto = false               # Disable link-time optimization
+panic = "unwind"          # Use normal panic handling (not abort)
+incremental = false       # Disable incremental compilation
+codegen-units = 16        # Default for parallelism
+rpath = false
+strip = "none"            # Do not strip symbols (transparent)
+split-debuginfo = "unpacked"
