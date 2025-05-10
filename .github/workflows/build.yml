@@ -5,11 +5,11 @@ on:
         release:
           description: 'Set to True if are running a release'     
           required: true
-          default: 'False'
+          default: 'True'
         version:
           description: 'If running a release, set the version e.g (icedtea-web-1.8.4)'     
           required: true
-          default: 'icedtea-web-1.8.x'
+          default: 'icedtea-web-1.8.8.17'
   pull_request:
     branches:
       - 1.8
