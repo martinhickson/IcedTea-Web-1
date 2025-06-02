@@ -9,7 +9,7 @@ on:
         version:
           description: 'If running a release, set the version e.g (icedtea-web-1.8.4)'     
           required: true
-          default: 'icedtea-web-1.8.8.17'
+          default: 'icedtea-web-1.8.8.18'
   pull_request:
     branches:
       - 1.8
@@ -57,10 +57,12 @@ jobs:
 
       - name: Compile rust
         run: |
-          curl -L -o rust.tar.gz "https://static.rust-lang.org/dist/rust-1.83.0-x86_64-unknown-linux-gnu.tar.gz"
-          sha256sum rust.tar.gz | awk '$1!="bd9d53d09d4b60826288336de19fb9c5c7592081e4e4520d6de2f65ee8d79087"{exit 1}'
+          curl -L -o rust.tar.gz "https://static.rust-lang.org/dist/rust-1.85.1-x86_64-unknown-linux-gnu.tar.gz"
+          echo "Verifying SHA-256 checksum..."
+          sha256sum rust.tar.gz | awk '$1!="b7202563a52b47f575b284a5a4794fafd688e39bfe8fd855b5e80129e671cb7f"{exit 1}'
+          echo "Checksum verified"
           tar -zxf rust.tar.gz
-          cd rust-1.83.0-x86_64-unknown-linux-gnu
+          cd rust-1.85.1-x86_64-unknown-linux-gnu
           ./install.sh
 
       - name: Compile pkg-config
