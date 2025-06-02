@@ -266,6 +266,8 @@ impl Os for Windows {
     }
 
     fn get_user_config_dir(&self) -> Option<std::path::PathBuf> {
+        // Required to prevent a linkage error:
+        dirs_paths_helper::get_xdg_config_dir(self);
         match self.get_home() {
             Some(mut p) => {
                 p.push(".config");
@@ -395,8 +397,8 @@ pub mod win {
     const HKEY_LOCAL_MACHINE: *mut c_void = 0x80000002 as *mut c_void;
 
     // function declarations
-
-    extern "system" {
+    #[link(name = "Advapi32")]
+    unsafe extern "system" {
         pub fn AttachConsole(dwProcessId: c_ulong) -> c_int;
         
         fn MultiByteToWideChar(
