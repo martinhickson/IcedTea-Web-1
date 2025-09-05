@@ -1,6 +1,7 @@
 name: Windows MSI with JDK Bundle
 
 on:
+  workflow_dispatch:
   push:
     branches: [ main, master, bundled-windows-jdk ]
     tags: [ '*' ]
@@ -41,6 +42,8 @@ jobs:
           curl
           wget
           gettext
+          sed
+          coreutils
 
     - name: Install Chocolatey packages
       shell: pwsh
@@ -122,8 +125,19 @@ jobs:
     - name: Configure with JDK bundling
       shell: msys2 {0}
       run: |
+        # Debug: Show current environment
+        echo "JAVA_HOME: $JAVA_HOME"
+        echo "Original PATH: $PATH"
+        echo "MSYS2 PATH: $MSYS2_PATH"
+
         # Ensure JDK is in PATH for configure script
         export PATH="$(cygpath $JAVA_HOME)/bin:$PATH"
+        echo "Updated PATH: $PATH"
+
+        # Verify JDK tools are available
+        echo "Checking for javac:"
+        which javac || echo "javac not found in PATH"
+        javac -version || echo "javac failed"
 
         # Set up paths for JAR dependencies
         export TAGSOUP_JAR=/tmp/jars/tagsoup.jar
