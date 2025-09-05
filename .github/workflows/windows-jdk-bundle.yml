@@ -45,16 +45,47 @@ jobs:
     - name: Install Chocolatey packages
       shell: pwsh
       run: |
-        choco install corretto8jdk rust -y
+        choco install corretto17jdk rust -y
         # WiX Toolset is pre-installed on Windows runners
 
     - name: Set up JDK for build
       shell: pwsh
       run: |
         # Set JAVA_HOME for the build process
-        $jdkPath = (Get-ChildItem "C:\Program Files\Amazon Corretto\jdk*" | Select-Object -First 1).FullName
+        # First try standard Chocolatey location
+        $chocoJdkPath = "C:\Program Files\Amazon Corretto\jdk17"
+        if (Test-Path $chocoJdkPath) {
+          $jdkPath = $chocoJdkPath
+          Write-Host "Found JDK at Chocolatey location: $jdkPath"
+        } else {
+          # Try alternative locations
+          $altPaths = @(
+            "C:\Program Files\Amazon Corretto\jdk*",
+            "C:\Program Files\Java\jdk*",
+            "C:\tools\jdk*"
+          )
+          foreach ($path in $altPaths) {
+            $found = Get-ChildItem $path -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($found) {
+              $jdkPath = $found.FullName
+              Write-Host "Found JDK at alternative location: $jdkPath"
+              break
+            }
+          }
+        }
+
+        if (-not $jdkPath -or -not (Test-Path $jdkPath)) {
+          Write-Error "JDK not found in any expected location!"
+          exit 1
+        }
+
+        Write-Host "Setting JAVA_HOME to: $jdkPath"
         echo "JAVA_HOME=$jdkPath" | Out-File -FilePath $env:GITHUB_ENV -Append
         echo "$jdkPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+        # Verify Java is working
+        $javaVersion = & "$jdkPath\bin\java.exe" -version 2>&1
+        Write-Host "Java version: $javaVersion"
 
     - name: Download required JARs
       shell: msys2 {0}
