@@ -122,6 +122,9 @@ jobs:
     - name: Configure with JDK bundling
       shell: msys2 {0}
       run: |
+        # Ensure JDK is in PATH for configure script
+        export PATH="$(cygpath $JAVA_HOME)/bin:$PATH"
+
         # Set up paths for JAR dependencies
         export TAGSOUP_JAR=/tmp/jars/tagsoup.jar
         export RHINO_JAR=/tmp/jars/rhino.jar
@@ -131,10 +134,7 @@ jobs:
         export WIXGEN_JAR=/tmp/jars/wixgen.jar
 
         # Configure with Windows JDK bundling enabled
-        # Convert Windows path to MSYS2 path for Java
-        JAVA_PATH=$(cygpath -u "$JAVA_HOME/bin/java")
         ./configure \
-          --with-java="$JAVA_PATH" \
           --disable-native-plugin \
           --with-windows-jdk-bundle=${{ env.JDK_BUNDLE_VERSION }} \
           --with-tagsoup=$TAGSOUP_JAR \
