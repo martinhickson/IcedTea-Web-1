@@ -24,6 +24,7 @@ jobs:
     - name: Create Draft Release
       id: create_release
       uses: actions/create-release@v1
+      # Note: This action is deprecated, consider using softprops/action-gh-release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -39,7 +40,7 @@ jobs:
     runs-on: ubuntu-latest
     container: centos:7
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           path: icedtea-web
 
@@ -114,7 +115,7 @@ jobs:
             sha256sum "$zip" > "$zip.sha256.txt"
           done
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: icedtea-web_build_x86-64_linux
           path: |
@@ -122,6 +123,7 @@ jobs:
 
       - name: Upload binary
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -133,6 +135,7 @@ jobs:
 
       - name: Upload shasum
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -149,7 +152,7 @@ jobs:
     runs-on: ubuntu-latest
     container: centos:7
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           path: icedtea-web
 
@@ -216,7 +219,7 @@ jobs:
             sha256sum "$zip_rename" > "$zip_rename.sha256.txt"
           done
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: icedtea-web_build_x86-64_portable
           path: |
@@ -224,6 +227,7 @@ jobs:
 
       - name: Upload binary
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -235,6 +239,7 @@ jobs:
 
       - name: Upload shasum
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -250,7 +255,7 @@ jobs:
     name: macOS
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           path: icedtea-web
 
@@ -292,7 +297,7 @@ jobs:
             sha256sum "$zip" > "$zip.sha256.txt"
           done
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: icedtea-web_build_x86-64_macos
           path: |
@@ -300,6 +305,7 @@ jobs:
 
       - name: Upload binary
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -311,6 +317,7 @@ jobs:
 
       - name: Upload shasum
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -328,7 +335,7 @@ jobs:
     steps:
       - name: Restore cygwin packages from cache
         id: cygwin
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: C:\cygwin_packages
           key: cygwin-packages-${{ runner.os }}-v1
@@ -361,7 +368,7 @@ jobs:
         shell: bash
         run: mkdir $HOME && git config --system core.autocrlf false && git config --system --add safe.directory '*'
 
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           set-safe-directory: false
 
@@ -420,7 +427,7 @@ jobs:
         run: bash .github/workflows/windows_build.sh
         shell: cmd
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: icedtea-web_build_x86-64_win
           path: |
@@ -439,7 +446,8 @@ jobs:
         shell: cmd
 
       - name: Upload binary
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -450,7 +458,8 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload shasum
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -461,7 +470,8 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload MSI
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -472,7 +482,8 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload MSI shasum
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
