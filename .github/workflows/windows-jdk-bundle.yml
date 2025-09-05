@@ -76,7 +76,17 @@ jobs:
     - name: Generate configure script
       shell: bash
       run: |
-        autoreconf -i
+        # Try to find autoreconf or use alternative
+        if command -v autoreconf >/dev/null 2>&1; then
+          echo "Using autoreconf"
+          autoreconf -i
+        elif command -v autoconf >/dev/null 2>&1; then
+          echo "autoreconf not found, using autoconf directly"
+          aclocal && autoheader && automake --add-missing && autoconf
+        else
+          echo "Neither autoreconf nor autoconf found!"
+          exit 1
+        fi
 
     - name: Configure with JDK bundling
       shell: bash
