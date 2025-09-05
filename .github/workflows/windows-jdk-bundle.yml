@@ -35,8 +35,7 @@ jobs:
           automake
           libtool
           pkg-config
-          rust
-          cargo
+          mingw-w64-x86_64-rust
           zip
           unzip
           curl
