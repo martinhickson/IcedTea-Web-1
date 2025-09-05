@@ -75,7 +75,7 @@ case "${host_os}" in
     linux*|freebsd*)
         build_linux=yes
         ;;
-    cygwin*)
+    cygwin*|mingw32*)
         build_windows=yes
         ;;
     darwin*)
