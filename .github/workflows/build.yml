@@ -420,7 +420,7 @@ jobs:
         run: |
           fsutil behavior set disable8dot3 0
           cmd /c dir /x "C:\Program Files (x86)"
-          # Only set short name if it doesn't already exist
+          REM Only set short name if it doesn't already exist
           if not exist "C:\Program Files (x86)\WIXTOO~1.14" (
             fsutil file setshortname "C:\Program Files (x86)\WiX Toolset v3.14" "WIXTOO~1.14"
           )
