@@ -40,6 +40,7 @@ jobs:
           unzip
           curl
           wget
+          gettext
 
     - name: Install Chocolatey packages
       shell: pwsh
