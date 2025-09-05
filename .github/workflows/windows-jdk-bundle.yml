@@ -57,7 +57,7 @@ jobs:
         echo "$jdkPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
 
     - name: Download required JARs
-      shell: bash
+      shell: msys2 {0}
       run: |
         mkdir -p /tmp/jars
         cd /tmp/jars
@@ -74,7 +74,7 @@ jobs:
         ls -la *.jar
 
     - name: Generate configure script
-      shell: bash
+      shell: msys2 {0}
       run: |
         # Try to find autoreconf or use alternative
         if command -v autoreconf >/dev/null 2>&1; then
@@ -89,7 +89,7 @@ jobs:
         fi
 
     - name: Configure with JDK bundling
-      shell: bash
+      shell: msys2 {0}
       run: |
         # Set up paths for JAR dependencies
         export TAGSOUP_JAR=/tmp/jars/tagsoup.jar
@@ -112,30 +112,30 @@ jobs:
           --prefix=/usr/local
 
     - name: Build IcedTea-Web
-      shell: bash
+      shell: msys2 {0}
       run: |
         make -j$(nproc)
 
     - name: Install to staging directory
-      shell: bash
+      shell: msys2 {0}
       run: |
         make install DESTDIR=/tmp/icedtea-install
 
     - name: Verify JDK download and extraction
-      shell: bash
+      shell: msys2 {0}
       run: |
         echo "Checking if JDK was downloaded and extracted..."
         ls -la /tmp/icedtea-install/usr/local/win-jdk-bundle/ || echo "JDK bundle directory not found"
         ls -la /tmp/icedtea-install/usr/local/win-jdk-bundle/jdk*/ || echo "JDK directory not found"
 
     - name: Build Windows MSI installer
-      shell: bash
+      shell: msys2 {0}
       run: |
         # Build the MSI with bundled JDK
         make win-installer
 
     - name: Verify MSI creation
-      shell: bash
+      shell: msys2 {0}
       run: |
         echo "Checking for generated MSI files..."
         find . -name "*.msi" -type f
