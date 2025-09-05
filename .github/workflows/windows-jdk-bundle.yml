@@ -2,10 +2,10 @@ name: Windows MSI with JDK Bundle
 
 on:
   push:
-    branches: [ main, master ]
+    branches: [ main, master, bundled-windows-jdk ]
     tags: [ '*' ]
   pull_request:
-    branches: [ main, master ]
+    branches: [ main, master, bundled-windows-jdk ]
     paths:
       - 'configure.ac'
       - 'Makefile.am'
