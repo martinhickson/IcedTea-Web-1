@@ -15,3 +15,4 @@ integration-tests/classloader-integration-tests-module-parent/target
 integration-tests/classloader-integration-tests-module-1/target
 integration-tests/classloader-integration-tests-module-wrapper/target
 artifact-no-dependencies/target
+rust-launcher/target

@@ -9,6 +9,18 @@
 --add-exports=java.desktop/sun.awt=ALL-UNNAMED,java.desktop
 --add-exports=java.desktop/javax.jnlp=ALL-UNNAMED,java.desktop
 
+#Debug JNLP apps by listening on an auto-assigned port using VM arg:
+#environment variable: JAVA_TOOL_OPTIONS=-agentlib:jdwp=transport=dt_socket,server=y,suspend=n
+#since manually assigned port will conflict with child java process
+#Also, the message: Listening for transport dt_socket at address: PORT_NUMBER
+#isn't present when launching via JNLP so log manually in main method of application:
+#    Method m = Class.forName("jdk.internal.vm.VMSupport").getDeclaredMethod("getAgentProperties");
+#    m.setAccessible(true);
+#    String portNumber = ((Properties) m.invoke(null)).getProperty("sun.jdwp.listenerAddress");
+#    logger.info("Debug port: " + portNumber);
+#Required for logging debug port:
+--add-exports java.base/jdk.internal.vm=ALL-UNNAMED
+
 --add-exports=java.base/com.sun.net.ssl.internal.ssl=ALL-UNNAMED,java.desktop
 --add-exports=java.base/sun.net.www.protocol.jar=ALL-UNNAMED,java.desktop
 --add-exports=java.base/sun.security.action=ALL-UNNAMED,java.desktop

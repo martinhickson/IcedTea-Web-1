@@ -12,6 +12,8 @@ Cygwin Build Steps on Windows for IcedTea-Web MSI Installer:
 
 Install Chocolatey Software Automation tool from website: https://chocolatey.org/
 
+Install the latest free and open source wix tool set from: https://github.com/wixtoolset/wix3/releases
+
 #Install build tools:
 choco feature enable -n allowGlobalConfirmation
 choco install cygwin git cyg-get wixtoolset corretto8jdk rust maven
@@ -63,9 +65,45 @@ sed -i 's/\r$//' html-gen.sh
 --with-mslinks=C:/tools/cygwin/usr/share/java/mslinks.jar \
 && make && make install && make win-installer
 
+# Alternative: Build with bundled Amazon Corretto JDK (recommended for Windows)
+./configure --disable-native-plugin --with-wix=C:/PROGRA~2/wix/bin \
+--with-windows-jdk-bundle=corretto-17 \
+--with-jre-home=C:/tools/cygwin/lib/jvm/openjdk/jre \
+--with-jdk-home=C:/tools/cygwin/lib/jvm/openjdk \
+--with-tagsoup=C:/tools/cygwin/usr/share/java/tagsoup.jar \
+--with-commonscompress=C:/tools/cygwin/usr/share/java/commonscompress.jar \
+--with-pack=C:/tools/cygwin/usr/share/java/pack.jar \
+--with-wixgen=/usr/bin/wixgen.jar --with-rhino=C:/tools/cygwin/usr/share/java/rhino.jar \
+--with-mslinks=C:/tools/cygwin/usr/share/java/mslinks.jar \
+&& make && make install && make win-installer
+
 #(if the configure command above fails because it cannot find rust, then install it again via: choco install rust)
 
 You will find the MSI in the folder win-installer.build, e.g. ~/work/IcedTeaWeb-1/win-installer.build/icedtea-web-1.8.8.5.msi
+
+Windows JDK Bundling Feature
+============================
+
+Starting with this version, IcedTea-Web supports bundling Amazon Corretto JDK directly in the Windows MSI installer.
+This creates a complete, self-contained Java Web Start solution for Windows users.
+
+Benefits:
+- No manual Java installation required
+- Single MSI installer for complete setup
+- Automatic JAVA_HOME and PATH configuration
+- Enterprise-friendly deployment
+- Compatible with existing IcedTea-Web functionality
+
+Options:
+--with-windows-jdk-bundle=corretto-17  # Bundle Amazon Corretto 17 (recommended)
+--with-windows-jdk-bundle=corretto-21  # Bundle Amazon Corretto 21
+--with-windows-jdk-bundle=none         # No JDK bundling (default)
+
+The bundled JDK will be installed to: C:\Program Files\WebStart\win-jdk-bundle\jdk17\
+Environment variables are automatically configured during installation.
+
+Note: This feature only works on Windows builds and requires internet access during the build process
+to download the JDK from Amazon's servers.
 
 -------------------------------
 Oracle Linux 9.2 Build Steps:

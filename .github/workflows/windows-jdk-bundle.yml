@@ -1,0 +1,262 @@
+name: Windows MSI with JDK Bundle
+
+on:
+  push:
+    branches: [ main, master ]
+    tags: [ '*' ]
+  pull_request:
+    branches: [ main, master ]
+    paths:
+      - 'configure.ac'
+      - 'Makefile.am'
+      - 'win-installer/**'
+      - '.github/workflows/windows-jdk-bundle.yml'
+
+env:
+  JDK_BUNDLE_VERSION: corretto-17
+
+jobs:
+  build-windows-msi:
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up MSYS2
+      uses: msys2/setup-msys2@v2
+      with:
+        msystem: MINGW64
+        update: true
+        install: >-
+          base-devel
+          git
+          autoconf
+          automake
+          libtool
+          pkg-config
+          rust
+          cargo
+          zip
+          unzip
+          curl
+          wget
+
+    - name: Install Chocolatey packages
+      shell: pwsh
+      run: |
+        choco install corretto8jdk rust -y
+        # WiX Toolset is pre-installed on Windows runners
+
+    - name: Set up JDK for build
+      shell: pwsh
+      run: |
+        # Set JAVA_HOME for the build process
+        $jdkPath = (Get-ChildItem "C:\Program Files\Amazon Corretto\jdk*" | Select-Object -First 1).FullName
+        echo "JAVA_HOME=$jdkPath" | Out-File -FilePath $env:GITHUB_ENV -Append
+        echo "$jdkPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+    - name: Download required JARs
+      shell: bash
+      run: |
+        mkdir -p /tmp/jars
+        cd /tmp/jars
+
+        # Download required JAR dependencies
+        curl -L -o tagsoup.jar https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar
+        curl -L -o rhino.jar https://repo1.maven.org/maven2/org/mozilla/rhino/1.7.14/rhino-1.7.14.jar
+        curl -L -o commonscompress.jar https://repo1.maven.org/maven2/org/apache/commons/commons-compress/1.26.0/commons-compress-1.26.0.jar
+        curl -L -o pack.jar https://github.com/martinhickson/pack200/releases/download/pack200-11.0.3/pack.jar
+        curl -L -o mslinks.jar https://repo1.maven.org/maven2/com/github/vatbub/mslinks/0.0.2/mslinks-0.0.2.jar
+        curl -L -o wixgen.jar https://github.com/akashche/wixgen/releases/download/1.7/wixgen.jar
+
+        echo "Downloaded JARs:"
+        ls -la *.jar
+
+    - name: Generate configure script
+      shell: bash
+      run: |
+        autoreconf -i
+
+    - name: Configure with JDK bundling
+      shell: bash
+      run: |
+        # Set up paths for JAR dependencies
+        export TAGSOUP_JAR=/tmp/jars/tagsoup.jar
+        export RHINO_JAR=/tmp/jars/rhino.jar
+        export COMMONSCOMPRESS_JAR=/tmp/jars/commonscompress.jar
+        export PACK_JAR=/tmp/jars/pack.jar
+        export MSLINKS_JAR=/tmp/jars/mslinks.jar
+        export WIXGEN_JAR=/tmp/jars/wixgen.jar
+
+        # Configure with Windows JDK bundling enabled
+        ./configure \
+          --disable-native-plugin \
+          --with-windows-jdk-bundle=${{ env.JDK_BUNDLE_VERSION }} \
+          --with-tagsoup=$TAGSOUP_JAR \
+          --with-rhino=$RHINO_JAR \
+          --with-commonscompress=$COMMONSCOMPRESS_JAR \
+          --with-pack=$PACK_JAR \
+          --with-mslinks=$MSLINKS_JAR \
+          --with-wixgen=$WIXGEN_JAR \
+          --prefix=/usr/local
+
+    - name: Build IcedTea-Web
+      shell: bash
+      run: |
+        make -j$(nproc)
+
+    - name: Install to staging directory
+      shell: bash
+      run: |
+        make install DESTDIR=/tmp/icedtea-install
+
+    - name: Verify JDK download and extraction
+      shell: bash
+      run: |
+        echo "Checking if JDK was downloaded and extracted..."
+        ls -la /tmp/icedtea-install/usr/local/win-jdk-bundle/ || echo "JDK bundle directory not found"
+        ls -la /tmp/icedtea-install/usr/local/win-jdk-bundle/jdk*/ || echo "JDK directory not found"
+
+    - name: Build Windows MSI installer
+      shell: bash
+      run: |
+        # Build the MSI with bundled JDK
+        make win-installer
+
+    - name: Verify MSI creation
+      shell: bash
+      run: |
+        echo "Checking for generated MSI files..."
+        find . -name "*.msi" -type f
+        ls -la win-installer.build/ || echo "win-installer.build directory not found"
+
+    - name: Upload MSI artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: icedtea-web-windows-msi-with-jdk
+        path: |
+          win-installer.build/*.msi
+          win-installer.build/*.exe
+        retention-days: 30
+
+    - name: Test MSI contents
+      shell: pwsh
+      run: |
+        $msiPath = Get-ChildItem "win-installer.build/*.msi" | Select-Object -First 1
+        if ($msiPath) {
+          Write-Host "MSI created successfully: $($msiPath.FullName)"
+          Write-Host "MSI size: $([math]::Round($msiPath.Length / 1MB, 2)) MB"
+
+          # Test MSI contains expected files
+          $extractPath = "C:\temp\msi_extract"
+          New-Item -ItemType Directory -Force -Path $extractPath | Out-Null
+
+          # Use lessmsi or 7zip to extract and verify contents
+          try {
+            & lessmsi x "$($msiPath.FullName)" $extractPath
+            Write-Host "MSI extraction successful"
+
+            # Check for JDK files
+            $jdkFiles = Get-ChildItem -Path $extractPath -Recurse -Filter "*jdk*" -Directory
+            if ($jdkFiles) {
+              Write-Host "JDK bundle found in MSI:"
+              $jdkFiles | ForEach-Object { Write-Host "  $($_.FullName)" }
+            } else {
+              Write-Host "Warning: No JDK files found in MSI"
+            }
+          } catch {
+            Write-Host "Could not extract MSI for verification: $($_.Exception.Message)"
+          }
+        } else {
+          Write-Error "No MSI file found!"
+          exit 1
+        }
+
+  test-jdk-compatibility:
+    runs-on: windows-latest
+    needs: build-windows-msi
+
+    steps:
+    - name: Download MSI artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: icedtea-web-windows-msi-with-jdk
+
+    - name: Test Java Web Start functionality
+      shell: pwsh
+      run: |
+        $msiPath = Get-ChildItem "*.msi" | Select-Object -First 1
+        if ($msiPath) {
+          Write-Host "Testing MSI: $($msiPath.FullName)"
+
+          # Test MSI installation (silent install)
+          Write-Host "Testing silent MSI installation..."
+          $installResult = Start-Process -FilePath "msiexec.exe" -ArgumentList "/i `"$($msiPath.FullName)`" /quiet /norestart /l*v install.log" -Wait -PassThru
+          Write-Host "Installation exit code: $($installResult.ExitCode)"
+
+          if ($installResult.ExitCode -eq 0) {
+            Write-Host "MSI installation successful"
+
+            # Test Java availability
+            $javaHome = [Environment]::GetEnvironmentVariable("JAVA_HOME", "Machine")
+            if ($javaHome) {
+              Write-Host "JAVA_HOME set to: $javaHome"
+              $javaVersion = & "$javaHome\bin\java.exe" -version 2>&1
+              Write-Host "Java version: $javaVersion"
+            } else {
+              Write-Host "Warning: JAVA_HOME not set"
+            }
+
+            # Test IcedTea-Web binaries
+            $javawsPath = "$env:ProgramFiles\WebStart\bin\javaws.exe"
+            if (Test-Path $javawsPath) {
+              Write-Host "javaws.exe found at: $javawsPath"
+
+              # Test that javaws can find the bundled JDK
+              Write-Host "Testing javaws with bundled JDK..."
+              try {
+                $javawsVersion = & $javawsPath -version 2>&1
+                Write-Host "javaws version output: $javawsVersion"
+
+                # Check if the output contains information about using bundled JDK
+                if ($javawsVersion -match "bundled" -or $javawsVersion -match "jdk17" -or $javawsVersion -match "Corretto") {
+                  Write-Host "✓ javaws successfully detected bundled JDK"
+                } else {
+                  Write-Host "ℹ javaws ran but bundled JDK detection not confirmed in output"
+                }
+              } catch {
+                Write-Error "javaws.exe failed to run: $($_.Exception.Message)"
+                exit 1
+              }
+            } else {
+              Write-Error "javaws.exe not found at expected location"
+              exit 1
+            }
+
+            # Verify JDK bundle exists
+            $jdkBundlePath = "$env:ProgramFiles\WebStart\win-jdk-bundle\jdk17"
+            if (Test-Path $jdkBundlePath) {
+              Write-Host "✓ JDK bundle found at: $jdkBundlePath"
+              $javaExePath = "$jdkBundlePath\bin\java.exe"
+              if (Test-Path $javaExePath) {
+                Write-Host "✓ java.exe found in JDK bundle"
+                $bundleJavaVersion = & $javaExePath -version 2>&1
+                Write-Host "Bundled JDK version: $bundleJavaVersion"
+              } else {
+                Write-Error "java.exe not found in JDK bundle"
+                exit 1
+              }
+            } else {
+              Write-Error "JDK bundle not found at expected location"
+              exit 1
+            }
+          } else {
+            Write-Error "MSI installation failed with exit code $($installResult.ExitCode)"
+            Get-Content install.log -Tail 20
+            exit 1
+          }
+        } else {
+          Write-Error "No MSI file found for testing!"
+          exit 1
+        }

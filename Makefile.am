@@ -76,6 +76,7 @@ export BASH_CMPL_DEST_DIR=$(DESTDIR)@bashcompdir@
 
 export WIN_ALL_DEPS=$(DESTDIR)$(prefix)/win-deps-all
 export WIN_RUN_DEPS=$(DESTDIR)$(prefix)/win-deps-runtime
+export WIN_JDK_DEPS=$(DESTDIR)$(prefix)/win-jdk-bundle
 export LINUX_BIN_DIST_DEPS=$(DESTDIR)$(prefix)/linux-deps-runtime
 export MACOS_BIN_DIST_DEPS=$(DESTDIR)$(prefix)/macos-deps-runtime
 
@@ -180,6 +181,11 @@ NETX_JAR=$(datadir)/$(PACKAGE_NAME)/javaws.jar
 SPLASH_PNG=$(datadir)/$(PACKAGE_NAME)/javaws_splash.png
 MODULARJDK_ARGS_LOCATION=$(DESTDIR)$(MODULARJDK_ARGS_DIR)/$(MODULARJDK_ARGS_FILE)
 
+# Windows JDK bundling configuration
+export CORRETTO_17_URL=https://corretto.aws/downloads/latest/amazon-corretto-17-x64-windows-jdk.zip
+export CORRETTO_21_URL=https://corretto.aws/downloads/latest/amazon-corretto-21-x64-windows-jdk.zip
+export CORRETTO_17_DIR_NAME=jdk17
+export CORRETTO_21_DIR_NAME=jdk21
 
 # Conditional defintions
 if HAVE_TAGSOUP
@@ -480,6 +486,35 @@ endif
 if HAVE_MSLINKS
 	filteredName=`basename $(MSLINKS_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(MSLINKS_JAR) $(WIN_RUN_DEPS)/$$filteredName
+endif
+
+# Download and bundle JDK for Windows
+if WINDOWS_JDK_BUNDLE
+	mkdir -p $(WIN_JDK_DEPS)
+	if test "$(WINDOWS_JDK_BUNDLE)" = "corretto-17"; then \
+		CORRETTO_URL=$(CORRETTO_17_URL); \
+		CORRETTO_DIR=$(CORRETTO_17_DIR_NAME); \
+	elif test "$(WINDOWS_JDK_BUNDLE)" = "corretto-21"; then \
+		CORRETTO_URL=$(CORRETTO_21_URL); \
+		CORRETTO_DIR=$(CORRETTO_21_DIR_NAME); \
+	fi; \
+	echo "Downloading JDK from $$CORRETTO_URL"; \
+	if command -v curl >/dev/null 2>&1; then \
+		curl -L "$$CORRETTO_URL" -o "$(WIN_JDK_DEPS)/corretto.zip"; \
+	elif command -v wget >/dev/null 2>&1; then \
+		wget "$$CORRETTO_URL" -O "$(WIN_JDK_DEPS)/corretto.zip"; \
+	else \
+		echo "Error: neither curl nor wget found for JDK download"; \
+		exit 1; \
+	fi; \
+	echo "Extracting JDK to $(WIN_JDK_DEPS)/$$CORRETTO_DIR"; \
+	unzip -q "$(WIN_JDK_DEPS)/corretto.zip" -d "$(WIN_JDK_DEPS)"; \
+	JDK_EXTRACTED_DIR=`ls -d $(WIN_JDK_DEPS)/amazon-corretto-* 2>/dev/null | head -1`; \
+	if [ -n "$$JDK_EXTRACTED_DIR" ]; then \
+		mv "$$JDK_EXTRACTED_DIR" "$(WIN_JDK_DEPS)/$$CORRETTO_DIR"; \
+	fi; \
+	rm -f "$(WIN_JDK_DEPS)/corretto.zip"; \
+	echo "JDK bundled successfully in $(WIN_JDK_DEPS)/$$CORRETTO_DIR"
 endif
 endif
 

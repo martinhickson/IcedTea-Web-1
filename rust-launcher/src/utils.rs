@@ -55,8 +55,23 @@ pub fn find_jre(os: &os_access::Os) -> std::path::PathBuf {
                             os.log("itw-rust-debug: found and using");
                             return embed_path2;
                         }
+
+                        // Check for bundled Windows JDK (Amazon Corretto)
+                        os.log("itw-rust-debug: trying bundled Windows JDK");
+                        let mut bundled_path = dirs_paths_helper::current_program_parent().clone();
+                        bundled_path.push("..");
+                        bundled_path.push("win-jdk-bundle");
+                        bundled_path.push("jdk17"); // Default to JDK 17, could be made configurable
+                        let mut bundled_java = bundled_path.clone();
+                        bundled_java.push("bin");
+                        bundled_java.push("java");
+                        if bundled_java.exists() {
+                            os.log("itw-rust-debug: found bundled Windows JDK and using");
+                            return bundled_path;
+                        }
+
                         let mut info1 = String::new();
-                        write!(&mut info1, "You have EMBEDDED jre build, however {}  nor {} is valid jre/jdk!", embed_path1.to_str().expect("unwrap failed"), embed_path2.to_str().expect("unwrap failed")).expect("unwrap failed");
+                        write!(&mut info1, "You have EMBEDDED jre build, however embedded paths nor bundled Windows JDK is valid! Tried: {}, {}, {}", embed_path1.to_str().expect("unwrap failed"), embed_path2.to_str().expect("unwrap failed"), bundled_path.to_str().expect("unwrap failed")).expect("unwrap failed");
                         os.important(&info1);
                     }
                     os.log("itw-rust-debug: trying jdk from registry");

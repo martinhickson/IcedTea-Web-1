@@ -120,6 +120,26 @@ if test ! "$ITW_LIBS" = BUNDLED -a ! "$ITW_LIBS" = DISTRIBUTION -a ! "$ITW_LIBS"
     AC_MSG_ERROR([incorrect --with-itw-libs; mandatory are BUNDLED, DISTRIBUTION or EMBEDDED ])
 fi
 
+AC_MSG_CHECKING([whether to bundle JDK with Windows installer])
+AC_ARG_WITH([windows-jdk-bundle],
+	      [AS_HELP_STRING([--with-windows-jdk-bundle],
+	      		      [bundle Amazon Corretto JDK with Windows MSI installer (none, corretto-17, corretto-21)])],
+	      [WINDOWS_JDK_BUNDLE="${withval}"], [WINDOWS_JDK_BUNDLE='none'])
+AC_MSG_RESULT(${WINDOWS_JDK_BUNDLE})
+AC_SUBST(WINDOWS_JDK_BUNDLE)
+
+# Validate Windows JDK bundle option
+if test "x$WINDOWS_JDK_BUNDLE" != xnone; then
+    if test "x$build_windows" != xyes; then
+        AC_MSG_ERROR([--with-windows-jdk-bundle is only supported on Windows builds])
+    fi
+    if test "x$WINDOWS_JDK_BUNDLE" != xcorretto-17 -a "x$WINDOWS_JDK_BUNDLE" != xcorretto-21; then
+        AC_MSG_ERROR([invalid --with-windows-jdk-bundle option. Use corretto-17 or corretto-21])
+    fi
+fi
+
+AM_CONDITIONAL([WINDOWS_JDK_BUNDLE], [test "x$WINDOWS_JDK_BUNDLE" != xnone])
+
 IT_CHECK_WITH_GCJ
 FIND_TOOL([ZIP], [zip])
 FIND_JAVAC

@@ -14,10 +14,36 @@
   "iconPath": "../win-installer/icon.ico",
   "topBannerBmpPath": "../win-installer/top_banner.bmp",
   "greetingsBannerBmpPath": "../win-installer/greetings_banner.bmp",
-  "useFeatureTree": false,
-  "featureId": "itw",
-  "featureTitle": "IcedTea-Web",
-  "featureDescription": "Free Software implementation of Java Web Start, originally based on the NetX project",
+  "useFeatureTree": true,
+  "features": [
+    {
+      "id": "itw",
+      "title": "IcedTea-Web",
+      "description": "Free Software implementation of Java Web Start, originally based on the NetX project",
+      "components": ["itw-core"]
+    },
+    {
+      "id": "jdk",
+      "title": "Amazon Corretto JDK",
+      "description": "Amazon Corretto OpenJDK distribution bundled with IcedTea-Web",
+      "components": ["jdk-bundle"],
+      "optional": true
+    }
+  ],
+  "components": [
+    {
+      "name": "itw-core",
+      "displayName": "IcedTea-Web Core",
+      "description": "IcedTea-Web runtime and tools",
+      "files": ["bin/*", "lib/*", "share/*"]
+    },
+    {
+      "name": "jdk-bundle",
+      "displayName": "Amazon Corretto JDK",
+      "description": "Bundled Amazon Corretto JDK for Windows",
+      "files": ["win-jdk-bundle/**"]
+    }
+  ],
 
   "registryKeys": [
     {
@@ -146,6 +172,19 @@
       "action": "set",
       "part": "last",
       "value": "[INSTALLDIR]bin"
+    },
+    {
+      "name": "JAVA_HOME",
+      "action": "set",
+      "value": "[INSTALLDIR]win-jdk-bundle\\jdk17",
+      "components": ["jdk-bundle"]
+    },
+    {
+      "name": "PATH",
+      "action": "set",
+      "part": "first",
+      "value": "[INSTALLDIR]win-jdk-bundle\\jdk17\\bin",
+      "components": ["jdk-bundle"]
     }
   ]
 }

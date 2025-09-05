@@ -64,6 +64,15 @@ if "%CUSTOM_JRE%" == "" (
       echo "Your custom JRE [%INST_JAVA_HOME%] read from INST_JAVA_HOME is not valid. Please fix this."
     )
   )
+)
+
+rem Check for bundled Windows JDK (Amazon Corretto)
+if "%CUSTOM_JRE%" == "" (
+  set "BUNDLED_JDK_PATH=%ITW_HOME%\win-jdk-bundle\jdk17"
+  if exist "%BUNDLED_JDK_PATH%\bin\java.exe" (
+    echo "Using bundled Windows JDK: %BUNDLED_JDK_PATH%"
+    set "CUSTOM_JRE=%BUNDLED_JDK_PATH%"
+  )
 )  
 if "%CUSTOM_JRE%" == "" (
   rem the following is for testing-only and not intended to be robust

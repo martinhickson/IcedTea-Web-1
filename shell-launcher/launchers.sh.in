@@ -54,6 +54,16 @@ fi;
 if [ "x$CUSTOM_JRE" = "x" ] ; then
   CUSTOM_JRE=`grep "$CUSTOM_JRE_REGEX" /etc/.java/.deploy/deployment.properties 2>/dev/null |  sed "s/$CUSTOM_JRE_REGEX//g"`
 fi;
+
+# Check for bundled Windows JDK (Amazon Corretto)
+if [ "x$CUSTOM_JRE" = "x" ] ; then
+  BUNDLED_JDK_PATH="$PORTABLE_ITW_HOME/win-jdk-bundle/jdk17"
+  if [ -x "$BUNDLED_JDK_PATH/bin/java" ]; then
+    echo "Using bundled Windows JDK: $BUNDLED_JDK_PATH"
+    CUSTOM_JRE=$BUNDLED_JDK_PATH
+  fi
+fi
+
 if [ ! "x$JAVA_HOME" = "x" ] ; then
   echo "Warning! JAVA_HOME of $JAVA_HOME in play!"
   CUSTOM_JRE=$JAVA_HOME
