@@ -131,7 +131,10 @@ jobs:
         export WIXGEN_JAR=/tmp/jars/wixgen.jar
 
         # Configure with Windows JDK bundling enabled
+        # Convert Windows path to MSYS2 path for Java
+        JAVA_PATH=$(cygpath -u "$JAVA_HOME/bin/java")
         ./configure \
+          --with-java="$JAVA_PATH" \
           --disable-native-plugin \
           --with-windows-jdk-bundle=${{ env.JDK_BUNDLE_VERSION }} \
           --with-tagsoup=$TAGSOUP_JAR \
