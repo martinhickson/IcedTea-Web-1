@@ -29,3 +29,11 @@
 --add-opens java.base/java.lang.reflect=ALL-UNNAMED
 --add-opens java.desktop/java.awt=ALL-UNNAMED
 --add-opens java.desktop/javax.swing=ALL-UNNAMED
+
+--add-exports java.desktop/sun.awt=ALL-UNNAMED
+--add-exports java.desktop/sun.awt.windows=ALL-UNNAMED
+--add-exports java.desktop/sun.awt.image=ALL-UNNAMED
+--add-exports java.desktop/sun.swing.table=ALL-UNNAMED
+--add-exports java.desktop/sun.swing=ALL-UNNAMED
+--add-exports java.desktop/sun.swing.plaf=ALL-UNNAMED
+--add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
