@@ -1,0 +1,375 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0           http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>net.sourceforge.icedtea-web</groupId>
+  <artifactId>icedtea-web-performance-tests</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>IcedTea-Web Performance Optimization Tests</name>
+  <description>Maven project for testing IcedTea-Web performance optimizations</description>
+
+  <properties>
+    <maven.compiler.source>8</maven.compiler.source>
+    <maven.compiler.target>8</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
+    <junit.version>5.9.2</junit.version>
+    <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
+    <maven.surefire.plugin.version>3.0.0</maven.surefire.plugin.version>
+    <maven.resources.plugin.version>3.3.0</maven.resources.plugin.version>
+    <maven.build.helper.plugin.version>3.3.0</maven.build.helper.plugin.version>
+    <maven.enforcer.plugin.version>3.3.0</maven.enforcer.plugin.version>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.ccil.cowan.tagsoup</groupId>
+      <artifactId>tagsoup</artifactId>
+      <version>1.2.1</version>
+    </dependency>
+    <dependency>
+      <groupId>com.github.vatbub</groupId>
+      <artifactId>mslinks</artifactId>
+      <version>1.0.6.2</version>
+    </dependency>
+    <dependency>
+      <groupId>org.mozilla</groupId>
+      <artifactId>rhino</artifactId>
+      <version>1.7R3</version>
+    </dependency>
+    <!-- JUnit 5 for testing -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-engine</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-params</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- JUnit 4 for backward compatibility -->
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>4.13.2</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Mockito for mocking -->
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <version>5.1.1</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-junit-jupiter</artifactId>
+      <version>5.1.1</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Hamcrest for assertions -->
+    <dependency>
+      <groupId>org.hamcrest</groupId>
+      <artifactId>hamcrest</artifactId>
+      <version>2.2</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+
+    <plugins>
+      <plugin>
+        <groupId>com.github.ekryd.sortpom</groupId>
+        <artifactId>sortpom-maven-plugin</artifactId>
+        <version>3.4.0</version>
+        <!-- or the latest version -->
+        <configuration>
+          <createBackupFile>true</createBackupFile>
+          <!-- other optional parameters, see plugin’s wiki/wiki pages -->
+        </configuration>
+        <executions>
+          <execution>
+            <!-- Bind to validate phase -->
+            <goals>
+              <goal>sort</goal>
+            </goals>
+            <phase>validate</phase>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Maven Enforcer Plugin to enforce JDK 17 -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>${maven.enforcer.plugin.version}</version>
+        <executions>
+          <execution>
+            <id>enforce-java</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <requireJavaVersion>
+                  <version>[8,9)</version>
+                  <message>Java 8 is required to build this project.</message>
+                </requireJavaVersion>
+                <requireMavenVersion>
+                  <version>[3.6.0,)</version>
+                  <message>Maven 3.6.0 or higher is required to build this project.</message>
+                </requireMavenVersion>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Maven Compiler Plugin -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven.compiler.plugin.version}</version>
+        <configuration>
+          <source>8</source>
+          <target>8</target>
+          <encoding>UTF-8</encoding>
+        </configuration>
+      </plugin>
+      <!-- Maven Resources Plugin for copying resources -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>${maven.resources.plugin.version}</version>
+        <executions>
+          <!-- Copy IcedTea-Web Java sources to target/generated-sources/main/java -->
+          <execution>
+            <id>copy-java-sources</id>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <phase>generate-sources</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/main/java</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../netx</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Copy IcedTea-Web resources to target/generated-sources/main/resources -->
+          <execution>
+            <id>copy-main-resources</id>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <phase>generate-resources</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-sources/main/resources</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../netx</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Copy test Java sources to target/generated-test-sources/java -->
+          <execution>
+            <id>copy-test-java-sources</id>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <phase>generate-test-sources</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-test-sources/java</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../tests/netx/unit</directory>
+                  <includes>
+                    <include>**/*.java</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+                <resource>
+                  <directory>${project.basedir}/../tests/test-extensions</directory>
+                  <includes>
+                    <include>**/*.java</include>
+                  </includes>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Copy test resources to target/generated-test-sources/resources -->
+          <execution>
+            <id>copy-test-resource-files</id>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <phase>generate-test-resources</phase>
+            <configuration>
+              <outputDirectory>${project.build.directory}/generated-test-sources/resources</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${project.basedir}/../tests/netx/unit</directory>
+                  <filtering>false</filtering>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Build Helper Plugin to add generated sources -->
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>build-helper-maven-plugin</artifactId>
+        <version>${maven.build.helper.plugin.version}</version>
+        <executions>
+          <!-- Add generated Java sources to compile path -->
+          <execution>
+            <id>add-generated-java-sources</id>
+            <goals>
+              <goal>add-source</goal>
+            </goals>
+            <phase>generate-sources</phase>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-sources/main/java</source>
+              </sources>
+            </configuration>
+          </execution>
+
+          <!-- Add generated resources to resources path -->
+          <execution>
+            <id>add-generated-resources</id>
+            <goals>
+              <goal>add-resource</goal>
+            </goals>
+            <phase>generate-resources</phase>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}/generated-sources/main/resources</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+
+          <!-- Add generated test sources to test compile path -->
+          <execution>
+            <id>add-generated-test-sources</id>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <phase>generate-test-sources</phase>
+            <configuration>
+              <sources>
+                <source>${project.build.directory}/generated-test-sources/java</source>
+              </sources>
+            </configuration>
+          </execution>
+
+          <!-- Add generated test resources to test resources path -->
+          <execution>
+            <id>add-generated-test-resources</id>
+            <goals>
+              <goal>add-test-resource</goal>
+            </goals>
+            <phase>generate-test-resources</phase>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>${project.build.directory}/generated-test-sources/resources</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Maven Surefire Plugin for running tests -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven.surefire.plugin.version}</version>
+        <configuration>
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/*Tests.java</include>
+          </includes>
+          <systemPropertyVariables>
+            <java.util.logging.config.file>${project.basedir}/../tests/logging.properties</java.util.logging.config.file>
+          </systemPropertyVariables>
+          <argLine>--add-exports java.base/sun.net.www.protocol.jar=ALL-UNNAMED
+                        --add-exports java.base/sun.security.action=ALL-UNNAMED
+                        --add-exports java.base/sun.security.provider=ALL-UNNAMED
+                        --add-exports java.base/sun.security.util=ALL-UNNAMED
+                        --add-exports java.base/sun.security.validator=ALL-UNNAMED
+                        --add-exports java.base/sun.security.x509=ALL-UNNAMED
+                        --add-exports java.base/jdk.internal.util.jar=ALL-UNNAMED
+                        --add-exports java.base/sun.net.www.protocol.http=ALL-UNNAMED
+                        --add-exports java.desktop/sun.applet=ALL-UNNAMED
+                        --add-exports java.desktop/sun.awt=ALL-UNNAMED
+                        --add-exports java.desktop/sun.awt.windows=ALL-UNNAMED
+                        --add-exports java.desktop/sun.awt.image=ALL-UNNAMED
+                        --add-exports java.desktop/sun.awt.X11=ALL-UNNAMED
+                        --add-exports java.desktop/sun.swing.table=ALL-UNNAMED
+                        --add-exports java.desktop/sun.swing=ALL-UNNAMED
+                        --add-exports java.desktop/sun.swing.plaf=ALL-UNNAMED
+                        --add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
+                        --add-exports java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED
+                        --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <!-- Profile for running performance optimization tests -->
+    <profile>
+      <id>performance-tests</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <includes>
+                <include>**/PerformanceOptimizationTestSuite.java</include>
+                <include>**/*OptimizationTest.java</include>
+                <include>**/*GifarProtectionTest.java</include>
+                <include>**/*ModuleSystemArgumentsTest.java</include>
+                <include>**/*PolicyLoadingTest.java</include>
+                <include>**/*JarFileFactoryAccessTest.java</include>
+                <include>**/*CachedJarFileCallbackOptimizationTest.java</include>
+              </includes>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

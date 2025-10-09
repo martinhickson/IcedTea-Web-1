@@ -349,7 +349,7 @@ public class ResourceDownloader implements Runnable {
                 } catch (IOException e) {
                     // continue to next candidate
                     OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "While processing " + url.toString() + " by " + requestMethod + " for resource " + resource.toString() + " got " + e + ": ");
-                    OutputController.getLogger().log(e);
+                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, e);
                 }
             }
         }

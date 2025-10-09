@@ -1310,7 +1310,19 @@ public final class Parser {
             "-XX:ThreadStackSize", /* thread stack size (in KB) */
             "-XX:MaxInlineSize", /* set max num of bytecodes to inline */
             "-XX:ReservedCodeCacheSize", /* Reserved code cache size (bytes) */
-            "-XX:MaxDirectMemorySize",};
+            "-XX:MaxDirectMemorySize", /* max direct memory size */
+            "--add-exports", /* export internal packages (Java 9+) */
+            "--add-opens", /* open internal packages (Java 9+) */
+            "--add-modules", /* add modules to module path (Java 9+) */
+            "--add-reads", /* add module reads (Java 9+) */
+            "--limit-modules", /* limit observable modules (Java 9+) */
+            "--patch-module", /* patch modules (Java 9+) */
+            "--upgrade-module-path", /* upgrade module path (Java 9+) */
+            "--module-path", /* module path (Java 9+) */
+            "--module", /* main module (Java 9+) */
+            "-p", /* short form of --module-path (Java 9+) */
+            "-m", /* short form of --module (Java 9+) */
+        };
     }
 
     /**

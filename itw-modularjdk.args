@@ -10,7 +10,9 @@
 --add-exports=java.desktop/javax.jnlp=ALL-UNNAMED,java.desktop
 
 --add-exports=java.base/com.sun.net.ssl.internal.ssl=ALL-UNNAMED,java.desktop
+--add-exports=java.base/sun.misc=ALL-UNNAMED
 --add-exports=java.base/sun.net.www.protocol.jar=ALL-UNNAMED,java.desktop
+--add-opens=java.base/sun.net.www.protocol.jar=ALL-UNNAMED,java.desktop
 --add-exports=java.base/sun.security.action=ALL-UNNAMED,java.desktop
 --add-exports=java.base/sun.security.provider=ALL-UNNAMED,java.desktop
 --add-exports=java.base/sun.security.util=ALL-UNNAMED,java.desktop
@@ -19,13 +21,18 @@
 --add-exports=java.base/jdk.internal.util.jar=ALL-UNNAMED,java.desktop
 --add-exports=java.base/sun.net.www.protocol.http=ALL-UNNAMED,java.desktop
 
+--add-exports=java.desktop/sun.applet=ALL-UNNAMED,java.desktop,jdk.jsobject
+--add-exports=java.desktop/sun.awt.windows=ALL-UNNAMED
+--add-exports=java.desktop/sun.awt.image=ALL-UNNAMED
 --add-exports=java.desktop/sun.awt.X11=ALL-UNNAMED,java.desktop
---add-exports=java.desktop/sun.applet=ALL-UNNAMED,java.desktop
---add-exports=java.desktop/sun.applet=ALL-UNNAMED,jdk.jsobject
+--add-exports=java.desktop/sun.swing.table=ALL-UNNAMED
+--add-exports=java.desktop/sun.swing=ALL-UNNAMED
+--add-exports=java.desktop/sun.swing.plaf=ALL-UNNAMED
+--add-exports=java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
 
 --add-exports=java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED,java.desktop
 
---add-opens java.base/java.lang=ALL-UNNAMED
---add-opens java.base/java.lang.reflect=ALL-UNNAMED
---add-opens java.desktop/java.awt=ALL-UNNAMED
---add-opens java.desktop/javax.swing=ALL-UNNAMED
+--add-opens=java.base/java.lang=ALL-UNNAMED
+--add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+--add-opens=java.desktop/java.awt=ALL-UNNAMED
+--add-opens=java.desktop/javax.swing=ALL-UNNAMED

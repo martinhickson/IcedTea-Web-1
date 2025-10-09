@@ -599,7 +599,7 @@ public class JNLPClassLoader extends URLClassLoader {
                 OutputController.getLogger().log("Unable to add permission for " + jar.getLocation());
             } else {
                 resourcePermissions.add(p);
-                OutputController.getLogger().log("Permission added: " + p.toString());
+                //OutputController.getLogger().log("Permission added: " + p.toString());
             }
         }
     }
@@ -1415,9 +1415,9 @@ public class JNLPClassLoader extends URLClassLoader {
                                 // Note that this is different from proprietary plugin behaviour.
                                 // If jnlp_href is used, the app should be treated similarly to when
                                 // it is run from javaws as a webstart.
-                                if (file instanceof PluginBridge && !((PluginBridge) file).useJNLPHref()) {
-                                    classpaths.addAll(getClassPathsFromManifest(mf, jar.getLocation().getPath()));
-                                }
+                                //if (file instanceof PluginBridge && !((PluginBridge) file).useJNLPHref()) {
+                                //    classpaths.addAll(getClassPathsFromManifest(mf, jar.getLocation().getPath()));
+                                //}
 
                                 JarIndexAccess index = JarIndexAccess.getJarIndex(jarFile);
                                 if (index != null) {
@@ -1609,7 +1609,7 @@ public class JNLPClassLoader extends URLClassLoader {
                     result = loadClassExt(name);
                     return result;
                 } catch (ClassNotFoundException cnfe1) {
-                    OutputController.getLogger().log(cnfe1);
+                    //OutputController.getLogger().log(cnfe1);
                 }
 
                 // As a last resort, look in any available indexes
@@ -1635,7 +1635,7 @@ public class JNLPClassLoader extends URLClassLoader {
                                 try {
                                     addNewJar(desc);
                                 } catch (Exception e) {
-                                    OutputController.getLogger().log(e);
+                                    //OutputController.getLogger().log(e);
                                 }
                             }
 

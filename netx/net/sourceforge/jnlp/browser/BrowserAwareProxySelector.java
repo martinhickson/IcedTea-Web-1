@@ -100,8 +100,8 @@ public class BrowserAwareProxySelector extends JNLPProxySelector {
         try {
             initFromBrowserConfig();
         } catch (IOException e) {
-            OutputController.getLogger().log(e);
-            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, R("RProxyFirefoxNotFound"));
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, 
+                    "Firefox proxy settings unavailable, using DIRECT");
             browserProxyType = PROXY_TYPE_NONE;
         }
     }

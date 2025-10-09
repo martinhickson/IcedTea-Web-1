@@ -291,7 +291,8 @@ class JNLPSecurityManager extends SecurityManager {
 
             super.checkPermission(perm);
         } catch (SecurityException ex) {
-            OutputController.getLogger().log("Denying permission: " + perm);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, 
+                    "Denying permission: " + perm);
             throw ex;
         }
     }

@@ -29,8 +29,10 @@ import java.net.UnknownHostException;
 import java.net.Proxy.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.StringTokenizer;
+import java.util.concurrent.ConcurrentHashMap;
 
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -82,6 +84,9 @@ public abstract class JNLPProxySelector extends ProxySelector {
 
     // FIXME what is this? where should it be used?
     private String overrideHosts = null;
+
+    /** Cache of proxy selections per host to avoid redundant lookups */
+    private final ConcurrentHashMap<String, List<Proxy>> proxyCache = new ConcurrentHashMap<>();
 
     public JNLPProxySelector(DeploymentConfiguration config) {
         parseConfiguration(config);
@@ -180,37 +185,44 @@ public abstract class JNLPProxySelector extends ProxySelector {
      */
     @Override
     public List<Proxy> select(URI uri) {
-        OutputController.getLogger().log("Selecting proxy for: " + uri);
+        if (proxyType == PROXY_TYPE_NONE) {
+            return Collections.singletonList(Proxy.NO_PROXY);
+        }
+
+
+        String cacheKey = uri.getScheme() + "://" + uri.getHost();
         
-        if (inBypassList(uri)) {
-            List<Proxy> proxies = Arrays.asList(new Proxy[] { Proxy.NO_PROXY });
-            OutputController.getLogger().log("Selected proxies: " + Arrays.toString(proxies.toArray()));
-            return proxies;
-        }
+        return proxyCache.computeIfAbsent(cacheKey, k -> {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, 
+                "Selecting proxy for: " + uri);
+            if (inBypassList(uri)) {
+                List<Proxy> proxies = Collections.singletonList(Proxy.NO_PROXY);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, 
+                    "Selected proxies: " + Arrays.toString(proxies.toArray()));
+                return proxies;
+            }
+            List<Proxy> proxies = new ArrayList<>();
+            switch (proxyType) {
+                case PROXY_TYPE_MANUAL:
+                    proxies.addAll(getFromConfiguration(uri));
+                    break;
+                case PROXY_TYPE_AUTO:
+                    proxies.addAll(getFromPAC(uri));
+                    break;
+                case PROXY_TYPE_BROWSER:
+                    proxies.addAll(getFromBrowser(uri));
+                    break;
+                case PROXY_TYPE_UNKNOWN:
+                    // fall through
+                default:
+                    proxies.add(Proxy.NO_PROXY);
+                    break;
+            }
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, 
+                "Selected proxies: " + Arrays.toString(proxies.toArray()));
 
-        List<Proxy> proxies = new ArrayList<>();
-
-        switch (proxyType) {
-            case PROXY_TYPE_MANUAL:
-                proxies.addAll(getFromConfiguration(uri));
-                break;
-            case PROXY_TYPE_AUTO:
-                proxies.addAll(getFromPAC(uri));
-                break;
-            case PROXY_TYPE_BROWSER:
-                proxies.addAll(getFromBrowser(uri));
-                break;
-            case PROXY_TYPE_UNKNOWN:
-                // fall through
-            case PROXY_TYPE_NONE:
-                // fall through
-            default:
-                proxies.add(Proxy.NO_PROXY);
-                break;
-        }
-
-        OutputController.getLogger().log("Selected proxies: " + Arrays.toString(proxies.toArray()));
-        return proxies;
+            return proxies.isEmpty() ? Collections.singletonList(Proxy.NO_PROXY) : proxies;
+        });
     }
 
     /**

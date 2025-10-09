@@ -324,6 +324,9 @@ public class OutputController {
     }
 
     private void log(Level level, Object o) {
+        if (!shouldLog(level)) {
+            return;
+        }
         String s ="";
         if (o == null) {
             s = NULL_OBJECT;
@@ -333,6 +336,18 @@ public class OutputController {
             s=o.toString();
         }
         log(new JavaMessage(new Header(level, false), s));
+    }
+
+    private boolean shouldLog(Level level) {
+        if (level.isDebug()) {
+            try {
+                return JNLPRuntime.isDebug();
+            } catch (Throwable t) {
+                // Throwable caught to handle initialisation circular dependency.
+                return false;
+            }
+        }
+        return true;
     }
 
     synchronized void log(MessageWithHeader l){
