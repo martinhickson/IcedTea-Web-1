@@ -9,7 +9,7 @@ on:
         version:
           description: 'If running a release, set the version e.g (icedtea-web-1.8.4)'     
           required: true
-          default: 'icedtea-web-1.8.8.18'
+          default: 'icedtea-web-1.8.8.19'
   pull_request:
     branches:
       - 1.8
@@ -444,6 +444,16 @@ jobs:
           cmd /c dir /x "C:\Program Files (x86)"
           fsutil file setshortname "C:\Program Files (x86)\WiX Toolset v3.14" "WIXTOO~1.14"
         shell: cmd
+
+      - name: Install BellSoft JDK
+        run: |
+          $jdkUrl = "https://download.bell-sw.com/java/8u462+11/bellsoft-jdk8u462+11-windows-amd64.zip"
+          Invoke-WebRequest -Uri $jdkUrl -OutFile "bellsoft-jdk.zip"
+          Expand-Archive -Path "bellsoft-jdk.zip" -DestinationPath "$env:USERPROFILE\bellsoft-jdk"
+          $jdkPath = Get-ChildItem "$env:USERPROFILE\bellsoft-jdk" | Select-Object -First 1
+          echo "JAVA_HOME=$($jdkPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
+          echo "$($jdkPath.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+        shell: powershell
 
       - name: Build
         run: bash .github/workflows/windows_build.sh
