@@ -51,29 +51,41 @@ import net.sourceforge.jnlp.runtime.JNLPRuntime;
  */
 public class JarFile extends java.util.jar.JarFile implements Closeable {
 
+    private static final boolean ENABLE_GIFAR_PROTECTION = false;
+
     public JarFile(String name) throws IOException {
         super(name);
-        verifyZipHeader(new File(name));
+        if (ENABLE_GIFAR_PROTECTION) {
+            verifyZipHeader(new File(name));
+        }
     }
 
     public JarFile(String name, boolean verify) throws IOException {
         super(name, verify);
-        verifyZipHeader(new File(name));
+        if (ENABLE_GIFAR_PROTECTION) {
+            verifyZipHeader(new File(name));
+        }
     }
 
     public JarFile(File file) throws IOException {
         super(file);
-        verifyZipHeader(file);
+        if (ENABLE_GIFAR_PROTECTION) {
+            verifyZipHeader(file);
+        }
     }
 
     public JarFile(File file, boolean verify) throws IOException {
         super(file, verify);
-        verifyZipHeader(file);
+        if (ENABLE_GIFAR_PROTECTION) {
+            verifyZipHeader(file);
+        }
     }
 
     public JarFile(File file, boolean verify, int mode) throws IOException {
         super(file, verify, mode);
-        verifyZipHeader(file);
+        if (ENABLE_GIFAR_PROTECTION) {
+            verifyZipHeader(file);
+        }
     }
 
     /**
@@ -100,7 +112,7 @@ public class JarFile extends java.util.jar.JarFile implements Closeable {
      * a Jar.
      */
     private void verifyZipHeader(File file) throws IOException {
-        if (!JNLPRuntime.isIgnoreHeaders()) {
+        if (ENABLE_GIFAR_PROTECTION && !JNLPRuntime.isIgnoreHeaders()) {
             InputStream s = new FileInputStream(file);
 
             /*

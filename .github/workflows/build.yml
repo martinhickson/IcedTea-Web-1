@@ -9,7 +9,7 @@ on:
         version:
           description: 'If running a release, set the version e.g (icedtea-web-1.8.4)'     
           required: true
-          default: 'icedtea-web-1.8.8.19'
+          default: 'icedtea-web-1.8.8.20'
   pull_request:
     branches:
       - 1.8

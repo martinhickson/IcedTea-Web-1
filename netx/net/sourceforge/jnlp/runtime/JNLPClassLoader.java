@@ -419,8 +419,8 @@ public class JNLPClassLoader extends URLClassLoader {
         JNLPClassLoader baseLoader = uniqueKeyToLoader.get(uniqueKey);
         JNLPClassLoader loader = new JNLPClassLoader(file, policy, mainName, enableCodeBase);
 
-        // If security level is 'high' or greater, we must check if the user allows unsigned applets 
-        // when the JNLPClassLoader is created. We do so here, because doing so in the constructor 
+        // If security level is 'high' or greater, we must check if the user allows unsigned applets
+        // when the JNLPClassLoader is created. We do so here, because doing so in the constructor
         // causes unwanted side-effects for some applets. However, if the loader has been tagged
         // with "runInSandbox", then we do not show this dialog - since this tag indicates that
         // the user was already shown a CertWarning dialog and has chosen to run the applet sandboxed.
@@ -485,7 +485,7 @@ public class JNLPClassLoader extends URLClassLoader {
         synchronized (getUniqueKeyLock(uniqueKey)) {
             JNLPClassLoader baseLoader = uniqueKeyToLoader.get(uniqueKey);
 
-            // A null baseloader implies that no loader has been created 
+            // A null baseloader implies that no loader has been created
             // for this codebase/jnlp yet. Create one.
             if (baseLoader == null
                     || (file.isApplication()
@@ -617,8 +617,8 @@ public class JNLPClassLoader extends URLClassLoader {
         }
         boolean isInvalid = false;
         try {
-            JarFile jarFile = new JarFile(cacheFile.getAbsolutePath());
-            jarFile.close();
+            JarFileCache.getInstance().getJarFile(cacheFile.getAbsolutePath());
+            //jarFile.close();
         } catch (IOException ioe) {
             //Catch a ZipException or any other read failure
             isInvalid = true;
@@ -959,7 +959,7 @@ public class JNLPClassLoader extends URLClassLoader {
                     continue; // JAR not found. Keep going.
                 }
 
-                JarFile jarFile = new JarFile(localFile);
+                JarFile jarFile = JarFileCache.getInstance().getJarFile(localFile.getAbsolutePath());
 
                 for (JarEntry entry : Collections.list(jarFile.entries())) {
                     String jeName = entry.getName().replaceAll("/", ".");
@@ -970,7 +970,7 @@ public class JNLPClassLoader extends URLClassLoader {
                     }
                 }
 
-                jarFile.close();
+                //jarFile.close();
             } catch (IOException e) {
                 /*
                  * After this exception is caught, it is escaped. This will skip
@@ -1008,7 +1008,7 @@ public class JNLPClassLoader extends URLClassLoader {
         if (f != null) {
             JarFile mainJar = null;
             try {
-                mainJar = new JarFile(f);
+                mainJar = JarFileCache.getInstance().getJarFile(f.getAbsolutePath());
                 Manifest manifest = mainJar.getManifest();
                 if (manifest == null || manifest.getMainAttributes() == null) {
                     //yes, jars without manifest exists
@@ -1018,7 +1018,7 @@ public class JNLPClassLoader extends URLClassLoader {
             } catch (IOException ioe) {
                 attributeValue = null;
             } finally {
-                StreamUtils.closeSilently(mainJar);
+                //StreamUtils.closeSilently(mainJar);
             }
         }
 
@@ -1332,7 +1332,9 @@ public class JNLPClassLoader extends URLClassLoader {
                             // which does a wait(), waiting for notification (presumably
                             // thrown after a resource is fetched). This bug manifests itself
                             // particularly when using The FileManager applet from Webmin.
-                            try (JarFile jarFile = new JarFile(localFile)) {
+                            try {
+                                JarFile jarFile = JarFileCache.getInstance()
+                                        .getJarFile(localFile.getAbsolutePath());
                                 for (JarEntry je : Collections.list(jarFile.entries())) {
 
                                     // another jar in my jar? it is more likely than you think
@@ -1398,7 +1400,7 @@ public class JNLPClassLoader extends URLClassLoader {
 
                                     jarEntries.add(je.getName());
                                 }
-                            }
+                            } finally {}
                         }
 
                         addURL(jar.getLocation());
@@ -1408,7 +1410,8 @@ public class JNLPClassLoader extends URLClassLoader {
                         if (localFile != null) {
                             CachedJarFileCallback.getInstance().addMapping(jar.getLocation(), localFile.toURI().toURL());
 
-                            try (JarFile jarFile = new JarFile(localFile.getAbsolutePath())) {
+                            try {
+                                JarFile jarFile = JarFileCache.getInstance().getJarFile(localFile.getAbsolutePath());
                                 Manifest mf = jarFile.getManifest();
 
                                 // Only check classpath if this is the plugin and there is no jnlp_href usage.
@@ -1423,7 +1426,7 @@ public class JNLPClassLoader extends URLClassLoader {
                                 if (index != null) {
                                     jarIndexes.add(index);
                                 }
-                            }
+                            } finally {}
                         } else {
                             CachedJarFileCallback.getInstance().addMapping(jar.getLocation(), jar.getLocation());
                         }
@@ -1524,7 +1527,7 @@ public class JNLPClassLoader extends URLClassLoader {
             }
         }
 
-        // Result is still null. Return what the codebaseloader 
+        // Result is still null. Return what the codebaseloader
         // has (which returns null if it is not loaded there either)
         if (codeBaseLoader != null) {
             return codeBaseLoader.findLoadedClassFromParent(name);
@@ -1708,9 +1711,9 @@ public class JNLPClassLoader extends URLClassLoader {
             jars.add(desc);
 
             // Decide what level of security this jar should have
-            // The verification and security setting functions rely on 
+            // The verification and security setting functions rely on
             // having AllPermissions as those actions normally happen
-            // during initialization. We therefore need to do those 
+            // during initialization. We therefore need to do those
             // actions as privileged.
             AccessController.doPrivileged(new PrivilegedExceptionAction<Void>() {
                 @Override
@@ -1731,9 +1734,9 @@ public class JNLPClassLoader extends URLClassLoader {
             CachedJarFileCallback.getInstance().addMapping(remoteURL, cachedUrl);
 
         } catch (Exception e) {
-            // Do nothing. This code is called by loadClass which cannot 
-            // throw additional exceptions. So instead, just ignore it. 
-            // Exception => jar will not get added to classpath, which will 
+            // Do nothing. This code is called by loadClass which cannot
+            // throw additional exceptions. So instead, just ignore it.
+            // Exception => jar will not get added to classpath, which will
             // result in CNFE from loadClass.
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
@@ -1908,8 +1911,8 @@ public class JNLPClassLoader extends URLClassLoader {
             }
         }
 
-        // Add resources from codebase (only if nothing was found above, 
-        // otherwise the server will get hammered) 
+        // Add resources from codebase (only if nothing was found above,
+        // otherwise the server will get hammered)
         if (lresources.isEmpty() && codeBaseLoader != null) {
             e = codeBaseLoader.findResources(name);
             while (e.hasMoreElements()) {
@@ -2122,7 +2125,7 @@ public class JNLPClassLoader extends URLClassLoader {
             throw new IllegalArgumentException("addToPathLoader only accepts path based URLs");
         }
 
-        // If there is no loader yet, create one, else add it to the 
+        // If there is no loader yet, create one, else add it to the
         // existing one (happens when called from merge())
         if (codeBaseLoader == null) {
             codeBaseLoader = new CodeBaseClassLoader(new URL[]{u}, this);
@@ -2497,7 +2500,7 @@ public class JNLPClassLoader extends URLClassLoader {
                 }
             } else return consultResult(codebaseHost);
         }
-        
+
         private SecurityDesc consultResult(URL codebaseHost){
             if (!runInSandbox && classLoader.getSigning()) {
                 return classLoader.file.getSecurity();
