@@ -474,16 +474,8 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         JarFile jarFile = new JarFile(orig.getAbsolutePath());
         FileOutputStream fos = new FileOutputStream(pack);
 
-        boolean useCommonsCompress = Boolean.parseBoolean(System.getenv("ITW_COMMONS_COMPRESS")) || isJDK14OrLater();
-
-        if (useCommonsCompress) {
-            io.pack200.Pack200.Packer p = io.pack200.Pack200.newPacker();
-            p.pack(jarFile, fos);
-        } else {
-            java.util.jar.Pack200.Packer p = java.util.jar.Pack200.newPacker();
-            p.pack(jarFile, fos);
-        }
-
+        io.pack200.Pack200.Packer p = io.pack200.Pack200.newPacker();
+        p.pack(jarFile, fos);
         fos.close();
 
         File packgz = new File(downloadDir, fileName + ".jar.pack.gz");

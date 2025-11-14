@@ -47,9 +47,9 @@ public class CachedJarFileCallbackTest {
 			CachedJarFileCallback cachedJarFileCallback = CachedJarFileCallback.getInstance();
 			cachedJarFileCallback.addMapping(remoteUrl, localUrl);
 			// retrieve from cache (throws exception if file not found)
-			try (JarFile fromCacheJarFile = cachedJarFileCallback.retrieve(remoteUrl)) {
-				// nothing to do, we just wanted to make sure that the local file existed
-			}
+			JarFile fromCacheJarFile = cachedJarFileCallback.retrieve(remoteUrl);
+			// Note: Do NOT close fromCacheJarFile here - it may come from JDK's global cache
+			// and should not be closed by application code
 		}
 	}
 }

@@ -108,7 +108,6 @@ public class ErrorSplashUtilsTest {
     @Test
     public void testgetErrorSplashScreen3() throws Exception {
         Map<String,String> fake1 = new HashMap<String,String>();
-        fake1.put(SplashUtils.ICEDTEA_WEB_SPLASH, SplashUtils.NONE);
         fake1.put(SplashUtils.ICEDTEA_WEB_PLUGIN_SPLASH, SplashUtils.DEFAULT);
         Map<String,String> original = getEnvironment();
         Assert.assertNotNull(original);
@@ -131,7 +130,6 @@ public class ErrorSplashUtilsTest {
     public void testgetErrorSplashScreen4() throws Exception {
         Map<String,String> fake1 = new HashMap<String,String>();
         fake1.put(SplashUtils.ICEDTEA_WEB_SPLASH, SplashUtils.DEFAULT);
-        fake1.put(SplashUtils.ICEDTEA_WEB_PLUGIN_SPLASH, SplashUtils.NONE);
         Map<String,String> original = getEnvironment();
         Assert.assertNotNull(original);
         try {
@@ -152,8 +150,6 @@ public class ErrorSplashUtilsTest {
     @Test
     public void testgetErrorSplashScreen5() throws Exception {
         Map<String,String> fake1 = new HashMap<String,String>();
-        fake1.put(SplashUtils.ICEDTEA_WEB_SPLASH, SplashUtils.NONE);
-        fake1.put(SplashUtils.ICEDTEA_WEB_PLUGIN_SPLASH, SplashUtils.NONE);
         Map<String,String> original = getEnvironment();
         Assert.assertNotNull(original);
         try {

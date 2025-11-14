@@ -16,7 +16,7 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
-    <junit.version>5.9.2</junit.version>
+    <junit.version>6.0.1</junit.version>
     <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
     <maven.surefire.plugin.version>3.0.0</maven.surefire.plugin.version>
     <maven.resources.plugin.version>3.3.0</maven.resources.plugin.version>
@@ -40,6 +40,12 @@
       <artifactId>rhino</artifactId>
       <version>1.7R3</version>
     </dependency>
+    <dependency>
+      <groupId>io.pack200</groupId>
+      <artifactId>pack200</artifactId>
+      <version>11.0.2</version>
+    </dependency>
+
     <!-- JUnit 5 for testing -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -97,7 +103,7 @@
       <plugin>
         <groupId>com.github.ekryd.sortpom</groupId>
         <artifactId>sortpom-maven-plugin</artifactId>
-        <version>3.4.0</version>
+        <version>4.0.0</version>
         <!-- or the latest version -->
         <configuration>
           <createBackupFile>true</createBackupFile>
@@ -128,8 +134,8 @@
             <configuration>
               <rules>
                 <requireJavaVersion>
-                  <version>[8,9)</version>
-                  <message>Java 8 is required to build this project.</message>
+                  <version>[17,18)</version>
+                  <message>Java 17 is required to build this project.</message>
                 </requireJavaVersion>
                 <requireMavenVersion>
                   <version>[3.6.0,)</version>
@@ -174,6 +180,10 @@
                   <includes>
                     <include>**/*.java</include>
                   </includes>
+                  <excludes>
+                    <exclude>**/AppletViewerPanelAccess.java</exclude>
+                    <exclude>**/NetxPanel.java</exclude>
+                  </excludes>
                 </resource>
               </resources>
             </configuration>
@@ -215,6 +225,13 @@
                   <includes>
                     <include>**/*.java</include>
                   </includes>
+                  <excludes>
+                    <exclude>**/MethodOverloadResolverTest.java</exclude>
+                    <exclude>**/NetxPanel.java</exclude>
+                    <exclude>**/Plugin*.java</exclude>
+                    <exclude>**/NetxPanel.java</exclude>
+                    <exclude>**/PluginPipeMock.java</exclude>
+                  </excludes>
                   <filtering>false</filtering>
                 </resource>
                 <resource>

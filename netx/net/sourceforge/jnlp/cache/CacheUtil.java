@@ -556,6 +556,17 @@ public class CacheUtil {
     private static String pathToURLPath(String path) {
         int len = CacheLRUWrapper.getInstance().getCacheDir().getFullPath().length();
         int index = path.indexOf(File.separatorChar, len + 1);
+        if (index == -1) {
+            // If no separator found after cache directory, return the path as-is
+            // This handles edge cases where the path structure is unexpected
+            System.err.println("Unexpected path was: " + path);
+            index = path.indexOf("/", len + 1);
+            if (index == -1) {
+                System.err.println("Unexpected path (again) was: " + path);
+                return path;
+            }
+            return path;
+        }
         return path.substring(index);
     }
 
@@ -636,6 +647,20 @@ public class CacheUtil {
         File localFile = getCacheFile(source, version);
         OutputStream out = new FileOutputStream(localFile);
         return new BufferedOutputStream(out);
+    }
+
+    public static InputStream ensureInputBuffered(InputStream in) throws IOException {
+        if (!(in instanceof BufferedInputStream)) {
+            in = new BufferedInputStream(in);
+        }
+        return in;
+    }
+
+    public static OutputStream ensureOutputBuffered(OutputStream out) throws IOException {
+        if (!(out instanceof BufferedOutputStream)) {
+            out = new BufferedOutputStream(out);
+        }
+        return out;
     }
 
     /**

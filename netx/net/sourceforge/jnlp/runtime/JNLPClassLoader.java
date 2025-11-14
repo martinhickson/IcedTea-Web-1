@@ -2079,28 +2079,23 @@ public class JNLPClassLoader extends URLClassLoader {
      * @throws SecurityException if the code is called from an untrusted source
      */
     private void merge(JNLPClassLoader extLoader) {
-
         try {
             System.getSecurityManager().checkPermission(new AllPermission());
         } catch (SecurityException se) {
             throw new SecurityException("JNLPClassLoader() may only be called from trusted sources!");
         }
-
         // jars
         for (URL u : extLoader.getURLs()) {
             addURL(u);
         }
-
         // Codebase
         if (this.enableCodeBase) {
             addToCodeBaseLoader(extLoader.file.getCodeBase());
         }
-
         // native search paths
         for (File nativeDirectory : extLoader.nativeLibraryStorage.getSearchDirectories()) {
             nativeLibraryStorage.addSearchDirectory(nativeDirectory);
         }
-
         // security descriptors
         synchronized (jarLocationSecurityMap) {
             for (URL key : extLoader.jarLocationSecurityMap.keySet()) {
@@ -2119,12 +2114,10 @@ public class JNLPClassLoader extends URLClassLoader {
         if (u == null) {
             return;
         }
-
         // Only paths may be added
         if (!u.getFile().endsWith("/")) {
             throw new IllegalArgumentException("addToPathLoader only accepts path based URLs");
         }
-
         // If there is no loader yet, create one, else add it to the
         // existing one (happens when called from merge())
         if (codeBaseLoader == null) {
@@ -2204,7 +2197,6 @@ public class JNLPClassLoader extends URLClassLoader {
      * @param jars Jars marked for removal.
      */
     void removeJars(JARDesc[] jars) {
-
         for (JARDesc eachJar : jars) {
             try {
                 tracker.removeResource(eachJar.getLocation());
@@ -2212,18 +2204,12 @@ public class JNLPClassLoader extends URLClassLoader {
                 OutputController.getLogger().log(e);
                 OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Failed to remove resource from tracker, continuing..");
             }
-
             File cachedFile = CacheUtil.getCacheFile(eachJar.getLocation(), null);
             String directoryUrl = CacheUtil.getCacheParentDirectory(cachedFile.getAbsolutePath());
-
             File directory = new File(directoryUrl);
-
             OutputController.getLogger().log("Deleting cached file: " + cachedFile.getAbsolutePath());
-
             cachedFile.delete();
-
             OutputController.getLogger().log("Deleting cached directory: " + directory.getAbsolutePath());
-
             directory.delete();
         }
     }
@@ -2238,10 +2224,8 @@ public class JNLPClassLoader extends URLClassLoader {
      */
     void initializeNewJarDownload(URL ref, String part, Version version) {
         JARDesc[] jars = ManageJnlpResources.findJars(this, ref, part, version);
-
         for (JARDesc eachJar : jars) {
             OutputController.getLogger().log("Downloading and initializing jar: " + eachJar.getLocation().toString());
-
             this.addNewJar(eachJar, UpdatePolicy.FORCE);
         }
     }
@@ -2683,20 +2667,16 @@ public class JNLPClassLoader extends URLClassLoader {
 
             // If we have searched this path before, don't try again
             if (Arrays.equals(super.getURLs(), notFoundResources.get(name))) {
-                return (new Vector<URL>(0)).elements();
+                return Collections.<URL>emptyEnumeration();  //(new Vector<URL>(0)).elements();
             }
-
             if (!name.startsWith("META-INF")) {
                 Enumeration<URL> urls = super.findResources(name);
-
                 if (!urls.hasMoreElements()) {
                     notFoundResources.put(name, super.getURLs());
                 }
-
                 return urls;
             }
-
-            return (new Vector<URL>(0)).elements();
+            return Collections.<URL>emptyEnumeration();//(new Vector<URL>(0)).elements();
         }
 
         @Override
@@ -2706,7 +2686,6 @@ public class JNLPClassLoader extends URLClassLoader {
             if (Arrays.equals(super.getURLs(), notFoundResources.get(name))) {
                 return null;
             }
-
             URL url = null;
             if (!name.startsWith("META-INF")) {
                 try {
@@ -2719,16 +2698,12 @@ public class JNLPClassLoader extends URLClassLoader {
                     }, parentJNLPClassLoader.getAccessControlContextForClassLoading());
                 } catch (PrivilegedActionException pae) {
                 }
-
                 if (url == null) {
                     notFoundResources.put(name, super.getURLs());
                 }
-
                 return url;
             }
-
             return null;
         }
     }
-
 }
