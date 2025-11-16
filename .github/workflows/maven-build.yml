@@ -1,0 +1,59 @@
+name: Maven Build (itw-maven)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  maven-build:
+    name: Maven Install (Windows)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Configure Maven for GitHub Packages
+        run: |
+          $settingsPath = "$env:USERPROFILE\.m2\settings.xml"
+          $settingsDir = Split-Path -Parent $settingsPath
+          if (-not (Test-Path $settingsDir)) {
+            New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null
+          }
+          @"
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${{ github.actor }}</username>
+                <password>${{ secrets.GITHUB_TOKEN }}</password>
+              </server>
+            </servers>
+          </settings>
+          "@ | Out-File -FilePath $settingsPath -Encoding UTF8
+        shell: powershell
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+
+      - name: Build with Maven
+        run: mvn install -Dmaven.test.skip=true
+        shell: cmd
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: maven-build-artifacts
+          path: |
+            target/*.jar
+            target/*.war
+          if-no-files-found: ignore
+

@@ -16,3 +16,7 @@ integration-tests/classloader-integration-tests-module-1/target
 integration-tests/classloader-integration-tests-module-wrapper/target
 artifact-no-dependencies/target
 target
+/itw-maven/.settings
+/itw-maven/.project
+/itw-maven/.classpath
+/itw-maven/pom.xml.bak
