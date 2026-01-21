@@ -7,9 +7,9 @@ on:
           required: true
           default: 'True'
         version:
-          description: 'If running a release, set the version e.g (icedtea-web-1.8.4)'     
+          description: 'If running a release, set the version (ensure it matches configure.ac)'     
           required: true
-          default: 'icedtea-web-1.8.8.19'
+          default: 'icedtea-web-1.8.8.20'
   pull_request:
     branches:
       - 1.8
@@ -488,62 +488,62 @@ jobs:
             icedtea-web-*.win.bin.*
             win-installer.build/icedtea-web-*.msi*
 
-      - name: Capture Windows filenames
+      - name: Find Windows ZIP
+        id: find_win_zip
         if: github.event.inputs.release == 'True'
         shell: bash
-        run: |
-          # Find actual filenames (not in release directory since we removed codesigning)
-          WIN_ZIP=$(find . -name "icedtea-web-*.win.bin.zip" -type f | head -n 1)
-          WIN_MSI=$(find win-installer.build -name "icedtea-web-*.msi" -type f | head -n 1)
-          echo "WIN_ZIP_FILE=${WIN_ZIP}" >> $GITHUB_ENV
-          echo "WIN_ZIP_NAME=$(basename ${WIN_ZIP})" >> $GITHUB_ENV
-          echo "WIN_MSI_FILE=${WIN_MSI}" >> $GITHUB_ENV
-          echo "WIN_MSI_NAME=$(basename ${WIN_MSI})" >> $GITHUB_ENV
+        run: bash .github/workflows/find_windows_files.sh zip
+
+      - name: Find Windows MSI
+        id: find_win_msi
+        if: github.event.inputs.release == 'True'
+        shell: bash
+        run: bash .github/workflows/find_windows_files.sh msi
 
       - name: Upload binary
         uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ env.WIN_ZIP_FILE }}
-          asset_name: ${{ env.WIN_ZIP_NAME }}
+          asset_path: ${{ steps.find_win_zip.outputs.win_zip }}
+          asset_name: ${{ steps.find_win_zip.outputs.win_zip_name }}
           asset_content_type: application/zip
 
       - name: Upload shasum
         uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ env.WIN_ZIP_FILE }}.sha256.txt
-          asset_name: ${{ env.WIN_ZIP_NAME }}.sha256.txt
-          asset_content_type: application/zip
+          asset_path: ${{ steps.find_win_zip.outputs.win_zip }}.sha256.txt
+          asset_name: ${{ steps.find_win_zip.outputs.win_zip_name }}.sha256.txt
+          asset_content_type: text/plain
 
       - name: Upload MSI
         uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ env.WIN_MSI_FILE }}
-          asset_name: ${{ env.WIN_MSI_NAME }}
-          asset_content_type: application/zip
+          asset_path: ${{ steps.find_win_msi.outputs.win_msi }}
+          asset_name: ${{ steps.find_win_msi.outputs.win_msi_name }}
+          asset_content_type: application/octet-stream
 
       - name: Upload MSI shasum
         uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ env.WIN_MSI_FILE }}.sha256.txt
-          asset_name: ${{ env.WIN_MSI_NAME }}.sha256.txt
-          asset_content_type: application/zip
+          asset_path: ${{ steps.find_win_msi.outputs.win_msi }}.sha256.txt
+          asset_name: ${{ steps.find_win_msi.outputs.win_msi_name }}.sha256.txt
+          asset_content_type: text/plain
