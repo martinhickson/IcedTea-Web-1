@@ -24,6 +24,7 @@ jobs:
     - name: Create Draft Release
       id: create_release
       uses: actions/create-release@v1
+      # Note: This action is deprecated, consider using softprops/action-gh-release
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -118,6 +119,10 @@ jobs:
           for zip in icedtea-web-*.linux.bin.zip; do
             sha256sum "$zip" > "$zip.sha256.txt"
           done
+          # Store the actual filename for upload (with icedtea-web/ prefix since we're inside that dir)
+          FILENAME=$(ls icedtea-web-*.linux.bin.zip)
+          echo "LINUX_ZIP_FILE=${FILENAME}" >> $GITHUB_ENV
+          echo "LINUX_ZIP_NAME=${FILENAME}" >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
@@ -127,24 +132,26 @@ jobs:
 
       - name: Upload binary
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ github.event.inputs.version }}.linux.bin.zip
-          asset_name: ${{ github.event.inputs.version }}.linux.bin.zip
+          asset_path: icedtea-web/${{ env.LINUX_ZIP_FILE }}
+          asset_name: ${{ env.LINUX_ZIP_NAME }}
           asset_content_type: application/zip
 
       - name: Upload shasum
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ github.event.inputs.version }}.linux.bin.zip.sha256.txt
-          asset_name: ${{ github.event.inputs.version }}.linux.bin.zip.sha256.txt
+          asset_path: icedtea-web/${{ env.LINUX_ZIP_FILE }}.sha256.txt
+          asset_name: ${{ env.LINUX_ZIP_NAME }}.sha256.txt
           asset_content_type: application/zip
 
   portable:
@@ -222,9 +229,10 @@ jobs:
               mv "$zip" "$zip_rename"
             sha256sum "$zip_rename" > "$zip_rename.sha256.txt"
           done
-          # Store the actual filename for upload
-          echo "PORTABLE_ZIP_FILE=$(ls icedtea-web-*.portable.bin.zip)" >> $GITHUB_ENV
-          echo "PORTABLE_ZIP_NAME=$(basename $(ls icedtea-web-*.portable.bin.zip))" >> $GITHUB_ENV
+          # Store the actual filename for upload (with icedtea-web/ prefix since we're inside that dir)
+          FILENAME=$(ls icedtea-web-*.portable.bin.zip)
+          echo "PORTABLE_ZIP_FILE=${FILENAME}" >> $GITHUB_ENV
+          echo "PORTABLE_ZIP_NAME=${FILENAME}" >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
@@ -234,6 +242,7 @@ jobs:
 
       - name: Upload binary
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -245,6 +254,7 @@ jobs:
 
       - name: Upload shasum
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -316,9 +326,10 @@ jobs:
           for zip in icedtea-web-*.macos.bin.zip; do
             sha256sum "$zip" > "$zip.sha256.txt"
           done
-          # Store the actual filename for upload
-          echo "MACOS_ZIP_FILE=$(ls icedtea-web-*.macos.bin.zip)" >> $GITHUB_ENV
-          echo "MACOS_ZIP_NAME=$(basename $(ls icedtea-web-*.macos.bin.zip))" >> $GITHUB_ENV
+          # Store the actual filename for upload (with icedtea-web/ prefix since we're inside that dir)
+          FILENAME=$(ls icedtea-web-*.macos.bin.zip)
+          echo "MACOS_ZIP_FILE=${FILENAME}" >> $GITHUB_ENV
+          echo "MACOS_ZIP_NAME=${FILENAME}" >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
@@ -328,6 +339,7 @@ jobs:
 
       - name: Upload binary
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -339,6 +351,7 @@ jobs:
 
       - name: Upload shasum
         uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -448,7 +461,10 @@ jobs:
         run: |
           fsutil behavior set disable8dot3 0
           cmd /c dir /x "C:\Program Files (x86)"
-          fsutil file setshortname "C:\Program Files (x86)\WiX Toolset v3.14" "WIXTOO~1.14"
+          REM Only set short name if it doesn't already exist
+          if not exist "C:\Program Files (x86)\WIXTOO~1.14" (
+            fsutil file setshortname "C:\Program Files (x86)\WiX Toolset v3.14" "WIXTOO~1.14"
+          )
         shell: cmd
 
       - name: Install BellSoft JDK
@@ -472,31 +488,21 @@ jobs:
             icedtea-web-*.win.bin.*
             win-installer.build/icedtea-web-*.msi*
 
-      - name: Codesign
-        run: bash .github/workflows/windows_sign.sh
-        if: github.event.inputs.release == 'True'
-        env:
-          description_url: 'https://adoptopenjdk.net'
-          key_vault_url: 'https://adoptopenjdk-codesign.vault.azure.net'
-          key_vault_certificate: 'LondonJavaCommunity'
-          key_vault_client_id: ${{ secrets.key_vault_client_id }}
-          key_vault_client_secret: ${{ secrets.key_vault_client_secret }}
-        shell: cmd
-
       - name: Capture Windows filenames
         if: github.event.inputs.release == 'True'
         shell: bash
         run: |
-          # Find actual filenames in release directory
-          WIN_ZIP=$(find release -name "icedtea-web-*.win.bin.zip" -type f | head -n 1)
-          WIN_MSI=$(find release -name "icedtea-web-*.msi" -type f | head -n 1)
+          # Find actual filenames (not in release directory since we removed codesigning)
+          WIN_ZIP=$(find . -name "icedtea-web-*.win.bin.zip" -type f | head -n 1)
+          WIN_MSI=$(find win-installer.build -name "icedtea-web-*.msi" -type f | head -n 1)
           echo "WIN_ZIP_FILE=${WIN_ZIP}" >> $GITHUB_ENV
           echo "WIN_ZIP_NAME=$(basename ${WIN_ZIP})" >> $GITHUB_ENV
           echo "WIN_MSI_FILE=${WIN_MSI}" >> $GITHUB_ENV
           echo "WIN_MSI_NAME=$(basename ${WIN_MSI})" >> $GITHUB_ENV
 
       - name: Upload binary
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -507,7 +513,8 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload shasum
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -518,7 +525,8 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload MSI
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -529,7 +537,8 @@ jobs:
           asset_content_type: application/zip
 
       - name: Upload MSI shasum
-        uses: actions/upload-release-asset@v1.0.1
+        uses: actions/upload-release-asset@v1
+        # Note: This action is deprecated, consider using softprops/action-gh-release.0.1
         if: github.event.inputs.release == 'True'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
