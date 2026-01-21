@@ -222,6 +222,9 @@ jobs:
               mv "$zip" "$zip_rename"
             sha256sum "$zip_rename" > "$zip_rename.sha256.txt"
           done
+          # Store the actual filename for upload
+          echo "PORTABLE_ZIP_FILE=$(ls icedtea-web-*.portable.bin.zip)" >> $GITHUB_ENV
+          echo "PORTABLE_ZIP_NAME=$(basename $(ls icedtea-web-*.portable.bin.zip))" >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
@@ -236,8 +239,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ github.event.inputs.version }}.portable.bin.zip
-          asset_name: ${{ github.event.inputs.version }}.portable.bin.zip
+          asset_path: icedtea-web/${{ env.PORTABLE_ZIP_FILE }}
+          asset_name: ${{ env.PORTABLE_ZIP_NAME }}
           asset_content_type: application/zip
 
       - name: Upload shasum
@@ -247,8 +250,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ github.event.inputs.version }}.portable.bin.zip.sha256.txt
-          asset_name: ${{ github.event.inputs.version }}.portable.bin.zip.sha256.txt
+          asset_path: icedtea-web/${{ env.PORTABLE_ZIP_FILE }}.sha256.txt
+          asset_name: ${{ env.PORTABLE_ZIP_NAME }}.sha256.txt
           asset_content_type: application/zip
 
   macos:
@@ -313,6 +316,9 @@ jobs:
           for zip in icedtea-web-*.macos.bin.zip; do
             sha256sum "$zip" > "$zip.sha256.txt"
           done
+          # Store the actual filename for upload
+          echo "MACOS_ZIP_FILE=$(ls icedtea-web-*.macos.bin.zip)" >> $GITHUB_ENV
+          echo "MACOS_ZIP_NAME=$(basename $(ls icedtea-web-*.macos.bin.zip))" >> $GITHUB_ENV
 
       - uses: actions/upload-artifact@v4
         with:
@@ -327,8 +333,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ github.event.inputs.version }}.macos.bin.zip
-          asset_name: ${{ github.event.inputs.version }}.macos.bin.zip
+          asset_path: icedtea-web/${{ env.MACOS_ZIP_FILE }}
+          asset_name: ${{ env.MACOS_ZIP_NAME }}
           asset_content_type: application/zip
 
       - name: Upload shasum
@@ -338,8 +344,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ github.event.inputs.version }}.macos.bin.zip.sha256.txt
-          asset_name: ${{ github.event.inputs.version }}.macos.bin.zip.sha256.txt
+          asset_path: icedtea-web/${{ env.MACOS_ZIP_FILE }}.sha256.txt
+          asset_name: ${{ env.MACOS_ZIP_NAME }}.sha256.txt
           asset_content_type: application/zip
 
   windows:
@@ -477,6 +483,18 @@ jobs:
           key_vault_client_secret: ${{ secrets.key_vault_client_secret }}
         shell: cmd
 
+      - name: Capture Windows filenames
+        if: github.event.inputs.release == 'True'
+        shell: bash
+        run: |
+          # Find actual filenames in release directory
+          WIN_ZIP=$(find release -name "icedtea-web-*.win.bin.zip" -type f | head -n 1)
+          WIN_MSI=$(find release -name "icedtea-web-*.msi" -type f | head -n 1)
+          echo "WIN_ZIP_FILE=${WIN_ZIP}" >> $GITHUB_ENV
+          echo "WIN_ZIP_NAME=$(basename ${WIN_ZIP})" >> $GITHUB_ENV
+          echo "WIN_MSI_FILE=${WIN_MSI}" >> $GITHUB_ENV
+          echo "WIN_MSI_NAME=$(basename ${WIN_MSI})" >> $GITHUB_ENV
+
       - name: Upload binary
         uses: actions/upload-release-asset@v1.0.1
         if: github.event.inputs.release == 'True'
@@ -484,8 +502,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: release/${{ github.event.inputs.version }}.win.bin.zip
-          asset_name: ${{ github.event.inputs.version }}.win.bin.zip
+          asset_path: ${{ env.WIN_ZIP_FILE }}
+          asset_name: ${{ env.WIN_ZIP_NAME }}
           asset_content_type: application/zip
 
       - name: Upload shasum
@@ -495,8 +513,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: release/${{ github.event.inputs.version }}.win.bin.zip.sha256.txt
-          asset_name: ${{ github.event.inputs.version }}.win.bin.zip.sha256.txt
+          asset_path: ${{ env.WIN_ZIP_FILE }}.sha256.txt
+          asset_name: ${{ env.WIN_ZIP_NAME }}.sha256.txt
           asset_content_type: application/zip
 
       - name: Upload MSI
@@ -506,8 +524,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: release/${{ github.event.inputs.version }}.msi
-          asset_name: ${{ github.event.inputs.version }}.msi
+          asset_path: ${{ env.WIN_MSI_FILE }}
+          asset_name: ${{ env.WIN_MSI_NAME }}
           asset_content_type: application/zip
 
       - name: Upload MSI shasum
@@ -517,6 +535,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: release/${{ github.event.inputs.version }}.msi.sha256.txt
-          asset_name: ${{ github.event.inputs.version }}.msi.sha256.txt
+          asset_path: ${{ env.WIN_MSI_FILE }}.sha256.txt
+          asset_name: ${{ env.WIN_MSI_NAME }}.sha256.txt
           asset_content_type: application/zip
