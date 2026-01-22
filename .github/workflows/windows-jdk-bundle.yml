@@ -44,12 +44,26 @@ jobs:
           gettext
           sed
           coreutils
+          bc
 
     - name: Install Chocolatey packages
       shell: pwsh
       run: |
         choco install corretto17jdk rust -y
         # WiX Toolset is pre-installed on Windows runners
+
+    - name: Enable 8dot3 shortnames for JDK path
+      shell: pwsh
+      run: |
+        # Enable 8.3 short names on C: drive if not already enabled
+        $result = fsutil.exe behavior query disable8dot3 C:
+        if ($result -match "disable8dot3 = 1") {
+          Write-Host "Enabling 8.3 short names on C: drive..."
+          fsutil.exe behavior set disable8dot3 0
+          Write-Host "8.3 short names enabled"
+        } else {
+          Write-Host "8.3 short names already enabled"
+        }
 
     - name: Set up JDK for build
       shell: pwsh
@@ -85,6 +99,19 @@ jobs:
         Write-Host "Setting JAVA_HOME to: $jdkPath"
         echo "JAVA_HOME=$jdkPath" | Out-File -FilePath $env:GITHUB_ENV -Append
         echo "$jdkPath\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+        # Get Windows 8.3 short path to avoid spaces in MSYS2
+        # Use cmd.exe to get short path (more reliable than FSO)
+        $shortPath = cmd.exe /c "for %I in (`"$jdkPath`") do @echo %~sI" | Out-String -NoNewline
+        $shortPath = $shortPath.Trim()
+        
+        if ([string]::IsNullOrEmpty($shortPath) -or $shortPath -eq $jdkPath) {
+          Write-Warning "Could not get short path, using original path"
+          $shortPath = $jdkPath
+        }
+        
+        Write-Host "JDK short path: $shortPath"
+        echo "JAVA_HOME_SHORT=$shortPath" | Out-File -FilePath $env:GITHUB_ENV -Append
 
         # Verify Java is working
         $javaVersion = & "$jdkPath\bin\java.exe" -version 2>&1
@@ -127,11 +154,16 @@ jobs:
       run: |
         # Debug: Show current environment
         echo "JAVA_HOME: $JAVA_HOME"
+        echo "JAVA_HOME_SHORT: $JAVA_HOME_SHORT"
         echo "Original PATH: $PATH"
         echo "MSYS2 PATH: $MSYS2_PATH"
 
-        # Ensure JDK is in PATH for configure script
-        export PATH="$(cygpath $JAVA_HOME)/bin:$PATH"
+        # Convert Windows short path (8.3 format, no spaces) to MSYS2 path
+        JAVA_HOME_MSYS=$(cygpath -u "$JAVA_HOME_SHORT")
+        echo "JAVA_HOME_MSYS: $JAVA_HOME_MSYS"
+
+        # Add JDK bin to PATH (using short path, so no spaces!)
+        export PATH="$JAVA_HOME_MSYS/bin:$PATH"
         echo "Updated PATH: $PATH"
 
         # Verify JDK tools are available
@@ -148,9 +180,13 @@ jobs:
         export WIXGEN_JAR=/tmp/jars/wixgen.jar
 
         # Configure with Windows JDK bundling enabled
+        # Use the short path version (no spaces) to avoid configure script issues
+        # Disable docs to avoid javadoc errors in CI builds
         ./configure \
           --disable-native-plugin \
+          --disable-docs \
           --with-windows-jdk-bundle=${{ env.JDK_BUNDLE_VERSION }} \
+          --with-jdk-home="$JAVA_HOME_MSYS" \
           --with-tagsoup=$TAGSOUP_JAR \
           --with-rhino=$RHINO_JAR \
           --with-commonscompress=$COMMONSCOMPRESS_JAR \

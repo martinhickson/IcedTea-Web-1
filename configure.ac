@@ -172,7 +172,14 @@ if test x"$HAVE_JAVA9" = xyes ; then
   JAVA_DESKTOP=java.desktop
   JAVA_NAMING=java.naming
 fi
-IT_CHECK_FOR_CLASS(JAVA_UTIL_JAR_PACK200, [java.util.jar.Pack200], [some.pkg], [])
+# Pack200 was removed in Java 14, so only check for it in older versions
+if test "${JAVA_VERSION}" -lt "14"; then
+  IT_CHECK_FOR_CLASS(JAVA_UTIL_JAR_PACK200, [java.util.jar.Pack200], [some.pkg], [])
+else
+  # For Java 14+, Pack200 is not available, set variable to no
+  JAVA_UTIL_JAR_PACK200=no
+  AC_SUBST([JAVA_UTIL_JAR_PACK200])
+fi
 IT_CHECK_FOR_CLASS(JAVA_NET_COOKIEMANAGER, [java.net.CookieManager], [some.pkg], [])
 IT_CHECK_FOR_CLASS(JAVA_NET_HTTPCOOKIE, [java.net.HttpCookie], [some.pkg], [])
 IT_CHECK_FOR_CLASS(JAVA_NET_COOKIEHANDLER, [java.net.CookieHandler], [some.pkg], [])
@@ -205,8 +212,16 @@ fi
 IT_CHECK_FOR_CLASS(COM_SUN_JNDI_TOOLKIT_URL_URLUTIL, [com.sun.jndi.toolkit.url.UrlUtil], [some.pkg], [$JAVA_NAMING])
 IT_CHECK_FOR_CLASS(SUN_NET_WWW_PROTOCOL_HTTP_HANDLER, [sun.net.www.protocol.http.Handler], [some.pkg], [$JAVA_BASE])
 if test "$enable_pluginjar" = yes ; then
-  IT_CHECK_FOR_CLASS(SUN_APPLET_APPLETIMAGEREF, [sun.applet.AppletImageRef], [sun.applet], [$JAVA_DESKTOP])
-  IT_CHECK_FOR_SUN_APPLET_ACCESSIBILITY
+  # sun.applet classes were removed in Java 9+, so only check for them in Java 8
+  if test "${JAVA_VERSION}" -eq "8"; then
+    IT_CHECK_FOR_CLASS(SUN_APPLET_APPLETIMAGEREF, [sun.applet.AppletImageRef], [sun.applet], [$JAVA_DESKTOP])
+    IT_CHECK_FOR_SUN_APPLET_ACCESSIBILITY
+  else
+    # For Java 9+, sun.applet classes are not available, set variables to no
+    SUN_APPLET_APPLETIMAGEREF=no
+    AC_SUBST([SUN_APPLET_APPLETIMAGEREF])
+    # Note: IT_CHECK_FOR_SUN_APPLET_ACCESSIBILITY would error, so we skip it for Java 9+
+  fi
 fi
 IT_CHECK_GLIB_VERSION
 IT_CHECK_XULRUNNER_MIMEDESCRIPTION_CONSTCHAR
