@@ -14,7 +14,6 @@
 // Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA  02111-1307, USA.
 package net.sourceforge.jnlp.runtime;
 
-import net.sourceforge.jnlp.AppletDesc;
 import net.sourceforge.jnlp.ApplicationDesc;
 import net.sourceforge.jnlp.ExtensionDesc;
 import net.sourceforge.jnlp.JARDesc;
@@ -563,9 +562,6 @@ public class JNLPClassLoader extends URLClassLoader {
 
             if (obj instanceof ApplicationDesc) {
                 ApplicationDesc ad = (ApplicationDesc) file.getLaunchInfo();
-                mainClass = ad.getMainClass();
-            } else if (obj instanceof AppletDesc) {
-                AppletDesc ad = (AppletDesc) file.getLaunchInfo();
                 mainClass = ad.getMainClass();
             }
         }

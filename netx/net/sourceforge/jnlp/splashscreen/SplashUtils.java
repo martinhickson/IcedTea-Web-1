@@ -36,8 +36,6 @@ obligated to do so.  If you do not wish to do so, delete this
 exception statement from your version. */
 package net.sourceforge.jnlp.splashscreen;
 
-import net.sourceforge.jnlp.runtime.AppletEnvironment;
-import net.sourceforge.jnlp.runtime.AppletInstance;
 import net.sourceforge.jnlp.runtime.Boot;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.splashscreen.impls.DefaultSplashScreen2012;
@@ -71,31 +69,7 @@ public class SplashUtils {
         }
     }
 
-    public static void showErrorCaught(Throwable ex, AppletInstance appletInstance) {
-        try {
-            showError(ex, appletInstance);
-        } catch (Throwable t) {
-                // prinitng this exception is discutable. I have let it in for case that
-                //some retyping will fail
-                OutputController.getLogger().log(t);
-        }
-    }
-
-    public static void showError(Throwable ex, AppletInstance appletInstance) {
-        if (appletInstance == null) {
-            return;
-        }
-        AppletEnvironment ae = appletInstance.getAppletEnvironment();
-        showError(ex, ae);
-    }
-
-    public static void showError(Throwable ex, AppletEnvironment ae) {
-        if (ae == null) {
-            return;
-        }
-        SplashController p = ae.getSplashController();
-        showError(ex, p);
-    }
+    // Applet support removed - these methods are no longer needed
 
     public static void showError(Throwable ex, SplashController f) {
         if (f == null) {

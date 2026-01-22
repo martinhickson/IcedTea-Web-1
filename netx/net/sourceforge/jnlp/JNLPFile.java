@@ -678,18 +678,6 @@ public class JNLPFile {
     }
 
     /**
-     * @return the launch information for an applet.
-     *
-     * @throws UnsupportedOperationException if there is no applet information
-     */
-    public AppletDesc getApplet() {
-        if (!isApplet())
-            throw new UnsupportedOperationException(R("JNotApplet"));
-
-        return (AppletDesc) launchType;
-    }
-
-    /**
      * @return the launch information for an application.
      *
      * @throws UnsupportedOperationException if there is no application information
@@ -723,13 +711,6 @@ public class JNLPFile {
             throw new UnsupportedOperationException(R("NotInstaller"));
 
         return (InstallerDesc) launchType;
-    }
-
-    /**
-     * @return whether the lauch descriptor describes an Applet.
-     */
-    public boolean isApplet() {
-        return launchType instanceof AppletDesc;
     }
 
     /**

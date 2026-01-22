@@ -221,10 +221,9 @@ public final class PluginBridge extends JNLPFile {
         if (main.endsWith(".class"))
             main = main.substring(0, main.length() - 6);
 
-        // the class name should be of the form foo.bar.Baz not foo/bar/Baz
-        String mainClass = main.replace('/', '.');
-        launchType = new AppletDesc(getTitle(), mainClass, documentBase, width,
-                                    height, params.getUnmodifiableMap());
+        // Applet support removed - AppletDesc no longer available
+        // PluginBridge can no longer create applet descriptors
+        throw new UnsupportedOperationException("Applet support has been removed. PluginBridge can no longer create applet descriptors.");
 
         if (main.endsWith(".class")) //single class file only
             security = new SecurityDesc(this, SecurityDesc.SANDBOX_PERMISSIONS,

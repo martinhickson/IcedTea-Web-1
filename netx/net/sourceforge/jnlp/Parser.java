@@ -682,16 +682,15 @@ public final class Parser {
     // This section loads the launch descriptor element
     //
     /**
-     * @return the launch descriptor element, either AppletDesc,
-     * ApplicationDesc, or InstallerDesc.
+     * @return the launch descriptor element, either ApplicationDesc, or InstallerDesc.
+     * Applet support has been removed.
      *
      * @param parent the parent node
      * @throws ParseException if the JNLP file is invalid
      */
     public LaunchDesc getLauncher(Node parent) throws ParseException {
         // check for other than one application type
-        if (1 < getChildNodes(parent, "applet-desc").length
-                + getChildNodes(parent, "application-desc").length
+        if (1 < getChildNodes(parent, "application-desc").length
                 + getChildNodes(parent, "javafx-desc").length
                 + getChildNodes(parent, "installer-desc").length) {
             throw new ParseException(R("PTwoDescriptors"));
@@ -702,7 +701,7 @@ public final class Parser {
             String name = child.getNodeName().getName();
 
             if ("applet-desc".equals(name)) {
-                return getApplet(child);
+                throw new ParseException("Applet support has been removed. Applets are no longer supported.");
             }
             if ("application-desc".equals(name)) {
                 return getApplication(child, false);
@@ -723,38 +722,6 @@ public final class Parser {
     
     
 
-    /**
-     * @param node
-     * @return the applet descriptor.
-     *
-     * @throws ParseException if the JNLP file is invalid
-     */
-    private AppletDesc getApplet(Node node) throws ParseException {
-        String name = getRequiredAttribute(node, "name", R("PUnknownApplet"));
-        String main = getMainClass(node, true);
-        URL docbase = getURL(node, "documentbase", base);
-        Map<String, String> paramMap = new HashMap<>();
-        int width = 0;
-        int height = 0;
-
-        try {
-            width = Integer.parseInt(getRequiredAttribute(node, "width", "100"));
-            height = Integer.parseInt(getRequiredAttribute(node, "height", "100"));
-        } catch (NumberFormatException nfe) {
-            if (width <= 0) {
-                throw new ParseException(R("PBadWidth"));
-            }
-            throw new ParseException(R("PBadWidth"));
-        }
-
-        // read params
-        Node params[] = getChildNodes(node, "param");
-        for (Node param : params) {
-            paramMap.put(getRequiredAttribute(param, "name", null), getRequiredAttribute(param, "value", ""));
-        }
-
-        return new AppletDesc(name, main, docbase, width, height, paramMap);
-    }
 
     /**
      * @return the application descriptor.

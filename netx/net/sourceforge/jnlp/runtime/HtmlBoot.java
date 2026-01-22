@@ -49,9 +49,6 @@ import net.sourceforge.jnlp.JNLPSplashScreen;
 import net.sourceforge.jnlp.OptionsDefinitions;
 import net.sourceforge.jnlp.ParserSettings;
 import net.sourceforge.jnlp.PluginBridge;
-import net.sourceforge.jnlp.runtime.html.AppletExtractor;
-import net.sourceforge.jnlp.runtime.html.AppletParser;
-import net.sourceforge.jnlp.runtime.html.AppletsFilter;
 import net.sourceforge.jnlp.util.ScreenFinder;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
@@ -129,77 +126,8 @@ public final class HtmlBoot {
         if (settings == null) {
             return false;
         }
-        try {
-            OutputController.getLogger().log("Proceeding with html");
-            final URL html = Boot.getFileLocation();
-            AppletExtractor axe = new AppletExtractor(html, settings);
-            AppletsFilter filtered = new AppletsFilter(axe.findAppletsOnPage(), html, vars.subList(1, vars.size()));
-            List<AppletParser> applets = filtered.getApplets();
-            // this hack was needed in early phases of the patch.   Now it sees to be not neede. Keeping inside to remove after much more testing
-            // will be replaced by regular JNLPRuntime is initialised
-//                System.setSecurityManager(new SecurityManager() {
-//
-//                    @Override
-//                    public void checkPermission(Permission perm) {
-//                        //
-//                    }
-//
-//                });
-            final int[] move = new int[]{0, 0, 0};
-            for (AppletParser appletParser : applets) {
-                //place the applets correctly over screen
-                changeMovement(move);
-                final PluginBridge pb = appletParser.toPluginBridge();
-                if (splashScreen != null) {
-                    splashScreen.setFile(pb);
-                }
-                final JFrame f = invokePluginMain(pb, html);
-                //close all applets in time
-                f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-                //f.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-                SwingUtils.invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
-                        Point movement = changeMovementSigns(move);
-                        f.pack();
-                        ScreenFinder.centerWindowsToCurrentScreen(f);
-                        Rectangle r = f.getBounds();
-                        r.x += movement.x;
-                        r.y += movement.y;
-                        f.setBounds(r);
-                        f.setVisible(true);
-                    }
-                });
-                move[0]++;
-            }
-            if (splashScreen != null) {
-                splashScreen.stopAnimation();
-                splashScreen.setVisible(false);
-                splashScreen.dispose();
-            }
-        } catch (final Exception ex) {
-            OutputController.getLogger().log(ex);
-            if (splashScreen != null) {
-                SwingUtils.invokeLater(new Runnable() {
-
-                    @Override
-                    public void run() {
-                        splashScreen.setErrorSplash(ex);
-                        splashScreen.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-                        splashScreen.addWindowListener(new WindowAdapter() {
-
-                            @Override
-                            public void windowClosed(WindowEvent e) {
-                                Boot.fatalError(R("RUnexpected", ex.toString(), ex.getStackTrace()[0]));
-                            }
-
-                        });
-                    }
-                });
-            } else {
-                Boot.fatalError(R("RUnexpected", ex.toString(), ex.getStackTrace()[0]));
-            }
-        }
-        return true;
+        // Applet support removed - HTML applet launching is no longer supported
+        OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "Applet support has been removed. HTML applet launching is no longer available.");
+        throw new UnsupportedOperationException("Applet support has been removed. HTML applet launching is no longer available.");
     }
 }

@@ -22,7 +22,6 @@
 
 package net.sourceforge.jnlp;
 
-import net.sourceforge.jnlp.runtime.AppletInstance;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 
 import java.net.URL;
@@ -35,7 +34,7 @@ import net.sourceforge.jnlp.splashscreen.SplashPanel;
 import net.sourceforge.jnlp.splashscreen.SplashUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
-import sun.applet.AppletViewerPanelAccess;
+// AppletViewerPanelAccess removed - applet support no longer available
 import sun.awt.SunToolkit;
 
 /**
@@ -44,10 +43,10 @@ import sun.awt.SunToolkit;
  *
  * @author      Francis Kung &lt;fkung@redhat.com&gt;
  */
-public class NetxPanel extends AppletViewerPanelAccess implements SplashController {
+// Applet support removed - NetxPanel is no longer functional
+public class NetxPanel implements SplashController {
     private final PluginParameters parameters;
     private PluginBridge bridge = null;
-    private AppletInstance appInst = null;
     private SplashController splashController;
     private volatile boolean initialized;
 
@@ -68,7 +67,7 @@ public class NetxPanel extends AppletViewerPanelAccess implements SplashControll
         new ConcurrentHashMap<>();
 
     public NetxPanel(URL documentURL, PluginParameters params, PluginBridge bridge) {
-        super(documentURL, params.getUnderlyingMap());
+        // Applet support removed - super() call removed as AppletViewerPanelAccess no longer exists
         this.bridge = bridge;
         this.parameters = params;
         this.initialized = false;
@@ -82,23 +81,9 @@ public class NetxPanel extends AppletViewerPanelAccess implements SplashControll
         }
     }
 
-    public AppletInstance getAppInst() {
-        return appInst;
-    }
+    // Applet support removed - all applet-related methods removed
 
-    @Override
-    protected void showAppletException(Throwable t) {
-        /*
-         * Log any exceptions thrown while loading, initializing, starting,
-         * and stopping the applet. 
-         */
-        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, t); //new logger
-        super.showAppletException(t);
-    }
-
-    //Overriding to use Netx classloader. You might need to relax visibility
-    //in sun.applet.AppletPanel for runLoader().
-    @Override
+    // Applet support removed - ourRunLoader no longer functional
     protected void ourRunLoader() {
 
         try {
@@ -111,28 +96,20 @@ public class NetxPanel extends AppletViewerPanelAccess implements SplashControll
                         getHeight(),
                         parameters);
             }
-            init(bridge);
+            // Applet support removed - init() no longer functional
+            throw new UnsupportedOperationException("Applet support has been removed");
 
         } catch (Exception e) {
-            status = APPLET_ERROR;
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
-            replaceSplash(SplashUtils.getErrorSplashScreen(getWidth(), getHeight(), e));
+            if (splashController != null) {
+                replaceSplash(SplashUtils.getErrorSplashScreen(0, 0, e));
+            }
         } finally {
-            // PR1157: This needs to occur even in the case of an exception
-            // so that the applet's event listeners are signaled.
-            // Once PluginAppletViewer.AppletEventListener is signaled PluginAppletViewer can properly stop waiting
-            // in PluginAppletViewer.waitForAppletInit
             this.initialized = true;
-            dispatchAppletEvent(APPLET_LOADING_COMPLETED, null);
         }
     }
 
-    /**
-     * Creates a new Thread (in a new applet-specific ThreadGroup) for running
-     * the applet
-     */
-    // Reminder: Relax visibility in sun.applet.AppletPanel
-    @Override
+    // Applet support removed - createAppletThread no longer functional
     protected synchronized void createAppletThread() {
         // initialize JNLPRuntime in the main threadgroup
         synchronized (JNLPRuntime.initMutex) {
@@ -154,8 +131,9 @@ public class NetxPanel extends AppletViewerPanelAccess implements SplashControll
         parameters.updateSize(width, height);
     }
 
+    // Applet support removed
     public ClassLoader getAppletClassLoader() {
-        return appInst.getClassLoader();
+        return null;
     }
 
     public boolean isInitialized() {
@@ -203,26 +181,9 @@ public class NetxPanel extends AppletViewerPanelAccess implements SplashControll
         return splashController.getSplashHeigth();
     }
 
+    // Applet support removed - init() no longer functional
     public void init(PluginBridge bridge) throws LaunchException {
-        setDoInitIfExists(true);
-        dispatchAppletEvent(APPLET_LOADING, null);
-        status = APPLET_LOAD;
-
-        Launcher l = new Launcher(false);
-
-        // May throw LaunchException:
-        appInst = (AppletInstance) l.launch(bridge, this);
-        setApplet(appInst.getApplet());
-
-        if (getApplet() != null) {
-            // Stick it in the frame
-            getApplet().setStub(this);
-            getApplet().setVisible(false);
-            add("Center", getApplet());
-            showAppletStatus("loaded");
-            validate();
-        }
-
+        throw new UnsupportedOperationException("Applet support has been removed. NetxPanel is no longer functional.");
     }        
 
 }
