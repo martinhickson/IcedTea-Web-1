@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.sourceforge.jnlp.util.JarFile;
+import net.sourceforge.jnlp.util.JarFileTempManager;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.jnlp.util.logging.OutputController.Level;
 import sun.net.www.protocol.jar.URLJarFile;
@@ -34,7 +35,9 @@ public class JarFileCache {
                 LOGGER.log(Level.MESSAGE_DEBUG, String.format("Loading URLJarFile into cache: %1$s",
                         tmpFile.getAbsoluteFile()));
             }
-            jarFile = new URLJarFile(tmpFile, null);
+            // Copy to temp directory first to avoid classloader interference
+            File tempFile = JarFileTempManager.getInstance().getTempJarFile(tmpFile);
+            jarFile = new URLJarFile(tempFile, null);
             urlJarFileMap.put(tmpFile, jarFile);
         }
         return jarFile;
@@ -47,7 +50,11 @@ public class JarFileCache {
                 LOGGER.log(Level.MESSAGE_DEBUG, String.format("Loading JarFile into cache: %1$s",
                         path));
             }
-            jarFile = new JarFile(path);
+            // Copy to temp directory first to avoid classloader interference
+            // The JarFile constructor will handle the temp copy automatically
+            File originalFile = new File(path);
+            File tempFile = JarFileTempManager.getInstance().getTempJarFile(originalFile);
+            jarFile = new JarFile(tempFile);
             jarFileMap.put(path, jarFile);
         }
         return jarFile;

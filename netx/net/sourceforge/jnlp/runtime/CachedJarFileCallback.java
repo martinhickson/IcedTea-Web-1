@@ -53,6 +53,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarFile;
 
 import net.sourceforge.jnlp.security.ConnectionFactory;
+import net.sourceforge.jnlp.util.JarFileTempManager;
 import net.sourceforge.jnlp.util.logging.OutputController;
 //.sourceforge.jnlp.util.JarFile;
 
@@ -150,8 +151,17 @@ final class CachedJarFileCallback implements URLJarFileCallBack {
                             OutputStream out = null;
                             File tmpFile = null;
                             try {
-                                tmpFile = File.createTempFile("jar_cache", null);
-                                tmpFile.deleteOnExit();
+                                // Use JarFileTempManager to copy to icedtea-web temp directory
+                                JarFileTempManager tempManager = JarFileTempManager.getInstance();
+                                // Create a temporary file in the icedtea-web directory
+                                File tempBaseDir = new File(System.getProperty("java.io.tmpdir"), "icedtea-web");
+                                if (!tempBaseDir.exists()) {
+                                    tempBaseDir.mkdirs();
+                                }
+                                String tempFileName = "jar_cache_" + System.currentTimeMillis() + "_" + 
+                                                     url.hashCode() + ".jar";
+                                tmpFile = new File(tempBaseDir, tempFileName);
+                                
                                 out = new FileOutputStream(tmpFile);
                                 int read = 0;
                                 byte[] buf = new byte[BUF_SIZE];
@@ -160,8 +170,9 @@ final class CachedJarFileCallback implements URLJarFileCallBack {
                                 }
                                 out.close();
                                 out = null;
+                                
+                                // Get open JAR file handle (kept open for performance)
                                 return JarFileCache.getInstance().getURLJarFile(tmpFile);
-                                //return new URLJarFile(tmpFile, null);
                             } catch (IOException e) {
                                 if (tmpFile != null) {
                                     tmpFile.delete();

@@ -46,46 +46,62 @@ import net.sourceforge.jnlp.runtime.JNLPRuntime;
 /**
  * A wrapper over {@link java.util.jar.JarFile} that verifies zip headers to
  * protect against GIFAR attacks.
+ * 
+ * This class automatically copies JAR files to the Java temp directory
+ * (icedtea-web folder) before opening them to avoid classloader interference
+ * and keeps file handles open for performance.
  *
  * @see <a href="http://en.wikipedia.org/wiki/Gifar">Gifar</a>
  */
 public class JarFile extends java.util.jar.JarFile implements Closeable {
 
     private static final boolean ENABLE_GIFAR_PROTECTION = false;
+    private File tempFile; // Keep reference to temp file
 
     public JarFile(String name) throws IOException {
-        super(name);
-        if (ENABLE_GIFAR_PROTECTION) {
-            verifyZipHeader(new File(name));
-        }
+        this(new File(name), false);
     }
 
     public JarFile(String name, boolean verify) throws IOException {
-        super(name, verify);
-        if (ENABLE_GIFAR_PROTECTION) {
-            verifyZipHeader(new File(name));
-        }
+        this(new File(name), verify);
     }
 
     public JarFile(File file) throws IOException {
-        super(file);
-        if (ENABLE_GIFAR_PROTECTION) {
-            verifyZipHeader(file);
-        }
+        this(file, false);
     }
 
     public JarFile(File file, boolean verify) throws IOException {
-        super(file, verify);
+        this(file, verify, java.util.zip.ZipFile.OPEN_READ);
+    }
+
+    public JarFile(File file, boolean verify, int mode) throws IOException {
+        // Copy to temp directory first to avoid classloader interference
+        super(copyToTempIfNeeded(file), verify, mode);
         if (ENABLE_GIFAR_PROTECTION) {
             verifyZipHeader(file);
         }
     }
-
-    public JarFile(File file, boolean verify, int mode) throws IOException {
-        super(file, verify, mode);
-        if (ENABLE_GIFAR_PROTECTION) {
-            verifyZipHeader(file);
+    
+    /**
+     * Copy file to temp directory if it's not already there.
+     * This prevents classloader interference and allows keeping handles open.
+     */
+    private static File copyToTempIfNeeded(File originalFile) throws IOException {
+        // Check if file is already in temp directory
+        String tempDir = System.getProperty("java.io.tmpdir");
+        String icedteaWebDir = tempDir + File.separator + "icedtea-web";
+        
+        // Normalize paths to handle both forward and backward slashes
+        String normalizedFilePath = originalFile.getAbsolutePath().replace('/', File.separatorChar);
+        String normalizedTempDir = icedteaWebDir.replace('/', File.separatorChar);
+        
+        if (normalizedFilePath.startsWith(normalizedTempDir)) {
+            // Already in temp directory, use as-is to prevent double-copying
+            return originalFile;
         }
+        
+        // Copy to temp directory
+        return JarFileTempManager.getInstance().getTempJarFile(originalFile);
     }
 
     /**

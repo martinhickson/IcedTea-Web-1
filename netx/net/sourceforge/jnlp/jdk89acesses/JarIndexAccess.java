@@ -56,7 +56,9 @@ public class JarIndexAccess {
 
     public static JarIndexAccess getJarIndex(JarFile jarFile) throws IOException {
         try {
-            Object result = getJarIndexHandle.invokeExact(jarFile);
+            // Use invoke() instead of invokeExact() to allow type conversion
+            // invokeExact() requires exact type match, but we're assigning to Object
+            Object result = getJarIndexHandle.invoke(jarFile);
             if (result == null) {
                 return null;
             }
@@ -68,7 +70,8 @@ public class JarIndexAccess {
 
     public LinkedList<String> get(String key) {
         try {
-            return (LinkedList<String>) getHandle.invokeExact(parent, key);
+            // Use invoke() instead of invokeExact() to allow type conversion
+            return (LinkedList<String>) getHandle.invoke(parent, key);
         } catch (Throwable t) {
             throw new RuntimeException("Failed to invoke get()", t);
         }

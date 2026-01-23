@@ -401,6 +401,13 @@ public class SecurityDesc {
                 // on resources anywhere recursively in or below the applet codebase, only on
                 // default ports and ports explicitly specified in resource locations
                 final URI resourceLocation = jar.getLocation().toURI().normalize();
+                
+                // Skip URLPermission generation for file:// URLs - they don't have hosts
+                // and use FilePermissions instead. This avoids unnecessary URISyntaxException.
+                if ("file".equalsIgnoreCase(resourceLocation.getScheme())) {
+                    continue;
+                }
+                
                 final URI host = getHost(resourceLocation);
                 final String hostUriString = host.toString();
                 final String urlPermissionUrlString = appendRecursiveSubdirToCodebaseHostString(hostUriString);
@@ -416,11 +423,16 @@ public class SecurityDesc {
         }
         try {
             final URI codebase = file.getNotNullProbalbeCodeBase().toURI().normalize();
-            final URI host = getHost(codebase);
-            final String codebaseHostUriString = host.toString();
-            final String urlPermissionUrlString = appendRecursiveSubdirToCodebaseHostString(codebaseHostUriString);
-            final Permission p = urlPermissionConstructor.newInstance(urlPermissionUrlString);
-            permissions.add(p);
+            
+            // Skip URLPermission generation for file:// URLs - they don't have hosts
+            // and use FilePermissions instead. This avoids unnecessary URISyntaxException.
+            if (!"file".equalsIgnoreCase(codebase.getScheme())) {
+                final URI host = getHost(codebase);
+                final String codebaseHostUriString = host.toString();
+                final String urlPermissionUrlString = appendRecursiveSubdirToCodebaseHostString(codebaseHostUriString);
+                final Permission p = urlPermissionConstructor.newInstance(urlPermissionUrlString);
+                permissions.add(p);
+            }
         } catch (final ReflectiveOperationException e) {
             OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, "Exception while attempting to reflectively generate a URLPermission, probably not running on Java 8+?");
             OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, e);

@@ -24,14 +24,6 @@
     <maven.enforcer.plugin.version>3.3.0</maven.enforcer.plugin.version>
   </properties>
 
-  <repositories>
-    <repository>
-      <id>github</id>
-      <name>GitHub Packages</name>
-      <url>https://maven.pkg.github.com/martinhickson/pack200</url>
-    </repository>
-  </repositories>
-
   <dependencies>
     <dependency>
       <groupId>org.ccil.cowan.tagsoup</groupId>
@@ -104,6 +96,14 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <repositories>
+    <repository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>https://maven.pkg.github.com/martinhickson/pack200</url>
+    </repository>
+  </repositories>
 
   <build>
 
@@ -414,7 +414,8 @@
                         --add-exports java.desktop/sun.swing.plaf=ALL-UNNAMED
                         --add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
                         --add-exports java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED
-                        --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+                        --add-opens java.base/java.lang=ALL-UNNAMED
+                        --add-modules java.naming</argLine>
         </configuration>
       </plugin>
     </plugins>

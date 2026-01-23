@@ -20,3 +20,9 @@ target
 /itw-maven/.project
 /itw-maven/.classpath
 /itw-maven/pom.xml.bak
+/.project
+/.classpath
+/pom.xml.bak
+/.settings
+/itw-maven/stderr.log
+/itw-maven/stdout.log

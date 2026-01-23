@@ -1,0 +1,315 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0           http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>net.sourceforge.icedtea-web</groupId>
+  <artifactId>icedtea-web-integration-tests</artifactId>
+  <version>1.0.1-SNAPSHOT</version>
+  <packaging>war</packaging>
+
+  <name>IcedTea-Web Integration Tests</name>
+  <description>Integration tests for IcedTea-Web using WildFly and Arquillian</description>
+
+  <properties>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
+    
+    <version.wildfly>36.0.0.Final</version.wildfly>
+    <version.cxf>4.0.3</version.cxf>
+    <version.arquillian>1.7.0.Alpha14</version.arquillian>
+    <version.shrinkwrap>1.2.6</version.shrinkwrap>
+    <version.junit>5.10.0</version.junit>
+    <version.selenium>4.15.0</version.selenium>
+    <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
+    <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
+    <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <!-- WildFly BOM -->
+      <dependency>
+        <groupId>org.wildfly</groupId>
+        <artifactId>wildfly-dist</artifactId>
+        <version>${version.wildfly}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      
+      <!-- Arquillian BOM -->
+      <dependency>
+        <groupId>org.jboss.arquillian</groupId>
+        <artifactId>arquillian-bom</artifactId>
+        <version>${version.arquillian}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <repositories>
+    <repository>
+      <id>central</id>
+      <name>Maven Central</name>
+      <url>https://repo1.maven.org/maven2</url>
+    </repository>
+  </repositories>
+
+  <dependencies>
+    <!-- IcedTea-Web Core (from parent project) -->
+    <dependency>
+      <groupId>net.sourceforge.icedtea-web</groupId>
+      <artifactId>icedtea-web</artifactId>
+      <version>1.0.1-SNAPSHOT</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Arquillian -->
+    <dependency>
+      <groupId>org.jboss.arquillian.junit5</groupId>
+      <artifactId>arquillian-junit5-container</artifactId>
+      <scope>test</scope>
+    </dependency>
+    
+    <!-- Arquillian WildFly Managed Container (runs WildFly in separate process) -->
+    <!-- Note: Using wildfly-remote for now as managed container may not be available for WF36 -->
+    <dependency>
+      <groupId>org.wildfly.arquillian</groupId>
+      <artifactId>wildfly-arquillian-container-managed</artifactId>
+      <version>5.0.0.Final</version>
+      <scope>test</scope>
+    </dependency>
+    
+    <!-- ShrinkWrap -->
+    <dependency>
+      <groupId>org.jboss.shrinkwrap</groupId>
+      <artifactId>shrinkwrap-api</artifactId>
+      <version>${version.shrinkwrap}</version>
+      <scope>test</scope>
+    </dependency>
+    
+    <dependency>
+      <groupId>org.jboss.shrinkwrap</groupId>
+      <artifactId>shrinkwrap-impl-base</artifactId>
+      <version>${version.shrinkwrap}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- JUnit 5 -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${version.junit}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- Selenium for browser automation (optional, for end-to-end tests) -->
+    <dependency>
+      <groupId>org.seleniumhq.selenium</groupId>
+      <artifactId>selenium-java</artifactId>
+      <version>${version.selenium}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- WildFly Server API for programmatic server management -->
+    <dependency>
+      <groupId>org.wildfly.core</groupId>
+      <artifactId>wildfly-server</artifactId>
+      <scope>test</scope>
+    </dependency>
+    
+    <!-- Embedded Undertow for serving JNLP files -->
+    <dependency>
+      <groupId>io.undertow</groupId>
+      <artifactId>undertow-core</artifactId>
+      <version>2.3.10.Final</version>
+      <scope>test</scope>
+    </dependency>
+    
+    <!-- Apache CXF for REST client and server -->
+    <dependency>
+      <groupId>org.apache.cxf</groupId>
+      <artifactId>cxf-rt-rs-client</artifactId>
+      <version>${version.cxf}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.cxf</groupId>
+      <artifactId>cxf-rt-rs-extension-providers</artifactId>
+      <version>${version.cxf}</version>
+    </dependency>
+    <dependency>
+      <groupId>org.apache.cxf</groupId>
+      <artifactId>cxf-rt-frontend-jaxrs</artifactId>
+      <version>${version.cxf}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.jaxrs</groupId>
+      <artifactId>jackson-jaxrs-json-provider</artifactId>
+      <version>2.15.2</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>${maven.compiler.plugin.version}</version>
+        <configuration>
+          <source>17</source>
+          <target>17</target>
+          <encoding>UTF-8</encoding>
+        </configuration>
+      </plugin>
+
+      <!-- Build sample application JAR -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-jar-plugin</artifactId>
+        <version>3.3.0</version>
+        <executions>
+          <execution>
+            <id>sample-app-jar</id>
+            <phase>process-test-classes</phase>
+            <goals>
+              <goal>test-jar</goal>
+            </goals>
+            <configuration>
+              <classifier>sample-app</classifier>
+              <includes>
+                <include>net/sourceforge/jnlp/test/SampleApplication.class</include>
+                <include>net/sourceforge/jnlp/test/client/**</include>
+              </includes>
+              <archive>
+                <manifest>
+                  <mainClass>net.sourceforge.jnlp.test.SampleApplication</mainClass>
+                </manifest>
+              </archive>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      
+      <!-- Build WAR for WildFly deployment -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-war-plugin</artifactId>
+        <version>3.3.2</version>
+        <configuration>
+          <warSourceDirectory>src/main/webapp</warSourceDirectory>
+          <webXml>src/main/webapp/WEB-INF/web.xml</webXml>
+          <!-- Include compiled classes from src/main/java (server-side REST classes) -->
+          <!-- Don't use packagingIncludes as it replaces defaults - use packagingExcludes instead if needed -->
+        </configuration>
+      </plugin>
+
+      <!-- Download WildFly -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>unpack-wildfly</id>
+            <phase>process-test-resources</phase>
+            <goals>
+              <goal>unpack</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>org.wildfly</groupId>
+                  <artifactId>wildfly-dist</artifactId>
+                  <version>${version.wildfly}</version>
+                  <type>zip</type>
+                  <!-- Set to false to skip unpacking if already exists -->
+                  <overWrite>false</overWrite>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <!-- Disable WildFly deployment scanner using find-and-replace-maven-plugin -->
+      <plugin>
+        <groupId>io.github.floverfelt</groupId>
+        <artifactId>find-and-replace-maven-plugin</artifactId>
+        <version>1.2.0</version>
+        <executions>
+          <execution>
+            <id>disable-deployment-scanner</id>
+            <phase>process-test-resources</phase>
+            <goals>
+              <goal>find-and-replace</goal>
+            </goals>
+            <configuration>
+              <replacementType>file-contents</replacementType>
+              <baseDir>target/wildfly-36.0.0.Final/standalone/configuration</baseDir>
+              <!-- Only match if scan-enabled is not already present -->
+              <!-- Only match if scan-enabled is not already present -->
+              <findRegex>&lt;deployment-scanner((?![^&gt;]*scan-enabled=)([^&gt;]*?))(/&gt;)</findRegex>
+              <replaceValue>&lt;deployment-scanner$1 scan-enabled="false"$3</replaceValue>
+              <recursive>false</recursive>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven.surefire.plugin.version}</version>
+        <configuration>
+          <skip>true</skip>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>${maven.failsafe.plugin.version}</version>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+        <configuration>
+          <systemPropertyVariables>
+            <wildfly.home>${project.build.directory}/wildfly-${version.wildfly}</wildfly.home>
+          </systemPropertyVariables>
+          <argLine>
+            --add-opens java.base/sun.net.www.protocol.jar=ALL-UNNAMED
+            --add-exports java.base/sun.security.action=ALL-UNNAMED
+            --add-exports java.base/sun.security.provider=ALL-UNNAMED
+            --add-exports java.base/sun.security.util=ALL-UNNAMED
+            --add-exports java.base/sun.security.validator=ALL-UNNAMED
+            --add-exports java.base/sun.security.x509=ALL-UNNAMED
+            --add-exports java.base/jdk.internal.util.jar=ALL-UNNAMED
+            --add-exports java.base/sun.net.www.protocol.http=ALL-UNNAMED
+            --add-exports java.desktop/sun.applet=ALL-UNNAMED
+            --add-exports java.desktop/sun.awt=ALL-UNNAMED
+            --add-exports java.desktop/sun.awt.windows=ALL-UNNAMED
+            --add-exports java.desktop/sun.awt.image=ALL-UNNAMED
+            --add-exports java.desktop/sun.awt.X11=ALL-UNNAMED
+            --add-exports java.desktop/sun.swing.table=ALL-UNNAMED
+            --add-exports java.desktop/sun.swing=ALL-UNNAMED
+            --add-exports java.desktop/sun.swing.plaf=ALL-UNNAMED
+            --add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
+            --add-exports java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED
+            --add-opens java.base/java.lang=ALL-UNNAMED
+          </argLine>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>
+

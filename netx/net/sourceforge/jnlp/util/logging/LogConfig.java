@@ -58,28 +58,56 @@ public class LogConfig {
     private boolean legacyLogaAsedFileLog;
 
     private LogConfig() {
-        DeploymentConfiguration config = JNLPRuntime.getConfiguration();
+        DeploymentConfiguration config = null;
+        try {
+            config = JNLPRuntime.getConfiguration();
+        } catch (ExceptionInInitializerError | NoClassDefFoundError | Exception e) {
+            // Configuration not yet initialized - use safe defaults
+            // This can happen during circular initialization
+            System.err.println("Warning: LogConfig initialization before DeploymentConfiguration is ready. Using defaults.");
+        }
+        
+        // Defensive: Default to info logging only (enableLogging=false) if config not available
         // Check whether logging and tracing is enabled.
-        enableLogging = Boolean.parseBoolean(config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING));
-        //enagle disable headers
-        enableHeaders = Boolean.parseBoolean(config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING_HEADERS));
+        String enableLoggingProp = config != null ? config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING) : null;
+        enableLogging = enableLoggingProp != null ? Boolean.parseBoolean(enableLoggingProp) : false;
+        
+        //enable disable headers
+        String enableHeadersProp = config != null ? config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING_HEADERS) : null;
+        enableHeaders = enableHeadersProp != null ? Boolean.parseBoolean(enableHeadersProp) : false;
+        
         //enable/disable individual channels
-        logToFile = Boolean.parseBoolean(config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING_TOFILE));
-        logToStreams = Boolean.parseBoolean(config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING_TOSTREAMS));
-        logToSysLog = Boolean.parseBoolean(config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING_TOSYSTEMLOG));
-        legacyLogaAsedFileLog = Boolean.parseBoolean(config.getProperty(DeploymentConfiguration.KEY_ENABLE_LEGACY_LOGBASEDFILELOG));
-        logClientAppToFile = Boolean.parseBoolean(config.getProperty(DeploymentConfiguration.KEY_ENABLE_APPLICATION_LOGGING_TOFILE));
+        String logToFileProp = config != null ? config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING_TOFILE) : null;
+        logToFile = logToFileProp != null ? Boolean.parseBoolean(logToFileProp) : false;
+        
+        String logToStreamsProp = config != null ? config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING_TOSTREAMS) : null;
+        logToStreams = logToStreamsProp != null ? Boolean.parseBoolean(logToStreamsProp) : false;
+        
+        String logToSysLogProp = config != null ? config.getProperty(DeploymentConfiguration.KEY_ENABLE_LOGGING_TOSYSTEMLOG) : null;
+        logToSysLog = logToSysLogProp != null ? Boolean.parseBoolean(logToSysLogProp) : false;
+        
+        String legacyLogProp = config != null ? config.getProperty(DeploymentConfiguration.KEY_ENABLE_LEGACY_LOGBASEDFILELOG) : null;
+        legacyLogaAsedFileLog = legacyLogProp != null ? Boolean.parseBoolean(legacyLogProp) : false;
+        
+        String logClientAppProp = config != null ? config.getProperty(DeploymentConfiguration.KEY_ENABLE_APPLICATION_LOGGING_TOFILE) : null;
+        logClientAppToFile = logClientAppProp != null ? Boolean.parseBoolean(logClientAppProp) : false;
 
         // Get log directory, create it if it doesn't exist. If unable to create and doesn't exist, don't log.
-        icedteaLogDir = PathsAndFiles.LOG_DIR.getFullPath();
-        if (icedteaLogDir != null) {
-            File f = new File(icedteaLogDir);
-            if (f.isDirectory() || f.mkdirs()) {
-                icedteaLogDir += File.separator;
+        try {
+            icedteaLogDir = PathsAndFiles.LOG_DIR.getFullPath();
+            if (icedteaLogDir != null) {
+                File f = new File(icedteaLogDir);
+                if (f.isDirectory() || f.mkdirs()) {
+                    icedteaLogDir += File.separator;
+                } else {
+                    enableLogging = false;
+                }
             } else {
                 enableLogging = false;
             }
-        } else {
+        } catch (Exception e) {
+            // If LOG_DIR.getFullPath() fails (e.g., during circular initialization), disable logging
+            icedteaLogDir = null;
             enableLogging = false;
         }
     }
