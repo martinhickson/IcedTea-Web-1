@@ -46,10 +46,15 @@ public class JarFileTempManager {
      * Enable optimized temp file handling:
      * - Create temp file in same folder as original (enables hard links)
      * - Use predictable name: <original>_itw.jar (reuse across launches)
-     * - Use hard link instead of copy when possible (instant, no disk waste)
+     * - Use hard link (Windows) or symlink (Unix) instead of copy when possible
      * - Use deleteOnExit() for cleanup
      */
     private static final boolean OPTIMISED_TEMP_FILE_HANDLING = true;
+    
+    /**
+     * Detect operating system for link type selection
+     */
+    private static final boolean IS_WINDOWS = System.getProperty("os.name").toLowerCase().contains("win");
     
     private static final String TEMP_DIR_NAME = "icedtea-web";
     
@@ -88,6 +93,10 @@ public class JarFileTempManager {
             throw new IllegalArgumentException("Original file cannot be null");
         }
         
+        LOGGER.log(Level.MESSAGE_ALL, 
+            String.format("[ITW-TEMP] getTempJarFile called for: %s (optimized=%b)", 
+                originalFile.getAbsolutePath(), OPTIMISED_TEMP_FILE_HANDLING));
+        
         if (OPTIMISED_TEMP_FILE_HANDLING) {
             return getTempJarFileOptimised(originalFile);
         } else {
@@ -106,11 +115,9 @@ public class JarFileTempManager {
         // Check if file already has _itw.jar suffix (prevent double-copying)
         String originalName = originalFile.getName();
         if (originalName.endsWith("_itw.jar")) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.log(Level.MESSAGE_DEBUG, 
-                    String.format("File is already ITW temp file, skipping: %s", 
-                        originalFile.getAbsolutePath()));
-            }
+            LOGGER.log(Level.MESSAGE_ALL, 
+                String.format("[ITW-TEMP] File is already ITW temp file, skipping: %s", 
+                    originalFile.getAbsolutePath()));
             return originalFile;
         }
         
@@ -126,33 +133,39 @@ public class JarFileTempManager {
         String tempFileName = baseName + "_itw.jar";
         tempFile = new File(parentDir, tempFileName);
         
-        // Try hard link first (instant, no disk waste, same filesystem)
-        boolean hardLinkSuccess = false;
+        // Platform-specific link strategy:
+        // - Windows: Use hard link (fileKey() returns null, cache uses path comparison)
+        // - Unix/Mac: Use symlink (fileKey() returns inode, hard links share same inode)
+        boolean linkSuccess = false;
+        String linkType = "";
         if (!tempFile.exists()) {
             try {
-                Files.createLink(tempFile.toPath(), originalFile.toPath());
-                hardLinkSuccess = true;
-                if (LOGGER.isDebugEnabled()) {
-                    LOGGER.log(Level.MESSAGE_DEBUG, 
-                        String.format("Created hard link: %s -> %s", 
-                            tempFile.getAbsolutePath(), originalFile.getAbsolutePath()));
+                if (IS_WINDOWS) {
+                    // Windows: Hard link works because fileKey() returns null
+                    Files.createLink(tempFile.toPath(), originalFile.toPath());
+                    linkType = "hard link";
+                } else {
+                    // Unix/Mac: Symlink needed because hard links share inode
+                    Files.createSymbolicLink(tempFile.toPath(), originalFile.toPath());
+                    linkType = "symbolic link";
                 }
+                linkSuccess = true;
+                LOGGER.log(Level.MESSAGE_ALL, 
+                    String.format("[ITW-TEMP] Created %s: %s -> %s", 
+                        linkType, tempFile.getAbsolutePath(), originalFile.getAbsolutePath()));
             } catch (IOException | UnsupportedOperationException e) {
-                // Hard link failed, will fall back to copy
-                if (LOGGER.isDebugEnabled()) {
-                    LOGGER.log(Level.MESSAGE_DEBUG, 
-                        String.format("Hard link failed, falling back to copy: %s", e.getMessage()));
-                }
+                // Link failed, fall back to copy
+                LOGGER.log(Level.WARNING_ALL, 
+                    String.format("[ITW-TEMP] %s failed, falling back to copy: %s", 
+                        (IS_WINDOWS ? "Hard link" : "Symbolic link"), e.getMessage()));
             }
         }
         
-        // Fall back to copy if hard link failed or file already exists
-        if (!hardLinkSuccess && !tempFile.exists()) {
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.log(Level.MESSAGE_DEBUG, 
-                    String.format("Copying JAR to temp file: %s -> %s", 
-                        originalFile.getAbsolutePath(), tempFile.getAbsolutePath()));
-            }
+        // Fall back to copy if link failed or file already exists
+        if (!linkSuccess && !tempFile.exists()) {
+            LOGGER.log(Level.MESSAGE_ALL, 
+                String.format("[ITW-TEMP] Copying JAR to temp file: %s -> %s", 
+                    originalFile.getAbsolutePath(), tempFile.getAbsolutePath()));
             
             try {
                 Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
@@ -167,6 +180,10 @@ public class JarFileTempManager {
         
         // Cache the mapping
         originalToTempMap.put(originalFile, tempFile);
+        
+        // Print for debugging
+        System.err.println("[ITW] Created temp JAR: " + originalFile.getName() + " -> " + tempFile.getName() + 
+                          " (link=" + (linkSuccess ? linkType : "copy") + ")");
         
         return tempFile;
     }
@@ -183,11 +200,9 @@ public class JarFileTempManager {
         String normalizedTempDir = tempBaseDir.getAbsolutePath().replace('/', File.separatorChar);
         if (normalizedFilePath.startsWith(normalizedTempDir)) {
             // File is already in temp directory, return as-is
-            if (LOGGER.isDebugEnabled()) {
-                LOGGER.log(Level.MESSAGE_DEBUG, 
-                    String.format("File is already in temp directory, skipping copy: %s", 
-                        originalFile.getAbsolutePath()));
-            }
+            LOGGER.log(Level.MESSAGE_ALL, 
+                String.format("[ITW-TEMP-LEGACY] File is already in temp directory, skipping copy: %s", 
+                    originalFile.getAbsolutePath()));
             return originalFile;
         }
         
@@ -204,11 +219,9 @@ public class JarFileTempManager {
         tempFile = new File(tempBaseDir, tempFileName);
         
         // Copy the file to temp directory
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.log(Level.MESSAGE_DEBUG, 
-                String.format("Copying JAR to temp directory: %s -> %s", 
-                    originalFile.getAbsolutePath(), tempFile.getAbsolutePath()));
-        }
+        LOGGER.log(Level.MESSAGE_ALL, 
+            String.format("[ITW-TEMP-LEGACY] Copying JAR to temp directory: %s -> %s", 
+                originalFile.getAbsolutePath(), tempFile.getAbsolutePath()));
         
         try {
             Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
@@ -259,10 +272,8 @@ public class JarFileTempManager {
         jarFile = new java.util.jar.JarFile(tempFile, true);
         openJarFiles.put(tempFile, jarFile);
         
-        if (LOGGER.isDebugEnabled()) {
-            LOGGER.log(Level.MESSAGE_DEBUG, 
-                String.format("Opened and cached JAR file handle: %s", tempFile.getAbsolutePath()));
-        }
+        LOGGER.log(Level.MESSAGE_ALL, 
+            String.format("[ITW-TEMP] Opened and cached JAR file handle: %s", tempFile.getAbsolutePath()));
         
         return jarFile;
     }

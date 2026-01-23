@@ -240,6 +240,35 @@
           </execution>
         </executions>
       </plugin>
+
+      <!-- Maven Surefire Plugin for test execution with JPMS flags -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.0.0-M9</version>
+        <configuration>
+          <argLine>--add-exports java.base/sun.net.www.protocol.jar=ALL-UNNAMED
+            --add-opens java.base/sun.net.www.protocol.jar=ALL-UNNAMED
+            --add-exports java.base/sun.security.action=ALL-UNNAMED
+            --add-exports java.base/sun.security.provider=ALL-UNNAMED
+            --add-exports java.base/sun.security.util=ALL-UNNAMED
+            --add-exports java.base/sun.security.validator=ALL-UNNAMED
+            --add-exports java.base/sun.security.x509=ALL-UNNAMED
+            --add-exports java.base/jdk.internal.util.jar=ALL-UNNAMED
+            --add-exports java.base/sun.net.www.protocol.http=ALL-UNNAMED
+            --add-exports java.desktop/sun.applet=ALL-UNNAMED
+            --add-exports java.desktop/sun.awt=ALL-UNNAMED
+            --add-exports java.desktop/sun.awt.windows=ALL-UNNAMED
+            --add-exports java.desktop/sun.awt.image=ALL-UNNAMED
+            --add-exports java.desktop/sun.awt.X11=ALL-UNNAMED
+            --add-exports java.desktop/sun.swing.table=ALL-UNNAMED
+            --add-exports java.desktop/sun.swing=ALL-UNNAMED
+            --add-exports java.desktop/sun.swing.plaf=ALL-UNNAMED
+            --add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
+            --add-exports java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED
+            --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+        </configuration>
+      </plugin>
     </plugins>
   </build>
 </project>

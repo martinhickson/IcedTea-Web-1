@@ -77,6 +77,7 @@ public class JarFile extends java.util.jar.JarFile implements Closeable {
     public JarFile(File file, boolean verify, int mode) throws IOException {
         // Copy to temp directory first to avoid classloader interference
         super(copyToTempIfNeeded(file), verify, mode);
+        System.err.println("[ITW JarFile] Opening: " + file.getName() + " -> actual file used");
         if (ENABLE_GIFAR_PROTECTION) {
             verifyZipHeader(file);
         }
@@ -87,6 +88,16 @@ public class JarFile extends java.util.jar.JarFile implements Closeable {
      * This prevents classloader interference and allows keeping handles open.
      */
     private static File copyToTempIfNeeded(File originalFile) throws IOException {
+        // Check if file is already a temp file (has _itw.jar suffix)
+        String fileName = originalFile.getName();
+        if (fileName.endsWith("_itw.jar")) {
+            // Already a temp file created by JarFileTempManager, use as-is
+            System.err.println("[ITW JarFile] Skipping temp copy (already _itw.jar): " + fileName);
+            return originalFile;
+        }
+        
+        System.err.println("[ITW JarFile] copyToTempIfNeeded called for: " + fileName);
+        
         // Check if file is already in temp directory
         String tempDir = System.getProperty("java.io.tmpdir");
         String icedteaWebDir = tempDir + File.separator + "icedtea-web";

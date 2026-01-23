@@ -52,8 +52,7 @@ public class PlainTextFormatter extends ReplacingTextFormatter {
     public  static final String SUFFIX = "txt";
     
     public static String getLineSeparator() {
-        return java.security.AccessController.doPrivileged(
-                new sun.security.action.GetPropertyAction("line.separator"));
+        return System.lineSeparator();
     }
 
     private final String pargraohIndentation;
