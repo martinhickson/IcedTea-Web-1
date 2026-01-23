@@ -10,7 +10,7 @@ export JVM_HOME_SHORT="$(cygpath -d "${JAVA_HOME}")"
 export JVMPATH="$(cygpath -u ${JVM_HOME_SHORT})"
 echo "Configure IcedTea-Web"
 ./autogen.sh
-./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-wix=${WIXPATH} --with-wixgen=${WIXGEN} --with-itw-libs=BUNDLED --with-jdk-home="${JVMPATH}"
+./configure --disable-native-plugin --disable-pluginjar --prefix="${ICEDTEAWEB_INSTALL}" --with-wix=${WIXPATH} --with-wixgen=${WIXGEN} --with-itw-libs=BUNDLED --with-jdk-home="${JVMPATH}"
 echo "Build IcedTea-Web"
 make
 echo "Create IcedTea-Web Distribution"

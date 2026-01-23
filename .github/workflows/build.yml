@@ -105,7 +105,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Incoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}"
+          ./configure --disable-native-plugin --disable-pluginjar --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}"
           
@@ -213,7 +213,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Incoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --enable-bats-on-linux --enable-shell-launchers --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${WORKSPACE}/pack.jar" --with-rhino="${WORKSPACE}/js.jar" --with-mslinks="${WORKSPACE}/mslinks.jar" --with-tagsoup="${WORKSPACE}/tagsoup.jar" --with-jdk-home="${JAVA_HOME}"
+          ./configure --disable-native-plugin --disable-pluginjar --enable-bats-on-linux --enable-shell-launchers --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${WORKSPACE}/pack.jar" --with-rhino="${WORKSPACE}/js.jar" --with-mslinks="${WORKSPACE}/mslinks.jar" --with-tagsoup="${WORKSPACE}/tagsoup.jar" --with-jdk-home="${JAVA_HOME}"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}/dest"
           
@@ -312,7 +312,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Invoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-jre-home="${JAVA_HOME}/jre"
+          ./configure --disable-native-plugin --disable-pluginjar --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-jre-home="${JAVA_HOME}/jre"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}"
           

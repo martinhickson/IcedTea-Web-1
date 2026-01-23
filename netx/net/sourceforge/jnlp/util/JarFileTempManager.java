@@ -42,6 +42,15 @@ public class JarFileTempManager {
     private static final OutputController LOGGER = OutputController.getLogger();
     private static final JarFileTempManager INSTANCE = new JarFileTempManager();
     
+    /**
+     * Enable optimized temp file handling:
+     * - Create temp file in same folder as original (enables hard links)
+     * - Use predictable name: <original>_itw.jar (reuse across launches)
+     * - Use hard link instead of copy when possible (instant, no disk waste)
+     * - Use deleteOnExit() for cleanup
+     */
+    private static final boolean OPTIMISED_TEMP_FILE_HANDLING = true;
+    
     private static final String TEMP_DIR_NAME = "icedtea-web";
     
     private final File tempBaseDir;
@@ -67,11 +76,11 @@ public class JarFileTempManager {
     }
     
     /**
-     * Get or create a temporary copy of the JAR file in the icedtea-web temp directory.
+     * Get or create a temporary copy of the JAR file.
      * The file handle is kept open for performance.
      * 
      * @param originalFile the original JAR file
-     * @return the temporary copy in icedtea-web directory
+     * @return the temporary copy (either in same folder or icedtea-web directory)
      * @throws IOException if the copy fails
      */
     public File getTempJarFile(File originalFile) throws IOException {
@@ -79,6 +88,96 @@ public class JarFileTempManager {
             throw new IllegalArgumentException("Original file cannot be null");
         }
         
+        if (OPTIMISED_TEMP_FILE_HANDLING) {
+            return getTempJarFileOptimised(originalFile);
+        } else {
+            return getTempJarFileLegacy(originalFile);
+        }
+    }
+    
+    /**
+     * Optimized temp file handling:
+     * - Creates temp file in same folder as original (enables hard links)
+     * - Uses predictable name: <original>_itw.jar (reuse across launches)
+     * - Uses hard link instead of copy when possible (instant, no disk waste)
+     * - Uses deleteOnExit() for cleanup
+     */
+    private File getTempJarFileOptimised(File originalFile) throws IOException {
+        // Check if file already has _itw.jar suffix (prevent double-copying)
+        String originalName = originalFile.getName();
+        if (originalName.endsWith("_itw.jar")) {
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.log(Level.MESSAGE_DEBUG, 
+                    String.format("File is already ITW temp file, skipping: %s", 
+                        originalFile.getAbsolutePath()));
+            }
+            return originalFile;
+        }
+        
+        // Check if we already have a temp copy for this original file
+        File tempFile = originalToTempMap.get(originalFile);
+        if (tempFile != null && tempFile.exists()) {
+            return tempFile;
+        }
+        
+        // Create temp file in same folder with _itw.jar suffix
+        File parentDir = originalFile.getParentFile();
+        String baseName = originalName.replaceFirst("\\.jar$", "");
+        String tempFileName = baseName + "_itw.jar";
+        tempFile = new File(parentDir, tempFileName);
+        
+        // Try hard link first (instant, no disk waste, same filesystem)
+        boolean hardLinkSuccess = false;
+        if (!tempFile.exists()) {
+            try {
+                Files.createLink(tempFile.toPath(), originalFile.toPath());
+                hardLinkSuccess = true;
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.log(Level.MESSAGE_DEBUG, 
+                        String.format("Created hard link: %s -> %s", 
+                            tempFile.getAbsolutePath(), originalFile.getAbsolutePath()));
+                }
+            } catch (IOException | UnsupportedOperationException e) {
+                // Hard link failed, will fall back to copy
+                if (LOGGER.isDebugEnabled()) {
+                    LOGGER.log(Level.MESSAGE_DEBUG, 
+                        String.format("Hard link failed, falling back to copy: %s", e.getMessage()));
+                }
+            }
+        }
+        
+        // Fall back to copy if hard link failed or file already exists
+        if (!hardLinkSuccess && !tempFile.exists()) {
+            if (LOGGER.isDebugEnabled()) {
+                LOGGER.log(Level.MESSAGE_DEBUG, 
+                    String.format("Copying JAR to temp file: %s -> %s", 
+                        originalFile.getAbsolutePath(), tempFile.getAbsolutePath()));
+            }
+            
+            try {
+                Files.copy(originalFile.toPath(), tempFile.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            } catch (IOException e) {
+                // Fallback to manual copy if Files.copy fails
+                copyFile(originalFile, tempFile);
+            }
+        }
+        
+        // Mark for deletion on JVM exit
+        tempFile.deleteOnExit();
+        
+        // Cache the mapping
+        originalToTempMap.put(originalFile, tempFile);
+        
+        return tempFile;
+    }
+    
+    /**
+     * Legacy temp file handling (for OPTIMISED_TEMP_FILE_HANDLING=false):
+     * - Creates temp file in java.io.tmpdir/icedtea-web
+     * - Uses unique timestamp-based name
+     * - Always copies (no hard link optimization)
+     */
+    private File getTempJarFileLegacy(File originalFile) throws IOException {
         // Check if the file is already in the temp directory (prevent double-copying)
         String normalizedFilePath = originalFile.getAbsolutePath().replace('/', File.separatorChar);
         String normalizedTempDir = tempBaseDir.getAbsolutePath().replace('/', File.separatorChar);
@@ -117,6 +216,9 @@ public class JarFileTempManager {
             // Fallback to manual copy if Files.copy fails
             copyFile(originalFile, tempFile);
         }
+        
+        // Mark for deletion on JVM exit
+        tempFile.deleteOnExit();
         
         // Cache the mapping
         originalToTempMap.put(originalFile, tempFile);
