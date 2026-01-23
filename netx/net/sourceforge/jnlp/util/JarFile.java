@@ -75,9 +75,13 @@ public class JarFile extends java.util.jar.JarFile implements Closeable {
     }
 
     public JarFile(File file, boolean verify, int mode) throws IOException {
-        // Copy to temp directory first to avoid classloader interference
+        // super() must be first statement - copy to temp directory to avoid classloader interference
         super(copyToTempIfNeeded(file), verify, mode);
-        System.err.println("[ITW JarFile] Opening: " + file.getName() + " -> actual file used");
+        
+        // Debug logging after super() call
+        System.err.println("[ITW JarFile] Opened JAR:");
+        System.err.println("  Input:  " + file.getAbsolutePath());
+        
         if (ENABLE_GIFAR_PROTECTION) {
             verifyZipHeader(file);
         }

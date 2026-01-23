@@ -301,7 +301,12 @@ public class JarCertVerifier implements CertVerifier {
      *             Will be thrown if there are any problems with the jar.
      */
     private VerifiedJarFile verifyJar(String jarName) throws Exception {
-        try (JarFile jarFile = new JarFile(jarName, true)) {
+        try {
+            // CRITICAL: Use JarFileCache to avoid closing shared cache entries
+            // Opening directly and closing causes "zip file closed" errors!
+            net.sourceforge.jnlp.util.JarFile jarFile = 
+                net.sourceforge.jnlp.runtime.JarFileCache.getInstance().getJarFile(jarName);
+            
             List<JarEntry> entriesVec = new ArrayList<>();
             byte[] buffer = new byte[8192];
 
@@ -323,6 +328,7 @@ public class JarCertVerifier implements CertVerifier {
                 }
             }
             return new VerifiedJarFile(jarName, null != jarFile.getManifest(), entriesVec);
+            // NOTE: Do NOT close jarFile - it's managed by JarFileCache!
 
         } catch (Exception e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);

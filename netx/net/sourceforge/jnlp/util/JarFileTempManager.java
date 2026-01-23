@@ -52,7 +52,10 @@ public class JarFileTempManager {
     private static final boolean OPTIMISED_TEMP_FILE_HANDLING = true;
     
     /**
-     * Detect operating system for link type selection
+     * Detect operating system for link type selection.
+     * 
+     * The real issue was URLClassLoader opening the ORIGINAL file while ITW opened
+     * the temp file. Now both use the same temp file, so hard links work on Windows.
      */
     private static final boolean IS_WINDOWS = System.getProperty("os.name").toLowerCase().contains("win");
     
@@ -133,31 +136,30 @@ public class JarFileTempManager {
         String tempFileName = baseName + "_itw.jar";
         tempFile = new File(parentDir, tempFileName);
         
-        // Platform-specific link strategy:
-        // - Windows: Use hard link (fileKey() returns null, cache uses path comparison)
-        // - Unix/Mac: Use symlink (fileKey() returns inode, hard links share same inode)
+        // Platform-specific strategy:
+        // - Unix/Mac: Use symlink (different inode, fast, minimal disk)
+        // - Windows: Use copy (hard links share OS file handles, symlinks need admin)
         boolean linkSuccess = false;
         String linkType = "";
         if (!tempFile.exists()) {
-            try {
-                if (IS_WINDOWS) {
-                    // Windows: Hard link works because fileKey() returns null
-                    Files.createLink(tempFile.toPath(), originalFile.toPath());
-                    linkType = "hard link";
-                } else {
-                    // Unix/Mac: Symlink needed because hard links share inode
+            if (!IS_WINDOWS) {
+                // Unix/Mac: Try symlink first
+                try {
                     Files.createSymbolicLink(tempFile.toPath(), originalFile.toPath());
+                    linkSuccess = true;
                     linkType = "symbolic link";
+                    LOGGER.log(Level.MESSAGE_ALL, 
+                        String.format("[ITW-TEMP] Created symbolic link: %s -> %s", 
+                            tempFile.getAbsolutePath(), originalFile.getAbsolutePath()));
+                } catch (IOException | UnsupportedOperationException e) {
+                    // Symlink failed, will fall through to copy
+                    LOGGER.log(Level.WARNING_ALL, 
+                        String.format("[ITW-TEMP] Symbolic link failed, falling back to copy: %s", e.getMessage()));
                 }
-                linkSuccess = true;
-                LOGGER.log(Level.MESSAGE_ALL, 
-                    String.format("[ITW-TEMP] Created %s: %s -> %s", 
-                        linkType, tempFile.getAbsolutePath(), originalFile.getAbsolutePath()));
-            } catch (IOException | UnsupportedOperationException e) {
-                // Link failed, fall back to copy
-                LOGGER.log(Level.WARNING_ALL, 
-                    String.format("[ITW-TEMP] %s failed, falling back to copy: %s", 
-                        (IS_WINDOWS ? "Hard link" : "Symbolic link"), e.getMessage()));
+            } else {
+                // Windows: Skip directly to copy (hard links share file handles, symlinks need admin)
+                LOGGER.log(Level.MESSAGE_ALL, "[ITW-TEMP] Windows detected, using copy (hard links not reliable)");
+                linkType = "copy";
             }
         }
         

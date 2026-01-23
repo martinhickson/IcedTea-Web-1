@@ -540,9 +540,12 @@ public class Launcher {
                 JARDesc mainJarDesc = file.getResources().getMainJAR();
                 File f = CacheUtil.getCacheFile(mainJarDesc.getLocation(), null);
                 if (f != null) {
-                    JarFile mainJar = new JarFile(f);
+                    // Use JarFileCache to avoid resource leaks and cache conflicts
+                    net.sourceforge.jnlp.util.JarFile mainJar = 
+                        net.sourceforge.jnlp.runtime.JarFileCache.getInstance().getJarFile(f.getAbsolutePath());
                     mainName = mainJar.getManifest().
                                 getMainAttributes().getValue("Main-Class");
+                    // NOTE: Do NOT close - managed by JarFileCache
                 }
             }
 
