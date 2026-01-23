@@ -47,12 +47,10 @@ public class ResourceDownloader implements Runnable {
     private static final int RETRY_COUNT = 5;
     private final Resource resource;
     private final Object lock;
-    private boolean useCommonsCompress = false;
 
     public ResourceDownloader(Resource resource, Object lock) {
         this.resource = resource;
         this.lock = lock;
-        useCommonsCompress = Boolean.parseBoolean(System.getenv("ITW_COMMONS_COMPRESS")) || isJDK14OrLater();
     }
 
     //JDK 14 and later doesn't have built-in Pack200 functionality
@@ -593,19 +591,10 @@ public class ResourceDownloader implements Runnable {
         try (GZIPInputStream gzInputStream = new GZIPInputStream(new FileInputStream(CacheUtil
                 .getCacheFile(compressedLocation, version)))) {
             InputStream inputStream = new BufferedInputStream(gzInputStream);
-
             JarOutputStream outputStream = new JarOutputStream(new FileOutputStream(CacheUtil
                     .getCacheFile(uncompressedLocation, version)));
-
-            if (useCommonsCompress) {
-                io.pack200.Pack200.Unpacker unpacker =
-                        io.pack200.Pack200.newUnpacker();
-                unpacker.unpack(inputStream, outputStream);
-            } else {
-                java.util.jar.Pack200.Unpacker unpacker = java.util.jar.Pack200.newUnpacker();
-                unpacker.unpack(inputStream, outputStream);
-            }
-
+            Pack200.Unpacker unpacker = Pack200.newUnpacker();
+            unpacker.unpack(inputStream, outputStream);
             outputStream.close();
             inputStream.close();
         }

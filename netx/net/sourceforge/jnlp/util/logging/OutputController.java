@@ -50,9 +50,9 @@ import net.sourceforge.jnlp.util.logging.headers.MessageWithHeader;
 
 
 /**
- * 
+ *
  * OutputController class (thread) must NOT call JNLPRuntime.getConfiguraion()
- * 
+ *
  */
 public class OutputController {
 
@@ -66,7 +66,7 @@ public class OutputController {
         ERROR_DEBUG; // - stderr/log in verbose/debug mode
         //ERROR_DEBUG is default for Throwable
         //MESSAGE_DEBUG is default  for String
-        
+
         public  boolean isOutput() {
             return this == Level.MESSAGE_ALL
                     || this == Level.MESSAGE_DEBUG
@@ -80,7 +80,7 @@ public class OutputController {
                     || this == Level.WARNING_ALL
                     || this == Level.WARNING_DEBUG;
         }
-        
+
         public  boolean isWarning() {
             return this == Level.WARNING_ALL
                     || this == Level.WARNING_DEBUG;
@@ -138,7 +138,7 @@ public class OutputController {
             consume();
         }
     }
-    
+
     public void close() throws Exception {
         flush();
         if (LogConfig.getLogConfig().isLogToFile()){
@@ -181,7 +181,7 @@ public class OutputController {
         }
         //only crucial stuff is going to system log
         //only java messages handled here, plugin is onhis own
-        if (LogConfig.getLogConfig().isLogToSysLog() && 
+        if (LogConfig.getLogConfig().isLogToSysLog() &&
                 (s.getHeader().level.equals(Level.ERROR_ALL) || s.getHeader().level.equals(Level.WARNING_ALL)) &&
                 s.getHeader().isC == false) {
             //no headers here
@@ -205,8 +205,8 @@ public class OutputController {
     private OutputController() {
         this(System.out, System.err);
     }
-    
-    
+
+
     private static class OutputControllerHolder {
 
         //https://en.wikipedia.org/wiki/Initialization_on_demand_holder_idiom
@@ -244,7 +244,7 @@ public class OutputController {
             }
         }));
     }
-     
+
     public void startConsumer() {
         consumerThread.start();
         //some messages were probably posted before start of consumer
@@ -338,6 +338,15 @@ public class OutputController {
         log(new JavaMessage(new Header(level, false), s));
     }
 
+    public boolean isDebugEnabled() {
+        try {
+            return JNLPRuntime.isDebug();
+        } catch (Throwable t) {
+            // Throwable caught to handle initialisation circular dependency.
+            return false;
+        }
+    }
+
     private boolean shouldLog(Level level) {
         if (level.isDebug()) {
             try {
@@ -354,11 +363,11 @@ public class OutputController {
         messageQue.add(l);
         this.notifyAll();
     }
-    
-    
+
+
 
     private static class FileLogHolder {
-        
+
         //https://en.wikipedia.org/wiki/Double-checked_locking#Usage_in_Java
         //https://en.wikipedia.org/wiki/Initialization_on_demand_holder_idiom
         private static volatile SingleStreamLogger INSTANCE = FileLog.createFileLog();
@@ -367,10 +376,10 @@ public class OutputController {
     private SingleStreamLogger getFileLog() {
         return FileLogHolder.INSTANCE;
     }
-    
-    
+
+
     private static class AppFileLogHolder {
-        
+
         //https://en.wikipedia.org/wiki/Double-checked_locking#Usage_in_Java
         //https://en.wikipedia.org/wiki/Initialization_on_demand_holder_idiom
         private static volatile SingleStreamLogger INSTANCE = FileLog.createAppFileLog();
@@ -428,7 +437,7 @@ public class OutputController {
         printOut(e);
         printError(e);
     }
-    
+
    //package private setters for testing
 
     void setErrLog(PrintStreamLogger errLog) {
@@ -438,7 +447,7 @@ public class OutputController {
     void setFileLog(SingleStreamLogger fileLog) {
         FileLogHolder.INSTANCE = fileLog;
     }
-    
+
     void setAppFileLog(SingleStreamLogger fileLog) {
         AppFileLogHolder.INSTANCE = fileLog;
     }
@@ -450,13 +459,13 @@ public class OutputController {
     void setSysLog(SingleStreamLogger sysLog) {
         SystemLogHolder.INSTANCE = sysLog;
     }
-    
+
     public synchronized String readLine() throws IOException {
         if (br == null) {
             br = new BufferedReader(new InputStreamReader(System.in));
         }
         return br.readLine();
     }
-    
-    
+
+
 }

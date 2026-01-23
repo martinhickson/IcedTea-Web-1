@@ -32,29 +32,16 @@
  statement from your version.*/
 package net.sourceforge.jnlp.jdk89acesses;
 
-import java.lang.reflect.Method;
 import javax.swing.ImageIcon;
-import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
- * This class is summ of access to sun.misc.Launcher which was removed in jdk9.
+ * This class previously safely accessed sun.misc.Launcher which was removed in jdk9.
  *
  * @author jvanek
  */
 public class SunMiscLauncher {
 
     public static ImageIcon getSecureImageIcon(String resource) {
-        try {
-            Class clazz = Class.forName("sun.misc.Launcher");
-            Object obj  = clazz.newInstance();
-            Method m = clazz.getMethod("getClassLoader");
-            ClassLoader cl = (ClassLoader) m.invoke(obj);
-            return new ImageIcon(cl.getResource(resource));
-        } catch (Exception ex) {
-            OutputController.getLogger().log(ex);
-            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "sun.misc.Launcher not found. Running jdk9 or higher? Using unsecure BootClassLoader");
-            return new ImageIcon(ClassLoader.getSystemClassLoader().getParent().getResource(resource));
-        }
+        return new ImageIcon(ClassLoader.getSystemClassLoader().getParent().getResource(resource));
     }
-
 }

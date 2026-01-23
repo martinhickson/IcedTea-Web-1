@@ -11,14 +11,14 @@
   <description>Maven project for testing IcedTea-Web performance optimizations</description>
 
   <properties>
-    <maven.compiler.source>8</maven.compiler.source>
-    <maven.compiler.target>8</maven.compiler.target>
+    <maven.compiler.source>17</maven.compiler.source>
+    <maven.compiler.target>17</maven.compiler.target>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
     <maven.compiler.encoding>UTF-8</maven.compiler.encoding>
-    <junit.version>5.9.2</junit.version>
+    <junit.version>6.0.1</junit.version>
     <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
-    <maven.surefire.plugin.version>3.0.0</maven.surefire.plugin.version>
+    <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
     <maven.resources.plugin.version>3.3.0</maven.resources.plugin.version>
     <maven.build.helper.plugin.version>3.3.0</maven.build.helper.plugin.version>
     <maven.enforcer.plugin.version>3.3.0</maven.enforcer.plugin.version>
@@ -40,6 +40,12 @@
       <artifactId>rhino</artifactId>
       <version>1.7R3</version>
     </dependency>
+    <dependency>
+      <groupId>io.pack200</groupId>
+      <artifactId>pack200</artifactId>
+      <version>11.0.2</version>
+    </dependency>
+
     <!-- JUnit 5 for testing -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -91,17 +97,25 @@
     </dependency>
   </dependencies>
 
+  <repositories>
+    <repository>
+      <id>github</id>
+      <name>GitHub Packages</name>
+      <url>https://maven.pkg.github.com/martinhickson/pack200</url>
+    </repository>
+  </repositories>
+
   <build>
 
     <plugins>
       <plugin>
         <groupId>com.github.ekryd.sortpom</groupId>
         <artifactId>sortpom-maven-plugin</artifactId>
-        <version>3.4.0</version>
+        <version>4.0.0</version>
         <!-- or the latest version -->
         <configuration>
           <createBackupFile>true</createBackupFile>
-          <!-- other optional parameters, see plugin’s wiki/wiki pages -->
+          <!-- other optional parameters, see plugin's wiki/wiki pages -->
         </configuration>
         <executions>
           <execution>
@@ -128,8 +142,8 @@
             <configuration>
               <rules>
                 <requireJavaVersion>
-                  <version>[8,9)</version>
-                  <message>Java 8 is required to build this project.</message>
+                  <version>[17,18)</version>
+                  <message>Java 17 is required to build this project.</message>
                 </requireJavaVersion>
                 <requireMavenVersion>
                   <version>[3.6.0,)</version>
@@ -147,9 +161,51 @@
         <artifactId>maven-compiler-plugin</artifactId>
         <version>${maven.compiler.plugin.version}</version>
         <configuration>
-          <source>8</source>
-          <target>8</target>
+          <source>17</source>
+          <target>17</target>
           <encoding>UTF-8</encoding>
+          <compilerArgs>
+            <arg>--add-exports</arg>
+            <arg>java.base/sun.net.www.protocol.jar=ALL-UNNAMED</arg>
+            <arg>--add-opens</arg>
+            <arg>java.base/sun.net.www.protocol.jar=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.base/sun.security.action=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.base/sun.security.provider=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.base/sun.security.util=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.base/sun.security.validator=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.base/sun.security.x509=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.base/jdk.internal.util.jar=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.base/sun.net.www.protocol.http=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/sun.applet=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/sun.awt=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/sun.awt.windows=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/sun.awt.image=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/sun.awt.X11=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/sun.swing.table=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/sun.swing=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/sun.swing.plaf=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED</arg>
+            <arg>--add-exports</arg>
+            <arg>java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED</arg>
+            <arg>--add-opens</arg>
+            <arg>java.base/java.lang=ALL-UNNAMED</arg>
+          </compilerArgs>
         </configuration>
       </plugin>
       <!-- Maven Resources Plugin for copying resources -->
@@ -171,6 +227,13 @@
                 <resource>
                   <directory>${project.basedir}/../netx</directory>
                   <filtering>false</filtering>
+                  <includes>
+                    <include>**/*.java</include>
+                  </includes>
+                  <excludes>
+                    <exclude>**/AppletViewerPanelAccess.java</exclude>
+                    <exclude>**/NetxPanel.java</exclude>
+                  </excludes>
                 </resource>
               </resources>
             </configuration>
@@ -189,6 +252,9 @@
                 <resource>
                   <directory>${project.basedir}/../netx</directory>
                   <filtering>false</filtering>
+                  <excludes>
+                    <exclude>**/*.java</exclude>
+                  </excludes>
                 </resource>
               </resources>
             </configuration>
@@ -209,6 +275,13 @@
                   <includes>
                     <include>**/*.java</include>
                   </includes>
+                  <excludes>
+                    <exclude>**/MethodOverloadResolverTest.java</exclude>
+                    <exclude>**/NetxPanel.java</exclude>
+                    <exclude>**/Plugin*.java</exclude>
+                    <exclude>**/NetxPanel.java</exclude>
+                    <exclude>**/PluginPipeMock.java</exclude>
+                  </excludes>
                   <filtering>false</filtering>
                 </resource>
                 <resource>
@@ -323,7 +396,7 @@
           <systemPropertyVariables>
             <java.util.logging.config.file>${project.basedir}/../tests/logging.properties</java.util.logging.config.file>
           </systemPropertyVariables>
-          <argLine>--add-exports java.base/sun.net.www.protocol.jar=ALL-UNNAMED
+          <argLine>--add-opens java.base/sun.net.www.protocol.jar=ALL-UNNAMED
                         --add-exports java.base/sun.security.action=ALL-UNNAMED
                         --add-exports java.base/sun.security.provider=ALL-UNNAMED
                         --add-exports java.base/sun.security.util=ALL-UNNAMED
@@ -341,7 +414,8 @@
                         --add-exports java.desktop/sun.swing.plaf=ALL-UNNAMED
                         --add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
                         --add-exports java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED
-                        --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+                        --add-opens java.base/java.lang=ALL-UNNAMED
+                        --add-modules java.naming</argLine>
         </configuration>
       </plugin>
     </plugins>

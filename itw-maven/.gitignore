@@ -1,0 +1,28 @@
+# Maven build output
+target/
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# Copied source files (should be in target/ only)
+src/main/java/
+src/main/resources/
+src/test/java/net/
+src/test/java/sun/
+
+# Keep our test resources
+!src/test/resources/
+
+# Maven wrapper
+.mvn/
+mvnw
+mvnw.cmd
+
+# OS files
+.DS_Store
+Thumbs.db
+

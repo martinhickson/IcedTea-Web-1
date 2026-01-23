@@ -554,9 +554,56 @@ public class CacheUtil {
      * Get the path to file minus the cache directory and indexed folder.
      */
     private static String pathToURLPath(String path) {
-        int len = CacheLRUWrapper.getInstance().getCacheDir().getFullPath().length();
-        int index = path.indexOf(File.separatorChar, len + 1);
-        return path.substring(index);
+        String cacheDir = CacheLRUWrapper.getInstance().getCacheDir().getFullPath();
+        
+        // Normalize paths: convert backslashes to forward slashes for consistent comparison
+        // and handle both trailing separator and no trailing separator cases
+        String normalizedPath = path.replace('\\', '/');
+        String normalizedCacheDir = cacheDir.replace('\\', '/');
+        
+        // Remove trailing separator from cache directory if present
+        if (normalizedCacheDir.endsWith("/")) {
+            normalizedCacheDir = normalizedCacheDir.substring(0, normalizedCacheDir.length() - 1);
+        }
+        
+        // Check if path starts with cache directory (case-insensitive on Windows)
+        if (!normalizedPath.toLowerCase().startsWith(normalizedCacheDir.toLowerCase())) {
+            // Path doesn't start with cache directory, return as-is
+            return path;
+        }
+        
+        // Find the separator after the cache directory
+        int cacheDirLen = normalizedCacheDir.length();
+        if (normalizedPath.length() <= cacheDirLen) {
+            // Path is exactly the cache directory or shorter, return as-is
+            return path;
+        }
+        
+        // Check if there's a separator right after the cache directory
+        int index = -1;
+        if (normalizedPath.charAt(cacheDirLen) == '/') {
+            // Separator is at cacheDirLen, look for next separator after that
+            index = normalizedPath.indexOf('/', cacheDirLen + 1);
+        } else {
+            // No separator immediately after cache dir, look for first separator
+            index = normalizedPath.indexOf('/', cacheDirLen);
+        }
+        
+        if (index == -1) {
+            // No separator found after cache directory - this means the path is just cacheDir/1144
+            // Return the part after cache directory (e.g., "/1144" or "1144")
+            if (normalizedPath.length() > cacheDirLen) {
+                String remainder = normalizedPath.substring(cacheDirLen);
+                // Convert back to original separator format
+                return remainder.replace('/', File.separatorChar);
+            }
+            return path;
+        }
+        
+        // Return the path starting from the separator after the indexed folder
+        String result = normalizedPath.substring(index);
+        // Convert back to original separator format
+        return result.replace('/', File.separatorChar);
     }
 
     /**
@@ -636,6 +683,20 @@ public class CacheUtil {
         File localFile = getCacheFile(source, version);
         OutputStream out = new FileOutputStream(localFile);
         return new BufferedOutputStream(out);
+    }
+
+    public static InputStream ensureInputBuffered(InputStream in) throws IOException {
+        if (!(in instanceof BufferedInputStream)) {
+            in = new BufferedInputStream(in);
+        }
+        return in;
+    }
+
+    public static OutputStream ensureOutputBuffered(OutputStream out) throws IOException {
+        if (!(out instanceof BufferedOutputStream)) {
+            out = new BufferedOutputStream(out);
+        }
+        return out;
     }
 
     /**

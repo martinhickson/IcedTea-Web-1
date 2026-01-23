@@ -66,6 +66,13 @@ public class Version {
         JreVersion(String v, boolean strict, boolean headless) {
             super(v);
             boolean match = matchesJreVersion();
+            if (!match && v != null) {
+                String requestedMajor = v.split("[.\\-_]")[0];
+                String actualMajor = getJreVersion().split("[.\\-_]")[0];
+                if (requestedMajor.equals(actualMajor)) {
+                    match = true; // Major version matches, consider it compatible
+                }
+            }
             if (!match) {
                 String s = Translator.R("JREversionDontMatch", getJreVersion(), v);
                 String e = "Strict run is  deffined, and your JRE - " + getJreVersion() + " - dont match requested JRE(s) - " + v;
@@ -85,7 +92,7 @@ public class Version {
                     OutputController.getLogger().log(OutputController.Level.WARNING_ALL, s);
                 }
             } else {
-                OutputController.getLogger().log("good - your JRE - " + getJreVersion() + " - match requested JRE - " + v);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "good - your JRE - " + getJreVersion() + " - match requested JRE - " + v);
             }
         }
 

@@ -9,7 +9,7 @@ on:
         version:
           description: 'If running a release, set the version (ensure it matches configure.ac)'     
           required: true
-          default: 'icedtea-web-1.8.8.20'
+          default: 'icedtea-web-1.8.8.21'
   pull_request:
     branches:
       - 1.8

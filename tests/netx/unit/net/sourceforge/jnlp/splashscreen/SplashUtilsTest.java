@@ -139,7 +139,6 @@ public class SplashUtilsTest {
     @Test
     public void testGetSplashScreen3() throws Exception {
         Map<String,String> fake1 = new HashMap<String,String>();
-        fake1.put(SplashUtils.ICEDTEA_WEB_SPLASH, SplashUtils.NONE);
         fake1.put(SplashUtils.ICEDTEA_WEB_PLUGIN_SPLASH, SplashUtils.DEFAULT);
         Map<String,String> original = getEnvironment();
         Assert.assertNotNull(original);
@@ -162,7 +161,6 @@ public class SplashUtilsTest {
     public void testGetSplashScreen4() throws Exception {
         Map<String,String> fake1 = new HashMap<String,String>();
         fake1.put(SplashUtils.ICEDTEA_WEB_SPLASH, SplashUtils.DEFAULT);
-        fake1.put(SplashUtils.ICEDTEA_WEB_PLUGIN_SPLASH, SplashUtils.NONE);
         Map<String,String> original = getEnvironment();
         Assert.assertNotNull(original);
         try {
@@ -183,8 +181,6 @@ public class SplashUtilsTest {
     @Test
     public void testGetSplashScreen5() throws Exception {
         Map<String,String> fake1 = new HashMap<String,String>();
-        fake1.put(SplashUtils.ICEDTEA_WEB_SPLASH, SplashUtils.NONE);
-        fake1.put(SplashUtils.ICEDTEA_WEB_PLUGIN_SPLASH, SplashUtils.NONE);
         Map<String,String> original = getEnvironment();
         Assert.assertNotNull(original);
         try {
@@ -253,13 +249,13 @@ public class SplashUtilsTest {
       field.setAccessible(true);
       field.set(null, newValue);
    }
-     
+
     @Test
     public void assertNulsAreOkInShow() {
         SplashUtils.showError(null, (AppletEnvironment)null);
         SplashUtils.showError(null, (AppletInstance)null);
         SplashUtils.showError(null, (SplashController)null);
     }
-     
+
 
 }

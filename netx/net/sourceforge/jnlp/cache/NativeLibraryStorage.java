@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 
+import net.sourceforge.jnlp.runtime.JarFileCache;
 import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
@@ -41,7 +42,7 @@ public class NativeLibraryStorage {
                 jarEntryDirectory = null;
             } catch (IOException e) {
                 /*
-                 * failed to delete a file in tmpdir, no big deal (as well the VM 
+                 * failed to delete a file in tmpdir, no big deal (as well the VM
                  * might be shutting down at this point so no much we can do)
                  */
             }
@@ -85,25 +86,26 @@ public class NativeLibraryStorage {
      * @param jarLocation location of jar to be searched
      */
     public void addSearchJar(URL jarLocation) {
-        OutputController.getLogger().log("Activate native: " + jarLocation);
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Activate native: " + jarLocation);
         File localFile = tracker.getCacheFile(jarLocation);
         if (localFile == null)
             return;
 
         try {
-            try (JarFile jarFile = new JarFile(localFile, false)) {
-                Enumeration<JarEntry> entries = jarFile.entries();
-                
-                while (entries.hasMoreElements()) {
-                    JarEntry e = entries.nextElement();
-                    
+            // Use JDK's global jar file cache - no try-with-resources needed
+            JarFile jarFile = JarFileCache.getInstance().getJarFile(localFile.getAbsolutePath());
+            Enumeration<JarEntry> entries = jarFile.entries();
+
+            while (entries.hasMoreElements()) {
+                JarEntry e = entries.nextElement();
+
                     if (e.isDirectory()) {
                         continue;
                     }
-                    
+
                     String name = new File(e.getName()).getName();
                     boolean isLibrary = false;
-                    
+
                     for (String suffix : NATIVE_LIBRARY_EXTENSIONS) {
                         if (name.endsWith(suffix)) {
                             isLibrary = true;
@@ -113,16 +115,15 @@ public class NativeLibraryStorage {
                     if (!isLibrary) {
                         continue;
                     }
-                    
+
                     ensureNativeStoreDirectory();
-                    
+
                     File outFile = new File(jarEntryDirectory, name);
                     if (!outFile.isFile()) {
                         FileUtils.createRestrictedFile(outFile, true);
                     }
                     CacheUtil.streamCopy(jarFile.getInputStream(e),
                             new FileOutputStream(outFile));
-                }
             }
         } catch (IOException ex) {
             OutputController.getLogger().log(ex);

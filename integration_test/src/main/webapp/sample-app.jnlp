@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jnlp spec="1.0+" codebase="@CODEBASE@" href="sample-app.jnlp">
+  <information>
+    <title>IcedTea-Web REST Test Application</title>
+    <vendor>IcedTea-Web Integration Tests</vendor>
+    <description>Sample JNLP application for integration testing with REST client-server communication</description>
+    <offline-allowed/>
+  </information>
+  
+  <security>
+    <all-permissions/>
+  </security>
+  
+  <resources>
+    <j2se version="1.8+" />
+    <jar href="sample-app.jar" main="true" />
+    <jar href="lib/cxf-rt-rs-client-4.0.3.jar" />
+    <jar href="lib/cxf-rt-rs-extension-providers-4.0.3.jar" />
+    <jar href="lib/cxf-rt-frontend-jaxrs-4.0.3.jar" />
+    <jar href="lib/cxf-core-4.0.3.jar" />
+    <jar href="lib/jakarta.ws.rs-api-3.1.0.jar" />
+    <jar href="lib/jakarta.annotation-api-2.1.1.jar" />
+    <jar href="lib/jackson-jaxrs-json-provider-2.15.2.jar" />
+    <jar href="lib/jackson-core-2.15.2.jar" />
+    <jar href="lib/jackson-databind-2.15.2.jar" />
+    <jar href="lib/jackson-annotations-2.15.2.jar" />
+  </resources>
+  
+  <application-desc main-class="net.sourceforge.jnlp.test.SampleApplication">
+    <argument>Hello from JNLP!</argument>
+  </application-desc>
+</jnlp>
+

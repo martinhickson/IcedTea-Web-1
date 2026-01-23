@@ -1,74 +1,79 @@
 package net.sourceforge.jnlp.jdk89acesses;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
 import java.util.LinkedList;
 import java.util.jar.JarFile;
+
 import net.sourceforge.jnlp.util.logging.OutputController;
 
-/**
- * Class to access sun.misc.JarINdex for both jdk9 and 8.
- *
- * @author jvanek
- */
 public class JarIndexAccess {
 
     private static Class<?> jarIndexClass;
-    /*JarIndex*/
+    private static MethodHandle getJarIndexHandle;
+    private static MethodHandle getHandle;
+
     private final Object parent;
 
     static {
         try {
-            jarIndexClass = Class.forName("sun.misc.JarIndex");
+            jarIndexClass = Class.forName("jdk.internal.util.jar.JarIndex");
         } catch (ClassNotFoundException ex) {
             try {
-                OutputController.getLogger().log(ex);
-                OutputController.getLogger().log("Running jdk9+ ?");
-                jarIndexClass = Class.forName("jdk.internal.util.jar.JarIndex");
+                jarIndexClass = Class.forName("sun.misc.JarIndex");
             } catch (ClassNotFoundException exx) {
                 OutputController.getLogger().log(exx);
-                throw new RuntimeException("JarIndex not found!");
+                throw new RuntimeException("JarIndex class not found!");
             }
+        }
+
+        try {
+            MethodHandles.Lookup lookup = MethodHandles.lookup();
+            getJarIndexHandle = lookup.findStatic(
+                jarIndexClass,
+                "getJarIndex",
+                MethodType.methodType(jarIndexClass, JarFile.class)
+            );
+
+            getHandle = lookup.findVirtual(
+                jarIndexClass,
+                "get",
+                MethodType.methodType(LinkedList.class, String.class)
+            );
+        } catch (NoSuchMethodException | IllegalAccessException e) {
+            throw new RuntimeException("Failed to initialize MethodHandles", e);
         }
     }
 
     private JarIndexAccess(Object parent) {
         if (parent == null) {
-            throw new RuntimeException("JarFile can notbe null!");
+            throw new RuntimeException("JarIndex parent object cannot be null!");
         }
         this.parent = parent;
     }
 
     public static JarIndexAccess getJarIndex(JarFile jarFile) throws IOException {
         try {
-            return getJarIndexImpl(jarFile);
-        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-            throw new RuntimeException(e);
+            // Use invoke() instead of invokeExact() to allow type conversion
+            // invokeExact() requires exact type match, but we're assigning to Object
+            Object result = getJarIndexHandle.invoke(jarFile);
+            if (result == null) {
+                return null;
+            }
+            return new JarIndexAccess(result);
+        } catch (Throwable t) {
+            throw new RuntimeException("Failed to invoke getJarIndex", t);
         }
     }
 
-    public static JarIndexAccess getJarIndexImpl(JarFile jarFile) throws IOException, NoSuchMethodException, IllegalAccessException, InvocationTargetException {
-        Method method = jarIndexClass.getMethod("getJarIndex", JarFile.class);
-        Object o = method.invoke(null, jarFile);
-        if (o == null) {
-            return null;
-        }
-        return new JarIndexAccess(o);
-    }
-
-    public LinkedList<String> get(String replace) {
+    public LinkedList<String> get(String key) {
         try {
-            return getImpl(replace);
-        } catch (NoSuchMethodException | IllegalAccessException | InvocationTargetException e) {
-            throw new RuntimeException(e);
+            // Use invoke() instead of invokeExact() to allow type conversion
+            return (LinkedList<String>) getHandle.invoke(parent, key);
+        } catch (Throwable t) {
+            throw new RuntimeException("Failed to invoke get()", t);
         }
     }
-
-    public LinkedList<String> getImpl(String replace) throws NoSuchMethodException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
-        Method method = jarIndexClass.getMethod("get", String.class);
-        Object o = method.invoke(parent, replace);
-        return (LinkedList<String>) o;
-    }
-
 }

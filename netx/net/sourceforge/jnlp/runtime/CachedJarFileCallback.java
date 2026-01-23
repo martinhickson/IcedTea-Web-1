@@ -50,13 +50,16 @@ import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.jar.JarFile;
+
 import net.sourceforge.jnlp.security.ConnectionFactory;
+import net.sourceforge.jnlp.util.JarFileTempManager;
 import net.sourceforge.jnlp.util.logging.OutputController;
-import net.sourceforge.jnlp.util.JarFile;
+//.sourceforge.jnlp.util.JarFile;
 
 import net.sourceforge.jnlp.util.UrlUtils;
 
-import sun.net.www.protocol.jar.URLJarFile;
+//import sun.net.www.protocol.jar.URLJarFile;
 import sun.net.www.protocol.jar.URLJarFileCallBack;
 
 /**
@@ -103,17 +106,19 @@ final class CachedJarFileCallback implements URLJarFileCallBack {
 
         if (UrlUtils.isLocalFile(localUrl)) {
             // if it is known to us, just return the cached file
-            JarFile returnFile = new JarFile(UrlUtils.decodeUrlQuietly(localUrl).getPath());
-            
+            //JarFile returnFile = new JarFile(UrlUtils.decodeUrlQuietly(localUrl).getPath());
+            String path = UrlUtils.decodeUrlQuietly(localUrl).getPath();
+            JarFile returnFile = JarFileCache.getInstance().getJarFile(path);
+
             //try {
-                
+
                 // Blank out the class-path because:
                 // 1) Web Start does not support it
                 // 2) For the plug-in, we want to cache files from class-path so we do it manually
             //    returnFile.getManifest().getMainAttributes().putValue("Class-Path", "");
 
             //    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Class-Path attribute cleared for " + returnFile.getName());
-                
+
 
             //} catch (NullPointerException npe) {
                 // Discard NPE here. Maybe there was no manifest, maybe there were no attributes, etc.
@@ -146,8 +151,17 @@ final class CachedJarFileCallback implements URLJarFileCallBack {
                             OutputStream out = null;
                             File tmpFile = null;
                             try {
-                                tmpFile = File.createTempFile("jar_cache", null);
-                                tmpFile.deleteOnExit();
+                                // Use JarFileTempManager to copy to icedtea-web temp directory
+                                JarFileTempManager tempManager = JarFileTempManager.getInstance();
+                                // Create a temporary file in the icedtea-web directory
+                                File tempBaseDir = new File(System.getProperty("java.io.tmpdir"), "icedtea-web");
+                                if (!tempBaseDir.exists()) {
+                                    tempBaseDir.mkdirs();
+                                }
+                                String tempFileName = "jar_cache_" + System.currentTimeMillis() + "_" + 
+                                                     url.hashCode() + ".jar";
+                                tmpFile = new File(tempBaseDir, tempFileName);
+                                
                                 out = new FileOutputStream(tmpFile);
                                 int read = 0;
                                 byte[] buf = new byte[BUF_SIZE];
@@ -156,7 +170,9 @@ final class CachedJarFileCallback implements URLJarFileCallBack {
                                 }
                                 out.close();
                                 out = null;
-                                return new URLJarFile(tmpFile, null);
+                                
+                                // Get open JAR file handle (kept open for performance)
+                                return JarFileCache.getInstance().getURLJarFile(tmpFile);
                             } catch (IOException e) {
                                 if (tmpFile != null) {
                                     tmpFile.delete();

@@ -55,7 +55,7 @@ public class JNLPPolicy extends Policy {
     /** the user-level policy for jnlps */
     private Policy userJnlpPolicy = null;
 
-    protected JNLPPolicy() {
+    public JNLPPolicy() {
         shellSource = JNLPPolicy.class.getProtectionDomain().getCodeSource();
         systemSource = Policy.class.getProtectionDomain().getCodeSource();
         systemPolicy = Policy.getPolicy();
@@ -81,22 +81,32 @@ public class JNLPPolicy extends Policy {
 
         // if we check the SecurityDesc here then keep in mind that
         // code can add properties at runtime to the ResourcesDesc!
-        if (JNLPRuntime.getApplication() != null) {
-            if (JNLPRuntime.getApplication().getClassLoader() instanceof JNLPClassLoader) {
-                JNLPClassLoader cl = (JNLPClassLoader) JNLPRuntime.getApplication().getClassLoader();
+        // Defensive: catch any exceptions during getApplication to avoid circular dependencies
+        ApplicationInstance app = null;
+        try {
+            app = JNLPRuntime.getApplication();
+        } catch (Exception e) {
+            // If getApplication fails (e.g., due to circular dependency), continue without app-specific permissions
+            // This can happen during initialization when security manager is being set up
+        }
 
-                PermissionCollection clPermissions = cl.getPermissions(source);
+        if (app != null) {
+            try {
+                if (app.getClassLoader() instanceof JNLPClassLoader) {
+                    JNLPClassLoader cl = (JNLPClassLoader) app.getClassLoader();
 
-                Enumeration<Permission> e;
-                CodeSource appletCS = new CodeSource(JNLPRuntime.getApplication().getJNLPFile().getSourceLocation(), (java.security.cert.Certificate[]) null);
+                    PermissionCollection clPermissions = cl.getPermissions(source);
 
-                // systempolicy permissions need to be accounted for as well
-                e = systemPolicy.getPermissions(appletCS).elements();
-                while (e.hasMoreElements()) {
-                    clPermissions.add(e.nextElement());
-                }
+                    Enumeration<Permission> e;
+                    CodeSource appletCS = new CodeSource(app.getJNLPFile().getSourceLocation(), (java.security.cert.Certificate[]) null);
 
-                // and so do permissions from the jnlp-specific system policy
+                    // systempolicy permissions need to be accounted for as well
+                    e = systemPolicy.getPermissions(appletCS).elements();
+                    while (e.hasMoreElements()) {
+                        clPermissions.add(e.nextElement());
+                    }
+
+                    // and so do permissions from the jnlp-specific system policy
                 if (systemJnlpPolicy != null) {
                     e = systemJnlpPolicy.getPermissions(appletCS).elements();
                     while (e.hasMoreElements()) {
@@ -111,7 +121,7 @@ public class JNLPPolicy extends Policy {
                         clPermissions.add(e.nextElement());
                     }
 
-                    CodeSource appletCodebaseSource = new CodeSource(JNLPRuntime.getApplication().getJNLPFile().getCodeBase(), (java.security.cert.Certificate[]) null);
+                    CodeSource appletCodebaseSource = new CodeSource(app.getJNLPFile().getCodeBase(), (java.security.cert.Certificate[]) null);
                     e = userJnlpPolicy.getPermissions(appletCodebaseSource).elements();
                     while (e.hasMoreElements()) {
                         clPermissions.add(e.nextElement());
@@ -120,10 +130,25 @@ public class JNLPPolicy extends Policy {
 
                 return clPermissions;
             }
+            } catch (Exception e) {
+                // If accessing application properties fails, continue without app-specific permissions
+                // This prevents circular dependencies during security manager initialization
+            }
         }
 
         // delegate to original Policy object; required to run under WebStart
-        return systemPolicy.getPermissions(source);
+        // But also include user policy permissions to ensure user policy is always consulted
+        PermissionCollection result = systemPolicy.getPermissions(source);
+
+        // Add user policy permissions if available
+        if (userJnlpPolicy != null) {
+            Enumeration<Permission> e = userJnlpPolicy.getPermissions(source).elements();
+            while (e.hasMoreElements()) {
+                result.add(e.nextElement());
+            }
+        }
+
+        return result;
     }
 
     /**
@@ -132,6 +157,13 @@ public class JNLPPolicy extends Policy {
     public void refresh() {
         if (userJnlpPolicy != null) {
             userJnlpPolicy.refresh();
+        }
+        if (systemJnlpPolicy != null) {
+            systemJnlpPolicy.refresh();
+        }
+        // Also refresh the system policy to pick up any changes
+        if (systemPolicy != null) {
+            systemPolicy.refresh();
         }
     }
 
@@ -181,7 +213,7 @@ public class JNLPPolicy extends Policy {
         String policyLocation = config.getProperty(key);
         return getPolicyFromUrl(policyLocation);
     }
-    
+
     /**
      * Constructs a delegate policy based on a config setting
      * @param key a KEY_* in DeploymentConfiguration
@@ -193,12 +225,85 @@ public class JNLPPolicy extends Policy {
             try {
                 final URI policyUri;
                 if (policyLocation.startsWith("file://")) {
-                    policyUri = new File(policyLocation).toURI();
+                    // File URIs must use forward slashes, not backslashes
+                    // Extract the path part after "file://" and normalize it
+                    String pathPart = policyLocation.substring(7); // Remove "file://" prefix
+
+                    // If path contains backslashes (Windows paths), normalize using File.getAbsolutePath()
+                    // Use getAbsolutePath() instead of canonicalize to avoid recursive loops on Windows
+                    if (pathPart.contains("\\")) {
+                        // Create a File object from the path
+                        File file = new File(pathPart);
+                        // Check if file exists before trying to load policy to avoid hangs
+                        if (!file.exists()) {
+                            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, 
+                                "Policy file does not exist, skipping: " + pathPart);
+                            return null;
+                        }
+                        // Use getAbsolutePath() to get absolute path without canonicalization
+                        // This avoids recursive loops in WinNTFileSystem.canonicalize0
+                        String absolutePath = file.getAbsolutePath();
+                        // Convert to URI manually to avoid File.toURI() which may call canonicalize
+                        // Replace backslashes with forward slashes for URI
+                        String uriPath = absolutePath.replace("\\", "/");
+                        // Ensure leading slash for Windows absolute paths
+                        if (!uriPath.startsWith("/")) {
+                            uriPath = "/" + uriPath;
+                        }
+                        policyUri = new URI("file", null, uriPath, null);
+                    } else {
+                        // For already normalized paths, handle specific cases
+                        String normalizedLocation = policyLocation;
+                        if (JNLPRuntime.isWindows() && policyLocation.startsWith("file:///c/")) {
+                            normalizedLocation = policyLocation.replace("file:///c/", "file:///C:/");
+                        }
+                        // Ensure forward slashes (in case of any remaining backslashes)
+                        normalizedLocation = normalizedLocation.replace("\\", "/");
+                        // Check if file exists for file:// URIs
+                        if (normalizedLocation.startsWith("file://")) {
+                            String filePath = normalizedLocation.substring(7);
+                            File file = new File(filePath);
+                            if (!file.exists()) {
+                                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, 
+                                    "Policy file does not exist, skipping: " + filePath);
+                                return null;
+                            }
+                        }
+                        policyUri = new URI(normalizedLocation);
+                    }
                 } else {
-                    policyUri = new URI(policyLocation.replace("\\", "/"));
+                    // For non-file URIs, first try to treat as file path
+                    File file = new File(policyLocation);
+                    if (file.exists()) {
+                        // Use getAbsolutePath() instead of canonicalize to avoid recursive loops
+                        String absolutePath = file.getAbsolutePath();
+                        // Convert to URI manually to avoid File.toURI() which may call canonicalize
+                        String uriPath = absolutePath.replace("\\", "/");
+                        if (!uriPath.startsWith("/")) {
+                            uriPath = "/" + uriPath;
+                        }
+                        policyUri = new URI("file", null, uriPath, null);
+                    } else {
+                        // For non-file URIs, replace backslashes with forward slashes
+                        policyUri = new URI(policyLocation.replace("\\", "/"));
+                    }
                 }
-                policy = getInstance("JavaPolicy", new URIParameter(policyUri));
-            } catch (IllegalArgumentException | NoSuchAlgorithmException | URISyntaxException e) {
+                // Wrap Policy.getInstance() in try-catch to catch any blocking or unexpected exceptions
+                try {
+                    policy = getInstance("JavaPolicy", new URIParameter(policyUri));
+                } catch (Exception e) {
+                    // Catch all exceptions including RuntimeException and Error to prevent hangs
+                    OutputController.getLogger().log(OutputController.Level.ERROR_ALL, 
+                        "Failed to load policy from: " + policyLocation);
+                    OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+                    return null;
+                }
+            } catch (IllegalArgumentException | URISyntaxException e) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            } catch (Exception e) {
+                // Catch any other unexpected exceptions to prevent hangs
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, 
+                    "Unexpected error loading policy from: " + policyLocation);
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
             }
         }
