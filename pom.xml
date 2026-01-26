@@ -44,6 +44,22 @@
       <version>11.0.2</version>
     </dependency>
 
+    <!-- ByteBuddy for runtime JarFile.close() protection (optional but recommended) -->
+    <!-- When available, enables JarFileCloseProtection to prevent "zip file closed" errors -->
+    <!-- See: JarFileCloseProtection.java and DEBUGGING_ZIP_FILE_CLOSED.md -->
+    <dependency>
+      <groupId>net.bytebuddy</groupId>
+      <artifactId>byte-buddy</artifactId>
+      <version>1.14.10</version>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>net.bytebuddy</groupId>
+      <artifactId>byte-buddy-agent</artifactId>
+      <version>1.14.10</version>
+      <optional>true</optional>
+    </dependency>
+
     <!-- JUnit 5 for testing -->
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -69,6 +85,14 @@
       <groupId>junit</groupId>
       <artifactId>junit</artifactId>
       <version>4.13.2</version>
+      <scope>test</scope>
+    </dependency>
+
+    <!-- JUnit Vintage Engine to run JUnit 4 tests on JUnit Platform -->
+    <dependency>
+      <groupId>org.junit.vintage</groupId>
+      <artifactId>junit-vintage-engine</artifactId>
+      <version>${junit.version}</version>
       <scope>test</scope>
     </dependency>
 
@@ -104,6 +128,7 @@
   </repositories>
 
   <build>
+
     <plugins>
       <plugin>
         <groupId>com.github.ekryd.sortpom</groupId>
@@ -203,7 +228,7 @@
         </configuration>
       </plugin>
 
-      <!-- Build Helper Plugin to add netx as source directory -->
+      <!-- Build Helper Plugin to add netx as source directory and tests as test source -->
       <plugin>
         <groupId>org.codehaus.mojo</groupId>
         <artifactId>build-helper-maven-plugin</artifactId>
@@ -238,6 +263,36 @@
               </resources>
             </configuration>
           </execution>
+          <execution>
+            <id>add-tests-source</id>
+            <goals>
+              <goal>add-test-source</goal>
+            </goals>
+            <phase>generate-test-sources</phase>
+            <configuration>
+              <sources>
+                <source>tests/netx/unit</source>
+                <source>tests/test-extensions</source>
+              </sources>
+            </configuration>
+          </execution>
+          <execution>
+            <id>add-test-resources</id>
+            <goals>
+              <goal>add-test-resource</goal>
+            </goals>
+            <phase>generate-test-resources</phase>
+            <configuration>
+              <resources>
+                <resource>
+                  <directory>tests/netx/unit</directory>
+                  <excludes>
+                    <exclude>**/*.java</exclude>
+                  </excludes>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
         </executions>
       </plugin>
 
@@ -247,6 +302,10 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.0.0-M9</version>
         <configuration>
+          <includes>
+            <include>**/*Test.java</include>
+            <include>**/Test*.java</include>
+          </includes>
           <argLine>--add-exports java.base/sun.net.www.protocol.jar=ALL-UNNAMED
             --add-opens java.base/sun.net.www.protocol.jar=ALL-UNNAMED
             --add-exports java.base/sun.security.action=ALL-UNNAMED
@@ -270,5 +329,7 @@
         </configuration>
       </plugin>
     </plugins>
+    <!-- Override Maven's default test source directory to use custom structure -->
+    <testSourceDirectory>${project.basedir}/tests-disabled</testSourceDirectory>
   </build>
 </project>

@@ -217,7 +217,7 @@ export IT_JAVACFLAGS=$(IT_JAVAC_SETTINGS) -source $(IT_LANGUAGE_SOURCE_VERSION) 
 #    IllegalAccessException
 #  - we want full privileges
 #
-export UNIFIED_CLASSPATH_SEGMENTS=$(NETX_JAR) $(PLUGIN_JAR) $(JSOBJECT_JAR) $(RHINO_JAR) $(TAGSOUP_JAR) $(MSLINKS_JAR) $(PACK_JAR)
+export UNIFIED_CLASSPATH_SEGMENTS=$(NETX_JAR) $(PLUGIN_JAR) $(JSOBJECT_JAR) $(RHINO_JAR) $(TAGSOUP_JAR) $(MSLINKS_JAR) $(PACK_JAR) $(BYTEBUDDY_JAR) $(BYTEBUDDY_AGENT_JAR)
 export UNIFIED_JACOCO_CLASSPATH_SEGMENTS=$(UNIFIED_CLASSPATH_SEGMENTS) $(JACOCO_CLASSPATH)
 export UNIFIED_CLASSPATH=$(call joinsegments, $(UNIFIED_CLASSPATH_SEGMENTS))
 export UNIFIED_JACOCO_CLASSPATH=$(call joinsegments, $(UNIFIED_JACOCO_CLASSPATH_SEGMENTS))
@@ -367,6 +367,8 @@ edit_launcher_script = sed \
   -e "s|[@]MSLINKS_JAR[@]|$(MSLINKS_JAR)|g" \
   -e "s|[@]TAGSOUP_JAR[@]|$(TAGSOUP_JAR)|g" \
   -e "s|[@]PACK_JAR[@]|$(PACK_JAR)|g" \
+  -e "s|[@]BYTEBUDDY_JAR[@]|$(BYTEBUDDY_JAR)|g" \
+  -e "s|[@]BYTEBUDDY_AGENT_JAR[@]|$(BYTEBUDDY_AGENT_JAR)|g" \
   -e "s|[@]RHINO_JAR[@]|$(RHINO_JAR)|g" \
   -e "s|[@]PROGRAM_NAME[@]|$${PROGRAM_NAME}|g" \
   -e "s|[@]MODULARJDK_ARGS_LOCATION[@]|$(MODULARJDK_ARGS_LOCATION)|g"
@@ -476,6 +478,12 @@ if HAVE_MSLINKS
 	filteredName=`basename $(MSLINKS_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(MSLINKS_JAR) $(WIN_RUN_DEPS)/$$filteredName
 endif
+if HAVE_BYTEBUDDY
+	filteredName=`basename "$(BYTEBUDDY_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
+	cp -v "$(BYTEBUDDY_JAR)" "$(WIN_RUN_DEPS)/$$filteredName"; \
+	filteredName=`basename "$(BYTEBUDDY_AGENT_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
+	cp -v "$(BYTEBUDDY_AGENT_JAR)" "$(WIN_RUN_DEPS)/$$filteredName"
+endif
 endif
 
 #no npapi plugin at all!
@@ -493,6 +501,12 @@ endif
 if HAVE_PACK
 	filteredName=`basename $(PACK_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(PACK_JAR) $(LINUX_BIN_DIST_DEPS)/$$filteredName
+endif
+if HAVE_BYTEBUDDY
+	filteredName=`basename "$(BYTEBUDDY_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
+	cp -v "$(BYTEBUDDY_JAR)" "$(LINUX_BIN_DIST_DEPS)/$$filteredName"; \
+	filteredName=`basename "$(BYTEBUDDY_AGENT_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
+	cp -v "$(BYTEBUDDY_AGENT_JAR)" "$(LINUX_BIN_DIST_DEPS)/$$filteredName"
 endif
 	cp $(NETX_DIR)/lib/src.zip $(DESTDIR)$(prefix)/netx.src.zip
 if ENABLE_PLUGINJAR
@@ -518,6 +532,12 @@ endif
 if HAVE_PACK
 	filteredName=`basename $(PACK_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(PACK_JAR) $(MACOS_BIN_DIST_DEPS)/$$filteredName
+endif
+if HAVE_BYTEBUDDY
+	filteredName=`basename "$(BYTEBUDDY_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
+	cp -v "$(BYTEBUDDY_JAR)" "$(MACOS_BIN_DIST_DEPS)/$$filteredName"; \
+	filteredName=`basename "$(BYTEBUDDY_AGENT_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
+	cp -v "$(BYTEBUDDY_AGENT_JAR)" "$(MACOS_BIN_DIST_DEPS)/$$filteredName"
 endif
 	cp $(NETX_DIR)/lib/src.zip $(DESTDIR)$(prefix)/netx.src.zip
 if ENABLE_PLUGINJAR
@@ -796,7 +816,7 @@ stamps/liveconnect.stamp: liveconnect-source-files.txt stamps/netx.stamp
 	  mkdir -p $(TOP_BUILD_DIR)/liveconnect && \
 	  $(SYSTEM_JDK_DIR)/bin/javac $(IT_JAVACFLAGS) \
 	      -d $(TOP_BUILD_DIR)/liveconnect \
-	      $(call composeclasspath,$(NETX_DIR) $(MSLINKS_JAR) $(TAGSOUP_JAR) $(PACK_JAR) $(RHINO_JAR)) \
+	      $(call composeclasspath,$(NETX_DIR) $(MSLINKS_JAR) $(TAGSOUP_JAR) $(PACK_JAR) $(BYTEBUDDY_JAR) $(BYTEBUDDY_AGENT_JAR) $(RHINO_JAR)) \
 	      -sourcepath $(LIVECONNECT_SRCS) \
 	      @liveconnect-source-files.txt ; \
 	fi
@@ -954,7 +974,7 @@ stamps/netx.stamp: netx-source-files.txt stamps/netx-html-gen.stamp
 	$(SYSTEM_JDK_DIR)/bin/javac $(IT_JAVACFLAGS) \
 		-d $(NETX_DIR) \
 		-sourcepath $(NETX_SRCDIR) \
-		$(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(PACK_JAR) $(RHINO_JAR)) \
+		$(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(PACK_JAR) $(BYTEBUDDY_JAR) $(BYTEBUDDY_AGENT_JAR) $(RHINO_JAR)) \
 	    @netx-source-files.txt
 	(cd $(NETX_RESOURCE_DIR); \
 	 for files in $$(find . -type f); \
@@ -1023,6 +1043,8 @@ launcher.build/$(javaws) launcher.build/$(itweb_settings) launcher.build/$(polic
 	  export JSOBJECT_JAR=$(JSOBJECT_JAR) ; \
 	  export TAGSOUP_JAR=$(TAGSOUP_JAR) ; \
 	  export PACK_JAR=$(PACK_JAR) ; \
+	  export BYTEBUDDY_JAR=$(BYTEBUDDY_JAR) ; \
+	  export BYTEBUDDY_AGENT_JAR=$(BYTEBUDDY_AGENT_JAR) ; \
 	  export RHINO_JAR=$(RHINO_JAR) ; \
 	  export MSLINKS_JAR=$(MSLINKS_JAR) ; \
 	  export MODULARJDK_ARGS_LOCATION=$(MODULARJDK_ARGS_LOCATION) ; \
@@ -1092,6 +1114,8 @@ rust-code-coverage:
 	  export JSOBJECT_JAR=$(JSOBJECT_JAR) ; \
 	  export TAGSOUP_JAR=$(TAGSOUP_JAR) ; \
 	  export PACK_JAR=$(PACK_JAR) ; \
+	  export BYTEBUDDY_JAR=$(BYTEBUDDY_JAR) ; \
+	  export BYTEBUDDY_AGENT_JAR=$(BYTEBUDDY_AGENT_JAR) ; \
 	  export RHINO_JAR=$(RHINO_JAR) ; \
 	  export MODULARJDK_ARGS_LOCATION=$(MODULARJDK_ARGS_LOCATION) ; \
 	  export MAIN_CLASS=net.sourceforge.jnlp.runtime.Boot ; \
@@ -1204,7 +1228,7 @@ if ENABLE_DOCS
 	 -doctitle 'IcedTea-Web: NetX API Specification' \
 	 -windowtitle 'IcedTea-Web: NetX ' \
 	 -header '<strong>IcedTea-Web<br/>NetX</strong>' \
-	 $(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(PACK_JAR) $(RHINO_JAR)) \
+	 $(call composeclasspath, $(MSLINKS_JAR) $(TAGSOUP_JAR) $(PACK_JAR) $(BYTEBUDDY_JAR) $(BYTEBUDDY_AGENT_JAR) $(RHINO_JAR)) \
 	 $(NETX_PKGS)
 endif
 	mkdir -p stamps
@@ -1714,7 +1738,7 @@ stamps/netx-unit-tests-compile.stamp: stamps/netx.stamp \
 	mkdir -p $(NETX_UNIT_TEST_DIR) && \
 	$(SYSTEM_JDK_DIR)/bin/javac $(IT_JAVACFLAGS) \
 	 -d $(NETX_UNIT_TEST_DIR) \
-	 $(call composeclasspath, $(JUNIT_RUNTIME) $(TOP_BUILD_DIR)/liveconnect/lib/classes.jar $(NETX_DIR)/lib/classes.jar $(MSLINKS_JAR)  $(TEST_EXTENSIONS_DIR) $(TAGSOUP_JAR) $(PACK_JAR)) \
+	 $(call composeclasspath, $(JUNIT_RUNTIME) $(TOP_BUILD_DIR)/liveconnect/lib/classes.jar $(NETX_DIR)/lib/classes.jar $(MSLINKS_JAR)  $(TEST_EXTENSIONS_DIR) $(TAGSOUP_JAR) $(PACK_JAR) $(BYTEBUDDY_JAR) $(BYTEBUDDY_AGENT_JAR)) \
 	 @netx-unit-tests-source-files.txt && \
 	mkdir -p stamps && \
 	touch $@
@@ -1744,7 +1768,7 @@ stamps/run-netx-unit-tests.stamp: stamps/netx-unit-tests-compile.stamp $(JUNIT_R
 	done ; \
 	cd $(NETX_UNIT_TEST_DIR) ; \
 	class_names=`cat $(UNIT_CLASS_NAMES)` ; \
-	CLASSPATH="$(call joinsegments, $(NETX_DIR)/lib/classes.jar $(TOP_BUILD_DIR)/liveconnect/lib/classes.jar $(JUNIT_RUNTIME) $(MSLINKS_JAR) $(JUNIT_RUNNER_JAR) $(TEST_EXTENSIONS_DIR) . $(TEST_EXTENSIONS_SRCDIR) $(TAGSOUP_JAR) $(PACK_JAR) ; \
+	CLASSPATH="$(call joinsegments, $(NETX_DIR)/lib/classes.jar $(TOP_BUILD_DIR)/liveconnect/lib/classes.jar $(JUNIT_RUNTIME) $(MSLINKS_JAR) $(JUNIT_RUNNER_JAR) $(TEST_EXTENSIONS_DIR) . $(TEST_EXTENSIONS_SRCDIR) $(TAGSOUP_JAR) $(PACK_JAR) $(BYTEBUDDY_JAR) $(BYTEBUDDY_AGENT_JAR) ; \
 	  $(SYSTEM_JRE_DIR)/bin/java "-Xbootclasspath/a:$$CLASSPATH" CommandLine $$class_names 
 if WITH_XSLTPROC
 	-$(XSLTPROC) --stringparam logs logs_unit.html $(TESTS_SRCDIR)/$(REPORT_STYLES_DIRNAME)/jreport.xsl $(NETX_UNIT_TEST_DIR)/tests-output.xml > $(TESTS_DIR)/index_unit.html
@@ -1784,7 +1808,7 @@ if WITH_JACOCO
 	  mv $(NETX_UNIT_TEST_DIR)/$$file  $(NETX_UNIT_TEST_DIR)/"$$file""$(EMMA_BACKUP_SUFFIX)" ; \
 	done ;\
 	class_names=`cat $(UNIT_CLASS_NAMES)` ; \
-	CLASSPATH=$(call joinsegments, $(NETX_DIR)/lib/classes.jar $(TOP_BUILD_DIR)/liveconnect/lib/classes.jar $(JUNIT_RUNTIME) $(JUNIT_RUNNER_JAR) $(TEST_EXTENSIONS_DIR) $(JACOCO_CLASSPATH) . $(TEST_EXTENSIONS_SRCDIR) $(MSLINKS_JAR) $(TAGSOUP_JAR) $(PACK_JAR)) ; \
+	CLASSPATH=$(call joinsegments, $(NETX_DIR)/lib/classes.jar $(TOP_BUILD_DIR)/liveconnect/lib/classes.jar $(JUNIT_RUNTIME) $(JUNIT_RUNNER_JAR) $(TEST_EXTENSIONS_DIR) $(JACOCO_CLASSPATH) . $(TEST_EXTENSIONS_SRCDIR) $(MSLINKS_JAR) $(TAGSOUP_JAR) $(PACK_JAR) $(BYTEBUDDY_JAR) $(BYTEBUDDY_AGENT_JAR)) ; \
 	  $(SYSTEM_JRE_DIR)/bin/java $(JACOCO_AGENT_SWITCH) -Xbootclasspath/a:$$CLASSPATH CommandLine $$class_names ; \
 	for file in $(COVERAGE_MODIFIED_FILES) ; do \
 	  mv $(NETX_UNIT_TEST_DIR)/$$file  $(NETX_UNIT_TEST_DIR)/"$$file""$(EMMA_SUFFIX)" ; \

@@ -106,6 +106,8 @@ final class CachedJarFileCallback implements URLJarFileCallBack {
 
         if (UrlUtils.isLocalFile(localUrl)) {
             // if it is known to us, just return the cached file
+            // CRITICAL: Use JarFileCache, NOT direct "new JarFile()"! 
+            // Direct opens cause "zip file closed" errors. See JarFileTempManager.ENABLE_JARFILE_CLOSE
             //JarFile returnFile = new JarFile(UrlUtils.decodeUrlQuietly(localUrl).getPath());
             String path = UrlUtils.decodeUrlQuietly(localUrl).getPath();
             JarFile returnFile = JarFileCache.getInstance().getJarFile(path);

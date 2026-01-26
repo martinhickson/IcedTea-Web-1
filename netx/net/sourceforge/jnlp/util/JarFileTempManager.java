@@ -52,6 +52,30 @@ public class JarFileTempManager {
     private static final boolean OPTIMISED_TEMP_FILE_HANDLING = true;
     
     /**
+     * CRITICAL: JarFile close() calls MUST be disabled to prevent "zip file closed" errors.
+     * 
+     * The JDK's ZipFile.Source cache shares RandomAccessFile handles across multiple JarFile
+     * instances. Closing a JarFile decrements the reference count, and when it reaches 0,
+     * the shared RandomAccessFile is closed, breaking ALL other JarFile instances that
+     * reference the same file.
+     * 
+     * ITW's temp file strategy creates separate files (myapp.jar vs myapp_itw.jar) to get
+     * separate ZipFile.Source cache entries, but closing EITHER file can still cause issues
+     * if any code path (e.g., URLClassLoader) is still using it.
+     * 
+     * Therefore, JarFile instances MUST be kept open for the lifetime of the application.
+     * The OS will close file handles on JVM exit. Memory usage is acceptable (~100KB per JAR
+     * for central directory cache).
+     * 
+     * This flag exists for emergency debugging only. It should ALWAYS be false in production.
+     * Setting it to true WILL cause "IllegalStateException: zip file closed" errors.
+     * 
+     * @see <a href="jdk.md">JDK ZipFile Analysis</a>
+     * @see <a href="itw.md">ITW Architecture Documentation</a>
+     */
+    private static final boolean ENABLE_JARFILE_CLOSE = false;
+    
+    /**
      * Detect operating system for link type selection.
      * 
      * The real issue was URLClassLoader opening the ORIGINAL file while ITW opened
@@ -296,15 +320,25 @@ public class JarFileTempManager {
     
     /**
      * Clean up temp files (called on shutdown).
+     * 
+     * NOTE: JarFile close() calls are DISABLED by default (ENABLE_JARFILE_CLOSE=false)
+     * to prevent "zip file closed" errors. See ENABLE_JARFILE_CLOSE documentation for details.
      */
     public void cleanup() {
-        // Close all open JAR file handles
-        for (java.util.jar.JarFile jarFile : openJarFiles.values()) {
-            try {
-                jarFile.close();
-            } catch (IOException e) {
-                LOGGER.log(OutputController.Level.ERROR_ALL, e);
+        // Close all open JAR file handles (DISABLED by default - see ENABLE_JARFILE_CLOSE)
+        if (ENABLE_JARFILE_CLOSE) {
+            for (java.util.jar.JarFile jarFile : openJarFiles.values()) {
+                try {
+                    jarFile.close();
+                } catch (IOException e) {
+                    LOGGER.log(OutputController.Level.ERROR_ALL, e);
+                }
             }
+        } else {
+            LOGGER.log(Level.MESSAGE_DEBUG, 
+                "[ITW-TEMP] Skipping JarFile.close() calls (ENABLE_JARFILE_CLOSE=false). " +
+                "JarFiles kept open to prevent 'zip file closed' errors. " +
+                "OS will close file handles on JVM exit.");
         }
         openJarFiles.clear();
         originalToTempMap.clear();

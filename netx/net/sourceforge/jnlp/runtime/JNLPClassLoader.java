@@ -618,6 +618,9 @@ public class JNLPClassLoader extends URLClassLoader {
         boolean isInvalid = false;
         try {
             JarFileCache.getInstance().getJarFile(cacheFile.getAbsolutePath());
+            // CRITICAL: Do NOT close JarFile! See JarFileTempManager.ENABLE_JARFILE_CLOSE
+            // Closing causes "IllegalStateException: zip file closed" errors due to
+            // shared ZipFile.Source cache in JDK. JarFiles must stay open for app lifetime.
             //jarFile.close();
         } catch (IOException ioe) {
             //Catch a ZipException or any other read failure
@@ -970,6 +973,9 @@ public class JNLPClassLoader extends URLClassLoader {
                     }
                 }
 
+                // CRITICAL: Do NOT close JarFile! See JarFileTempManager.ENABLE_JARFILE_CLOSE
+                // Closing causes "IllegalStateException: zip file closed" errors due to
+                // shared ZipFile.Source cache in JDK. JarFiles must stay open for app lifetime.
                 //jarFile.close();
             } catch (IOException e) {
                 /*
