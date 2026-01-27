@@ -23,6 +23,20 @@ const LOCAL_PATHS: &'static [&'static str] = &[
     "bin",
     "../bin"];
 
+fn sanitize_jar_filename(name: &std::ffi::OsStr) -> Option<std::ffi::OsString> {
+    let name_str = name.to_string_lossy();
+    let mut filtered: String = name_str.chars().filter(|ch| ch.is_ascii_alphabetic()).collect();
+    if filtered.is_empty() {
+        return None;
+    }
+    if filtered.ends_with("jar") {
+        let new_len = filtered.len().saturating_sub(3);
+        filtered.truncate(new_len);
+    }
+    filtered.push_str(".jar");
+    Some(std::ffi::OsString::from(filtered))
+}
+
 pub fn resolve_argsfile(logger: &dyn os_access::Os) -> std::path::PathBuf {
     resolve_jar(hardcoded_paths::get_argsfile(), logger)
 }
@@ -44,6 +58,7 @@ pub fn resolve_splash(logger: &dyn os_access::Os) -> std::path::PathBuf {
 }
 
 fn try_jar_in_subdirs(dir: &std::path::PathBuf, name: &std::ffi::OsStr, logger: &dyn os_access::Os) -> Option<std::path::PathBuf> {
+    let sanitized_name = sanitize_jar_filename(name);
     for path in LOCAL_PATHS {
         let mut candidate = std::path::PathBuf::from(dir);
         candidate.push(path);
@@ -54,6 +69,20 @@ fn try_jar_in_subdirs(dir: &std::path::PathBuf, name: &std::ffi::OsStr, logger: 
         if dirs_paths_helper::is_file(&candidate) {
             logger.log(&dirs_paths_helper::path_to_string(&candidate));
             return Some(candidate);
+        }
+        if let Some(ref sanitized) = sanitized_name {
+            if sanitized.as_os_str() != name {
+                let mut alt_candidate = std::path::PathBuf::from(dir);
+                alt_candidate.push(path);
+                alt_candidate.push(sanitized);
+                let mut info2 = String::new();
+                write!(&mut info2, "itw-rust-debug: trying {}", &dirs_paths_helper::path_to_string(&alt_candidate)).expect("unwrap failed");
+                logger.log(&info2);
+                if dirs_paths_helper::is_file(&alt_candidate) {
+                    logger.log(&dirs_paths_helper::path_to_string(&alt_candidate));
+                    return Some(alt_candidate);
+                }
+            }
         }
     }
     return None;
@@ -177,6 +206,8 @@ fn get_bootcp_members(jre_path: &std::path::PathBuf, os: &dyn os_access::Os) -> 
     append_if_exists(hardcoded_paths::get_rhino(), os, &mut cp_parts);
     append_if_exists(hardcoded_paths::get_pack(), os, &mut cp_parts);
     append_if_exists(hardcoded_paths::get_tagsoup(), os, &mut cp_parts);
+    append_if_exists(hardcoded_paths::get_bytebuddy(), os, &mut cp_parts);
+    append_if_exists(hardcoded_paths::get_bytebuddy_agent(), os, &mut cp_parts);
     append_if_exists(hardcoded_paths::get_mslinks(), os, &mut cp_parts);
     let mut nashorn_jar = jre_path.clone();
     nashorn_jar.push("lib");

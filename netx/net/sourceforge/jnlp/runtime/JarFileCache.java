@@ -54,7 +54,10 @@ public class JarFileCache {
             // The JarFile constructor will handle the temp copy automatically
             File originalFile = new File(path);
             File tempFile = JarFileTempManager.getInstance().getTempJarFile(originalFile);
-            jarFile = new JarFile(tempFile);
+            
+            // CRITICAL: Pass verify=true to enable signature verification!
+            // Without this, CodeSigners will be null and JARs will appear unsigned.
+            jarFile = new JarFile(tempFile, true);  // verify=true enables signatures
             jarFileMap.put(path, jarFile);
         }
         return jarFile;

@@ -221,6 +221,10 @@ public class JNLPRuntime {
     public static void initialize(boolean isApplication) throws IllegalStateException {
         checkInitialized();
 
+        // Install JarFile.close protection as early as possible.
+        // This is critical to prevent "zip file closed" errors during classloading.
+        JarFileCloseProtection.install();
+
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {

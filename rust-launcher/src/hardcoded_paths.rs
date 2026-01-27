@@ -20,6 +20,8 @@ const PACK_JAR: Option<&'static str> = option_env!("PACK_JAR");
 const ITW_LIBS: Option<&'static str> = option_env!("ITW_LIBS");
 const MODULARJDK_ARGS_LOCATION: Option<&'static str> = option_env!("MODULARJDK_ARGS_LOCATION");
 const MSLINKS_JAR: Option<&'static str> = option_env!("MSLINKS_JAR");
+const BYTEBUDDY_JAR: Option<&'static str> = option_env!("BYTEBUDDY_JAR");
+const BYTEBUDDY_AGENT_JAR: Option<&'static str> = option_env!("BYTEBUDDY_AGENT_JAR");
 
 
 pub fn get_jre() -> &'static str {
@@ -62,6 +64,10 @@ pub fn get_rhino() -> Option<&'static str> { sanitize(RHINO_JAR) }
 pub fn get_pack() -> Option<&'static str> { sanitize(PACK_JAR) }
 
 pub fn get_mslinks() -> Option<&'static str> { sanitize(MSLINKS_JAR) }
+
+pub fn get_bytebuddy() -> Option<&'static str> { sanitize(BYTEBUDDY_JAR) }
+
+pub fn get_bytebuddy_agent() -> Option<&'static str> { sanitize(BYTEBUDDY_AGENT_JAR) }
 
 pub fn get_argsfile() -> &'static str {
     MODULARJDK_ARGS_LOCATION.unwrap_or("MODULARJDK_ARGS_LOCATION-dev-unspecified")

@@ -19,6 +19,8 @@
  */
 package net.sourceforge.jnlp.runtime;
 
+import net.bytebuddy.implementation.bind.annotation.SuperCall;
+import net.bytebuddy.implementation.bind.annotation.This;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.io.IOException;
@@ -26,6 +28,7 @@ import java.util.HashSet;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarFile;
+import java.util.zip.ZipFile;
 
 /**
  * Runtime protection against premature JarFile.close() calls that cause
@@ -143,7 +146,8 @@ public class JarFileCloseProtection {
     /**
      * Enable debug logging of intercepted close() calls.
      */
-    private static final boolean DEBUG = Boolean.getBoolean("itw.debug.jarfile.close");
+    private static final boolean DEBUG = Boolean.parseBoolean(
+        System.getProperty("itw.debug.jarfile.close", "true"));
     
     static {
         // Read mode from system property (defaults to PREVENT_ALL)
@@ -293,13 +297,13 @@ public class JarFileCloseProtection {
         /**
          * Intercept JarFile.close() and decide whether to allow it.
          * 
-         * @param jarFile The JarFile being closed
+         * @param zipFile The ZipFile/JarFile being closed
          * @param zuper Callable to invoke original close() method
          * @throws IOException if close fails (when allowed)
          */
-        public static void intercept(JarFile jarFile, 
-                                     java.util.concurrent.Callable<?> zuper) throws IOException {
-            String jarPath = jarFile.getName();
+        public static void intercept(@This ZipFile zipFile,
+                                     @SuperCall java.util.concurrent.Callable<?> zuper) throws IOException {
+            String jarPath = zipFile.getName();
             
             // Decide whether to allow close based on mode
             boolean allowClose = shouldAllowClose(jarPath);
