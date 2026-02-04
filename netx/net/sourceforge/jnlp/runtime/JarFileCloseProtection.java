@@ -19,8 +19,7 @@
  */
 package net.sourceforge.jnlp.runtime;
 
-import net.bytebuddy.implementation.bind.annotation.SuperCall;
-import net.bytebuddy.implementation.bind.annotation.This;
+import net.bytebuddy.asm.Advice;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.io.IOException;
@@ -243,11 +242,10 @@ public class JarFileCloseProtection {
         // Equivalent to:
         //   ByteBuddyAgent.install();
         //   new ByteBuddy()
-        //       .redefine(JarFile.class)
-        //       .method(ElementMatchers.named("close"))
-        //       .intercept(MethodDelegation.to(CloseInterceptor.class))
+        //       .redefine(ZipFile.class)
+        //       .visit(Advice.to(CloseAdvice.class).on(ElementMatchers.named("close")))
         //       .make()
-        //       .load(JarFile.class.getClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
+        //       .load(ZipFile.class.getClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
         
         Class<?> agentClass = Class.forName("net.bytebuddy.agent.ByteBuddyAgent");
         agentClass.getMethod("install").invoke(null);
@@ -257,24 +255,22 @@ public class JarFileCloseProtection {
         
         Class<?> matchersClass = Class.forName("net.bytebuddy.matcher.ElementMatchers");
         Object nameMatcher = matchersClass.getMethod("named", String.class).invoke(null, "close");
-        
-        Class<?> delegationClass = Class.forName("net.bytebuddy.implementation.MethodDelegation");
-        Object delegation = delegationClass.getMethod("to", Class.class)
-            .invoke(null, CloseInterceptor.class);
-        
-        // builder.redefine(JarFile.class)
-        Object builder = byteBuddyClass.getMethod("redefine", Class.class)
-            .invoke(byteBuddy, JarFile.class);
-        
-        // builder.method(nameMatcher)
-        builder = builder.getClass().getMethod("method", 
+
+        Class<?> adviceClass = Class.forName("net.bytebuddy.asm.Advice");
+        Object advice = adviceClass.getMethod("to", Class.class)
+            .invoke(null, CloseAdvice.class);
+        Object adviceOn = advice.getClass().getMethod("on",
             Class.forName("net.bytebuddy.matcher.ElementMatcher"))
-            .invoke(builder, nameMatcher);
+            .invoke(advice, nameMatcher);
+
+        // builder.redefine(ZipFile.class)
+        Object builder = byteBuddyClass.getMethod("redefine", Class.class)
+            .invoke(byteBuddy, ZipFile.class);
         
-        // builder.intercept(delegation)
-        builder = builder.getClass().getMethod("intercept",
-            Class.forName("net.bytebuddy.implementation.Implementation"))
-            .invoke(builder, delegation);
+        // builder.visit(Advice.to(CloseAdvice.class).on(named("close")))
+        builder = builder.getClass().getMethod("visit",
+            Class.forName("net.bytebuddy.asm.AsmVisitorWrapper"))
+            .invoke(builder, adviceOn);
         
         // builder.make()
         Object dynamicType = builder.getClass().getMethod("make").invoke(builder);
@@ -285,56 +281,48 @@ public class JarFileCloseProtection {
         
         dynamicType.getClass().getMethod("load", ClassLoader.class,
             Class.forName("net.bytebuddy.dynamic.loading.ClassLoadingStrategy"))
-            .invoke(dynamicType, JarFile.class.getClassLoader(), strategy);
+            .invoke(dynamicType, ZipFile.class.getClassLoader(), strategy);
     }
     
     /**
-     * ByteBuddy interceptor for JarFile.close().
-     * This class is used by ByteBuddy via MethodDelegation.
+     * ByteBuddy advice for ZipFile.close().
+     * This class is used by ByteBuddy via Advice.
      */
-    public static class CloseInterceptor {
+    public static class CloseAdvice {
         
         /**
-         * Intercept JarFile.close() and decide whether to allow it.
+         * Intercept ZipFile.close() and decide whether to allow it.
          * 
          * @param zipFile The ZipFile/JarFile being closed
-         * @param zuper Callable to invoke original close() method
-         * @throws IOException if close fails (when allowed)
+         * @return true to skip the original close() (prevent close)
          */
-        public static void intercept(@This ZipFile zipFile,
-                                     @SuperCall java.util.concurrent.Callable<?> zuper) throws IOException {
+        @Advice.OnMethodEnter(skipOn = Advice.OnNonDefaultValue.class)
+        public static boolean intercept(@Advice.This ZipFile zipFile) {
             String jarPath = zipFile.getName();
             
             // Decide whether to allow close based on mode
-            boolean allowClose = shouldAllowClose(jarPath);
+            boolean allowClose = shouldAllowClose(jarPath, zipFile);
             
             // Log if debug enabled
-            if (DEBUG || currentMode == Mode.LOG_ONLY) {
+            if (shouldLogClose()) {
                 logCloseAttempt(jarPath, allowClose);
             }
-            
-            // Allow or prevent close
-            if (allowClose) {
-                try {
-                    zuper.call();
-                } catch (IOException e) {
-                    throw e;
-                } catch (Exception e) {
-                    throw new IOException("Failed to close JAR file", e);
-                }
-            } else {
-                // Close prevented!
-                if (DEBUG) {
-                    LOGGER.log(OutputController.Level.MESSAGE_DEBUG,
-                        "[ITW] ✓ PREVENTED close() on: " + jarPath);
-                }
-            }
+
+            // Return true to skip original close(), false to allow it
+            return !allowClose;
         }
         
         /**
          * Determine if close() should be allowed based on current mode.
          */
-        private static boolean shouldAllowClose(String jarPath) {
+        public static boolean shouldLogClose() {
+            return DEBUG || currentMode == Mode.LOG_ONLY;
+        }
+
+        public static boolean shouldAllowClose(String jarPath, ZipFile zipFile) {
+            if (!(zipFile instanceof JarFile)) {
+                return true; // Only protect JarFile instances
+            }
             switch (currentMode) {
                 case PREVENT_ALL:
                     return false;  // Block ALL closes
@@ -352,7 +340,7 @@ public class JarFileCloseProtection {
         /**
          * Log the close attempt with stack trace.
          */
-        private static void logCloseAttempt(String jarPath, boolean allowed) {
+        public static void logCloseAttempt(String jarPath, boolean allowed) {
             StackTraceElement[] stack = Thread.currentThread().getStackTrace();
             
             StringBuilder sb = new StringBuilder();
