@@ -20,6 +20,7 @@
 package net.sourceforge.jnlp.runtime;
 
 import net.bytebuddy.asm.Advice;
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.io.IOException;
@@ -145,8 +146,7 @@ public class JarFileCloseProtection {
     /**
      * Enable debug logging of intercepted close() calls.
      */
-    private static final boolean DEBUG = Boolean.parseBoolean(
-        System.getProperty("itw.debug.jarfile.close", "true"));
+    private static final boolean DEBUG = resolveDebugEnabled();
     
     static {
         // Read mode from system property (defaults to PREVENT_ALL)
@@ -176,6 +176,39 @@ public class JarFileCloseProtection {
             LOGGER.log(OutputController.Level.WARNING_ALL,
                 "[ITW]   To re-enable: remove -Ditw.jarfile.close.mode=DISABLED");
         }
+    }
+
+    private static boolean resolveDebugEnabled() {
+        String systemProp = System.getProperty("itw.debug.jarfile.close");
+        if (systemProp != null) {
+            return isTruthy(systemProp);
+        }
+
+        if (isTruthy(System.getenv("ITW_DEBUG_JARFILE_CLOSE"))) {
+            return true;
+        }
+
+        try {
+            String deploymentProp = JNLPRuntime.getConfiguration()
+                .getProperty(DeploymentConfiguration.KEY_DEBUG_JARFILE_CLOSE);
+            return isTruthy(deploymentProp);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
+    private static boolean isTruthy(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        return "true".equalsIgnoreCase(trimmed)
+            || "1".equals(trimmed)
+            || "yes".equalsIgnoreCase(trimmed)
+            || "on".equalsIgnoreCase(trimmed);
     }
     
     /**

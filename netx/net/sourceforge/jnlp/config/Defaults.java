@@ -374,6 +374,11 @@ public class Defaults {
                         BasicValueValidators.getBooleanValidator(),
                         String.valueOf(true)
                 },
+                {
+                        DeploymentConfiguration.KEY_DEBUG_JARFILE_CLOSE,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(false)
+                },
                 /* JNLP association */
                 {
                         DeploymentConfiguration.KEY_JNLP_ASSOCIATIONS,
