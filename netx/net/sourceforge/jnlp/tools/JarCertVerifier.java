@@ -72,6 +72,7 @@ public class JarCertVerifier implements CertVerifier {
 
     private static final String META_INF = "META-INF/";
     private static final Pattern SIG = Pattern.compile(".*" + META_INF + "SIG-.*");
+    private static final boolean JAR_CERT_VERIFIER_VERBOSE = false;
 
     // prefix for new signature-related files in META-INF directory
     private static final String SIG_PREFIX = META_INF + "SIG-";
@@ -302,15 +303,19 @@ public class JarCertVerifier implements CertVerifier {
      */
     private VerifiedJarFile verifyJar(String jarName) throws Exception {
         try {
-            System.err.println("[JarCertVerifier] verifyJar called for: " + jarName);
+            if (JAR_CERT_VERIFIER_VERBOSE) {
+                System.err.println("[JarCertVerifier] verifyJar called for: " + jarName);
+            }
             
             // CRITICAL: Use JarFileCache to avoid closing shared cache entries
             // Opening directly and closing causes "zip file closed" errors!
             net.sourceforge.jnlp.util.JarFile jarFile = 
                 net.sourceforge.jnlp.runtime.JarFileCache.getInstance().getJarFile(jarName);
             
-            System.err.println("[JarCertVerifier] JarFile class: " + jarFile.getClass().getName());
-            System.err.println("[JarCertVerifier] Reading entries to trigger signature verification...");
+            if (JAR_CERT_VERIFIER_VERBOSE) {
+                System.err.println("[JarCertVerifier] JarFile class: " + jarFile.getClass().getName());
+                System.err.println("[JarCertVerifier] Reading entries to trigger signature verification...");
+            }
             
             List<JarEntry> entriesVec = new ArrayList<>();
             byte[] buffer = new byte[8192];
@@ -333,7 +338,7 @@ public class JarCertVerifier implements CertVerifier {
                 }
                 
                 // DEBUG: Check signatures immediately after reading
-                if (!je.isDirectory() && !isMetaInfFile(je.getName())) {
+                if (JAR_CERT_VERIFIER_VERBOSE && !je.isDirectory() && !isMetaInfFile(je.getName())) {
                     CodeSigner[] signersAfterRead = je.getCodeSigners();
                     System.err.println("[JarCertVerifier] After reading " + je.getName() + 
                         ": CodeSigners = " + (signersAfterRead == null ? "null" : signersAfterRead.length));
@@ -377,7 +382,7 @@ public class JarCertVerifier implements CertVerifier {
                 boolean isSigned = (signers != null);
                 
                 // DEBUG: Log signature detection
-                if (!je.isDirectory() && !isMetaInfFile(name)) {
+                if (JAR_CERT_VERIFIER_VERBOSE && !je.isDirectory() && !isMetaInfFile(name)) {
                     System.err.println("[JarCertVerifier] Entry: " + name);
                     System.err.println("  CodeSigners: " + (signers == null ? "null" : signers.length + " signer(s)"));
                     System.err.println("  isSigned: " + isSigned);

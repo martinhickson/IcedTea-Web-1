@@ -50,6 +50,15 @@ public class JarFileTempManager {
      * - Use deleteOnExit() for cleanup
      */
     private static final boolean OPTIMISED_TEMP_FILE_HANDLING = true;
+
+    /**
+     * Enable temp file copying/links for JARs.
+     *
+     * When false, ITW will use the original JAR path directly and skip copying
+     * or hard/symlinking. ByteBuddy close protection handles the "zip file closed"
+     * issue, so copying is unnecessary by default.
+     */
+    private static final boolean COPY_JARS = false;
     
     /**
      * CRITICAL: JarFile close() calls MUST be disabled to prevent "zip file closed" errors.
@@ -118,6 +127,13 @@ public class JarFileTempManager {
     public File getTempJarFile(File originalFile) throws IOException {
         if (originalFile == null) {
             throw new IllegalArgumentException("Original file cannot be null");
+        }
+
+        if (!COPY_JARS) {
+            LOGGER.log(Level.MESSAGE_DEBUG,
+                String.format("[ITW-TEMP] COPY_JARS disabled, using original file: %s",
+                    originalFile.getAbsolutePath()));
+            return originalFile;
         }
         
         LOGGER.log(Level.MESSAGE_ALL, 

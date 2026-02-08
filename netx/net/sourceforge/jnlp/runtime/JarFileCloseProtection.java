@@ -147,6 +147,7 @@ public class JarFileCloseProtection {
      * Enable debug logging of intercepted close() calls.
      */
     private static final boolean DEBUG = resolveDebugEnabled();
+    private static final boolean JARFILE_CLOSE_PROTECTION_VERBOSE = false;
     
     static {
         // Read mode from system property (defaults to PREVENT_ALL)
@@ -165,10 +166,12 @@ public class JarFileCloseProtection {
             install();
             
             if (byteBuddyInstalled) {
-                LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                    "[ITW] ✓ JarFile close protection ENABLED by default (mode=" + currentMode + ")");
-                LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                    "[ITW]   This prevents 'zip file closed' errors. To disable: -Ditw.jarfile.close.mode=DISABLED");
+                if (JARFILE_CLOSE_PROTECTION_VERBOSE) {
+                    LOGGER.log(OutputController.Level.MESSAGE_ALL,
+                        "[ITW] ✓ JarFile close protection ENABLED by default (mode=" + currentMode + ")");
+                    LOGGER.log(OutputController.Level.MESSAGE_ALL,
+                        "[ITW]   This prevents 'zip file closed' errors. To disable: -Ditw.jarfile.close.mode=DISABLED");
+                }
             }
         } else {
             LOGGER.log(OutputController.Level.WARNING_ALL,
@@ -182,10 +185,6 @@ public class JarFileCloseProtection {
         String systemProp = System.getProperty("itw.debug.jarfile.close");
         if (systemProp != null) {
             return isTruthy(systemProp);
-        }
-
-        if (isTruthy(System.getenv("ITW_DEBUG_JARFILE_CLOSE"))) {
-            return true;
         }
 
         try {
@@ -241,11 +240,13 @@ public class JarFileCloseProtection {
             installByteBuddyInterceptor();
             
             byteBuddyInstalled = true;
-            LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                "[ITW] ✓ JarFile close protection INSTALLED via ByteBuddy (mode=" + currentMode + ")");
-            LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                "[ITW]   All JarFile.close() calls will be " + 
-                (currentMode == Mode.LOG_ONLY ? "logged" : "intercepted"));
+            if (JARFILE_CLOSE_PROTECTION_VERBOSE) {
+                LOGGER.log(OutputController.Level.MESSAGE_ALL,
+                    "[ITW] ✓ JarFile close protection INSTALLED via ByteBuddy (mode=" + currentMode + ")");
+                LOGGER.log(OutputController.Level.MESSAGE_ALL,
+                    "[ITW]   All JarFile.close() calls will be " +
+                    (currentMode == Mode.LOG_ONLY ? "logged" : "intercepted"));
+            }
             
             return true;
             

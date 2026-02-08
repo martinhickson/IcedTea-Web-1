@@ -56,6 +56,7 @@ import net.sourceforge.jnlp.runtime.JNLPRuntime;
 public class JarFile extends java.util.jar.JarFile implements Closeable {
 
     private static final boolean ENABLE_GIFAR_PROTECTION = false;
+    private static final boolean JARFILE_VERBOSE = false;
     private File originalFile; // Original file passed to constructor
     private File actualFile;   // Actual file opened (temp copy)
     
@@ -88,9 +89,11 @@ public class JarFile extends java.util.jar.JarFile implements Closeable {
         this.actualFile = lastTempFileCreated.get();
         
         // Debug logging after super() call
-        System.err.println("[ITW JarFile] Opened JAR:");
-        System.err.println("  Input:  " + file.getAbsolutePath());
-        System.err.println("  Actual: " + this.actualFile.getAbsolutePath());
+        if (JARFILE_VERBOSE) {
+            System.err.println("[ITW JarFile] Opened JAR:");
+            System.err.println("  Input:  " + file.getAbsolutePath());
+            System.err.println("  Actual: " + this.actualFile.getAbsolutePath());
+        }
         
         if (ENABLE_GIFAR_PROTECTION) {
             verifyZipHeader(this.actualFile);  // Verify the ACTUAL file, not original
@@ -111,10 +114,14 @@ public class JarFile extends java.util.jar.JarFile implements Closeable {
         
         if (fileName.endsWith("_itw.jar")) {
             // Already a temp file created by JarFileTempManager, use as-is
-            System.err.println("[ITW JarFile] Skipping temp copy (already _itw.jar): " + fileName);
+            if (JARFILE_VERBOSE) {
+                System.err.println("[ITW JarFile] Skipping temp copy (already _itw.jar): " + fileName);
+            }
             actualFile = originalFile;
         } else {
-            System.err.println("[ITW JarFile] actualFileForConstructor called for: " + fileName);
+            if (JARFILE_VERBOSE) {
+                System.err.println("[ITW JarFile] actualFileForConstructor called for: " + fileName);
+            }
             
             // Check if file is already in temp directory
             String tempDir = System.getProperty("java.io.tmpdir");
