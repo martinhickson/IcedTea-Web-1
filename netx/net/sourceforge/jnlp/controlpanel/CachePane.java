@@ -74,6 +74,7 @@ import net.sourceforge.jnlp.util.ui.NonEditableTableModel;
 import net.sourceforge.swing.SwingUtils;
 
 public class CachePane extends JPanel {
+    private static final boolean PURGE_ON_STARTUP = true;
     final JDialog parent;
     final DeploymentConfiguration config;
     private JComponent defaultFocusComponent;
@@ -376,7 +377,7 @@ public class CachePane extends JPanel {
             @Override
             public void run() {
                 try {
-                    visualCleanCache(parent);
+                    visualCleanCache(parent, config);
                     populateTable();
                 } catch (Exception exception) {
                     OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, exception);
@@ -523,6 +524,15 @@ public class CachePane extends JPanel {
     }
 
     public static void visualCleanCache(Component parent) {
+        visualCleanCache(parent, net.sourceforge.jnlp.runtime.JNLPRuntime.getConfiguration());
+    }
+
+    public static void visualCleanCache(Component parent, DeploymentConfiguration config) {
+        if (PURGE_ON_STARTUP) {
+            scheduleCachePurgeOnStartup(parent, config);
+            return;
+        }
+
         try {
             boolean success = CacheUtil.clearCache();
             if (!success) {
@@ -531,6 +541,21 @@ public class CachePane extends JPanel {
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(parent, Translator.R("CCannotClearCache"));
         }
+    }
+
+    private static void scheduleCachePurgeOnStartup(Component parent, DeploymentConfiguration config) {
+        try {
+            if (config != null) {
+                config.setProperty(DeploymentConfiguration.KEY_CACHE_PURGE_ON_STARTUP, String.valueOf(true));
+                config.save();
+                JOptionPane.showMessageDialog(parent,
+                        "Principal consultant note: The cache will be cleared next time you launch IcedTea-Web.");
+                return;
+            }
+        } catch (Exception ex) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL, ex);
+        }
+        JOptionPane.showMessageDialog(parent, Translator.R("CCannotClearCache"));
     }
 }
 

@@ -177,6 +177,10 @@ if ENABLE_PLUGINJAR
 endif
 
 NETX_JAR=$(datadir)/$(PACKAGE_NAME)/javaws.jar
+ITW_CHOOSER_JAR=$(datadir)/$(PACKAGE_NAME)/itw-chooser.jar
+ITW_CHOOSER_UBER_DIR=$(TOP_BUILD_DIR)/itw-chooser-uber.build
+ITW_CHOOSER_UBER_DEPS=$(ITW_CHOOSER_UBER_DIR)/deps.xml
+ITW_CHOOSER_UBER_POM=$(ITW_CHOOSER_UBER_DIR)/pom.xml
 SPLASH_PNG=$(datadir)/$(PACKAGE_NAME)/javaws_splash.png
 MODULARJDK_ARGS_LOCATION=$(DESTDIR)$(MODULARJDK_ARGS_DIR)/$(MODULARJDK_ARGS_FILE)
 
@@ -322,6 +326,7 @@ endif
 export PLUGIN_VERSION = IcedTea-Web $(FULL_VERSION)
 
 export EXTRA_DIST = $(MODULARJDK_ARGS_FILE) $(top_srcdir)/netx $(top_srcdir)/plugin ${ICON} $(DESKTOP_IN_FILES) $(top_srcdir)/completion \
+  $(top_srcdir)/itw-chooser.manifest.in $(top_srcdir)/itw-chooser-uber/pom.xml.in \
   shell-launcher rust-launcher $(top_srcdir)/tests html-gen.sh NEW_LINE_IFS $(top_srcdir)/metadata.in $(top_srcdir)/win-installer
 
 # reproducers `D`shortcuts
@@ -377,7 +382,7 @@ edit_launcher_script = sed \
 # Top-Level Targets
 # =================
 
-all-local: stamps/netx-dist.stamp stamps/plugin.stamp stamps/docs.stamp \
+all-local: stamps/netx-dist.stamp stamps/itw-chooser.stamp stamps/plugin.stamp stamps/docs.stamp \
  $(LAUNCHERS) $(DESKTOP_FILES)
 
 
@@ -404,6 +409,7 @@ if ENABLE_PLUGINJAR
 	${INSTALL_DATA} $(TOP_BUILD_DIR)/liveconnect/lib/classes-jsobject.jar $(DESTDIR)$(JSOBJECT_JAR)
 endif
 	${INSTALL_DATA} $(NETX_DIR)/lib/classes.jar $(DESTDIR)$(NETX_JAR)
+	${INSTALL_DATA} $(NETX_DIR)/lib/itw-chooser.jar $(DESTDIR)$(ITW_CHOOSER_JAR)
 	${INSTALL_DATA} $(NETX_SRCDIR)/javaws_splash.png $(DESTDIR)$(SPLASH_PNG)
 	${INSTALL_DATA} $(TOP_SRC_DIR)/${ICON} $(ICONS_DEST_DIR)/
 	mkdir -p $(DESTDIR)$(MODULARJDK_ARGS_DIR)
@@ -1000,13 +1006,59 @@ stamps/netx-dist.stamp: stamps/netx.stamp $(TOP_BUILD_DIR)/netx.manifest stamps/
 	mkdir -p stamps
 	touch $@
 
+stamps/itw-chooser.stamp: stamps/netx.stamp
+	rm -rf $(ITW_CHOOSER_UBER_DIR)
+	mkdir -p $(ITW_CHOOSER_UBER_DIR)
+	rm -f $(ITW_CHOOSER_UBER_DEPS)
+	touch $(ITW_CHOOSER_UBER_DEPS)
+	@add_dep() { \
+	  jar="$$1"; art="$$2"; \
+	  if [ "x$$jar" != "x" ] && [ -f "$$jar" ] ; then \
+	    printf '%s\n' \
+	      '    <dependency>' \
+	      '      <groupId>net.sourceforge.jnlp</groupId>' \
+	      "      <artifactId>$$art</artifactId>" \
+	      "      <version>$(FULL_VERSION)</version>" \
+	      '      <scope>system</scope>' \
+	      "      <systemPath>$$jar</systemPath>" \
+	      '    </dependency>' \
+	      >> $(ITW_CHOOSER_UBER_DEPS) ; \
+	  fi ; \
+	}; \
+	add_dep "$(NETX_DIR)/lib/classes.jar" "itw-classes"; \
+	add_dep "$(TAGSOUP_JAR)" "tagsoup"; \
+	add_dep "$(PACK_JAR)" "pack"; \
+	add_dep "$(RHINO_JAR)" "rhino"; \
+	add_dep "$(BYTEBUDDY_JAR)" "bytebuddy"; \
+	add_dep "$(BYTEBUDDY_AGENT_JAR)" "bytebuddy-agent"; \
+	add_dep "$(COMMONSCOMPRESS_JAR)" "commons-compress"; \
+	add_dep "$(MSLINKS_JAR)" "mslinks"
+	POM_TEMPLATE="$(top_srcdir)/itw-chooser-uber/pom.xml.in" ; \
+	if [ ! -f "$$POM_TEMPLATE" ] ; then \
+	  echo "Missing itw-chooser-uber/pom.xml.in. Cannot build uber jar." ; \
+	  exit 1 ; \
+	fi ; \
+	sed -e "s|[@]PACKAGE_NAME[@]|$(PACKAGE_NAME)|g" \
+	    -e "s|[@]FULL_VERSION[@]|$(FULL_VERSION)|g" \
+	    -e "s|[@]PACKAGE_URL[@]|$(PACKAGE_URL)|g" \
+	    "$$POM_TEMPLATE" | \
+	  sed -e "/@ITW_CHOOSER_DEPENDENCIES@/r $(ITW_CHOOSER_UBER_DEPS)" \
+	      -e "/@ITW_CHOOSER_DEPENDENCIES@/d" > $(ITW_CHOOSER_UBER_POM)
+	(cd $(ITW_CHOOSER_UBER_DIR) ; mvn -q -DskipTests package)
+	mkdir -p $(NETX_DIR)/lib
+	cp $(ITW_CHOOSER_UBER_DIR)/target/itw-chooser.jar $(NETX_DIR)/lib/itw-chooser.jar
+	mkdir -p stamps
+	touch $@
+
 clean-netx:
 	rm -rf $(NETX_DIR)
 	rm -f stamps/netx-dist.stamp
+	rm -f stamps/itw-chooser.stamp
 	rm -f netx-source-files.txt
 	rm -f stamps/netx.stamp
 	rm -f stamps/netx-html-gen.stamp
 	rm -f $(NETX_RESOURCE_DIR)/{NEWS,AUTHORS,COPYING,ChangeLog}.html
+	rm -rf $(ITW_CHOOSER_UBER_DIR)
 
 clean-desktop-files:
 	rm -f javaws.desktop
@@ -2115,6 +2167,8 @@ add-netx-debug: stamps/add-netx-debug.stamp
 netx: stamps/netx.stamp
 
 netx-dist: stamps/netx-dist.stamp
+
+itw-chooser: stamps/itw-chooser.stamp
 
 plugin: stamps/plugin.stamp
 

@@ -245,6 +245,8 @@ public class JNLPRuntime {
             OutputController.getLogger().log(OutputController.Level.WARNING_ALL, R("RConfigurationError")+": "+getConfiguration().getLoadingException().getMessage());
         }
 
+        purgeCacheOnStartupIfRequested();
+
         isWebstartApplication = isApplication;
 
         //Setting the system property for javawebstart's version.
@@ -311,6 +313,30 @@ public class JNLPRuntime {
 
         initialized = true;
 
+    }
+
+    private static void purgeCacheOnStartupIfRequested() {
+        try {
+            DeploymentConfiguration config = getConfiguration();
+            String value = config.getProperty(DeploymentConfiguration.KEY_CACHE_PURGE_ON_STARTUP);
+            if (!Boolean.parseBoolean(value)) {
+                return;
+            }
+
+            boolean cleared = CacheUtil.clearCache();
+            if (cleared) {
+                config.setProperty(DeploymentConfiguration.KEY_CACHE_PURGE_ON_STARTUP, String.valueOf(false));
+                try {
+                    config.save();
+                } catch (IOException e) {
+                    OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                            "Failed to persist cache purge flag reset: " + e.getMessage());
+                }
+            }
+        } catch (Throwable t) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                    "Cache purge on startup failed: " + t.getMessage());
+        }
     }
 
     /**

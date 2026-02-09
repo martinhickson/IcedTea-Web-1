@@ -379,6 +379,21 @@ public class Defaults {
                         BasicValueValidators.getBooleanValidator(),
                         String.valueOf(false)
                 },
+                {
+                        DeploymentConfiguration.KEY_CACHE_PURGE_ON_STARTUP,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(false)
+                },
+                {
+                        DeploymentConfiguration.KEY_RELAUNCH_JNLP,
+                        null,
+                        ""
+                },
+                {
+                        DeploymentConfiguration.KEY_RELAUNCH_SIMULATE_FAILURE,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(false)
+                },
                 /* JNLP association */
                 {
                         DeploymentConfiguration.KEY_JNLP_ASSOCIATIONS,

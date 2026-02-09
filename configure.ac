@@ -1,4 +1,4 @@
-AC_INIT([icedtea-web],[1.8.8.21],[distro-pkg-dev@openjdk.java.net], [icedtea-web], [http://icedtea.classpath.org/wiki/IcedTea-Web])
+AC_INIT([icedtea-web],[1.8.8.22],[distro-pkg-dev@openjdk.java.net], [icedtea-web], [http://icedtea.classpath.org/wiki/IcedTea-Web])
 AM_INIT_AUTOMAKE([1.9 tar-pax foreign])
 AC_CONFIG_FILES([Makefile netx.manifest])
 AM_MAINTAINER_MODE([enable])
@@ -152,7 +152,11 @@ if test x"$HAVE_JAVA9" = xyes ; then
   JAVA_DESKTOP=java.desktop
   JAVA_NAMING=java.naming
 fi
-IT_CHECK_FOR_CLASS(JAVA_UTIL_JAR_PACK200, [java.util.jar.Pack200], [some.pkg], [])
+if test x"$HAVE_JAVA9" = xyes ; then
+  AC_MSG_NOTICE([Skipping java.util.jar.Pack200 check on JDK9+ (pack.jar is used instead)])
+else
+  IT_CHECK_FOR_CLASS(JAVA_UTIL_JAR_PACK200, [java.util.jar.Pack200], [some.pkg], [])
+fi
 IT_CHECK_FOR_CLASS(JAVA_NET_COOKIEMANAGER, [java.net.CookieManager], [some.pkg], [])
 IT_CHECK_FOR_CLASS(JAVA_NET_HTTPCOOKIE, [java.net.HttpCookie], [some.pkg], [])
 IT_CHECK_FOR_CLASS(JAVA_NET_COOKIEHANDLER, [java.net.CookieHandler], [some.pkg], [])

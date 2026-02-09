@@ -105,6 +105,8 @@ public final class Boot implements PrivilegedAction<Void> {
         // setup Swing EDT tracing:
         SwingUtils.setup();
 
+        argsIn = applyRelaunchIfConfigured(argsIn);
+
         optionParser = new OptionParser(argsIn, OptionsDefinitions.getJavaWsOptions());
 
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.STARTUP_TRACKER)) {
@@ -214,6 +216,36 @@ public final class Boot implements PrivilegedAction<Void> {
             AccessController.doPrivileged(new Boot());
         }
 
+    }
+
+    private static String[] applyRelaunchIfConfigured(String[] argsIn) {
+        try {
+            DeploymentConfiguration config = JNLPRuntime.getConfiguration();
+            String simulateFailure = config.getProperty(DeploymentConfiguration.KEY_RELAUNCH_SIMULATE_FAILURE);
+            if (Boolean.parseBoolean(simulateFailure)) {
+                OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                    "Simulating relaunch failure (deployment.javaws.relaunch.simulateFailure=true).");
+                return argsIn;
+            }
+
+            String relaunchJnlp = config.getProperty(DeploymentConfiguration.KEY_RELAUNCH_JNLP);
+            if (relaunchJnlp != null && !relaunchJnlp.trim().isEmpty()) {
+                if (argsIn == null || argsIn.length == 0) {
+                    argsIn = new String[] { relaunchJnlp.trim() };
+                }
+                config.setProperty(DeploymentConfiguration.KEY_RELAUNCH_JNLP, "");
+                try {
+                    config.save();
+                } catch (Exception e) {
+                    OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                        "Failed to persist relaunch flag reset: " + e.getMessage());
+                }
+            }
+        } catch (Throwable t) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                "Failed to apply relaunch configuration: " + t.getMessage());
+        }
+        return argsIn;
     }
 
     private static void handleMessage() {

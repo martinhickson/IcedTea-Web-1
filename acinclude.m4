@@ -534,6 +534,44 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_PACK],
   AM_CONDITIONAL([HAVE_PACK], [test x$PACK_JAR != xno -a x$PACK_JAR != x ])
 ])
 
+AC_DEFUN_ONCE([IT_CHECK_FOR_COMMONSCOMPRESS],
+[
+  AC_MSG_CHECKING([for commons-compress])
+  AC_ARG_WITH([commonscompress],
+             [AS_HELP_STRING([--with-commonscompress],
+                             [commonscompress.jar])],
+             [
+                COMMONSCOMPRESS_JAR=${withval}
+             ],
+             [
+                COMMONSCOMPRESS_JAR=
+             ])
+  if test -z "${COMMONSCOMPRESS_JAR}"; then
+    for dir in /usr/share/java /usr/local/share/java ; do
+      if test -f $dir/commonscompress.jar; then
+        COMMONSCOMPRESS_JAR=$dir/commonscompress.jar
+        break
+      fi
+      if test -f $dir/commons-compress.jar; then
+        COMMONSCOMPRESS_JAR=$dir/commons-compress.jar
+        break
+      fi
+    done
+  fi
+  AM_COND_IF([WINDOWS], [
+    COMMONSCOMPRESS_JAR=$(cygpath -m ${COMMONSCOMPRESS_JAR})
+  ])
+  AC_MSG_RESULT(${COMMONSCOMPRESS_JAR})
+  if test -z "${COMMONSCOMPRESS_JAR}"; then
+    AC_MSG_RESULT(***************************************************************)
+    AC_MSG_RESULT(*  Warning you are building without commons-compress        *)
+    AC_MSG_RESULT(*  Some archive formats may not be supported                *)
+    AC_MSG_RESULT(***************************************************************)
+  fi
+  AC_SUBST(COMMONSCOMPRESS_JAR)
+  AM_CONDITIONAL([HAVE_COMMONSCOMPRESS], [test x$COMMONSCOMPRESS_JAR != xno -a x$COMMONSCOMPRESS_JAR != x ])
+])
+
 AC_DEFUN_ONCE([IT_CHECK_FOR_MSLINKS],
 [
   AC_MSG_CHECKING([for mslinks])

@@ -194,6 +194,9 @@ public final class DeploymentConfiguration {
     public static final String KEY_ENABLE_LOGGING_TOSTREAMS = "deployment.log.stdstreams";
     public static final String KEY_ENABLE_LOGGING_TOSYSTEMLOG = "deployment.log.system";
     public static final String KEY_DEBUG_JARFILE_CLOSE = "deployment.debug.jarfile.close";
+    public static final String KEY_CACHE_PURGE_ON_STARTUP = "deployment.cache.purge.on.startup";
+    public static final String KEY_RELAUNCH_JNLP = "deployment.javaws.relaunch.jnlp";
+    public static final String KEY_RELAUNCH_SIMULATE_FAILURE = "deployment.javaws.relaunch.simulateFailure";
     
     /*
      * manifest check

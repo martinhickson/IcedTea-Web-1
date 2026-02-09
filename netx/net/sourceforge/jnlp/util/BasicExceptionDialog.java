@@ -45,6 +45,7 @@ import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.swing.BorderFactory;
@@ -58,8 +59,13 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JTextArea;
 import net.sourceforge.swing.SwingUtils;
+import net.sourceforge.jnlp.Launcher;
+import net.sourceforge.jnlp.OptionsDefinitions;
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.controlpanel.CachePane;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.JavaConsole;
+import net.sourceforge.jnlp.util.optionparser.OptionParser;
 
 /**
  * A dialog that displays some basic information about an exception
@@ -110,6 +116,10 @@ public class BasicExceptionDialog {
         final JButton cacheButton = getClearCacheButton(errorDialog);
         cacheButton.setAlignmentY(JComponent.LEFT_ALIGNMENT);
         quickInfoPanelButtons.add(cacheButton);
+
+        final JButton relaunchButton = getRelaunchButton(errorDialog);
+        relaunchButton.setAlignmentY(JComponent.LEFT_ALIGNMENT);
+        quickInfoPanelButtons.add(relaunchButton);
 
         final JButton consoleButton = getShowButton(errorDialog);
         consoleButton.setAlignmentY(JComponent.LEFT_ALIGNMENT);
@@ -195,6 +205,79 @@ public class BasicExceptionDialog {
             }
         });
         return clearAllButton;
+    }
+
+    public static JButton getRelaunchButton(final Component parent) {
+        JButton relaunchButton = new JButton("Relaunch");
+        relaunchButton.setToolTipText("Relaunch IcedTea-Web with the same JNLP file");
+        relaunchButton.addActionListener(new java.awt.event.ActionListener() {
+            @Override
+            public void actionPerformed(java.awt.event.ActionEvent evt) {
+                SwingUtils.invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            String jnlpPath = resolveInitialJnlpPath();
+                            if (jnlpPath == null || jnlpPath.trim().isEmpty()) {
+                                JOptionPane.showMessageDialog(parent, "Unable to determine JNLP file for relaunch.");
+                                return;
+                            }
+
+                            DeploymentConfiguration config = JNLPRuntime.getConfiguration();
+                            String simulateFailure = config.getProperty(DeploymentConfiguration.KEY_RELAUNCH_SIMULATE_FAILURE);
+                            if (Boolean.parseBoolean(simulateFailure)) {
+                                JOptionPane.showMessageDialog(parent,
+                                        "Simulated relaunch failure (deployment.javaws.relaunch.simulateFailure=true).");
+                                return;
+                            }
+                            config.setProperty(DeploymentConfiguration.KEY_RELAUNCH_JNLP, jnlpPath);
+                            config.save();
+
+                            String javawsLocation = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
+                            if (javawsLocation == null || javawsLocation.trim().isEmpty()) {
+                                JOptionPane.showMessageDialog(parent, R("LNetxJarMissingInfo"));
+                                return;
+                            }
+
+                            ProcessBuilder pb = new ProcessBuilder(javawsLocation);
+                            pb.environment().put("ICEDTEA_WEB_SPLASH", "none");
+                            pb.inheritIO();
+                            pb.start();
+                        } catch (Exception ex) {
+                            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+                            JOptionPane.showMessageDialog(parent, ex.toString());
+                        }
+                    }
+                });
+            }
+        });
+        return relaunchButton;
+    }
+
+    private static String resolveInitialJnlpPath() {
+        List<String> args = JNLPRuntime.getInitialArguments();
+        if (args == null || args.isEmpty()) {
+            return null;
+        }
+
+        try {
+            OptionParser parser = new OptionParser(args.toArray(new String[0]), OptionsDefinitions.getJavaWsOptions());
+            if (parser.hasOption(OptionsDefinitions.OPTIONS.JNLP)) {
+                return parser.getParam(OptionsDefinitions.OPTIONS.JNLP);
+            }
+            if (parser.mainArgExists()) {
+                return parser.getMainArg();
+            }
+        } catch (Exception ex) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+        }
+
+        for (String arg : args) {
+            if (arg != null && !arg.startsWith("-")) {
+                return arg;
+            }
+        }
+        return null;
     }
 
     private synchronized static int willBeHidden() {

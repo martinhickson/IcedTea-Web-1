@@ -10,6 +10,16 @@ export BYTEBUDDY_AGENT_JAR="$(cygpath -u "C:/cygwin64/usr/share/java/byte-buddy-
 export PATH="${PATH}:/cygdrive/c/rust/bin:${WIXPATH}"
 export JVM_HOME_SHORT="$(cygpath -d "${JAVA_HOME}")"
 export JVMPATH="$(cygpath -u ${JVM_HOME_SHORT})"
+if ! command -v mvn >/dev/null 2>&1; then
+  MAVEN_VERSION="3.9.8"
+  MAVEN_ZIP="apache-maven-${MAVEN_VERSION}-bin.zip"
+  MAVEN_URL="https://archive.apache.org/dist/maven/maven-3/${MAVEN_VERSION}/binaries/${MAVEN_ZIP}"
+  echo "Maven not found. Downloading ${MAVEN_URL}"
+  curl -L -o "${MAVEN_ZIP}" "${MAVEN_URL}"
+  unzip -q "${MAVEN_ZIP}"
+  export MAVEN_HOME="$(pwd)/apache-maven-${MAVEN_VERSION}"
+  export PATH="${MAVEN_HOME}/bin:${PATH}"
+fi
 echo "Configure IcedTea-Web"
 ./autogen.sh
 ./configure --disable-native-plugin --disable-pluginjar --disable-docs --prefix="${ICEDTEAWEB_INSTALL}" --with-wix=${WIXPATH} --with-wixgen=${WIXGEN} --with-itw-libs=BUNDLED --with-jdk-home="${JVMPATH}" --with-bytebuddy="${BYTEBUDDY_JAR}" --with-bytebuddy-agent="${BYTEBUDDY_AGENT_JAR}"
