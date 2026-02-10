@@ -181,6 +181,7 @@ ITW_CHOOSER_JAR=$(datadir)/$(PACKAGE_NAME)/itw-chooser.jar
 ITW_CHOOSER_UBER_DIR=$(TOP_BUILD_DIR)/itw-chooser-uber.build
 ITW_CHOOSER_UBER_DEPS=$(ITW_CHOOSER_UBER_DIR)/deps.xml
 ITW_CHOOSER_UBER_POM=$(ITW_CHOOSER_UBER_DIR)/pom.xml
+ITW_CHOOSER_CLASSES_JAR=$(ITW_CHOOSER_UBER_DIR)/itw-classes.jar
 SPLASH_PNG=$(datadir)/$(PACKAGE_NAME)/javaws_splash.png
 MODULARJDK_ARGS_LOCATION=$(DESTDIR)$(MODULARJDK_ARGS_DIR)/$(MODULARJDK_ARGS_FILE)
 
@@ -1011,21 +1012,37 @@ stamps/itw-chooser.stamp: stamps/netx.stamp
 	mkdir -p $(ITW_CHOOSER_UBER_DIR)
 	rm -f $(ITW_CHOOSER_UBER_DEPS)
 	touch $(ITW_CHOOSER_UBER_DEPS)
+	$(SYSTEM_JDK_DIR)/bin/jar cf $(ITW_CHOOSER_CLASSES_JAR) -C $(NETX_DIR) .
 	@add_dep() { \
 	  jar="$$1"; art="$$2"; \
 	  if [ "x$$jar" != "x" ] && [ -f "$$jar" ] ; then \
 	    printf '%s\n' \
 	      '    <dependency>' \
-	      '      <groupId>net.sourceforge.jnlp</groupId>' \
+	      '      <groupId>itw.local</groupId>' \
 	      "      <artifactId>$$art</artifactId>" \
 	      "      <version>$(FULL_VERSION)</version>" \
-	      '      <scope>system</scope>' \
-	      "      <systemPath>$$jar</systemPath>" \
 	      '    </dependency>' \
 	      >> $(ITW_CHOOSER_UBER_DEPS) ; \
 	  fi ; \
 	}; \
-	add_dep "$(NETX_DIR)/lib/classes.jar" "itw-classes"; \
+	install_dep() { \
+	  jar="$$1"; art="$$2"; \
+	  if [ "x$$jar" != "x" ] && [ -f "$$jar" ] ; then \
+	    mvn -q -Dmaven.repo.local=$(ITW_CHOOSER_UBER_DIR)/repo \
+	      -Dfile="$$jar" -DgroupId=itw.local -DartifactId="$$art" \
+	      -Dversion=$(FULL_VERSION) -Dpackaging=jar -DgeneratePom=true \
+	      install:install-file ; \
+	  fi ; \
+	}; \
+	install_dep "$(ITW_CHOOSER_CLASSES_JAR)" "itw-classes"; \
+	install_dep "$(TAGSOUP_JAR)" "tagsoup"; \
+	install_dep "$(PACK_JAR)" "pack"; \
+	install_dep "$(RHINO_JAR)" "rhino"; \
+	install_dep "$(BYTEBUDDY_JAR)" "bytebuddy"; \
+	install_dep "$(BYTEBUDDY_AGENT_JAR)" "bytebuddy-agent"; \
+	install_dep "$(COMMONSCOMPRESS_JAR)" "commons-compress"; \
+	install_dep "$(MSLINKS_JAR)" "mslinks"; \
+	add_dep "$(ITW_CHOOSER_CLASSES_JAR)" "itw-classes"; \
 	add_dep "$(TAGSOUP_JAR)" "tagsoup"; \
 	add_dep "$(PACK_JAR)" "pack"; \
 	add_dep "$(RHINO_JAR)" "rhino"; \
@@ -1044,7 +1061,7 @@ stamps/itw-chooser.stamp: stamps/netx.stamp
 	    "$$POM_TEMPLATE" | \
 	  sed -e "/@ITW_CHOOSER_DEPENDENCIES@/r $(ITW_CHOOSER_UBER_DEPS)" \
 	      -e "/@ITW_CHOOSER_DEPENDENCIES@/d" > $(ITW_CHOOSER_UBER_POM)
-	(cd $(ITW_CHOOSER_UBER_DIR) ; mvn -q -DskipTests package)
+	(cd $(ITW_CHOOSER_UBER_DIR) ; mvn -q -DskipTests -Dmaven.repo.local=$(ITW_CHOOSER_UBER_DIR)/repo package)
 	mkdir -p $(NETX_DIR)/lib
 	cp $(ITW_CHOOSER_UBER_DIR)/target/itw-chooser.jar $(NETX_DIR)/lib/itw-chooser.jar
 	mkdir -p stamps

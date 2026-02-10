@@ -180,78 +180,25 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          yum -y install autoconf bind-utils bzip2 cpio elfutils-libelf-devel gcc gcc-c++ glibc glibc-common glibc-devel \
-          gmp-devel java-1.8.0-openjdk-devel libcurl-devel make maven mpfr-devel perl unzip which zip
-          curl -L -o tagsoup.jar "https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar"
-          sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
-          curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
-          sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
-          curl -L -o byte-buddy.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar"
-          sha256sum byte-buddy.jar | awk '$1!="30e6e0446437a67db37e2b7f7d33f50787ddfd970359319dfd05469daa2dcbce"{exit 1}'
-          curl -L -o byte-buddy-agent.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar"
-          sha256sum byte-buddy-agent.jar | awk '$1!="67993a89d47ca58ff868802a4448ddd150e5fe4e5a5645ded990d7b4d557a6b9"{exit 1}'
-          curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
-          sha256sum rhino.zip | awk '$1!="c94c6de3a29b3acbc4eee732e688f75a5d94bd02c9878be4ceb4d3cd220f3866"{exit 1}'
-          unzip -j rhino.zip "*/js.jar"
-
-      - name: Compile pkg-config
-        run: |
-          curl -L -o pkg-config.tar.gz "https://pkg-config.freedesktop.org/releases/pkg-config-0.29.2.tar.gz"
-          sha256sum pkg-config.tar.gz | awk '$1!="6fc69c01688c9458a57eb9a1664c9aba372ccda420a02bf4429fe610e7e7d591"{exit 1}'
-          tar -zxf pkg-config.tar.gz
-          cd pkg-config-0.29.2
-          ./configure --with-internal-glib
-          make install
-
-      - name: Compile automake
-        run: |
-          curl -L -o automake-1.13.1.tar.gz "https://ftp.gnu.org/gnu/automake/automake-1.13.1.tar.gz"
-          sha256sum automake-1.13.1.tar.gz | awk '$1!="51bc10031847e9965c4f2c16a0a66552309ce28ea82b1afa8cef736643ebaa27"{exit 1}'
-          tar -zxf automake-1.13.1.tar.gz 
-          cd automake-1.13.1
-          bash configure
-          make && make install
-          rm -rf /usr/local/bin/automake
-          ln -s /usr/local/bin/automake-1.13 /usr/local/bin/automake
+          yum -y install java-17-openjdk-devel maven
 
       - name: Build Uber Jar
         run: |
-          JDK8_DIR=$(ls -d /usr/lib/jvm/java-1.8.0-openjdk* 2>/dev/null | head -n 1)
-          if [ -n "${JDK8_DIR}" ]; then
-            export JAVA_HOME="${JDK8_DIR}"
-          else
-            export JAVAC_EXE="$(command -v javac || true)"
-            if [ -n "${JAVAC_EXE}" ]; then
-              export JAVA_HOME="$(dirname "$(dirname "$(readlink -e "${JAVAC_EXE}")")")"
-            else
-              export JAVA_EXE="$(command -v java)"
-              export JAVA_HOME="$(dirname "$(dirname "$(readlink -e "${JAVA_EXE}")")")"
-            fi
-          fi
-          export JAVA_HOME="$(readlink -e "${JAVA_HOME}")"
-          export TAGSOUP="${PWD}/tagsoup.jar"
-          export RHINO="${PWD}/js.jar"
-          export PACK="${PWD}/pack.jar"
-          export ACLOCAL_PATH="/usr/local/share/aclocal"
-          export PATH="/usr/local/bin:${PATH}"
-          export WORKSPACE="${PWD}"
           cd icedtea-web
-          ./autogen.sh
-          ./configure --disable-native-plugin --disable-pluginjar --disable-docs --enable-shell-launchers --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-bytebuddy="${WORKSPACE}/byte-buddy.jar" --with-bytebuddy-agent="${WORKSPACE}/byte-buddy-agent.jar"
-          make itw-chooser
+          mvn -q -Dmaven.test.skip=true -P itw-chooser package
 
       - uses: actions/upload-artifact@v4
         with:
           name: itw-chooser-uber-jar
           path: |
-            icedtea-web/netx.build/lib/itw-chooser.jar
+            icedtea-web/target/itw-chooser.jar
 
       - name: Generate shasum
         run: |
-          cd icedtea-web/netx.build/lib
+          cd icedtea-web/target
           sha256sum itw-chooser.jar > itw-chooser.jar.sha256.txt
-          echo "CHOOSER_UBER_FILE=netx.build/lib/itw-chooser.jar" >> $GITHUB_ENV
-          echo "CHOOSER_UBER_SHA=netx.build/lib/itw-chooser.jar.sha256.txt" >> $GITHUB_ENV
+          echo "CHOOSER_UBER_FILE=target/itw-chooser.jar" >> $GITHUB_ENV
+          echo "CHOOSER_UBER_SHA=target/itw-chooser.jar.sha256.txt" >> $GITHUB_ENV
 
       - name: Upload uber jar
         uses: actions/upload-release-asset@v1

@@ -20,6 +20,7 @@
     <maven.compiler.plugin.version>3.11.0</maven.compiler.plugin.version>
     <maven.build.helper.plugin.version>3.3.0</maven.build.helper.plugin.version>
     <maven.enforcer.plugin.version>3.3.0</maven.enforcer.plugin.version>
+    <maven.shade.plugin.version>3.5.0</maven.shade.plugin.version>
   </properties>
 
   <dependencies>
@@ -332,4 +333,69 @@
     <!-- Override Maven's default test source directory to use custom structure -->
     <testSourceDirectory>${project.basedir}/tests-disabled</testSourceDirectory>
   </build>
+
+  <profiles>
+    <profile>
+      <id>itw-chooser</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-shade-plugin</artifactId>
+            <version>${maven.shade.plugin.version}</version>
+            <executions>
+              <execution>
+                <goals>
+                  <goal>shade</goal>
+                </goals>
+                <phase>package</phase>
+                <configuration>
+                  <finalName>itw-chooser</finalName>
+                  <createDependencyReducedPom>false</createDependencyReducedPom>
+                  <shadedArtifactAttached>false</shadedArtifactAttached>
+                  <transformers>
+                    <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"></transformer>
+                    <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheLicenseResourceTransformer"></transformer>
+                    <transformer implementation="org.apache.maven.plugins.shade.resource.ApacheNoticeResourceTransformer">
+                      <addHeader>false</addHeader>
+                    </transformer>
+                    <transformer implementation="org.apache.maven.plugins.shade.resource.DontIncludeResourceTransformer">
+                      <resources>
+                        <resource>.SF</resource>
+                        <resource>.DSA</resource>
+                        <resource>.RSA</resource>
+                        <resource>module-info.class</resource>
+                        <resource>META-INF/MANIFEST.MF</resource>
+                        <resource>META-INF/DEPENDENCIES</resource>
+                      </resources>
+                    </transformer>
+                    <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
+                      <manifestEntries>
+                        <Main-Class>net.sourceforge.jnlp.runtime.ItwChooser</Main-Class>
+                        <Implementation-Title>${project.name} ITW Chooser</Implementation-Title>
+                        <Implementation-Version>${project.version}</Implementation-Version>
+                      </manifestEntries>
+                    </transformer>
+                  </transformers>
+                  <filters>
+                    <filter>
+                      <artifact>*:*</artifact>
+                      <excludes>
+                        <exclude>META-INF/*.SF</exclude>
+                        <exclude>META-INF/*.DSA</exclude>
+                        <exclude>META-INF/*.RSA</exclude>
+                        <exclude>module-info.class</exclude>
+                        <exclude>META-INF/DEPENDENCIES</exclude>
+                        <exclude>META-INF/MANIFEST.MF</exclude>
+                      </excludes>
+                    </filter>
+                  </filters>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>
