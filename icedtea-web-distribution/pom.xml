@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>net.sourceforge.icedtea-web</groupId>
+    <artifactId>icedtea-web-parent</artifactId>
+    <version>1.0.1-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>icedtea-web-distribution</artifactId>
+  <packaging>pom</packaging>
+
+  <name>IcedTea-Web Maven Distribution</name>
+  <description>Maven-built IcedTea-Web distribution with .NET launcher and bundled Corretto</description>
+
+  <properties>
+    <itw.distribution.root>${project.build.directory}/dist/icedtea-web-maven-${project.version}</itw.distribution.root>
+    <itw.distribution.platform>linux</itw.distribution.platform>
+    <itw.dotnet.runtime.identifier>linux-x64</itw.dotnet.runtime.identifier>
+    <itw.dotnet.framework>net8.0</itw.dotnet.framework>
+    <itw.dotnet.selfContained>true</itw.dotnet.selfContained>
+    <itw.launcher.extension></itw.launcher.extension>
+    <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz</itw.corretto.url>
+    <itw.corretto.archive>${project.build.directory}/downloads/corretto-linux-jdk.tar.gz</itw.corretto.archive>
+    <itw.uberjar.classifier>uber</itw.uberjar.classifier>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>net.sourceforge.icedtea-web</groupId>
+      <artifactId>icedtea-web</artifactId>
+      <version>${project.version}</version>
+      <classifier>${itw.uberjar.classifier}</classifier>
+      <type>jar</type>
+    </dependency>
+    <dependency>
+      <groupId>net.bytebuddy</groupId>
+      <artifactId>byte-buddy-agent</artifactId>
+      <version>1.14.10</version>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>copy-runtime-artifacts</id>
+            <phase>process-resources</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>net.sourceforge.icedtea-web</groupId>
+                  <artifactId>icedtea-web</artifactId>
+                  <version>${project.version}</version>
+                  <classifier>${itw.uberjar.classifier}</classifier>
+                  <type>jar</type>
+                  <destFileName>icedtea-web-uber.jar</destFileName>
+                  <outputDirectory>${project.build.directory}/staging/lib</outputDirectory>
+                </artifactItem>
+                <artifactItem>
+                  <groupId>net.bytebuddy</groupId>
+                  <artifactId>byte-buddy-agent</artifactId>
+                  <version>1.14.10</version>
+                  <type>jar</type>
+                  <destFileName>byte-buddy-agent.jar</destFileName>
+                  <outputDirectory>${project.build.directory}/staging/bin</outputDirectory>
+                </artifactItem>
+              </artifactItems>
+              <overWriteReleases>true</overWriteReleases>
+              <overWriteSnapshots>true</overWriteSnapshots>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>3.2.0</version>
+        <executions>
+          <execution>
+            <id>publish-dotnet-launcher</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <workingDirectory>${project.basedir}/../dotnet-launcher</workingDirectory>
+              <executable>dotnet</executable>
+              <arguments>
+                <argument>publish</argument>
+                <argument>JavawsLauncher.csproj</argument>
+                <argument>--configuration</argument>
+                <argument>Release</argument>
+                <argument>--framework</argument>
+                <argument>${itw.dotnet.framework}</argument>
+                <argument>--runtime</argument>
+                <argument>${itw.dotnet.runtime.identifier}</argument>
+                <argument>--self-contained</argument>
+                <argument>${itw.dotnet.selfContained}</argument>
+                <argument>-p:PublishSingleFile=false</argument>
+                <argument>-p:PublishReadyToRun=true</argument>
+                <argument>-p:DebugType=none</argument>
+                <argument>--output</argument>
+                <argument>${project.build.directory}/dotnet-publish</argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>distribution-windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+      </activation>
+      <properties>
+        <itw.distribution.platform>windows</itw.distribution.platform>
+        <itw.dotnet.runtime.identifier>win-x64</itw.dotnet.runtime.identifier>
+        <itw.launcher.extension>.exe</itw.launcher.extension>
+        <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip</itw.corretto.url>
+        <itw.corretto.archive>${project.build.directory}/downloads/corretto-windows-jdk.zip</itw.corretto.archive>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>assemble-windows-dotnet-corretto-distribution</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${itw.distribution.root}"/>
+                    <mkdir dir="${itw.distribution.root}/bin"/>
+                    <mkdir dir="${itw.distribution.root}/lib"/>
+                    <mkdir dir="${itw.distribution.root}/runtime/corretto"/>
+                    <mkdir dir="${project.build.directory}/downloads"/>
+
+                    <copy todir="${itw.distribution.root}/bin">
+                      <fileset dir="${project.build.directory}/dotnet-publish"/>
+                    </copy>
+                    <copy file="${itw.distribution.root}/bin/javaws.exe" tofile="${itw.distribution.root}/bin/itweb-settings.exe"/>
+                    <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>
+                    <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
+
+                    <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
+                    <unzip src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto"/>
+
+                    <delete file="${project.build.directory}/icedtea-web-maven-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
+                    <zip destfile="${project.build.directory}/icedtea-web-maven-${project.version}-${itw.dotnet.runtime.identifier}.zip">
+                      <zipfileset dir="${project.build.directory}/dist">
+                        <exclude name="**/bin/*"/>
+                        <exclude name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
+                        <include name="**/bin/*"/>
+                        <include name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                    </zip>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>distribution-linux</id>
+      <activation>
+        <os>
+          <family>unix</family>
+        </os>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>assemble-linux-dotnet-corretto-distribution</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${itw.distribution.root}"/>
+                    <mkdir dir="${itw.distribution.root}/bin"/>
+                    <mkdir dir="${itw.distribution.root}/lib"/>
+                    <mkdir dir="${itw.distribution.root}/runtime/corretto"/>
+                    <mkdir dir="${project.build.directory}/downloads"/>
+
+                    <copy todir="${itw.distribution.root}/bin">
+                      <fileset dir="${project.build.directory}/dotnet-publish"/>
+                    </copy>
+                    <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/itweb-settings"/>
+                    <chmod file="${itw.distribution.root}/bin/javaws" perm="ugo+rx"/>
+                    <chmod file="${itw.distribution.root}/bin/itweb-settings" perm="ugo+rx"/>
+                    <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>
+                    <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
+
+                    <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
+                    <untar src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto" compression="gzip"/>
+                    <chmod perm="ugo+rx">
+                      <fileset dir="${itw.distribution.root}/runtime/corretto">
+                        <include name="**/bin/*"/>
+                      </fileset>
+                    </chmod>
+
+                    <delete file="${project.build.directory}/icedtea-web-maven-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
+                    <zip destfile="${project.build.directory}/icedtea-web-maven-${project.version}-${itw.dotnet.runtime.identifier}.zip">
+                      <zipfileset dir="${project.build.directory}/dist">
+                        <exclude name="**/bin/*"/>
+                        <exclude name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
+                        <include name="**/bin/*"/>
+                        <include name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                    </zip>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

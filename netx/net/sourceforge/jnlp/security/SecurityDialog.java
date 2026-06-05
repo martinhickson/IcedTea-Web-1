@@ -54,6 +54,7 @@ import net.sourceforge.jnlp.runtime.JNLPClassLoader.SecurityDelegate;
 import net.sourceforge.jnlp.security.SecurityDialogs.AccessType;
 import net.sourceforge.jnlp.security.SecurityDialogs.DialogType;
 import net.sourceforge.jnlp.security.dialogresults.DialogResult;
+import net.sourceforge.jnlp.security.dialogresults.YesNoSandbox;
 import net.sourceforge.jnlp.security.dialogs.AccessWarningPane;
 import net.sourceforge.jnlp.security.dialogs.AppletWarningPane;
 import net.sourceforge.jnlp.security.dialogs.CertWarningPane;
@@ -396,10 +397,16 @@ public class SecurityDialog {
     }
 
     DialogResult getDefaultNegativeAnswer() {
+        if (panel == null) {
+            return YesNoSandbox.no();
+        }
         return panel.getDefaultNegativeAnswer();
     }
 
     DialogResult getDefaultPositiveAnswer() {
+        if (panel == null) {
+            return YesNoSandbox.yes();
+        }
         return  panel.getDefaultPositiveAnswer();
     }
 

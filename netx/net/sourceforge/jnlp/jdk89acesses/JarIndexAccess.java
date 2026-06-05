@@ -11,6 +11,7 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 
 public class JarIndexAccess {
 
+    private static final boolean AVAILABLE;
     private static Class<?> jarIndexClass;
     private static MethodHandle getJarIndexHandle;
     private static MethodHandle getHandle;
@@ -18,33 +19,39 @@ public class JarIndexAccess {
     private final Object parent;
 
     static {
+        boolean available = false;
+        Class<?> indexClass = null;
+        MethodHandle getIndex = null;
+        MethodHandle get = null;
         try {
-            jarIndexClass = Class.forName("jdk.internal.util.jar.JarIndex");
-        } catch (ClassNotFoundException ex) {
             try {
-                jarIndexClass = Class.forName("sun.misc.JarIndex");
-            } catch (ClassNotFoundException exx) {
-                OutputController.getLogger().log(exx);
-                throw new RuntimeException("JarIndex class not found!");
+                indexClass = Class.forName("jdk.internal.util.jar.JarIndex");
+            } catch (ClassNotFoundException ex) {
+                indexClass = Class.forName("sun.misc.JarIndex");
             }
-        }
 
-        try {
             MethodHandles.Lookup lookup = MethodHandles.lookup();
-            getJarIndexHandle = lookup.findStatic(
-                jarIndexClass,
+            getIndex = lookup.findStatic(
+                indexClass,
                 "getJarIndex",
-                MethodType.methodType(jarIndexClass, JarFile.class)
+                MethodType.methodType(indexClass, JarFile.class)
             );
 
-            getHandle = lookup.findVirtual(
-                jarIndexClass,
+            get = lookup.findVirtual(
+                indexClass,
                 "get",
                 MethodType.methodType(LinkedList.class, String.class)
             );
-        } catch (NoSuchMethodException | IllegalAccessException e) {
-            throw new RuntimeException("Failed to initialize MethodHandles", e);
+            available = true;
+        } catch (Throwable t) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                "JarIndex support unavailable on this JRE: " + t.getMessage());
+            OutputController.getLogger().log(t);
         }
+        AVAILABLE = available;
+        jarIndexClass = indexClass;
+        getJarIndexHandle = getIndex;
+        getHandle = get;
     }
 
     private JarIndexAccess(Object parent) {
@@ -55,6 +62,9 @@ public class JarIndexAccess {
     }
 
     public static JarIndexAccess getJarIndex(JarFile jarFile) throws IOException {
+        if (!AVAILABLE) {
+            return null;
+        }
         try {
             // Use invoke() instead of invokeExact() to allow type conversion
             // invokeExact() requires exact type match, but we're assigning to Object

@@ -27,3 +27,4 @@ target
 /itw-maven/stderr.log
 /itw-maven/stdout.log
 /jdk-src
+/dotnet-launcher/obj/
