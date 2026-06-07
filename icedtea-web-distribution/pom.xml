@@ -24,6 +24,8 @@
     <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz</itw.corretto.url>
     <itw.corretto.archive>${project.build.directory}/downloads/corretto-linux-jdk.tar.gz</itw.corretto.archive>
     <itw.uberjar.classifier>uber</itw.uberjar.classifier>
+    <itw.native.packages.skip>true</itw.native.packages.skip>
+    <itw.native.package.formats>deb rpm</itw.native.package.formats>
   </properties>
 
   <dependencies>
@@ -111,6 +113,26 @@
                 <argument>-p:DebugType=none</argument>
                 <argument>--output</argument>
                 <argument>${project.build.directory}/dotnet-publish</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>build-linux-native-packages</id>
+            <phase>verify</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <skip>${itw.native.packages.skip}</skip>
+              <workingDirectory>${project.basedir}/..</workingDirectory>
+              <executable>bash</executable>
+              <environmentVariables>
+                <ITW_VERSION>${project.version}</ITW_VERSION>
+                <ITW_NATIVE_OUTPUT_DIR>${project.build.directory}/native-packages</ITW_NATIVE_OUTPUT_DIR>
+                <ITW_PACKAGE_FORMATS>${itw.native.package.formats}</ITW_PACKAGE_FORMATS>
+              </environmentVariables>
+              <arguments>
+                <argument>packaging/linux/build-native-packages.sh</argument>
               </arguments>
             </configuration>
           </execution>

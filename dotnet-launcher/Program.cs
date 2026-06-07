@@ -25,12 +25,6 @@ internal static class Program
                 ? binDirectory.Parent ?? binDirectory
                 : binDirectory;
 
-            var javaExecutable = ResolveJavaExecutable(installRoot);
-            var uberJar = ResolveRequiredFile(installRoot, "ITW_UBER_JAR",
-                Path.Combine("lib", "icedtea-web-uber.jar"));
-            var byteBuddyAgent = ResolveOptionalFile(installRoot, "ITW_BYTEBUDDY_AGENT_JAR",
-                Path.Combine("bin", "byte-buddy-agent.jar"));
-
             var javaArgs = new List<string>();
             var javawsArgs = new List<string>();
             foreach (var arg in args)
@@ -44,6 +38,12 @@ internal static class Program
                     javawsArgs.Add(arg);
                 }
             }
+
+            var javaExecutable = ResolveJavaExecutable(installRoot, javawsArgs);
+            var uberJar = ResolveRequiredFile(installRoot, "ITW_UBER_JAR",
+                Path.Combine("lib", "icedtea-web-uber.jar"));
+            var byteBuddyAgent = ResolveOptionalFile(installRoot, "ITW_BYTEBUDDY_AGENT_JAR",
+                Path.Combine("bin", "byte-buddy-agent.jar"));
 
             var majorVersion = DetectJavaMajorVersion(javaExecutable);
             var command = ComposeJavaCommand(
@@ -67,12 +67,21 @@ internal static class Program
         }
     }
 
-    private static string ResolveJavaExecutable(DirectoryInfo installRoot)
+    private static string ResolveJavaExecutable(DirectoryInfo installRoot, IReadOnlyCollection<string> javawsArgs)
     {
         var forcedBundledJava = Environment.GetEnvironmentVariable("ITW_BUNDLED_JAVA");
         if (!string.IsNullOrWhiteSpace(forcedBundledJava) && File.Exists(forcedBundledJava))
         {
             return forcedBundledJava;
+        }
+
+        if (IsRelaunch(javawsArgs))
+        {
+            var configuredJava = ResolveConfiguredJavaExecutable();
+            if (!string.IsNullOrWhiteSpace(configuredJava))
+            {
+                return configuredJava;
+            }
         }
 
         var runtimeRoot = new DirectoryInfo(Path.Combine(installRoot.FullName, "runtime"));
@@ -110,6 +119,90 @@ internal static class Program
         throw new FileNotFoundException(
             "Bundled Corretto runtime not found. Expected runtime/**/bin/" + JavaExecutableName()
             + " next to the Maven distribution launcher.");
+    }
+
+    private static bool IsRelaunch(IEnumerable<string> javawsArgs) =>
+        javawsArgs.Any(arg => arg.Equals("-Xnofork", StringComparison.OrdinalIgnoreCase));
+
+    private static string? ResolveConfiguredJavaExecutable()
+    {
+        var configuredJreDir = ReadDeploymentProperty("deployment.jre.dir");
+        if (!string.IsNullOrWhiteSpace(configuredJreDir))
+        {
+            var configuredJava = Path.Combine(configuredJreDir, "bin", JavaExecutableName());
+            if (File.Exists(configuredJava))
+            {
+                return configuredJava;
+            }
+        }
+
+        var javaHome = Environment.GetEnvironmentVariable("JAVA_HOME");
+        if (!string.IsNullOrWhiteSpace(javaHome))
+        {
+            var javaFromHome = Path.Combine(javaHome, "bin", JavaExecutableName());
+            if (File.Exists(javaFromHome))
+            {
+                return javaFromHome;
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ReadDeploymentProperty(string key)
+    {
+        foreach (var path in CandidateDeploymentPropertyFiles())
+        {
+            if (!File.Exists(path))
+            {
+                continue;
+            }
+
+            foreach (var line in File.ReadLines(path))
+            {
+                var trimmed = line.Trim();
+                if (trimmed.Length == 0 || trimmed.StartsWith("#", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var separator = trimmed.IndexOf('=');
+                if (separator <= 0)
+                {
+                    continue;
+                }
+
+                var name = trimmed[..separator].Trim();
+                if (name.Equals(key, StringComparison.Ordinal))
+                {
+                    return trimmed[(separator + 1)..].Trim();
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<string> CandidateDeploymentPropertyFiles()
+    {
+        var xdgConfigHome = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+        if (!string.IsNullOrWhiteSpace(xdgConfigHome))
+        {
+            yield return Path.Combine(xdgConfigHome, "icedtea-web", "deployment.properties");
+        }
+
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                yield return Path.Combine(userProfile, "AppData", "LocalLow", "Sun", "Java", "Deployment", "deployment.properties");
+            }
+            else
+            {
+                yield return Path.Combine(userProfile, ".config", "icedtea-web", "deployment.properties");
+            }
+        }
     }
 
     private static string ResolveRequiredFile(DirectoryInfo installRoot, string envVar, string relativePath)
@@ -157,6 +250,11 @@ internal static class Program
         if (javaMajorVersion >= 9)
         {
             command.AddRange(ModularJdkArguments());
+        }
+
+        if (javaMajorVersion >= 18 && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
+        {
+            command.Add("-Djava.security.manager=allow");
         }
 
         command.AddRange(forwardedJvmArgs);
@@ -271,6 +369,9 @@ internal static class Program
         "--add-exports", "java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED",
         "--add-opens", "java.base/java.lang=ALL-UNNAMED",
     };
+
+    private static bool HasSecurityManagerCompatibilityFlag(IEnumerable<string> forwardedJvmArgs) =>
+        forwardedJvmArgs.Any(arg => arg.StartsWith("-Djava.security.manager=", StringComparison.Ordinal));
 
     private static string JavaExecutableName() =>
         RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "java.exe" : "java";
