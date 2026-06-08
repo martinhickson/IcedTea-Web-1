@@ -108,20 +108,32 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           notes="$(cat <<EOF
-          IcedTea-Web ${RELEASE_VERSION} keeps Java Web Start practical on current desktop systems. It is for teams and users who still rely on JNLP applications and want a maintained, installable IcedTea-Web build without being pinned to an old Java 8 desktop setup.
+          ## IcedTea-Web
 
-          This release focuses on the hard operational work around IcedTea-Web: repeatable builds, platform-specific packaging, bundled runtime support, and clear release provenance. The result is a set of ready-to-use Windows, Linux, and macOS artifacts built from a dedicated release branch and tag, with smoke tests and checksums produced as part of the release pipeline.
+          IcedTea-Web is a runtime for executing JNLP-based Java applications across Windows, Linux, and macOS.
 
-          ## Highlights
+          ### Highlights
 
-          - Runs JNLP applications through the familiar IcedTea-Web `javaws` flow, with packaged launchers for modern desktop environments.
-          - Provides platform builds for Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon.
-          - Ships native installers: Windows MSI, Linux DEB/RPM, and macOS DMG.
-          - Bundles Amazon Corretto 11 so installs are less dependent on a user-managed system JDK.
-          - Publishes SHA-256 checksum files for every release asset.
-          - Builds from a versioned release branch and annotated tag, then uploads the exact artifacts produced by CI.
+          * **Cross-platform support**
+            Provides consistent execution of JNLP applications on Windows x64, Linux x64, and macOS (Intel and Apple Silicon).
 
-          This is deliberately not a wholesale replacement of IcedTea-Web. It is a practical continuation: preserve the proven JNLP core, modernize the release engineering around it, and make the downloads easier to trust and install.
+          * **Bundled Java runtime option**
+            Supports distribution with a bundled Java runtime to ensure predictable execution environments across systems.
+
+          * **Native packaging formats**
+            Available as platform-native installers and archives for straightforward deployment in desktop and enterprise environments.
+
+          * **Verifiable build outputs**
+            Release artifacts include checksums to support integrity verification and secure distribution workflows.
+
+          * **Reproducible build process**
+            Built through a CI-driven pipeline designed to produce consistent, traceable release outputs from tagged source states.
+
+          ### JNLP Experience
+
+          JNLP provides a network-based application delivery model where applications are launched directly from a hosted descriptor. It enables centralized deployment, controlled updates, and consistent runtime configuration without requiring manual installation workflows on each client device.
+
+          IcedTea-Web implements this model by providing a stable execution environment for JNLP applications on modern desktop systems, supporting predictable application launch behavior and centralized application management across diverse environments.
 
           Release branch: ${RELEASE_BRANCH}
           Tag: ${RELEASE_TAG}
