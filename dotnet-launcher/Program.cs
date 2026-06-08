@@ -46,8 +46,9 @@ internal static class Program
                 Path.Combine("bin", "byte-buddy-agent.jar"));
 
             var majorVersion = DetectJavaMajorVersion(javaExecutable);
+            var launchJavaExecutable = ResolveLaunchJavaExecutable(javaExecutable);
             var command = ComposeJavaCommand(
-                javaExecutable,
+                launchJavaExecutable,
                 uberJar,
                 byteBuddyAgent,
                 executablePath,
@@ -57,7 +58,7 @@ internal static class Program
                 javaArgs,
                 javawsArgs);
 
-            return RunJava(javaExecutable, command);
+            return RunJava(launchJavaExecutable, command);
         }
         catch (Exception ex)
         {
@@ -295,8 +296,7 @@ internal static class Program
 
     private static int RunJava(string javaExecutable, IReadOnlyList<string> command)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            && !IsTruthy(Environment.GetEnvironmentVariable("ITW_PRESERVE_STDIO")))
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !ShouldPreserveStdio())
         {
             return RunJavaWithRedirectedOutput(javaExecutable, command);
         }
@@ -316,6 +316,21 @@ internal static class Program
         process.WaitForExit();
         return process.ExitCode;
     }
+
+    private static string ResolveLaunchJavaExecutable(string javaExecutable)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || ShouldPreserveStdio())
+        {
+            return javaExecutable;
+        }
+
+        var javaFile = new FileInfo(javaExecutable);
+        var javaw = Path.Combine(javaFile.DirectoryName ?? string.Empty, "javaw.exe");
+        return File.Exists(javaw) ? javaw : javaExecutable;
+    }
+
+    private static bool ShouldPreserveStdio() =>
+        IsTruthy(Environment.GetEnvironmentVariable("ITW_PRESERVE_STDIO"));
 
     private static int RunJavaWithRedirectedOutput(string javaExecutable, IReadOnlyList<string> command)
     {

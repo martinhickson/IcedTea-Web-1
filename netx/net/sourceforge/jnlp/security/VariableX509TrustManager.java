@@ -409,6 +409,11 @@ final public class VariableX509TrustManager {
     private boolean askUser(final X509Certificate[] chain, final String authType,
                             final boolean isTrusted, final boolean hostMatched,
                             final String hostName) {
+        if (JNLPRuntime.isAutoAcceptHttpsCertificate()) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Auto-accepting HTTPS certificate because --auto-accept-https-certificate=true was specified.");
+            return true;
+        }
          return AccessController.doPrivileged(new PrivilegedAction<Boolean>() {
             @Override
             public Boolean run() {

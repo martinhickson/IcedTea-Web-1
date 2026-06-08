@@ -190,6 +190,10 @@ public final class Boot implements PrivilegedAction<Void> {
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.TRUSTALL)) {
             JNLPRuntime.setTrustAll(true);
         }
+        if (optionParser.hasOption(OptionsDefinitions.OPTIONS.AUTO_ACCEPT_HTTPS_CERTIFICATE)) {
+            JNLPRuntime.setAutoAcceptHttpsCertificate(
+                    Boolean.parseBoolean(optionParser.getParam(OptionsDefinitions.OPTIONS.AUTO_ACCEPT_HTTPS_CERTIFICATE)));
+        }
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.HTML)) {
             JNLPRuntime.setHtml(true);
         }

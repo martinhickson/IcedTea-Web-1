@@ -158,6 +158,9 @@ public class JNLPRuntime {
 
     /** all security dialogs will be consumed and pretented as being verified by user and allowed.*/
     private static boolean trustAll=false;
+
+    /** HTTPS certificate prompts will be accepted without user interaction. Intended for explicit test opt-in. */
+    private static boolean autoAcceptHttpsCertificate = false;
     
     /** flag keeping rest of jnlpruntime live that javaws was lunched as -html */
     private static boolean html=false;
@@ -915,6 +918,14 @@ public class JNLPRuntime {
 
     public static boolean isTrustAll() {
         return trustAll;
+    }
+
+    public static void setAutoAcceptHttpsCertificate(boolean b) {
+        autoAcceptHttpsCertificate = b;
+    }
+
+    public static boolean isAutoAcceptHttpsCertificate() {
+        return autoAcceptHttpsCertificate;
     }
 
     public static void setTrustNone(final boolean b) {

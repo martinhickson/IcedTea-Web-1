@@ -96,6 +96,7 @@ public class JnlpRelaunchIT {
                 "-headless",
                 "-verbose",
                 "-Xtrustall",
+                "--auto-accept-https-certificate=true",
                 jnlpUrl
         );
         pb.environment().put("JAVA_HOME", JDK_HOME);

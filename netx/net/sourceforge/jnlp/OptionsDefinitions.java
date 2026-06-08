@@ -50,6 +50,7 @@ public class OptionsDefinitions {
 
         //javaws undocummented swithces
         TRUSTALL("-Xtrustall","BOTrustall"),
+        AUTO_ACCEPT_HTTPS_CERTIFICATE("--auto-accept-https-certificate", "true|false", "BOAutoAcceptHttpsCertificate", NumberOfArguments.ONE),
         //javaws control-options
         ABOUT("-about", "BOAbout"),
         VIEWER("-viewer", "BOViewer"),
@@ -235,6 +236,7 @@ public class OptionsDefinitions {
         //trustall is not returned by getJavaWsRuntimeOptions
         //or getJavaWsControlOptions, as it is not desired in documentation
         l.add(OPTIONS.TRUSTALL);
+        l.add(OPTIONS.AUTO_ACCEPT_HTTPS_CERTIFICATE);
         return l;
     }
 

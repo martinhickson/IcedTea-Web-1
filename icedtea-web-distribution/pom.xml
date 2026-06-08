@@ -216,6 +216,7 @@
       <activation>
         <os>
           <family>unix</family>
+          <name>Linux</name>
         </os>
       </activation>
       <build>
@@ -265,6 +266,80 @@
                       <zipfileset dir="${project.build.directory}/dist" filemode="755">
                         <include name="**/bin/*"/>
                         <include name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                    </zip>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>distribution-macos</id>
+      <activation>
+        <os>
+          <family>mac</family>
+        </os>
+      </activation>
+      <properties>
+        <itw.distribution.platform>macos</itw.distribution.platform>
+        <itw.dotnet.runtime.identifier>osx-x64</itw.dotnet.runtime.identifier>
+        <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz</itw.corretto.url>
+        <itw.corretto.archive>${project.build.directory}/downloads/corretto-macos-jdk.tar.gz</itw.corretto.archive>
+      </properties>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.1.0</version>
+            <executions>
+              <execution>
+                <id>assemble-macos-dotnet-corretto-distribution</id>
+                <phase>package</phase>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <configuration>
+                  <target>
+                    <delete dir="${itw.distribution.root}"/>
+                    <mkdir dir="${itw.distribution.root}/bin"/>
+                    <mkdir dir="${itw.distribution.root}/lib"/>
+                    <mkdir dir="${itw.distribution.root}/runtime/corretto"/>
+                    <mkdir dir="${project.build.directory}/downloads"/>
+
+                    <copy todir="${itw.distribution.root}/bin">
+                      <fileset dir="${project.build.directory}/dotnet-publish"/>
+                    </copy>
+                    <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/itweb-settings"/>
+                    <chmod file="${itw.distribution.root}/bin/javaws" perm="ugo+rx"/>
+                    <chmod file="${itw.distribution.root}/bin/itweb-settings" perm="ugo+rx"/>
+                    <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>
+                    <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
+
+                    <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
+                    <untar src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto" compression="gzip"/>
+                    <chmod perm="ugo+rx">
+                      <fileset dir="${itw.distribution.root}/runtime/corretto">
+                        <include name="**/bin/*"/>
+                        <include name="**/Contents/Home/bin/*"/>
+                      </fileset>
+                    </chmod>
+
+                    <delete file="${project.build.directory}/icedtea-web-maven-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
+                    <zip destfile="${project.build.directory}/icedtea-web-maven-${project.version}-${itw.dotnet.runtime.identifier}.zip">
+                      <zipfileset dir="${project.build.directory}/dist">
+                        <exclude name="**/bin/*"/>
+                        <exclude name="**/runtime/corretto/**/bin/*"/>
+                        <exclude name="**/runtime/corretto/**/Contents/Home/bin/*"/>
+                      </zipfileset>
+                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
+                        <include name="**/bin/*"/>
+                        <include name="**/runtime/corretto/**/bin/*"/>
+                        <include name="**/runtime/corretto/**/Contents/Home/bin/*"/>
                       </zipfileset>
                     </zip>
                   </target>

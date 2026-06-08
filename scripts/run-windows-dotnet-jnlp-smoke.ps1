@@ -159,7 +159,7 @@ function Start-Javaws {
 
     Start-Process `
         -FilePath $Launcher `
-        -ArgumentList @("-headless", "-verbose", "-Xtrustall", "-Xnofork", $JnlpUrl) `
+        -ArgumentList @("-headless", "-verbose", "-Xtrustall", "--auto-accept-https-certificate=true", "-Xnofork", $JnlpUrl) `
         -RedirectStandardOutput $OutLogFile `
         -RedirectStandardError $ErrLogFile `
         -PassThru `

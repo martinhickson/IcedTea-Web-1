@@ -207,7 +207,7 @@ EOF
   echo "JNLP URL: $jnlp_url"
   echo "Marker: $marker"
   echo "javaws log: $javaws_log"
-  "$JAVAWS_BIN" -headless -verbose -Xtrustall -Xnofork "$jnlp_url" > "$javaws_log" 2>&1 &
+  "$JAVAWS_BIN" -headless -verbose -Xtrustall --auto-accept-https-certificate=true -Xnofork "$jnlp_url" > "$javaws_log" 2>&1 &
   JAVAWS_PID=$!
 
   tail -f "$javaws_log" &

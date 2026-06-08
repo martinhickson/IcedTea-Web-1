@@ -1,574 +1,292 @@
 name: Build
+
 on:
   workflow_dispatch:
     inputs:
-        release:
-          description: 'Set to True if are running a release'     
-          required: true
-          default: 'True'
-        version:
-          description: 'If running a release, set the version (ensure it matches configure.ac)'     
-          required: true
-          default: 'icedtea-web-1.8.8.21'
+      release:
+        description: 'Set to True if running a release'
+        required: true
+        default: 'True'
+      version:
+        description: 'Release tag/version'
+        required: true
+        default: 'icedtea-web-1.8.8.21'
+      dotnet-self-contained:
+        description: 'Bundle the .NET runtime in the launcher distribution'
+        required: true
+        default: 'true'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
   pull_request:
     branches:
       - 1.8
+
 jobs:
   release:
-    if: github.event.inputs.release == 'True'
-    name: Create Draft release
+    if: github.event_name == 'workflow_dispatch' && inputs.release == 'True'
+    name: Create draft release
     runs-on: ubuntu-latest
-    outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
     steps:
-    - name: Create Draft Release
-      id: create_release
-      uses: actions/create-release@v1
-      # Note: This action is deprecated, consider using softprops/action-gh-release
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      with:
-        tag_name: ${{ github.event.inputs.version }}
-        release_name: 'Enhanced Release of ${{ github.event.inputs.version }}'
-        draft: true
-        prerelease: false
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-  linux:
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if gh release view "${{ inputs.version }}" >/dev/null 2>&1; then
+            gh release edit "${{ inputs.version }}" \
+              --draft \
+              --title "Enhanced Release of ${{ inputs.version }}"
+          else
+            gh release create "${{ inputs.version }}" \
+              --draft \
+              --title "Enhanced Release of ${{ inputs.version }}" \
+              --notes "Automated Maven/.NET distribution build for ${{ inputs.version }}."
+          fi
+
+  dotnet-distribution:
     if: always()
     needs: release
-    name: Linux
-    runs-on: ubuntu-latest
-    container: oraclelinux:9
+    name: Maven .NET Distribution (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            rid: win-x64
+            launcher: bin/javaws.exe
+            smoke-script: scripts/run-windows-dotnet-jnlp-smoke.ps1
+            corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip
+          - os: ubuntu-latest
+            rid: linux-x64
+            launcher: bin/javaws
+            smoke-script: scripts/run-linux-dotnet-jnlp-smoke.sh
+            corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz
+          - os: macos-15-intel
+            rid: osx-x64
+            launcher: bin/javaws
+            smoke-script: ''
+            corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz
+          - os: macos-15
+            rid: osx-arm64
+            launcher: bin/javaws
+            smoke-script: ''
+            corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-macos-jdk.tar.gz
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Corretto 11 compiler
+        uses: actions/setup-java@v4
         with:
-          path: icedtea-web
+          java-version: '11'
+          distribution: 'corretto'
 
-      - name: Install Dependencies
-        run: |
-          yum -y install autoconf bind-utils bzip2 cpio elfutils-libelf-devel gcc gcc-c++ glibc glibc-common glibc-devel \
-          gmp-devel java-1.8.0-openjdk-devel libcurl-devel make mpfr-devel perl unzip which zip
-          curl -L -o tagsoup.jar "https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar"
-          sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
-          curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
-          sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
-          curl -L -o byte-buddy.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar"
-          sha256sum byte-buddy.jar | awk '$1!="30e6e0446437a67db37e2b7f7d33f50787ddfd970359319dfd05469daa2dcbce"{exit 1}'
-          curl -L -o byte-buddy-agent.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar"
-          sha256sum byte-buddy-agent.jar | awk '$1!="67993a89d47ca58ff868802a4448ddd150e5fe4e5a5645ded990d7b4d557a6b9"{exit 1}'
-          curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
-          sha256sum rhino.zip | awk '$1!="c94c6de3a29b3acbc4eee732e688f75a5d94bd02c9878be4ceb4d3cd220f3866"{exit 1}'
-          unzip -j rhino.zip "*/js.jar"
+      - name: Remember Corretto 11 compiler home
+        run: echo "JDK8_HOME=$env:JAVA_HOME" >> $env:GITHUB_ENV
+        shell: pwsh
 
-      - name: Compile rust
-        run: |
-          curl -L -o rust.tar.gz "https://static.rust-lang.org/dist/rust-1.85.1-x86_64-unknown-linux-gnu.tar.gz"
-          echo "Verifying SHA-256 checksum..."
-          sha256sum rust.tar.gz | awk '$1!="b7202563a52b47f575b284a5a4794fafd688e39bfe8fd855b5e80129e671cb7f"{exit 1}'
-          echo "Checksum verified"
-          tar -zxf rust.tar.gz
-          cd rust-1.85.1-x86_64-unknown-linux-gnu
-          ./install.sh
-
-      - name: Compile pkg-config
-        run: |
-          curl -L -o pkg-config.tar.gz "https://pkg-config.freedesktop.org/releases/pkg-config-0.29.2.tar.gz"
-          sha256sum pkg-config.tar.gz | awk '$1!="6fc69c01688c9458a57eb9a1664c9aba372ccda420a02bf4429fe610e7e7d591"{exit 1}'
-          tar -zxf pkg-config.tar.gz
-          cd pkg-config-0.29.2
-          ./configure --with-internal-glib
-          make install
-
-      - name: Compile automake
-        run: |
-          curl -L -o automake-1.13.1.tar.gz "https://ftp.gnu.org/gnu/automake/automake-1.13.1.tar.gz"
-          sha256sum automake-1.13.1.tar.gz | awk '$1!="51bc10031847e9965c4f2c16a0a66552309ce28ea82b1afa8cef736643ebaa27"{exit 1}'
-          tar -zxf automake-1.13.1.tar.gz 
-          cd automake-1.13.1
-          bash configure
-          make && make install
-          rm -rf /usr/local/bin/automake
-          ln -s /usr/local/bin/automake-1.13 /usr/local/bin/automake
-
-      - name: Build
-        run: |
-          export ICEDTEAWEB_INSTALL="/icedtea-web-image"
-          export JAVA_EXE="$(which java)"
-          export JAVA_PATH="$(readlink -e "${JAVA_EXE}")"
-          export BIN_PATH="$(dirname "${JAVA_PATH}")"
-          export JRE_PATH="$(dirname "${BIN_PATH}")"
-          export JAVA_HOME="$(dirname "${JRE_PATH}")"
-          export TAGSOUP="${PWD}/tagsoup.jar"
-          export RHINO="${PWD}/js.jar"
-          export PACK="${PWD}/pack.jar"
-          export ACLOCAL_PATH="/usr/local/share/aclocal"
-          export PATH="/usr/local/bin:${PATH}"
-          export WORKSPACE="${PWD}"
-          pkg-config --version
-          cd icedtea-web
-          echo "Invoking autogen.sh"
-          ./autogen.sh
-          echo "Incoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --disable-pluginjar --disable-docs --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-bytebuddy="${WORKSPACE}/byte-buddy.jar" --with-bytebuddy-agent="${WORKSPACE}/byte-buddy-agent.jar"
-          echo "Build IcedTea-Web"
-          make DESTDIR="${WORKSPACE}"
-          
-      - name: Build Distribution
-        run: |
-          export WORKSPACE="${PWD}"
-          echo "Create IcedTea-Web Distribution"
-          cd icedtea-web
-          make linux-bin-dist DESTDIR="${WORKSPACE}"
-          find . -name "icedtea-web-*.linux.bin.zip"
-          for zip in icedtea-web-*.linux.bin.zip; do
-            sha256sum "$zip" > "$zip.sha256.txt"
-          done
-          # Store the actual filename for upload (with icedtea-web/ prefix since we're inside that dir)
-          FILENAME=$(ls icedtea-web-*.linux.bin.zip)
-          echo "LINUX_ZIP_FILE=${FILENAME}" >> $GITHUB_ENV
-          echo "LINUX_ZIP_NAME=${FILENAME}" >> $GITHUB_ENV
-
-      - uses: actions/upload-artifact@v4
+      - name: Set up Corretto 11 Maven runtime
+        uses: actions/setup-java@v4
         with:
-          name: icedtea-web_build_x86-64_linux
-          path: |
-            icedtea-web/icedtea-web-*.linux.bin.*
+          java-version: '11'
+          distribution: 'corretto'
 
-      - name: Upload binary
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Remember Corretto 11 home
+        run: echo "JDK11_HOME=$env:JAVA_HOME" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v4
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ env.LINUX_ZIP_FILE }}
-          asset_name: ${{ env.LINUX_ZIP_NAME }}
-          asset_content_type: application/zip
+          dotnet-version: '8.0.x'
 
-      - name: Upload shasum
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ env.LINUX_ZIP_FILE }}.sha256.txt
-          asset_name: ${{ env.LINUX_ZIP_NAME }}.sha256.txt
-          asset_content_type: application/zip
-
-  portable:
-    if: always()
-    needs: release
-    name: Portable
-    runs-on: ubuntu-latest
-    container: oraclelinux:9
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: icedtea-web
-
-      - name: Install Dependencies
+      - name: Configure Maven for GitHub Packages
         run: |
-          yum -y install autoconf bind-utils bzip2 cpio elfutils-libelf-devel gcc gcc-c++ glibc glibc-common glibc-devel \
-          gmp-devel java-1.8.0-openjdk-devel libcurl-devel make mpfr-devel perl unzip which zip
-          curl -L -o tagsoup.jar "https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar"
-          sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
-          curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
-          sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
-          curl -L -o mslinks.jar "https://repo1.maven.org/maven2/com/github/vatbub/mslinks/1.0.5/mslinks-1.0.5.jar"
-          sha256sum mslinks.jar | awk '$1!="e14d756f81b310b75baeb5baf219d25592b6a8635eb215c4059f17493b0cea5c"{exit 1}'
-          curl -L -o byte-buddy.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar"
-          sha256sum byte-buddy.jar | awk '$1!="30e6e0446437a67db37e2b7f7d33f50787ddfd970359319dfd05469daa2dcbce"{exit 1}'
-          curl -L -o byte-buddy-agent.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar"
-          sha256sum byte-buddy-agent.jar | awk '$1!="67993a89d47ca58ff868802a4448ddd150e5fe4e5a5645ded990d7b4d557a6b9"{exit 1}'
-          curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
-          sha256sum rhino.zip | awk '$1!="c94c6de3a29b3acbc4eee732e688f75a5d94bd02c9878be4ceb4d3cd220f3866"{exit 1}'
-          unzip -j rhino.zip "*/js.jar"
+          $settingsPath = Join-Path $HOME ".m2/settings.xml"
+          $settingsDir = Split-Path -Parent $settingsPath
+          if (-not (Test-Path $settingsDir)) {
+            New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null
+          }
+          @"
+          <settings>
+            <servers>
+              <server>
+                <id>github</id>
+                <username>${{ github.actor }}</username>
+                <password>${{ secrets.GITHUB_TOKEN }}</password>
+              </server>
+            </servers>
+          </settings>
+          "@ | Out-File -FilePath $settingsPath -Encoding UTF8
+        shell: pwsh
 
-      - name: Compile pkg-config
-        run: |
-          curl -L -o pkg-config.tar.gz "https://pkg-config.freedesktop.org/releases/pkg-config-0.29.2.tar.gz"
-          sha256sum pkg-config.tar.gz | awk '$1!="6fc69c01688c9458a57eb9a1664c9aba372ccda420a02bf4429fe610e7e7d591"{exit 1}'
-          tar -zxf pkg-config.tar.gz
-          cd pkg-config-0.29.2
-          ./configure --with-internal-glib
-          make install
-
-      - name: Compile automake
-        run: |
-          curl -L -o automake-1.13.1.tar.gz "https://ftp.gnu.org/gnu/automake/automake-1.13.1.tar.gz"
-          sha256sum automake-1.13.1.tar.gz | awk '$1!="51bc10031847e9965c4f2c16a0a66552309ce28ea82b1afa8cef736643ebaa27"{exit 1}'
-          tar -zxf automake-1.13.1.tar.gz 
-          cd automake-1.13.1
-          bash configure
-          make && make install
-          rm -rf /usr/local/bin/automake
-          ln -s /usr/local/bin/automake-1.13 /usr/local/bin/automake
-
-      - name: Build
-        run: |
-          export ICEDTEAWEB_INSTALL="/icedtea-web-image"
-          export JAVA_EXE="$(which java)"
-          export JAVA_PATH="$(readlink -e "${JAVA_EXE}")"
-          export BIN_PATH="$(dirname "${JAVA_PATH}")"
-          export JRE_PATH="$(dirname "${BIN_PATH}")"
-          export JAVA_HOME="$(dirname "${JRE_PATH}")"
-          export WORKSPACE="${PWD}"
-          pkg-config --version
-          cd icedtea-web
-          echo "Invoking autogen.sh"
-          ./autogen.sh
-          echo "Incoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --disable-pluginjar --disable-docs --enable-bats-on-linux --enable-shell-launchers --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${WORKSPACE}/pack.jar" --with-rhino="${WORKSPACE}/js.jar" --with-mslinks="${WORKSPACE}/mslinks.jar" --with-tagsoup="${WORKSPACE}/tagsoup.jar" --with-jdk-home="${JAVA_HOME}" --with-bytebuddy="${WORKSPACE}/byte-buddy.jar" --with-bytebuddy-agent="${WORKSPACE}/byte-buddy-agent.jar"
-          echo "Build IcedTea-Web"
-          make DESTDIR="${WORKSPACE}/dest"
-          
-      - name: Build Distribution
-        run: |
-          export WORKSPACE="${PWD}"
-          echo "Create IcedTea-Web Distribution"
-          cd icedtea-web
-          make linux-bin-dist DESTDIR="${WORKSPACE}/dest"
-          find . -name "icedtea-web-*.linux.bin.zip"
-          for zip in icedtea-web-*.linux.bin.zip; do
-            zip_rename="${zip/linux/portable}"
-              mv "$zip" "$zip_rename"
-            sha256sum "$zip_rename" > "$zip_rename.sha256.txt"
-          done
-          # Store the actual filename for upload (with icedtea-web/ prefix since we're inside that dir)
-          FILENAME=$(ls icedtea-web-*.portable.bin.zip)
-          echo "PORTABLE_ZIP_FILE=${FILENAME}" >> $GITHUB_ENV
-          echo "PORTABLE_ZIP_NAME=${FILENAME}" >> $GITHUB_ENV
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: icedtea-web_build_x86-64_portable
-          path: |
-            icedtea-web/icedtea-web-*.portable.bin.*
-
-      - name: Upload binary
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ env.PORTABLE_ZIP_FILE }}
-          asset_name: ${{ env.PORTABLE_ZIP_NAME }}
-          asset_content_type: application/zip
-
-      - name: Upload shasum
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ env.PORTABLE_ZIP_FILE }}.sha256.txt
-          asset_name: ${{ env.PORTABLE_ZIP_NAME }}.sha256.txt
-          asset_content_type: application/zip
-
-  macos:
-    if: always()
-    needs: release
-    name: macOS
-    runs-on: macos-latest
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          path: icedtea-web
-
-      - name: Install Dependencies
-        run: |
-          brew install autoconf automake coreutils freetype gnu-sed rust
-          brew install --cask corretto@8
-          curl -L -o tagsoup.jar "https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar"
-          sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
-          curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
-          sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
-          curl -L -o byte-buddy.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar"
-          sha256sum byte-buddy.jar | awk '$1!="30e6e0446437a67db37e2b7f7d33f50787ddfd970359319dfd05469daa2dcbce"{exit 1}'
-          curl -L -o byte-buddy-agent.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar"
-          sha256sum byte-buddy-agent.jar | awk '$1!="67993a89d47ca58ff868802a4448ddd150e5fe4e5a5645ded990d7b4d557a6b9"{exit 1}'
-          curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
-          sha256sum rhino.zip | awk '$1!="c94c6de3a29b3acbc4eee732e688f75a5d94bd02c9878be4ceb4d3cd220f3866"{exit 1}'
-          unzip -j rhino.zip "*/js.jar"
-
-      - name: Build
-        run: |
-          # Create a local bin directory to override sed
-          mkdir -p "$HOME/local-bin"
-          cp "$(which gsed)" "$HOME/local-bin/sed"  # Override sed safely with gsed
-
-          export ICEDTEAWEB_INSTALL="/icedtea-web-image"
-          export PATH="$HOME/local-bin:/usr/local/opt/gnu-sed/libexec/gnubin:/usr/local/opt/coreutils/bin:$PATH"
-          export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
-          export TAGSOUP="${PWD}/tagsoup.jar"
-          export RHINO="${PWD}/js.jar"
-          export PACK="${PWD}/pack.jar"
-          export ACLOCAL_PATH="/usr/local/share/aclocal"
-          export WORKSPACE="${PWD}"
-
-          # Confirm sed is overridden
-          echo "Using sed from: $(which sed)"
-          sed --version
-
-          # Build steps
-          pkg-config --version
-          cd icedtea-web
-          autoreconf -i
-          echo "Invoking autogen.sh"
-          ./autogen.sh
-          echo "Invoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --disable-pluginjar --disable-docs --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-jre-home="${JAVA_HOME}/jre" --with-bytebuddy="${WORKSPACE}/byte-buddy.jar" --with-bytebuddy-agent="${WORKSPACE}/byte-buddy-agent.jar"
-          echo "Build IcedTea-Web"
-          make DESTDIR="${WORKSPACE}"
-          
-      - name: Build Distribution
-        run: |
-          export WORKSPACE="${PWD}"
-          echo "Create IcedTea-Web Distribution"
-          cd icedtea-web
-          make macos-bin-dist DESTDIR="${WORKSPACE}"
-          find . -name "icedtea-web-*.linux.bin.zip"
-          for zip in icedtea-web-*.macos.bin.zip; do
-            sha256sum "$zip" > "$zip.sha256.txt"
-          done
-          # Store the actual filename for upload (with icedtea-web/ prefix since we're inside that dir)
-          FILENAME=$(ls icedtea-web-*.macos.bin.zip)
-          echo "MACOS_ZIP_FILE=${FILENAME}" >> $GITHUB_ENV
-          echo "MACOS_ZIP_NAME=${FILENAME}" >> $GITHUB_ENV
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: icedtea-web_build_x86-64_macos
-          path: |
-            icedtea-web/icedtea-web-*.macos.bin.*
-
-      - name: Upload binary
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ env.MACOS_ZIP_FILE }}
-          asset_name: ${{ env.MACOS_ZIP_NAME }}
-          asset_content_type: application/zip
-
-      - name: Upload shasum
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: icedtea-web/${{ env.MACOS_ZIP_FILE }}.sha256.txt
-          asset_name: ${{ env.MACOS_ZIP_NAME }}.sha256.txt
-          asset_content_type: application/zip
-
-  windows:
-    if: always()
-    needs: release
-    name: Windows
-    runs-on: windows-latest
-    steps:
-      - name: Restore cygwin packages from cache
-        id: cygwin
+      - name: Cache Maven dependencies
         uses: actions/cache@v4
         with:
-          path: C:\cygwin_packages
-          key: cygwin-packages-${{ runner.os }}-v1
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
 
-      - name: Download Cygwin
+      - name: Build Maven .NET distribution
         run: |
-          Invoke-WebRequest -UseBasicParsing 'https://cygwin.com/setup-x86_64.exe' -OutFile 'C:\temp\cygwin.exe'
-          Invoke-WebRequest -UseBasicParsing 'https://cygwin.com/setup-x86_64.exe.sig' -OutFile 'C:\temp\cygwin.exe.sig'
-
-      - name: Download Cygwin keys
-        shell: bash {0}
-        run: |
-          gpg -v --keyserver keys.gnupg.net --recv-key 1A698DE9E2E56300
-          gpg -v --keyserver keys.gnupg.net --recv-key 676041BA
-          gpg -v --keyserver ipv4.pool.sks-keyservers.net --recv-key 1A698DE9E2E56300
-          gpg -v --keyserver ipv4.pool.sks-keyservers.net --recv-key 676041BA
-          gpg -v --keyserver keyserver.ubuntu.com --recv-key 1A698DE9E2E56300
-          gpg -v --keyserver keyserver.ubuntu.com --recv-key 676041BA
-          exit 0
-
-      - name: Check Cygwin sig
-        run: |
-          gpg --keyid-format=long --with-fingerprint --verify 'C:\temp\cygwin.exe.sig' 'C:\temp\cygwin.exe'
-          Start-Process -Wait -FilePath 'C:\temp\cygwin.exe' -ArgumentList '--packages autoconf,automake,cpio,curl,gcc,git,gnupg,grep,libtool,make,mingw64-x86_64-gcc-core,perl,pkg-config,unzip,wget,zip --quiet-mode --download --local-install --delete-orphans --site https://mirrors.kernel.org/sourceware/cygwin/ --local-package-dir C:\cygwin_packages --root C:\cygwin64'
-
-      - name: Set PATH
-        run: echo "C:\cygwin64\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-
-      - name: Cygwin git configuration
-        shell: bash
-        run: mkdir $HOME && git config --system core.autocrlf false && git config --system --add safe.directory '*'
-
-      - uses: actions/checkout@v4
-        with:
-          set-safe-directory: false
-
-      - name: Install Dependencies
-        run: |
-          # Create C:/cygwin64/usr/share/java if it doesn't exist
-          New-Item -Path C:\cygwin64\usr\share\java -Type Directory
-          # Retrieve tagsoup jar
-          Invoke-WebRequest -UseBasicParsing 'https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar' -OutFile 'C:\cygwin64\usr\share\java\tagsoup.jar'
-          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\tagsoup.jar' | Select-Object -ExpandProperty Hash)
-          If ($checksum -ne "AC97F7B4B1D8E9337EDFA0E34044F8D0EFE7223F6AD8F3A85D54CC1018EA2E04") {
-            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
-            exit 1
+          $selfContained = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "${{ inputs.dotnet-self-contained }}"
+          } else {
+            "true"
           }
-          # Retrieve mslinks jar
-          Invoke-WebRequest -UseBasicParsing 'https://repo1.maven.org/maven2/com/github/vatbub/mslinks/1.0.5/mslinks-1.0.5.jar' -OutFile 'C:\cygwin64\usr\share\java\mslinks.jar'
-          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\mslinks.jar' | Select-Object -ExpandProperty Hash)
-          If ($checksum -ne "E14D756F81B310B75BAEB5BAF219D25592B6A8635EB215C4059F17493B0CEA5C") {
-            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
-            exit 1
-          }
-          # Retrieve Wixgen jar
-          Invoke-WebRequest -UseBasicParsing 'https://github.com/akashche/wixgen/releases/download/1.7/wixgen.jar' -OutFile 'C:\cygwin64\usr\share\java\wixgen.jar'
-          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\wixgen.jar' | Select-Object -ExpandProperty Hash)
-          If ($checksum -ne "57E68A91C46A2F4B1B41A3F93793E331D62D6D151DDC222FA4D3EC9CE876F967") {
-            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
-            exit 1
-          }
-          # Retrieve Enhanced Pack200 jar
-          Invoke-WebRequest -UseBasicParsing 'https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar' -OutFile 'C:\cygwin64\usr\share\java\pack.jar'
-          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\pack.jar' | Select-Object -ExpandProperty Hash)
-          If ($checksum -ne "13CEC5CB108C2BCC1AA22845F53DCA94D9D3CF148C73EE98457CDA50B0642728") {
-            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
-            exit 1
-          }
-          # Retrieve ByteBuddy jars
-          Invoke-WebRequest -UseBasicParsing 'https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar' -OutFile 'C:\cygwin64\usr\share\java\byte-buddy.jar'
-          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\byte-buddy.jar' | Select-Object -ExpandProperty Hash)
-          If ($checksum -ne "30E6E0446437A67DB37E2B7F7D33F50787DDFD970359319DFD05469DAA2DCBCE") {
-            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
-            exit 1
-          }
-          Invoke-WebRequest -UseBasicParsing 'https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar' -OutFile 'C:\cygwin64\usr\share\java\byte-buddy-agent.jar'
-          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\byte-buddy-agent.jar' | Select-Object -ExpandProperty Hash)
-          If ($checksum -ne "67993A89D47CA58FF868802A4448DDD150E5FE4E5A5645DED990D7B4D557A6B9") {
-            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
-            exit 1
-          }
-          # Retrieve Rhino
-          Invoke-WebRequest -UseBasicParsing 'https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip' -OutFile 'rhino1_6R7.zip'
-          $checksum = (Get-FileHash -Algorithm SHA256 'rhino1_6R7.zip' | Select-Object -ExpandProperty Hash) 
-          If ($checksum -ne "C94C6DE3A29B3ACBC4EEE732E688F75A5D94BD02C9878BE4CEB4D3CD220F3866") {
-            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
-            exit 1
-          }
-          7z.exe x rhino1_6R7.zip
-          Move-Item -Path rhino1_6R7\js.jar -Destination C:\cygwin64\usr\share\java
-          # Retrieve AzureSignTool
-          New-Item -Path C:\AzureSignTool -Type Directory
-          Invoke-WebRequest -UseBasicParsing 'https://github.com/vcsjones/AzureSignTool/releases/download/1.0.1/AzureSignTool.zip' -OutFile 'AzureSignTool.zip'
-          $checksum = (Get-FileHash -Algorithm SHA256 'AzureSignTool.zip' | Select-Object -ExpandProperty Hash) 
-          If ($checksum -ne "4178B8E5DC6423E75DA2184C3B0D78167A0A59B82A20842884B780B1E815BA89") {
-            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
-            exit 1
-          }
-          Expand-Archive -LiteralPath 'AzureSignTool.zip' -DestinationPath 'C:\AzureSignTool'
-
-      - name: Enable 8dot3 shortnames
-        run: |
-          fsutil behavior set disable8dot3 0
-          cmd /c dir /x "C:\Program Files (x86)"
-          REM Only set short name if it doesn't already exist
-          if not exist "C:\Program Files (x86)\WIXTOO~1.14" (
-            fsutil file setshortname "C:\Program Files (x86)\WiX Toolset v3.14" "WIXTOO~1.14"
+          $mvnArgs = @(
+            "-P", "maven-distribution",
+            "-pl", "icedtea-web-distribution",
+            "-am",
+            "install",
+            "-Dmaven.test.skip=true",
+            "-DskipTests",
+            "-Djdk8.home=$env:JDK8_HOME",
+            "-Djdk11.home=$env:JDK11_HOME",
+            "-Ditw.dotnet.selfContained=$selfContained",
+            "-Ditw.dotnet.runtime.identifier=${{ matrix.rid }}",
+            "-Ditw.corretto.url=${{ matrix.corretto-url }}"
           )
-        shell: cmd
+          & mvn @mvnArgs
+        shell: pwsh
 
-      - name: Install BellSoft JDK
+      - name: Build signed headless JNLP app
         run: |
-          $jdkUrl = "https://download.bell-sw.com/java/8u462+11/bellsoft-jdk8u462+11-windows-amd64.zip"
-          Invoke-WebRequest -Uri $jdkUrl -OutFile "bellsoft-jdk.zip"
-          Expand-Archive -Path "bellsoft-jdk.zip" -DestinationPath "$env:USERPROFILE\bellsoft-jdk"
-          $jdkPath = Get-ChildItem "$env:USERPROFILE\bellsoft-jdk" | Select-Object -First 1
-          echo "JAVA_HOME=$($jdkPath.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Append
-          echo "$($jdkPath.FullName)\bin" | Out-File -FilePath $env:GITHUB_PATH -Append
-        shell: powershell
+          $mvnArgs = @(
+            "-pl", "icedtea-web-integration",
+            "process-test-classes",
+            "-DskipTests",
+            "-Djdk8.home=$env:JDK8_HOME",
+            "-Ditw.jdk8.home=$env:JDK8_HOME"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
 
-      - name: Build
-        run: bash .github/workflows/windows_build.sh
-        shell: cmd
+      - name: Smoke test packaged javaws launcher
+        run: |
+          $dist = Get-ChildItem "icedtea-web-distribution/target/dist" -Directory | Select-Object -First 1
+          if ($null -eq $dist) {
+            throw "Distribution directory not found"
+          }
+          $launcher = Join-Path $dist.FullName "${{ matrix.launcher }}"
+          & $launcher -version
+        shell: pwsh
 
-      - uses: actions/upload-artifact@v4
+      - name: Run Linux JNLP smoke test from normal distribution ZIP
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x "${{ matrix.smoke-script }}"
+          ITW_SMOKE_BUILD_TEST_APP=false ITW_SMOKE_TIMEOUT_SECONDS=180 "${{ matrix.smoke-script }}"
+        shell: bash
+
+      - name: Build Linux native packages in Docker
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x packaging/linux/build-native-packages.sh packaging/linux/container-build-package.sh
+          ITW_VERSION=1.0.1-SNAPSHOT \
+          ITW_PACKAGE_FORMATS="deb rpm" \
+          packaging/linux/build-native-packages.sh
+        shell: bash
+
+      - name: Run Windows JNLP smoke test from normal distribution ZIP
+        if: runner.os == 'Windows'
+        run: |
+          $env:ITW_SMOKE_BUILD_TEST_APP = "false"
+          $env:ITW_SMOKE_TIMEOUT_SECONDS = "180"
+          & "${{ matrix.smoke-script }}"
+        shell: pwsh
+
+      - name: Ensure Windows Docker service is running
+        if: runner.os == 'Windows'
+        run: |
+          $dockerService = Get-Service -Name docker
+          if ($dockerService.Status -ne "Running") {
+            Start-Service -Name docker
+          }
+          docker version
+        shell: pwsh
+
+      - name: Build Windows MSI in Windows Server Core Docker
+        if: runner.os == 'Windows'
+        run: |
+          $env:ITW_VERSION = "1.0.1-SNAPSHOT"
+          & packaging/windows/build-msi.ps1
+        shell: pwsh
+
+      - name: Generate checksums
+        run: |
+          $patterns = @(
+            "icedtea-web-distribution/target/*.zip",
+            "icedtea-web-distribution/target/native-packages/*.deb",
+            "icedtea-web-distribution/target/native-packages/*.rpm",
+            "icedtea-web-distribution/target/native-packages/*.msi"
+          )
+          foreach ($pattern in $patterns) {
+            Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
+              $hash = Get-FileHash -Algorithm SHA256 $_.FullName
+              "$($hash.Hash.ToLowerInvariant())  $($_.Name)" | Out-File -FilePath "$($_.FullName).sha256.txt" -Encoding ASCII
+            }
+          }
+        shell: pwsh
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v4
         with:
-          name: icedtea-web_build_x86-64_win
+          name: icedtea-web-maven-${{ matrix.rid }}
           path: |
-            icedtea-web-*.win.bin.*
-            win-installer.build/icedtea-web-*.msi*
+            icedtea-web-distribution/target/*.zip
+            icedtea-web-distribution/target/*.zip.sha256.txt
+          if-no-files-found: error
 
-      - name: Find Windows ZIP
-        id: find_win_zip
-        if: github.event.inputs.release == 'True'
-        shell: bash
-        run: bash .github/workflows/find_windows_files.sh zip
-
-      - name: Find Windows MSI
-        id: find_win_msi
-        if: github.event.inputs.release == 'True'
-        shell: bash
-        run: bash .github/workflows/find_windows_files.sh msi
-
-      - name: Upload binary
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Linux native packages
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ steps.find_win_zip.outputs.win_zip }}
-          asset_name: ${{ steps.find_win_zip.outputs.win_zip_name }}
-          asset_content_type: application/zip
+          name: icedtea-web-native-${{ matrix.rid }}
+          path: |
+            icedtea-web-distribution/target/native-packages/*.deb
+            icedtea-web-distribution/target/native-packages/*.rpm
+            icedtea-web-distribution/target/native-packages/*.deb.sha256.txt
+            icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt
+          if-no-files-found: error
 
-      - name: Upload shasum
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Upload Windows MSI
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v4
         with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ steps.find_win_zip.outputs.win_zip }}.sha256.txt
-          asset_name: ${{ steps.find_win_zip.outputs.win_zip_name }}.sha256.txt
-          asset_content_type: text/plain
+          name: icedtea-web-msi-${{ matrix.rid }}
+          path: |
+            icedtea-web-distribution/target/native-packages/*.msi
+            icedtea-web-distribution/target/native-packages/*.msi.sha256.txt
+          if-no-files-found: error
 
-      - name: Upload MSI
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
+      - name: Upload release assets
+        if: github.event_name == 'workflow_dispatch' && inputs.release == 'True'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ steps.find_win_msi.outputs.win_msi }}
-          asset_name: ${{ steps.find_win_msi.outputs.win_msi_name }}
-          asset_content_type: application/octet-stream
-
-      - name: Upload MSI shasum
-        uses: actions/upload-release-asset@v1
-        # Note: This action is deprecated, consider using softprops/action-gh-release
-        if: github.event.inputs.release == 'True'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ${{ steps.find_win_msi.outputs.win_msi }}.sha256.txt
-          asset_name: ${{ steps.find_win_msi.outputs.win_msi_name }}.sha256.txt
-          asset_content_type: text/plain
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $patterns = @(
+            "icedtea-web-distribution/target/*.zip",
+            "icedtea-web-distribution/target/*.zip.sha256.txt",
+            "icedtea-web-distribution/target/native-packages/*.deb",
+            "icedtea-web-distribution/target/native-packages/*.rpm",
+            "icedtea-web-distribution/target/native-packages/*.msi",
+            "icedtea-web-distribution/target/native-packages/*.deb.sha256.txt",
+            "icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt",
+            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt"
+          )
+          $files = @()
+          foreach ($pattern in $patterns) {
+            $files += Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
+          }
+          if ($files.Count -eq 0) {
+            throw "No release assets found to upload."
+          }
+          & gh release upload "${{ inputs.version }}" @files --clobber
+        shell: pwsh

@@ -24,22 +24,34 @@ jobs:
             rid: win-x64
             launcher: bin/javaws.exe
             smoke-script: scripts/run-windows-dotnet-jnlp-smoke.ps1
+            corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip
           - os: ubuntu-latest
             rid: linux-x64
             launcher: bin/javaws
             smoke-script: scripts/run-linux-dotnet-jnlp-smoke.sh
+            corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz
+          - os: macos-15-intel
+            rid: osx-x64
+            launcher: bin/javaws
+            smoke-script: ''
+            corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz
+          - os: macos-15
+            rid: osx-arm64
+            launcher: bin/javaws
+            smoke-script: ''
+            corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-macos-jdk.tar.gz
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Corretto 8 compiler
+      - name: Set up Corretto 11 compiler
         uses: actions/setup-java@v4
         with:
-          java-version: '8'
+          java-version: '11'
           distribution: 'corretto'
 
-      - name: Remember Corretto 8 home
+      - name: Remember Corretto 11 compiler home
         run: echo "JDK8_HOME=$env:JAVA_HOME" >> $env:GITHUB_ENV
         shell: pwsh
 
@@ -97,7 +109,8 @@ jobs:
             "-Djdk8.home=$env:JDK8_HOME",
             "-Djdk11.home=$env:JDK11_HOME",
             "-Ditw.dotnet.selfContained=${{ inputs.dotnet-self-contained }}",
-            "-Ditw.dotnet.runtime.identifier=${{ matrix.rid }}"
+            "-Ditw.dotnet.runtime.identifier=${{ matrix.rid }}",
+            "-Ditw.corretto.url=${{ matrix.corretto-url }}"
           )
           & mvn @mvnArgs
         shell: pwsh
@@ -146,6 +159,16 @@ jobs:
           $env:ITW_SMOKE_BUILD_TEST_APP = "false"
           $env:ITW_SMOKE_TIMEOUT_SECONDS = "180"
           & "${{ matrix.smoke-script }}"
+        shell: pwsh
+
+      - name: Ensure Windows Docker service is running
+        if: runner.os == 'Windows'
+        run: |
+          $dockerService = Get-Service -Name docker
+          if ($dockerService.Status -ne "Running") {
+            Start-Service -Name docker
+          }
+          docker version
         shell: pwsh
 
       - name: Build Windows MSI in Windows Server Core Docker

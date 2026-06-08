@@ -91,6 +91,7 @@ public class MultiJdkJnlpLaunchIT {
             command.add("-headless");
             command.add("-verbose");
             command.add("-Xtrustall");
+            command.add("--auto-accept-https-certificate=true");
             command.add("-Xnofork");
             if (Integer.parseInt(jdk.label) >= 21) {
                 command.add("-J-Djava.security.manager=allow");
