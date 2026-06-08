@@ -19,9 +19,6 @@
     <maven.shade.plugin.version>3.5.1</maven.shade.plugin.version>
     <uberjar.mainClass>net.sourceforge.jnlp.runtime.JavawsUberLauncher</uberjar.mainClass>
     <uberjar.classifier>uber</uberjar.classifier>
-    <jdk8.home>/usr/lib/jvm/java-1.8.0-amazon-corretto</jdk8.home>
-    <maven.compiler.executable>${jdk8.home}/bin/javac</maven.compiler.executable>
-    <maven.compiler.fork>true</maven.compiler.fork>
   </properties>
 
   <dependencies>
@@ -129,8 +126,8 @@
             <configuration>
               <rules>
                 <requireJavaVersion>
-                  <version>[1.8,)</version>
-                  <message>Maven must run on Java 8 or newer. Compilation uses JDK 8 at ${jdk8.home}.</message>
+                  <version>[11,)</version>
+                  <message>Maven must run on Java 11 or newer because the Pack200 compatibility dependency is compiled for Java 11. The Maven build still emits Java 8 bytecode via source/target 1.8.</message>
                 </requireJavaVersion>
                 <requireMavenVersion>
                   <version>[3.6.0,)</version>
