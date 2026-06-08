@@ -82,21 +82,31 @@ jobs:
           restore-keys: ${{ runner.os }}-m2
 
       - name: Build Maven .NET distribution
-        run: >
-          mvn -P maven-distribution -pl icedtea-web-distribution -am install
-          -Dmaven.test.skip=true
-          -DskipTests
-          "-Djdk8.home=$env:JDK8_HOME"
-          "-Ditw.dotnet.selfContained=${{ inputs.dotnet-self-contained }}"
-          "-Ditw.dotnet.runtime.identifier=${{ matrix.rid }}"
+        run: |
+          $mvnArgs = @(
+            "-P", "maven-distribution",
+            "-pl", "icedtea-web-distribution",
+            "-am",
+            "install",
+            "-Dmaven.test.skip=true",
+            "-DskipTests",
+            "-Djdk8.home=$env:JDK8_HOME",
+            "-Ditw.dotnet.selfContained=${{ inputs.dotnet-self-contained }}",
+            "-Ditw.dotnet.runtime.identifier=${{ matrix.rid }}"
+          )
+          & mvn @mvnArgs
         shell: pwsh
 
       - name: Build signed headless JNLP app
-        run: >
-          mvn -pl icedtea-web-integration process-test-classes
-          -DskipTests
-          "-Djdk8.home=$env:JDK8_HOME"
-          "-Ditw.jdk8.home=$env:JDK8_HOME"
+        run: |
+          $mvnArgs = @(
+            "-pl", "icedtea-web-integration",
+            "process-test-classes",
+            "-DskipTests",
+            "-Djdk8.home=$env:JDK8_HOME",
+            "-Ditw.jdk8.home=$env:JDK8_HOME"
+          )
+          & mvn @mvnArgs
         shell: pwsh
 
       - name: Smoke test packaged javaws launcher
