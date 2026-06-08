@@ -151,10 +151,11 @@ jobs:
           & $launcher -version
         shell: pwsh
 
-      - name: Run Linux JNLP smoke test from normal distribution ZIP
+      - name: Run Linux JNLP smoke test from distribution tree
         if: runner.os == 'Linux'
         run: |
           chmod +x "${{ matrix.smoke-script }}"
+          ITW_DOTNET_DIST_DIR="${{ github.workspace }}/icedtea-web-distribution/target/dist/icedtea-web-2.0.1-SNAPSHOT" \
           ITW_SMOKE_BUILD_TEST_APP=false ITW_SMOKE_TIMEOUT_SECONDS=180 "${{ matrix.smoke-script }}"
         shell: bash
 
@@ -167,9 +168,10 @@ jobs:
           packaging/linux/build-native-packages.sh
         shell: bash
 
-      - name: Run Windows JNLP smoke test from normal distribution ZIP
+      - name: Run Windows JNLP smoke test from distribution tree
         if: runner.os == 'Windows'
         run: |
+          $env:ITW_DOTNET_DIST_DIR = "${{ github.workspace }}\icedtea-web-distribution\target\dist\icedtea-web-2.0.1-SNAPSHOT"
           $env:ITW_SMOKE_BUILD_TEST_APP = "false"
           $env:ITW_SMOKE_TIMEOUT_SECONDS = "180"
           & "${{ matrix.smoke-script }}"
@@ -192,12 +194,14 @@ jobs:
           & packaging/windows/build-msi.ps1
         shell: pwsh
 
-      - name: Upload distribution artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: icedtea-web-${{ matrix.rid }}
-          path: icedtea-web-distribution/target/*.zip
-          if-no-files-found: error
+      - name: Build macOS DMG
+        if: runner.os == 'macOS'
+        run: |
+          chmod +x packaging/macos/build-dmg.sh
+          ITW_VERSION=2.0.1-SNAPSHOT \
+          ITW_MACOS_RID="${{ matrix.rid }}" \
+          packaging/macos/build-dmg.sh
+        shell: bash
 
       - name: Upload Linux native packages
         if: runner.os == 'Linux'
@@ -215,4 +219,12 @@ jobs:
         with:
           name: icedtea-web-msi-${{ matrix.rid }}
           path: icedtea-web-distribution/target/native-packages/*.msi
+          if-no-files-found: error
+
+      - name: Upload macOS DMG
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: icedtea-web-dmg-${{ matrix.rid }}
+          path: icedtea-web-distribution/target/native-packages/*.dmg
           if-no-files-found: error

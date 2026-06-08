@@ -62,6 +62,7 @@ import javax.swing.JPanel;
 import javax.swing.SwingConstants;
 import javax.swing.event.HyperlinkEvent;
 import javax.swing.event.HyperlinkListener;
+import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.runtime.Translator;
 import net.sourceforge.jnlp.security.SecurityDialog;
@@ -95,10 +96,7 @@ public class MissingALACAttributePanel extends SecurityDialogPanel implements  R
 
     protected final void addComponents(String title, String codebase, String remoteUrls) throws IOException {
 
-        URL imgUrl = this.getClass().getResource("/net/sourceforge/jnlp/resources/warning.png");
-        ImageIcon icon;
-        Image img = ImageIO.read(imgUrl);
-        icon = new ImageIcon(img);
+        ImageIcon icon = SunMiscLauncher.getSecureImageIcon("net/sourceforge/jnlp/resources/warning.png");
         String topLabelText = Translator.R("ALACAMissingMainTitle", title, codebase, remoteUrls);
         String bottomLabelText = Translator.R("ALACAMissingInfo");
 

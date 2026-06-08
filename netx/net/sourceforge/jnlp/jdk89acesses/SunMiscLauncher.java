@@ -32,16 +32,87 @@
  statement from your version.*/
 package net.sourceforge.jnlp.jdk89acesses;
 
+import java.io.InputStream;
+import java.net.URL;
+
 import javax.swing.ImageIcon;
 
+import net.sourceforge.jnlp.util.logging.OutputController;
+
 /**
- * This class previously safely accessed sun.misc.Launcher which was removed in jdk9.
+ * Loads bundled dialog and UI icons from the IcedTea-Web uber JAR.
+ *
+ * <p>Historically this accessed {@code sun.misc.Launcher} on JDK 8. The extension
+ * class loader was removed in JDK 9+, so icons must be resolved from the
+ * IcedTea-Web class loader instead. All standard icons live under
+ * {@code net/sourceforge/jnlp/resources/} inside the uber JAR.</p>
  *
  * @author jvanek
  */
-public class SunMiscLauncher {
+public final class SunMiscLauncher {
+
+    private SunMiscLauncher() {
+    }
 
     public static ImageIcon getSecureImageIcon(String resource) {
-        return new ImageIcon(ClassLoader.getSystemClassLoader().getParent().getResource(resource));
+        URL url = getResourceUrl(resource);
+        if (url == null) {
+            OutputController.getLogger().log(OutputController.Level.WARNING,
+                    "Bundled icon resource not found: " + resource);
+            return new ImageIcon();
+        }
+        return new ImageIcon(url);
+    }
+
+    public static URL getResourceUrl(String resource) {
+        return locateResource(normalizeResourcePath(resource));
+    }
+
+    public static InputStream getResourceAsStream(String resource) {
+        URL url = getResourceUrl(resource);
+        if (url == null) {
+            return null;
+        }
+        try {
+            return url.openStream();
+        } catch (Exception ex) {
+            OutputController.getLogger().log(OutputController.Level.WARNING, ex);
+            return null;
+        }
+    }
+
+    private static String normalizeResourcePath(String resource) {
+        if (resource == null || resource.isEmpty()) {
+            return resource;
+        }
+        while (resource.startsWith("/")) {
+            resource = resource.substring(1);
+        }
+        return resource;
+    }
+
+    private static URL locateResource(String resource) {
+        if (resource == null || resource.isEmpty()) {
+            return null;
+        }
+        ClassLoader[] loaders = new ClassLoader[] {
+            SunMiscLauncher.class.getClassLoader(),
+            Thread.currentThread().getContextClassLoader(),
+            ClassLoader.getSystemClassLoader()
+        };
+        for (ClassLoader loader : loaders) {
+            if (loader == null) {
+                continue;
+            }
+            URL url = loader.getResource(resource);
+            if (url != null) {
+                return url;
+            }
+        }
+        ClassLoader extensionLoader = ClassLoader.getSystemClassLoader().getParent();
+        if (extensionLoader != null) {
+            return extensionLoader.getResource(resource);
+        }
+        return null;
     }
 }

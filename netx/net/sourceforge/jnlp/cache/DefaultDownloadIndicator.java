@@ -47,6 +47,7 @@ import javax.swing.JLabel;
 import javax.swing.JPanel;
 import javax.swing.Timer;
 
+import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.runtime.ApplicationInstance;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.ImageResources;
@@ -245,10 +246,10 @@ public class DefaultDownloadIndicator implements DownloadIndicator {
         private JLabel header = new JLabel();
         /** Show/hide detailsButton button: */
         private final JButton detailsButton;
-        private static final URL magnifyGlassUrl = ClassLoader.getSystemResource("net/sourceforge/jnlp/resources/showDownloadDetails.png");
-        private static final URL redCrossUrl = ClassLoader.getSystemResource("net/sourceforge/jnlp/resources/hideDownloadDetails.png");
-        private static final Icon magnifyGlassIcon = new ImageIcon(magnifyGlassUrl);
-        private static final Icon redCrossIcon = new ImageIcon(redCrossUrl);
+        private static final Icon magnifyGlassIcon =
+                SunMiscLauncher.getSecureImageIcon("net/sourceforge/jnlp/resources/showDownloadDetails.png");
+        private static final Icon redCrossIcon =
+                SunMiscLauncher.getSecureImageIcon("net/sourceforge/jnlp/resources/hideDownloadDetails.png");
         /** used  instead of detailsButton button in case of one jar*/
         private JLabel delimiter = new JLabel("");
         /** all already created progress bars*/

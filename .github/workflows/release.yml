@@ -120,7 +120,7 @@ jobs:
 
           - Runs JNLP applications through the familiar IcedTea-Web `javaws` flow, with packaged launchers for modern desktop environments.
           - Provides platform builds for Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon.
-          - Includes native packages where they matter: Windows MSI plus Linux DEB and RPM packages.
+          - Ships native installers: Windows MSI, Linux DEB/RPM, and macOS DMG.
           - Bundles Amazon Corretto 11 so installs are less dependent on a user-managed system JDK.
           - Publishes SHA-256 checksum files for every release asset.
           - Builds from a versioned release branch and annotated tag, then uploads the exact artifacts produced by CI.
@@ -286,11 +286,12 @@ jobs:
           & $launcher -version
         shell: pwsh
 
-      - name: Run Linux JNLP smoke test from normal distribution ZIP
+      - name: Run Linux JNLP smoke test from distribution tree
         if: runner.os == 'Linux'
         run: |
           chmod +x "${{ matrix.smoke-script }}"
           ITW_VERSION="${{ env.RELEASE_VERSION }}" \
+          ITW_DOTNET_DIST_DIR="${{ github.workspace }}/icedtea-web-distribution/target/dist/icedtea-web-${{ env.RELEASE_VERSION }}" \
           ITW_SMOKE_BUILD_TEST_APP=false \
           ITW_SMOKE_TIMEOUT_SECONDS=180 \
           "${{ matrix.smoke-script }}"
@@ -305,10 +306,11 @@ jobs:
           packaging/linux/build-native-packages.sh
         shell: bash
 
-      - name: Run Windows JNLP smoke test from normal distribution ZIP
+      - name: Run Windows JNLP smoke test from distribution tree
         if: runner.os == 'Windows'
         run: |
           $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
+          $env:ITW_DOTNET_DIST_DIR = "${{ github.workspace }}\icedtea-web-distribution\target\dist\icedtea-web-${{ env.RELEASE_VERSION }}"
           $env:ITW_SMOKE_BUILD_TEST_APP = "false"
           $env:ITW_SMOKE_TIMEOUT_SECONDS = "180"
           & "${{ matrix.smoke-script }}"
@@ -331,13 +333,22 @@ jobs:
           & packaging/windows/build-msi.ps1
         shell: pwsh
 
+      - name: Build macOS DMG
+        if: runner.os == 'macOS'
+        run: |
+          chmod +x packaging/macos/build-dmg.sh
+          ITW_VERSION="${{ env.RELEASE_VERSION }}" \
+          ITW_MACOS_RID="${{ matrix.rid }}" \
+          packaging/macos/build-dmg.sh
+        shell: bash
+
       - name: Generate checksums
         run: |
           $patterns = @(
-            "icedtea-web-distribution/target/*.zip",
             "icedtea-web-distribution/target/native-packages/*.deb",
             "icedtea-web-distribution/target/native-packages/*.rpm",
-            "icedtea-web-distribution/target/native-packages/*.msi"
+            "icedtea-web-distribution/target/native-packages/*.msi",
+            "icedtea-web-distribution/target/native-packages/*.dmg"
           )
           foreach ($pattern in $patterns) {
             Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
@@ -346,15 +357,6 @@ jobs:
             }
           }
         shell: pwsh
-
-      - name: Upload distribution artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: icedtea-web-${{ matrix.rid }}
-          path: |
-            icedtea-web-distribution/target/*.zip
-            icedtea-web-distribution/target/*.zip.sha256.txt
-          if-no-files-found: error
 
       - name: Upload Linux native packages
         if: runner.os == 'Linux'
@@ -378,20 +380,30 @@ jobs:
             icedtea-web-distribution/target/native-packages/*.msi.sha256.txt
           if-no-files-found: error
 
+      - name: Upload macOS DMG
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: icedtea-web-dmg-${{ matrix.rid }}
+          path: |
+            icedtea-web-distribution/target/native-packages/*.dmg
+            icedtea-web-distribution/target/native-packages/*.dmg.sha256.txt
+          if-no-files-found: error
+
       - name: Upload release assets
         if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $patterns = @(
-            "icedtea-web-distribution/target/*.zip",
-            "icedtea-web-distribution/target/*.zip.sha256.txt",
             "icedtea-web-distribution/target/native-packages/*.deb",
             "icedtea-web-distribution/target/native-packages/*.rpm",
             "icedtea-web-distribution/target/native-packages/*.msi",
+            "icedtea-web-distribution/target/native-packages/*.dmg",
             "icedtea-web-distribution/target/native-packages/*.deb.sha256.txt",
             "icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt"
+            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt",
+            "icedtea-web-distribution/target/native-packages/*.dmg.sha256.txt"
           )
           $files = @()
           foreach ($pattern in $patterns) {

@@ -8,12 +8,12 @@ $ErrorActionPreference = "Stop"
 
 $RootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "2.0.1-SNAPSHOT" }
-$DistZip = if ($env:ITW_DOTNET_WINDOWS_ZIP) {
-    $env:ITW_DOTNET_WINDOWS_ZIP
+$DistDir = if ($env:ITW_DOTNET_DIST_DIR) {
+    $env:ITW_DOTNET_DIST_DIR
 } else {
-    Join-Path $RootDir "icedtea-web-distribution\target\icedtea-web-$Version-win-x64.zip"
+    Join-Path $RootDir "icedtea-web-distribution\target\dist\icedtea-web-$Version"
 }
-$DistDir = $env:ITW_DOTNET_DIST_DIR
+$DistZip = $env:ITW_DOTNET_WINDOWS_ZIP
 $JavawsBin = $env:ITW_JAVAWS_BIN
 $AppJar = if ($env:ITW_HEADLESS_APP_JAR) {
     $env:ITW_HEADLESS_APP_JAR
@@ -48,49 +48,45 @@ function Prepare-DotnetDistribution {
         return $JavawsBin
     }
 
-    if ($DistDir) {
+    if ($DistDir -and (Test-Path (Join-Path $DistDir "bin\javaws.exe") -PathType Leaf)) {
         $candidate = Join-Path $DistDir "bin\javaws.exe"
-        if (-not (Test-Path $candidate -PathType Leaf)) {
-            throw "ITW_DOTNET_DIST_DIR is set but bin\javaws.exe does not exist: $candidate"
-        }
-        Write-Host "Using javaws from ITW_DOTNET_DIST_DIR: $candidate"
+        Write-Host "Using javaws from distribution directory: $candidate"
         return $candidate
     }
 
-    if (-not (Test-Path $DistZip -PathType Leaf)) {
-        throw @"
-Windows .NET distribution artifact not found:
-  $DistZip
+    if ($DistZip -and (Test-Path $DistZip -PathType Leaf)) {
+        $unpackDir = Join-Path $WorkDir "dotnet-dist"
+        New-Item -ItemType Directory -Path $unpackDir -Force | Out-Null
+        Write-Host "Extracting legacy Windows distribution ZIP: $DistZip"
+        Expand-Archive -Path $DistZip -DestinationPath $unpackDir -Force
+
+        $root = Get-ChildItem -Path $unpackDir -Directory | Select-Object -First 1
+        if ($null -eq $root) {
+            throw "Extracted artifact did not contain a distribution directory: $DistZip"
+        }
+
+        $candidate = Join-Path $root.FullName "bin\javaws.exe"
+        if (-not (Test-Path $candidate -PathType Leaf)) {
+            throw "Extracted artifact does not contain bin\javaws.exe: $candidate"
+        }
+
+        Write-Host "Using javaws from extracted ZIP: $candidate"
+        return $candidate
+    }
+
+    throw @"
+Windows .NET distribution not found:
+  $DistDir
 
 Build it first with:
   mvn -P maven-distribution -pl icedtea-web-distribution -am install `
     -Dmaven.test.skip=true -DskipTests `
-    "-Djdk8.home=`$env:JAVA_HOME" `
     "-Ditw.dotnet.runtime.identifier=win-x64" `
     "-Ditw.dotnet.selfContained=true"
 
-Or point this script at an existing artifact with ITW_DOTNET_WINDOWS_ZIP,
-ITW_DOTNET_DIST_DIR, or ITW_JAVAWS_BIN.
+Or point this script at an existing build with ITW_DOTNET_DIST_DIR,
+ITW_DOTNET_WINDOWS_ZIP, or ITW_JAVAWS_BIN.
 "@
-    }
-
-    $unpackDir = Join-Path $WorkDir "dotnet-dist"
-    New-Item -ItemType Directory -Path $unpackDir -Force | Out-Null
-    Write-Host "Extracting normal Windows .NET distribution artifact: $DistZip"
-    Expand-Archive -Path $DistZip -DestinationPath $unpackDir -Force
-
-    $root = Get-ChildItem -Path $unpackDir -Directory | Select-Object -First 1
-    if ($null -eq $root) {
-        throw "Extracted artifact did not contain a distribution directory: $DistZip"
-    }
-
-    $candidate = Join-Path $root.FullName "bin\javaws.exe"
-    if (-not (Test-Path $candidate -PathType Leaf)) {
-        throw "Extracted artifact does not contain bin\javaws.exe: $candidate"
-    }
-
-    Write-Host "Using javaws from normal Windows .NET distribution artifact: $candidate"
-    return $candidate
 }
 
 function Ensure-HeadlessApp {

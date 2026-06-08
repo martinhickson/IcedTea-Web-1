@@ -42,10 +42,7 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.net.URL;
 
-import javax.swing.ImageIcon;
-import javax.swing.JFrame;
-
-import net.sourceforge.jnlp.JNLPFile;
+import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.security.SecurityDialog;
 import net.sourceforge.jnlp.security.dialogs.remember.ExecuteAppletAction;
 import net.sourceforge.jnlp.security.appletextendedsecurity.UnsignedAppletActionEntry;
@@ -65,8 +62,7 @@ public class UnsignedAppletTrustWarningPanel extends AppTrustWarningPanel {
 
     @Override
     protected ImageIcon getInfoImage() {
-        final String location = "net/sourceforge/jnlp/resources/info-small.png";
-        return new ImageIcon(ClassLoader.getSystemClassLoader().getResource(location));
+        return SunMiscLauncher.getSecureImageIcon("net/sourceforge/jnlp/resources/info-small.png");
     }
 
     protected static String getTopPanelTextKey() {
