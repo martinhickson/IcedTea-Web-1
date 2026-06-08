@@ -5,7 +5,7 @@
   <parent>
     <groupId>net.sourceforge.icedtea-web</groupId>
     <artifactId>icedtea-web-parent</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>2.0.1-SNAPSHOT</version>
   </parent>
 
   <artifactId>icedtea-web</artifactId>
@@ -17,8 +17,11 @@
   <properties>
     <maven.build.helper.plugin.version>3.3.0</maven.build.helper.plugin.version>
     <maven.shade.plugin.version>3.5.1</maven.shade.plugin.version>
+    <exec.maven.plugin.version>3.1.1</exec.maven.plugin.version>
     <uberjar.mainClass>net.sourceforge.jnlp.runtime.JavawsUberLauncher</uberjar.mainClass>
     <uberjar.classifier>uber</uberjar.classifier>
+    <itw.generated.resources.dir>${project.build.directory}/generated-resources/net/sourceforge/jnlp/resources</itw.generated.resources.dir>
+    <itw.html.gen.changesets>140</itw.html.gen.changesets>
   </properties>
 
   <dependencies>
@@ -264,6 +267,17 @@
         <version>3.6.0</version>
         <executions>
           <execution>
+            <id>copy-runtime-deps-for-docgen</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/dependency-jars</outputDirectory>
+              <includeScope>runtime</includeScope>
+            </configuration>
+          </execution>
+          <execution>
             <id>copy-bytebuddy-agent</id>
             <phase>package</phase>
             <goals>
@@ -285,32 +299,83 @@
       </plugin>
 
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <version>3.1.0</version>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${exec.maven.plugin.version}</version>
         <executions>
+          <execution>
+            <id>generate-about-html</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <workingDirectory>${project.basedir}</workingDirectory>
+              <executable>bash</executable>
+              <arguments>
+                <argument>../scripts/maven-generate-about-html.sh</argument>
+                <argument>${itw.html.gen.changesets}</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>generate-about-intro-pages</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <workingDirectory>${project.basedir}</workingDirectory>
+              <executable>bash</executable>
+              <arguments>
+                <argument>../scripts/maven-generate-about-intro-pages.sh</argument>
+                <argument>${project.version}</argument>
+              </arguments>
+            </configuration>
+          </execution>
           <execution>
             <id>generate-javaws-launcher</id>
             <phase>package</phase>
             <goals>
-              <goal>run</goal>
+              <goal>exec</goal>
             </goals>
             <configuration>
-              <target>
-                <mkdir dir="${project.build.directory}/bin"/>
-                <copy file="${project.basedir}/../scripts/javaws.sh" tofile="${project.build.directory}/bin/javaws" overwrite="true" filtering="true">
-                  <filterset>
-                    <filter token="ITW_UBER_JAR" value="${project.build.directory}/${project.build.finalName}-${uberjar.classifier}.jar"/>
-                    <filter token="BYTEBUDDY_AGENT_JAR" value="${project.build.directory}/bin/byte-buddy-agent.jar"/>
-                    <filter token="MAIN_CLASS" value="${uberjar.mainClass}"/>
-                  </filterset>
-                </copy>
-                <chmod file="${project.build.directory}/bin/javaws" perm="ugo+rx"/>
-              </target>
+              <workingDirectory>${project.basedir}</workingDirectory>
+              <executable>bash</executable>
+              <arguments>
+                <argument>../scripts/maven-generate-javaws-launcher.sh</argument>
+                <argument>${project.build.finalName}</argument>
+                <argument>${uberjar.classifier}</argument>
+                <argument>${uberjar.mainClass}</argument>
+              </arguments>
             </configuration>
           </execution>
         </executions>
       </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>copy-generated-about-docs</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}/net/sourceforge/jnlp/resources</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${itw.generated.resources.dir}</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
     </plugins>
   </build>
 

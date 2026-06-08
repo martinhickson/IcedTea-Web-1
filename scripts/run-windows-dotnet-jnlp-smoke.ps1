@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 # JNLP from a temporary local HTTP server, and prints the javaws output.
 
 $RootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
-$Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "1.0.1-SNAPSHOT" }
+$Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "2.0.1-SNAPSHOT" }
 $DistZip = if ($env:ITW_DOTNET_WINDOWS_ZIP) {
     $env:ITW_DOTNET_WINDOWS_ZIP
 } else {

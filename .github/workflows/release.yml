@@ -4,24 +4,24 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Release version for distribution and native packages (e.g., 1.8.8.23)'
+        description: 'Release version for distribution and native packages (e.g., 2.0.1)'
         required: true
-        default: '1.8.8.23'
+        default: '2.0.1'
         type: string
       release_branch:
         description: 'Release branch to create and build'
         required: true
-        default: 'release/icedtea-web-1.8.8.23'
+        default: 'release/icedtea-web-2.0.1'
         type: string
       release_tag:
         description: 'Release tag to create'
         required: true
-        default: 'icedtea-web-1.8.8.23'
+        default: 'icedtea-web-2.0.1'
         type: string
       release_name:
         description: 'GitHub Release title'
         required: true
-        default: 'IcedTea-Web v1.8.8.23'
+        default: 'IcedTea-Web v2.0.1'
         type: string
       dotnet-self-contained:
         description: 'Bundle the .NET runtime in the launcher distribution'
@@ -40,7 +40,7 @@ permissions:
   packages: read
 
 env:
-  RELEASE_VERSION: ${{ inputs.release_version || '1.0.1-SNAPSHOT' }}
+  RELEASE_VERSION: ${{ inputs.release_version || '2.0.1-SNAPSHOT' }}
 
 jobs:
   release:
@@ -230,6 +230,16 @@ jobs:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
+
+      - name: Set up Git Bash
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Test-Path "C:\Program Files\Git\bin\bash.exe")) {
+            choco install git.install -y --no-progress
+          }
+          echo "C:\Program Files\Git\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+        shell: pwsh
 
       - name: Build distribution
         run: |

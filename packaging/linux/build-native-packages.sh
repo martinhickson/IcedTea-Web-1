@@ -26,10 +26,23 @@ run_builder() {
     exit 1
   fi
 
-  "${DOCKER_CMD[@]}" build \
-    --file "$dockerfile" \
-    --tag "$image" \
-    "$ROOT_DIR/packaging/linux/docker"
+  local attempt=1
+  local max_attempts=3
+  while (( attempt <= max_attempts )); do
+    if "${DOCKER_CMD[@]}" build \
+      --file "$dockerfile" \
+      --tag "$image" \
+      "$ROOT_DIR/packaging/linux/docker"; then
+      break
+    fi
+    if (( attempt == max_attempts )); then
+      echo "Docker image build failed after ${max_attempts} attempts: $image" >&2
+      exit 1
+    fi
+    echo "Docker image build failed (attempt ${attempt}/${max_attempts}); retrying in 30s..." >&2
+    sleep 30
+    attempt=$((attempt + 1))
+  done
 
   "${DOCKER_CMD[@]}" run --rm \
     --user "$(id -u):$(id -g)" \

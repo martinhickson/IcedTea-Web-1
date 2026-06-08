@@ -45,7 +45,7 @@ public class JNLPIntegrationTestIT {
         // Deploy the WAR to WildFly (runs in separate process)
         // testable=false ensures tests run in the test client process, not in WildFly container
         // Use a different name to avoid conflicts with auto-deployed WAR
-        File warFile = new File("target/icedtea-web-integration-tests-1.0.1-SNAPSHOT.war");
+        File warFile = new File("target/icedtea-web-integration-tests-2.0.1-SNAPSHOT.war");
         System.out.println("  Looking for WAR file: " + warFile.getAbsolutePath());
         if (!warFile.exists()) {
             throw new RuntimeException("WAR file not found: " + warFile.getAbsolutePath());
@@ -65,7 +65,7 @@ public class JNLPIntegrationTestIT {
         System.out.println("  Adding JNLP application files to WAR web root...");
         
         // Add sample application JAR to web root (not WEB-INF/classes)
-        File sampleJar = new File("target/icedtea-web-integration-tests-1.0.1-SNAPSHOT-sample-app.jar");
+        File sampleJar = new File("target/icedtea-web-integration-tests-2.0.1-SNAPSHOT-sample-app.jar");
         if (sampleJar.exists()) {
             archive.addAsWebResource(sampleJar, "sample-app.jar");
             System.out.println("  ✓ Added sample-app.jar to web root");
@@ -167,7 +167,7 @@ public class JNLPIntegrationTestIT {
         System.out.println();
         
         // Get the sample JAR
-        File sampleJar = new File("target/icedtea-web-integration-tests-1.0.1-SNAPSHOT-sample-app.jar");
+        File sampleJar = new File("target/icedtea-web-integration-tests-2.0.1-SNAPSHOT-sample-app.jar");
         if (!sampleJar.exists()) {
             String error = "ERROR: Sample JAR not found at: " + sampleJar.getAbsolutePath();
             System.out.println(error);

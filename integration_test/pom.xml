@@ -4,7 +4,7 @@
 
   <groupId>net.sourceforge.icedtea-web</groupId>
   <artifactId>icedtea-web-integration-tests</artifactId>
-  <version>1.0.1-SNAPSHOT</version>
+  <version>2.0.1-SNAPSHOT</version>
   <packaging>war</packaging>
 
   <name>IcedTea-Web Integration Tests</name>
@@ -63,7 +63,7 @@
     <dependency>
       <groupId>net.sourceforge.icedtea-web</groupId>
       <artifactId>icedtea-web</artifactId>
-      <version>1.0.1-SNAPSHOT</version>
+      <version>2.0.1-SNAPSHOT</version>
       <scope>test</scope>
     </dependency>
 

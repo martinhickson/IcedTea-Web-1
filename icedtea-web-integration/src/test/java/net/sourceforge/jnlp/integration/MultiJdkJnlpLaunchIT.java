@@ -155,7 +155,7 @@ public class MultiJdkJnlpLaunchIT {
     }
 
     private void copyHeadlessAppJar() throws IOException {
-        Path source = Paths.get("target").resolve("icedtea-web-integration-1.0.1-SNAPSHOT-headless-app.jar");
+        Path source = Paths.get("target").resolve("icedtea-web-integration-2.0.1-SNAPSHOT-headless-app.jar");
         assumeTrue(Files.exists(source), "headless-app jar not built: " + source.toAbsolutePath());
         Files.copy(source, webRoot.resolve("headless-app.jar"));
     }

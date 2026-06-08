@@ -9,7 +9,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-VERSION="${ITW_VERSION:-1.0.1-SNAPSHOT}"
+VERSION="${ITW_VERSION:-2.0.1-SNAPSHOT}"
 DIST_ZIP="${ITW_DOTNET_LINUX_ZIP:-$ROOT_DIR/icedtea-web-distribution/target/icedtea-web-$VERSION-linux-x64.zip}"
 DIST_DIR="${ITW_DOTNET_DIST_DIR:-}"
 JAVAWS_BIN="${ITW_JAVAWS_BIN:-}"
