@@ -54,149 +54,98 @@ import java.util.jar.JarFile;
 
 import net.sourceforge.jnlp.security.ConnectionFactory;
 import net.sourceforge.jnlp.util.JarFileTempManager;
-import net.sourceforge.jnlp.util.logging.OutputController;
-//.sourceforge.jnlp.util.JarFile;
-
 import net.sourceforge.jnlp.util.UrlUtils;
 
-//import sun.net.www.protocol.jar.URLJarFile;
-import sun.net.www.protocol.jar.URLJarFileCallBack;
-
 /**
- * Invoked by URLJarFile to get a JarFile corresponding to a URL.
- *
- * Large parts of this class are based on JarFileFactory and URLJarFile.
+ * Resolves {@code jar:} URLs to locally cached JAR files.
+ * <p>
+ * On JDK 23 and earlier, registered as {@code URLJarFileCallBack} via
+ * {@link LegacyUrlJarFileCallbackRegistrar}. On JDK 24+, the same {@link #retrieve(URL)}
+ * logic is invoked by {@link JarUrlCacheProtection} through ByteBuddy.
  */
-final class CachedJarFileCallback implements URLJarFileCallBack {
+final class CachedJarFileCallback {
 
     private static final CachedJarFileCallback INSTANCE = new CachedJarFileCallback();
 
-    public synchronized static CachedJarFileCallback getInstance() {
+    public static synchronized CachedJarFileCallback getInstance() {
         return INSTANCE;
     }
 
-    /* our managed cache */
-    private final Map<URL, URL> mapping;
+    private final Map<URL, URL> mapping = new ConcurrentHashMap<>();
 
     private CachedJarFileCallback() {
-        mapping = new ConcurrentHashMap<URL, URL>();
     }
 
-    protected void addMapping(URL remoteUrl, URL localUrl) {
+    void addMapping(URL remoteUrl, URL localUrl) {
         mapping.put(remoteUrl, localUrl);
     }
 
-    @Override
-    public java.util.jar.JarFile retrieve(URL url) throws IOException {
+    /**
+     * Return a cached/open JarFile for the given jar URL, downloading through ITW if needed.
+     */
+    public JarFile retrieve(URL url) throws IOException {
         URL localUrl = mapping.get(url);
-        if (localUrl == null) {
-            if (url.getRef() != null) {
-                url = new URL(url.toString().substring(0, url.toString().lastIndexOf(url.getRef()) - 1));
-                localUrl = mapping.get(url);
-            }
+        if (localUrl == null && url.getRef() != null) {
+            url = new URL(url.toString().substring(0, url.toString().lastIndexOf(url.getRef()) - 1));
+            localUrl = mapping.get(url);
         }
 
         if (localUrl == null) {
-            /*
-             * If the jar url is not known, treat it as it would be treated in
-             * general by URLJarFile.
-             */
             return cacheJarFile(url);
         }
 
         if (UrlUtils.isLocalFile(localUrl)) {
-            // if it is known to us, just return the cached file
-            // CRITICAL: Use JarFileCache, NOT direct "new JarFile()"! 
-            // Direct opens cause "zip file closed" errors. See JarFileTempManager.ENABLE_JARFILE_CLOSE
-            //JarFile returnFile = new JarFile(UrlUtils.decodeUrlQuietly(localUrl).getPath());
             String path = UrlUtils.decodeUrlQuietly(localUrl).getPath();
-            JarFile returnFile = JarFileCache.getInstance().getJarFile(path);
-
-            //try {
-
-                // Blank out the class-path because:
-                // 1) Web Start does not support it
-                // 2) For the plug-in, we want to cache files from class-path so we do it manually
-            //    returnFile.getManifest().getMainAttributes().putValue("Class-Path", "");
-
-            //    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Class-Path attribute cleared for " + returnFile.getName());
-
-
-            //} catch (NullPointerException npe) {
-                // Discard NPE here. Maybe there was no manifest, maybe there were no attributes, etc.
-            //}
-
-            return returnFile;
-        } else {
-            // throw new IllegalStateException("a non-local file in cache");
-            return null;
+            return JarFileCache.getInstance().getJarFile(path);
         }
 
+        return null;
     }
 
-    /*
-     * This method is a copy of URLJarFile.retrieve() without the callback check.
-     */
-    private  java.util.jar.JarFile cacheJarFile(URL url) throws IOException {
-        java.util.jar.JarFile result = null;
-
-        final int BUF_SIZE = 2048;
+    private JarFile cacheJarFile(URL url) throws IOException {
+        final int bufSize = 2048;
         URLConnection conn = ConnectionFactory.getConnectionFactory().openConnection(url);
-        /* get the stream before asserting privileges */
         final InputStream in = conn.getInputStream();
 
         try {
-            result =
-                    AccessController.doPrivileged(new PrivilegedExceptionAction<java.util.jar.JarFile>() {
-                        @Override
-                        public java.util.jar.JarFile run() throws IOException {
-                            OutputStream out = null;
-                            File tmpFile = null;
-                            try {
-                                // Use JarFileTempManager to copy to icedtea-web temp directory
-                                JarFileTempManager tempManager = JarFileTempManager.getInstance();
-                                // Create a temporary file in the icedtea-web directory
-                                File tempBaseDir = new File(System.getProperty("java.io.tmpdir"), "icedtea-web");
-                                if (!tempBaseDir.exists()) {
-                                    tempBaseDir.mkdirs();
-                                }
-                                String tempFileName = "jar_cache_" + System.currentTimeMillis() + "_" + 
-                                                     url.hashCode() + ".jar";
-                                tmpFile = new File(tempBaseDir, tempFileName);
-                                
-                                out = new FileOutputStream(tmpFile);
-                                int read = 0;
-                                byte[] buf = new byte[BUF_SIZE];
-                                while ((read = in.read(buf)) != -1) {
-                                    out.write(buf, 0, read);
-                                }
+            return AccessController.doPrivileged(
+                    (PrivilegedExceptionAction<JarFile>) () -> {
+                        OutputStream out = null;
+                        File tmpFile = null;
+                        try {
+                            File tempBaseDir = new File(System.getProperty("java.io.tmpdir"), "icedtea-web");
+                            if (!tempBaseDir.exists()) {
+                                tempBaseDir.mkdirs();
+                            }
+                            tmpFile = new File(tempBaseDir,
+                                    "jar_cache_" + System.currentTimeMillis() + "_" + url.hashCode() + ".jar");
+
+                            out = new FileOutputStream(tmpFile);
+                            byte[] buf = new byte[bufSize];
+                            int read;
+                            while ((read = in.read(buf)) != -1) {
+                                out.write(buf, 0, read);
+                            }
+                            out.close();
+                            out = null;
+
+                            return JarFileCache.getInstance().getURLJarFile(tmpFile);
+                        } catch (IOException e) {
+                            if (tmpFile != null) {
+                                tmpFile.delete();
+                            }
+                            throw e;
+                        } finally {
+                            in.close();
+                            if (out != null) {
                                 out.close();
-                                out = null;
-                                
-                                // Get open JAR file handle (kept open for performance)
-                                return JarFileCache.getInstance().getURLJarFile(tmpFile);
-                            } catch (IOException e) {
-                                if (tmpFile != null) {
-                                    tmpFile.delete();
-                                }
-                                throw e;
-                            } finally {
-                                if (in != null) {
-                                    in.close();
-                                }
-                                if (out != null) {
-                                    out.close();
-                                }
                             }
                         }
                     });
         } catch (PrivilegedActionException pae) {
             throw (IOException) pae.getException();
-        } finally{
-           ConnectionFactory.getConnectionFactory().disconnect(conn);
+        } finally {
+            ConnectionFactory.getConnectionFactory().disconnect(conn);
         }
-
-        return result;
     }
-
 }

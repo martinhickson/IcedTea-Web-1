@@ -8,8 +8,6 @@ import net.sourceforge.jnlp.util.JarFile;
 import net.sourceforge.jnlp.util.JarFileTempManager;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.jnlp.util.logging.OutputController.Level;
-import sun.net.www.protocol.jar.URLJarFile;
-
 public class JarFileCache {
 
     private static final OutputController LOGGER = OutputController.getLogger();
@@ -19,8 +17,8 @@ public class JarFileCache {
     private ConcurrentHashMap<String, JarFile> jarFileMap
         = new ConcurrentHashMap<String, JarFile>();
 
-    private ConcurrentHashMap<File, URLJarFile> urlJarFileMap =
-            new ConcurrentHashMap<File, URLJarFile>();
+    private ConcurrentHashMap<File, JarFile> urlJarFileMap =
+            new ConcurrentHashMap<File, JarFile>();
 
     private JarFileCache() {}
 
@@ -28,16 +26,16 @@ public class JarFileCache {
         return INSTANCE;
     }
 
-    public URLJarFile getURLJarFile(File tmpFile) throws IOException {
-        URLJarFile jarFile = urlJarFileMap.get(tmpFile);
+    public JarFile getURLJarFile(File tmpFile) throws IOException {
+        JarFile jarFile = urlJarFileMap.get(tmpFile);
         if (jarFile == null) {
             if (LOGGER.isDebugEnabled()) {
-                LOGGER.log(Level.MESSAGE_DEBUG, String.format("Loading URLJarFile into cache: %1$s",
+                LOGGER.log(Level.MESSAGE_DEBUG, String.format("Loading JarFile into cache: %1$s",
                         tmpFile.getAbsoluteFile()));
             }
             // Copy to temp directory first to avoid classloader interference
             File tempFile = JarFileTempManager.getInstance().getTempJarFile(tmpFile);
-            jarFile = new URLJarFile(tempFile, null);
+            jarFile = new JarFile(tempFile.getAbsolutePath());
             urlJarFileMap.put(tmpFile, jarFile);
         }
         return jarFile;

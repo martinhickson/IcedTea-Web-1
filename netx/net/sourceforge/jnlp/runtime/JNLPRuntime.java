@@ -78,7 +78,6 @@ import net.sourceforge.jnlp.util.logging.JavaConsole;
 import net.sourceforge.jnlp.util.logging.LogConfig;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.jnlp.util.JavaVersionUtils;
-import sun.net.www.protocol.jar.URLJarFile;
 
 /**
  * <p>
@@ -228,6 +227,7 @@ public class JNLPRuntime {
         // Install JarFile.close protection as early as possible.
         // This is critical to prevent "zip file closed" errors during classloading.
         JarFileCloseProtection.install();
+        JarUrlCacheProtection.install();
 
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
@@ -316,7 +316,7 @@ public class JNLPRuntime {
         Security.setProperty("package.access", 
                              Security.getProperty("package.access")+",net.sourceforge.jnlp");
 
-        URLJarFile.setCallBack(CachedJarFileCallback.getInstance());
+        LegacyUrlJarFileCallbackRegistrar.register(CachedJarFileCallback.getInstance());
 
         initialized = true;
 
