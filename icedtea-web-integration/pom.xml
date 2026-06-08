@@ -1,0 +1,216 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>net.sourceforge.icedtea-web</groupId>
+    <artifactId>icedtea-web-parent</artifactId>
+    <version>1.0.1-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>icedtea-web-integration</artifactId>
+  <packaging>jar</packaging>
+
+  <name>IcedTea-Web Integration Tests</name>
+  <description>Multi-JDK JNLP launch integration tests (Failsafe)</description>
+
+  <properties>
+    <maven.compiler.source>11</maven.compiler.source>
+    <maven.compiler.target>11</maven.compiler.target>
+    <maven.compiler.fork>false</maven.compiler.fork>
+    <maven.compiler.executable/>
+    <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
+    <maven.failsafe.plugin.version>3.2.5</maven.failsafe.plugin.version>
+    <version.junit>5.10.2</version.junit>
+    <version.undertow>2.3.10.Final</version.undertow>
+    <itw.uberjar.classifier>uber</itw.uberjar.classifier>
+    <itw.jdk8.home>/usr/lib/jvm/java-1.8.0-amazon-corretto</itw.jdk8.home>
+    <itw.jdk11.home>/usr/lib/jvm/java-11-amazon-corretto</itw.jdk11.home>
+    <itw.jdk17.home>/usr/lib/jvm/java-17-amazon-corretto</itw.jdk17.home>
+    <itw.jdk21.home>/usr/lib/jvm/java-21-amazon-corretto</itw.jdk21.home>
+    <itw.launch.timeout.seconds>180</itw.launch.timeout.seconds>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>net.sourceforge.icedtea-web</groupId>
+      <artifactId>icedtea-web</artifactId>
+      <version>${project.version}</version>
+      <classifier>${itw.uberjar.classifier}</classifier>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${version.junit}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>io.undertow</groupId>
+      <artifactId>undertow-core</artifactId>
+      <version>${version.undertow}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-dependency-plugin</artifactId>
+        <version>3.6.0</version>
+        <executions>
+          <execution>
+            <id>copy-uber-jar</id>
+            <phase>pre-integration-test</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>net.sourceforge.icedtea-web</groupId>
+                  <artifactId>icedtea-web</artifactId>
+                  <version>${project.version}</version>
+                  <classifier>${itw.uberjar.classifier}</classifier>
+                  <type>jar</type>
+                  <overWrite>true</overWrite>
+                  <destFileName>icedtea-web-${itw.uberjar.classifier}.jar</destFileName>
+                </artifactItem>
+              </artifactItems>
+              <outputDirectory>${project.build.directory}</outputDirectory>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>prepare-javaws-launcher</id>
+            <phase>pre-integration-test</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <mkdir dir="${project.build.directory}/bin"/>
+                <copy file="${project.basedir}/../icedtea-web/target/bin/byte-buddy-agent.jar"
+                      tofile="${project.build.directory}/bin/byte-buddy-agent.jar" failonerror="true"/>
+                <copy file="${project.basedir}/../scripts/javaws.sh" tofile="${project.build.directory}/bin/javaws" overwrite="true" filtering="true">
+                  <filterset>
+                    <filter token="ITW_UBER_JAR" value="${project.build.directory}/icedtea-web-${itw.uberjar.classifier}.jar"/>
+                    <filter token="BYTEBUDDY_AGENT_JAR" value="${project.build.directory}/bin/byte-buddy-agent.jar"/>
+                    <filter token="MAIN_CLASS" value="net.sourceforge.jnlp.runtime.JavawsUberLauncher"/>
+                  </filterset>
+                </copy>
+                <chmod file="${project.build.directory}/bin/javaws" perm="ugo+rx"/>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <executions>
+          <execution>
+            <id>compile-headless-app-java8</id>
+            <phase>process-test-classes</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <mkdir dir="${project.build.directory}/headless-classes"/>
+                <exec executable="${itw.jdk8.home}/bin/javac" failonerror="true">
+                  <arg value="-d"/>
+                  <arg value="${project.build.directory}/headless-classes"/>
+                  <arg value="${project.basedir}/src/test/java8/net/sourceforge/jnlp/integration/HeadlessJnlpMain.java"/>
+                </exec>
+                <jar destfile="${project.build.directory}/icedtea-web-integration-${project.version}-headless-app.jar"
+                     basedir="${project.build.directory}/headless-classes">
+                  <manifest>
+                    <attribute name="Main-Class" value="net.sourceforge.jnlp.integration.HeadlessJnlpMain"/>
+                  </manifest>
+                </jar>
+                <delete file="${project.build.directory}/itw-integration-test-keystore.jks"/>
+                <exec executable="${itw.jdk8.home}/bin/keytool" failonerror="true">
+                  <arg value="-genkeypair"/>
+                  <arg value="-alias"/>
+                  <arg value="itw-integration"/>
+                  <arg value="-keystore"/>
+                  <arg value="${project.build.directory}/itw-integration-test-keystore.jks"/>
+                  <arg value="-storepass"/>
+                  <arg value="changeit"/>
+                  <arg value="-keypass"/>
+                  <arg value="changeit"/>
+                  <arg value="-dname"/>
+                  <arg value="CN=IcedTea-Web Integration Test"/>
+                  <arg value="-validity"/>
+                  <arg value="3650"/>
+                  <arg value="-keyalg"/>
+                  <arg value="RSA"/>
+                </exec>
+                <exec executable="${itw.jdk8.home}/bin/jarsigner" failonerror="true">
+                  <arg value="-keystore"/>
+                  <arg value="${project.build.directory}/itw-integration-test-keystore.jks"/>
+                  <arg value="-storepass"/>
+                  <arg value="changeit"/>
+                  <arg value="-keypass"/>
+                  <arg value="changeit"/>
+                  <arg value="${project.build.directory}/icedtea-web-integration-${project.version}-headless-app.jar"/>
+                  <arg value="itw-integration"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>${maven.surefire.plugin.version}</version>
+        <configuration>
+          <skip>true</skip>
+        </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>${maven.failsafe.plugin.version}</version>
+        <configuration>
+          <includes>
+            <include>**/*IT.java</include>
+          </includes>
+          <systemPropertyVariables>
+            <itw.javaws.bin>${project.build.directory}/bin/javaws</itw.javaws.bin>
+            <itw.uber.jar>${project.build.directory}/icedtea-web-${itw.uberjar.classifier}.jar</itw.uber.jar>
+            <itw.launch.timeout.seconds>${itw.launch.timeout.seconds}</itw.launch.timeout.seconds>
+            <itw.jdk8.home>${itw.jdk8.home}</itw.jdk8.home>
+            <itw.jdk11.home>${itw.jdk11.home}</itw.jdk11.home>
+            <itw.jdk17.home>${itw.jdk17.home}</itw.jdk17.home>
+            <itw.jdk21.home>${itw.jdk21.home}</itw.jdk21.home>
+          </systemPropertyVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+</project>

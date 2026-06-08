@@ -33,6 +33,7 @@ import net.sourceforge.jnlp.util.JarFile;
 
 import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.AppletInstance;
 import net.sourceforge.jnlp.runtime.ApplicationInstance;
 import net.sourceforge.jnlp.runtime.JNLPClassLoader;
@@ -513,7 +514,7 @@ public class Launcher {
                 return null;
             }
 
-            if (JNLPRuntime.getForksAllowed() && file.needsNewVM()) {
+            if (JNLPRuntime.getForksAllowed() && (file.needsNewVM() || needsConfiguredJreRelaunch())) {
                 if (!JNLPRuntime.isHeadless()){
                     SplashScreen sp = SplashScreen.getSplashScreen();
                     if (sp!=null) {
@@ -899,6 +900,23 @@ public class Launcher {
          * result is that all other AppContexts see a null dtd.
          */
         new ParserDelegator();
+    }
+
+    private boolean needsConfiguredJreRelaunch() {
+        String configuredJreDir = JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_JRE_DIR);
+        if (configuredJreDir == null || configuredJreDir.trim().isEmpty()) {
+            return false;
+        }
+
+        File configuredJavaHome = new File(configuredJreDir).getAbsoluteFile();
+        File currentJavaHome = new File(System.getProperty("java.home")).getAbsoluteFile();
+        boolean needsRelaunch = !currentJavaHome.equals(configuredJavaHome)
+                && !currentJavaHome.getPath().startsWith(configuredJavaHome.getPath() + File.separator);
+        if (needsRelaunch) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Relaunching with configured JRE: " + configuredJavaHome);
+        }
+        return needsRelaunch;
     }
 
        /**

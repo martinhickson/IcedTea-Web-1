@@ -933,6 +933,9 @@ public class JNLPFile {
 
         JREDesc[] jres = getResources().getJREs();
         for (JREDesc jre : jres) {
+            if (!jre.getVersion().matchesJreVersion()) {
+                newVMArgs.add("-Dicedtea-web.relaunch.requestedJre=" + jre.getVersion());
+            }
             String initialHeapSize = jre.getInitialHeapSize();
             if (initialHeapSize != null) {
                 newVMArgs.add("-Xms" + initialHeapSize);
