@@ -56,6 +56,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
+          ref: 1.8
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -64,16 +65,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create release branch
+      - name: Create release branch from latest 1.8
         run: |
-          if git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" >/dev/null 2>&1; then
-            git fetch origin "${RELEASE_BRANCH}"
-            git checkout -B "${RELEASE_BRANCH}" "origin/${RELEASE_BRANCH}"
-            echo "Using existing branch: ${RELEASE_BRANCH}"
-          else
-            git checkout -b "${RELEASE_BRANCH}"
-            echo "Created branch: ${RELEASE_BRANCH}"
-          fi
+          git fetch origin 1.8
+          git checkout -B "${RELEASE_BRANCH}" "origin/1.8"
+          echo "Release branch ${RELEASE_BRANCH} based on origin/1.8 ($(git rev-parse --short HEAD))"
 
       - name: Set up Corretto 11 for release preparation
         uses: actions/setup-java@v5
