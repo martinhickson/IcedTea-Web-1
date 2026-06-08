@@ -203,6 +203,13 @@ jobs:
           packaging/macos/build-dmg.sh
         shell: bash
 
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: icedtea-web-maven-${{ matrix.rid }}
+          path: icedtea-web-distribution/target/*.zip
+          if-no-files-found: error
+
       - name: Upload Linux native packages
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v7

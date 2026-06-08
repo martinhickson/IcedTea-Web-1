@@ -304,7 +304,7 @@ public class UnsignedAppletActionStorageImpl extends LockingReaderWriter impleme
     private void backupOldFile(int version, File backingFile) {
         try {
             File backup = new File(backingFile.getAbsolutePath() + "." + version + BACKUP_SUFFIX);
-            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "backuping " + getBackingFile().getAbsolutePath() + " as " + backup.getName());
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Backing up " + getBackingFile().getAbsolutePath() + " as " + backup.getName());
             String warning = "- !WARNING! this is automated copy of old " + backingFile.getName() + " which was removed/replaced. Before you blindly copy those items back, please note, that this file might be modified without your approval by evil attacker. It is advised to not return below lines, or verify them before returning";
             String s = FileUtils.loadFileAsString(backingFile);
             s.replaceFirst("\\s*", "");
@@ -315,7 +315,7 @@ public class UnsignedAppletActionStorageImpl extends LockingReaderWriter impleme
             }
             FileUtils.saveFile(s, backup);
         } catch (Exception ex) {
-            OutputController.getLogger().log(OutputController.Level.WARNING_ALL, "Error during backuping: " + ex.getMessage());
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL, "Error during backup: " + ex.getMessage());
             OutputController.getLogger().log(ex);
         }
     }
