@@ -43,6 +43,10 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashSet;
 import java.util.Set;
+
+import javax.swing.ImageIcon;
+import javax.swing.JFrame;
+
 import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.ParseException;

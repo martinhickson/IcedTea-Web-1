@@ -57,7 +57,7 @@ public final class SunMiscLauncher {
     public static ImageIcon getSecureImageIcon(String resource) {
         URL url = getResourceUrl(resource);
         if (url == null) {
-            OutputController.getLogger().log(OutputController.Level.WARNING,
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
                     "Bundled icon resource not found: " + resource);
             return new ImageIcon();
         }
@@ -76,7 +76,7 @@ public final class SunMiscLauncher {
         try {
             return url.openStream();
         } catch (Exception ex) {
-            OutputController.getLogger().log(OutputController.Level.WARNING, ex);
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL, ex);
             return null;
         }
     }

@@ -42,6 +42,10 @@ import java.awt.BorderLayout;
 import java.awt.Dimension;
 import java.net.URL;
 
+import javax.swing.ImageIcon;
+import javax.swing.JFrame;
+
+import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.security.SecurityDialog;
 import net.sourceforge.jnlp.security.dialogs.remember.ExecuteAppletAction;

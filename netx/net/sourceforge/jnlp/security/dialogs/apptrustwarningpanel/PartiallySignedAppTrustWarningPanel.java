@@ -42,6 +42,9 @@ import java.awt.Dimension;
 import java.security.cert.Certificate;
 import java.security.cert.X509Certificate;
 
+import javax.swing.ImageIcon;
+import javax.swing.JButton;
+
 import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.PluginBridge;
