@@ -1,28 +1,8 @@
-name: Release
+name: Build
 
 on:
   workflow_dispatch:
     inputs:
-      release_version:
-        description: 'Release version for Maven and native packages (e.g., 1.8.8.22)'
-        required: true
-        default: '1.8.8.22'
-        type: string
-      release_branch:
-        description: 'Release branch to create and build'
-        required: true
-        default: 'release/icedtea-web-1.8.8.22'
-        type: string
-      release_tag:
-        description: 'Release tag to create'
-        required: true
-        default: 'icedtea-web-1.8.8.22'
-        type: string
-      release_name:
-        description: 'GitHub Release title'
-        required: true
-        default: 'IcedTea-Web 1.8.8.22'
-        type: string
       dotnet-self-contained:
         description: 'Bundle the .NET runtime in the launcher distribution'
         required: true
@@ -31,109 +11,10 @@ on:
         options:
           - 'true'
           - 'false'
-  pull_request:
-    branches:
-      - 1.8
-
-permissions:
-  contents: write
-  packages: read
-
-env:
-  RELEASE_VERSION: ${{ inputs.release_version || '1.0.1-SNAPSHOT' }}
 
 jobs:
-  release:
-    if: github.event_name == 'workflow_dispatch'
-    name: Prepare release branch and tag
-    runs-on: ubuntu-latest
-    env:
-      RELEASE_VERSION: ${{ inputs.release_version }}
-      RELEASE_BRANCH: ${{ inputs.release_branch }}
-      RELEASE_TAG: ${{ inputs.release_tag }}
-      RELEASE_NAME: ${{ inputs.release_name }}
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Configure Git
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Create release branch
-        run: |
-          if git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" >/dev/null 2>&1; then
-            git fetch origin "${RELEASE_BRANCH}"
-            git checkout -B "${RELEASE_BRANCH}" "origin/${RELEASE_BRANCH}"
-            echo "Using existing branch: ${RELEASE_BRANCH}"
-          else
-            git checkout -b "${RELEASE_BRANCH}"
-            echo "Created branch: ${RELEASE_BRANCH}"
-          fi
-
-      - name: Set up Corretto 11 for release preparation
-        uses: actions/setup-java@v5
-        with:
-          java-version: '11'
-          distribution: 'corretto'
-
-      - name: Update Maven versions
-        run: |
-          mvn -P maven-distribution versions:set \
-            -DnewVersion="${RELEASE_VERSION}" \
-            -DprocessAllModules \
-            -DgenerateBackupPoms=false
-
-      - name: Commit and push release branch
-        run: |
-          git add -A
-          if git diff --staged --quiet; then
-            echo "No release version changes to commit."
-          else
-            git commit -m "Release version ${RELEASE_VERSION}"
-          fi
-          git push origin "${RELEASE_BRANCH}"
-
-      - name: Create and push release tag
-        run: |
-          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
-            echo "Using existing tag: ${RELEASE_TAG}"
-          else
-            git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_VERSION}"
-            git push origin "${RELEASE_TAG}"
-          fi
-
-      - name: Create or update draft release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          notes="$(cat <<EOF
-          Automated Maven/.NET distribution build for ${RELEASE_VERSION}.
-
-          Release branch: ${RELEASE_BRANCH}
-          Tag: ${RELEASE_TAG}
-          EOF
-          )"
-          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
-            gh release edit "${RELEASE_TAG}" \
-              --draft \
-              --title "${RELEASE_NAME}" \
-              --notes "${notes}"
-          else
-            gh release create "${RELEASE_TAG}" \
-              --draft \
-              --title "${RELEASE_NAME}" \
-              --notes "${notes}"
-          fi
-
   dotnet-distribution:
-    if: always()
-    needs: release
-    name: Maven .NET Distribution (${{ matrix.rid }})
+    name: Build ${{ matrix.rid }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -163,8 +44,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_branch || github.ref }}
 
       - name: Set up Corretto 11 compiler
         uses: actions/setup-java@v5
@@ -220,11 +99,6 @@ jobs:
 
       - name: Build Maven .NET distribution
         run: |
-          $selfContained = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            "${{ inputs.dotnet-self-contained }}"
-          } else {
-            "true"
-          }
           $mvnArgs = @(
             "-P", "maven-distribution",
             "-pl", "icedtea-web-distribution",
@@ -234,7 +108,7 @@ jobs:
             "-DskipTests",
             "-Djdk8.home=$env:JDK8_HOME",
             "-Djdk11.home=$env:JDK11_HOME",
-            "-Ditw.dotnet.selfContained=$selfContained",
+            "-Ditw.dotnet.selfContained=${{ inputs.dotnet-self-contained }}",
             "-Ditw.dotnet.runtime.identifier=${{ matrix.rid }}",
             "-Ditw.corretto.url=${{ matrix.corretto-url }}"
           )
@@ -267,17 +141,14 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           chmod +x "${{ matrix.smoke-script }}"
-          ITW_VERSION="${{ env.RELEASE_VERSION }}" \
-          ITW_SMOKE_BUILD_TEST_APP=false \
-          ITW_SMOKE_TIMEOUT_SECONDS=180 \
-          "${{ matrix.smoke-script }}"
+          ITW_SMOKE_BUILD_TEST_APP=false ITW_SMOKE_TIMEOUT_SECONDS=180 "${{ matrix.smoke-script }}"
         shell: bash
 
       - name: Build Linux native packages in Docker
         if: runner.os == 'Linux'
         run: |
           chmod +x packaging/linux/build-native-packages.sh packaging/linux/container-build-package.sh
-          ITW_VERSION="${{ env.RELEASE_VERSION }}" \
+          ITW_VERSION=1.0.1-SNAPSHOT \
           ITW_PACKAGE_FORMATS="deb rpm" \
           packaging/linux/build-native-packages.sh
         shell: bash
@@ -285,7 +156,6 @@ jobs:
       - name: Run Windows JNLP smoke test from normal distribution ZIP
         if: runner.os == 'Windows'
         run: |
-          $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
           $env:ITW_SMOKE_BUILD_TEST_APP = "false"
           $env:ITW_SMOKE_TIMEOUT_SECONDS = "180"
           & "${{ matrix.smoke-script }}"
@@ -304,33 +174,15 @@ jobs:
       - name: Build Windows MSI in Windows Server Core Docker
         if: runner.os == 'Windows'
         run: |
-          $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
+          $env:ITW_VERSION = "1.0.1-SNAPSHOT"
           & packaging/windows/build-msi.ps1
-        shell: pwsh
-
-      - name: Generate checksums
-        run: |
-          $patterns = @(
-            "icedtea-web-distribution/target/*.zip",
-            "icedtea-web-distribution/target/native-packages/*.deb",
-            "icedtea-web-distribution/target/native-packages/*.rpm",
-            "icedtea-web-distribution/target/native-packages/*.msi"
-          )
-          foreach ($pattern in $patterns) {
-            Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
-              $hash = Get-FileHash -Algorithm SHA256 $_.FullName
-              "$($hash.Hash.ToLowerInvariant())  $($_.Name)" | Out-File -FilePath "$($_.FullName).sha256.txt" -Encoding ASCII
-            }
-          }
         shell: pwsh
 
       - name: Upload distribution artifacts
         uses: actions/upload-artifact@v7
         with:
           name: icedtea-web-maven-${{ matrix.rid }}
-          path: |
-            icedtea-web-distribution/target/*.zip
-            icedtea-web-distribution/target/*.zip.sha256.txt
+          path: icedtea-web-distribution/target/*.zip
           if-no-files-found: error
 
       - name: Upload Linux native packages
@@ -341,8 +193,6 @@ jobs:
           path: |
             icedtea-web-distribution/target/native-packages/*.deb
             icedtea-web-distribution/target/native-packages/*.rpm
-            icedtea-web-distribution/target/native-packages/*.deb.sha256.txt
-            icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt
           if-no-files-found: error
 
       - name: Upload Windows MSI
@@ -350,32 +200,5 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: icedtea-web-msi-${{ matrix.rid }}
-          path: |
-            icedtea-web-distribution/target/native-packages/*.msi
-            icedtea-web-distribution/target/native-packages/*.msi.sha256.txt
+          path: icedtea-web-distribution/target/native-packages/*.msi
           if-no-files-found: error
-
-      - name: Upload release assets
-        if: github.event_name == 'workflow_dispatch'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          $patterns = @(
-            "icedtea-web-distribution/target/*.zip",
-            "icedtea-web-distribution/target/*.zip.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.deb",
-            "icedtea-web-distribution/target/native-packages/*.rpm",
-            "icedtea-web-distribution/target/native-packages/*.msi",
-            "icedtea-web-distribution/target/native-packages/*.deb.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt"
-          )
-          $files = @()
-          foreach ($pattern in $patterns) {
-            $files += Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-          }
-          if ($files.Count -eq 0) {
-            throw "No release assets found to upload."
-          }
-          & gh release upload "${{ inputs.release_tag }}" @files --clobber
-        shell: pwsh
