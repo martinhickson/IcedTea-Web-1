@@ -30,6 +30,8 @@ $WebRoot = $null
 $ServerProcess = $null
 $JavawsProcess = $null
 
+Write-Host "Windows .NET JNLP smoke script revision: redirected-process-logs-v2"
+
 function Stop-SmokeProcess {
     param($Process)
     if ($null -ne $Process -and -not $Process.HasExited) {

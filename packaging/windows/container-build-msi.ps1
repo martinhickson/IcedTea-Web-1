@@ -32,9 +32,14 @@ $MsiPath = Join-Path $OutputDir "icedtea-web-dotnet-$Version-win-x64.msi"
 
 function New-StableId {
     param([string]$Prefix, [string]$Value)
-    $bytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($Value))
-    $hex = -join ($bytes[0..11] | ForEach-Object { $_.ToString("x2") })
-    return "$Prefix$hex"
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = $sha256.ComputeHash([System.Text.Encoding]::UTF8.GetBytes($Value))
+        $hex = -join ($bytes[0..11] | ForEach-Object { $_.ToString("x2") })
+        return "$Prefix$hex"
+    } finally {
+        $sha256.Dispose()
+    }
 }
 
 function Convert-ToWixPath {
@@ -47,10 +52,30 @@ function Escape-Xml {
     return [System.Security.SecurityElement]::Escape($Value)
 }
 
-$files = Get-ChildItem -Path $DistDir -File -Recurse | Sort-Object FullName
+function Get-RelativePath {
+    param(
+        [string]$BasePath,
+        [string]$Path
+    )
+
+    $baseFullPath = [System.IO.Path]::GetFullPath($BasePath)
+    if (-not $baseFullPath.EndsWith([System.IO.Path]::DirectorySeparatorChar)) {
+        $baseFullPath += [System.IO.Path]::DirectorySeparatorChar
+    }
+    $pathFullPath = [System.IO.Path]::GetFullPath($Path)
+    $baseUri = New-Object System.Uri($baseFullPath)
+    $pathUri = New-Object System.Uri($pathFullPath)
+    $relativeUri = $baseUri.MakeRelativeUri($pathUri).ToString()
+    if ([string]::IsNullOrWhiteSpace($relativeUri)) {
+        return "."
+    }
+    return [System.Uri]::UnescapeDataString($relativeUri).Replace("/", "\")
+}
+
+$files = Get-ChildItem -Path $DistDir -Recurse | Where-Object { -not $_.PSIsContainer } | Sort-Object FullName
 $directories = @{}
 foreach ($file in $files) {
-    $relativeDir = [System.IO.Path]::GetRelativePath($DistDir, $file.DirectoryName)
+    $relativeDir = Get-RelativePath $DistDir $file.DirectoryName
     if ($relativeDir -eq ".") {
         continue
     }
@@ -78,8 +103,8 @@ foreach ($entry in $directories.GetEnumerator() | Sort-Object { ($_.Key -split "
 $componentsXml = New-Object System.Text.StringBuilder
 $componentRefsXml = New-Object System.Text.StringBuilder
 foreach ($file in $files) {
-    $relativeFile = [System.IO.Path]::GetRelativePath($DistDir, $file.FullName)
-    $relativeDir = [System.IO.Path]::GetRelativePath($DistDir, $file.DirectoryName)
+    $relativeFile = Get-RelativePath $DistDir $file.FullName
+    $relativeDir = Get-RelativePath $DistDir $file.DirectoryName
     $normalizedRelativeFile = $relativeFile.Replace("/", "\")
     $directoryId = if ($relativeDir -eq ".") { "INSTALLFOLDER" } else { $directories[$relativeDir] }
     $componentId = New-StableId "Cmp" $relativeFile
