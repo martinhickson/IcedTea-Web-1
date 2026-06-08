@@ -1,5 +1,11 @@
 $ErrorActionPreference = "Stop"
 
+$env:DOTNET_ROOT = if ($env:DOTNET_ROOT) { $env:DOTNET_ROOT } else { "C:\dotnet" }
+$env:DOTNET_CLI_TELEMETRY_OPTOUT = "1"
+$dotnetTools = "C:\Users\ContainerAdministrator\.dotnet\tools"
+$pathEntries = @($env:DOTNET_ROOT, $dotnetTools, $env:PATH) | Where-Object { $_ }
+$env:PATH = ($pathEntries -join ";")
+
 $RootDir = if ($env:ITW_WORKSPACE) { $env:ITW_WORKSPACE } else { "C:\workspace" }
 $Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "1.0.1-SNAPSHOT" }
 $DistDir = if ($env:ITW_DIST_DIR) {
@@ -152,7 +158,7 @@ $WixExe = if (Test-Path "C:\Users\ContainerAdministrator\.dotnet\tools\wix.exe" 
     "wix"
 }
 
-& $WixExe build $WxsPath -arch x64 -o $MsiPath
+& $WixExe build -acceptEula wix7 $WxsPath -arch x64 -o $MsiPath
 if ($LASTEXITCODE -ne 0) {
     throw "WiX MSI build failed."
 }
