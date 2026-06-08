@@ -61,6 +61,7 @@ internal static class Program
         }
         catch (Exception ex)
         {
+            WriteLauncherFailure(ex);
             Console.Error.WriteLine("IcedTea-Web .NET launcher failed: " + ex.Message);
             Console.Error.WriteLine(ex);
             return 1;
@@ -294,6 +295,12 @@ internal static class Program
 
     private static int RunJava(string javaExecutable, IReadOnlyList<string> command)
     {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            && !IsTruthy(Environment.GetEnvironmentVariable("ITW_PRESERVE_STDIO")))
+        {
+            return RunJavaWithRedirectedOutput(javaExecutable, command);
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = javaExecutable,
@@ -308,6 +315,65 @@ internal static class Program
             ?? throw new InvalidOperationException("Unable to start Java process");
         process.WaitForExit();
         return process.ExitCode;
+    }
+
+    private static int RunJavaWithRedirectedOutput(string javaExecutable, IReadOnlyList<string> command)
+    {
+        var logBasePath = CreateLauncherLogBasePath();
+        var stdoutPath = logBasePath + ".out.log";
+        var stderrPath = logBasePath + ".err.log";
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = javaExecutable,
+            UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var arg in command)
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start Java process");
+        using var stdout = File.Create(stdoutPath);
+        using var stderr = File.Create(stderrPath);
+        var stdoutCopy = process.StandardOutput.BaseStream.CopyToAsync(stdout);
+        var stderrCopy = process.StandardError.BaseStream.CopyToAsync(stderr);
+        process.WaitForExit();
+        stdoutCopy.GetAwaiter().GetResult();
+        stderrCopy.GetAwaiter().GetResult();
+        return process.ExitCode;
+    }
+
+    private static string CreateLauncherLogBasePath()
+    {
+        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(root))
+        {
+            root = Path.GetTempPath();
+        }
+        var logDirectory = Path.Combine(root, "IcedTea-Web", "logs");
+        Directory.CreateDirectory(logDirectory);
+        var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff");
+        return Path.Combine(logDirectory, "javaws-" + stamp + "-" + Environment.ProcessId);
+    }
+
+    private static void WriteLauncherFailure(Exception ex)
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return;
+        }
+        try
+        {
+            var logPath = CreateLauncherLogBasePath() + ".launcher-error.log";
+            File.WriteAllText(logPath, "IcedTea-Web .NET launcher failed: " + ex + Environment.NewLine);
+        }
+        catch
+        {
+            // Avoid masking the original launcher failure.
+        }
     }
 
     private static int DetectJavaMajorVersion(string javaExecutable)

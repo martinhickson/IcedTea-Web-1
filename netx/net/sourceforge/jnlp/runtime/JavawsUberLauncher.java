@@ -9,6 +9,10 @@ package net.sourceforge.jnlp.runtime;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import javax.swing.JFileChooser;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
+import javax.swing.filechooser.FileFilter;
 import net.sourceforge.jnlp.Launcher;
 
 /**
@@ -27,7 +31,53 @@ public final class JavawsUberLauncher {
 
     public static void main(String[] args) throws Exception {
         ensureLauncherLocation();
+        args = chooseJnlpFileWhenNoArguments(args);
+        if (args == null) {
+            return;
+        }
         Boot.main(args);
+    }
+
+    private static String[] chooseJnlpFileWhenNoArguments(String[] args) throws Exception {
+        if (args.length > 0 || !"javaws".equals(System.getProperty("icedtea-web.bin.name"))) {
+            return args;
+        }
+        File selected = chooseJnlpFile();
+        return selected == null ? null : new String[] { selected.getAbsolutePath() };
+    }
+
+    private static File chooseJnlpFile() throws Exception {
+        final File[] selected = new File[1];
+        SwingUtilities.invokeAndWait(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
+                } catch (Exception ignored) {
+                    // Fall back to Swing's default look and feel if the platform one is unavailable.
+                }
+                JFileChooser chooser = new JFileChooser();
+                chooser.setDialogTitle("Choose JNLP Application to Launch");
+                chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
+                chooser.setAcceptAllFileFilterUsed(true);
+                chooser.setFileFilter(new FileFilter() {
+                    @Override
+                    public boolean accept(File file) {
+                        return file.isDirectory() || file.getName().toLowerCase().endsWith(".jnlp");
+                    }
+
+                    @Override
+                    public String getDescription() {
+                        return "JNLP applications (*.jnlp)";
+                    }
+                });
+                int result = chooser.showOpenDialog(null);
+                if (result == JFileChooser.APPROVE_OPTION) {
+                    selected[0] = chooser.getSelectedFile();
+                }
+            }
+        });
+        return selected[0];
     }
 
     private static void ensureLauncherLocation() {

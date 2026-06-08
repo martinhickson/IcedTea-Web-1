@@ -12,4 +12,5 @@
     <SelfContained>true</SelfContained>
     <PublishReadyToRun>true</PublishReadyToRun>
   </PropertyGroup>
+
 </Project>

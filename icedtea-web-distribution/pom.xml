@@ -19,6 +19,7 @@
     <itw.distribution.platform>linux</itw.distribution.platform>
     <itw.dotnet.runtime.identifier>linux-x64</itw.dotnet.runtime.identifier>
     <itw.dotnet.framework>net8.0</itw.dotnet.framework>
+    <itw.dotnet.outputType>Exe</itw.dotnet.outputType>
     <itw.dotnet.selfContained>true</itw.dotnet.selfContained>
     <itw.launcher.extension></itw.launcher.extension>
     <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz</itw.corretto.url>
@@ -111,6 +112,7 @@
                 <argument>-p:PublishSingleFile=false</argument>
                 <argument>-p:PublishReadyToRun=true</argument>
                 <argument>-p:DebugType=none</argument>
+                <argument>-p:OutputType=${itw.dotnet.outputType}</argument>
                 <argument>--output</argument>
                 <argument>${project.build.directory}/dotnet-publish</argument>
               </arguments>
@@ -153,6 +155,7 @@
       <properties>
         <itw.distribution.platform>windows</itw.distribution.platform>
         <itw.dotnet.runtime.identifier>win-x64</itw.dotnet.runtime.identifier>
+        <itw.dotnet.outputType>WinExe</itw.dotnet.outputType>
         <itw.launcher.extension>.exe</itw.launcher.extension>
         <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip</itw.corretto.url>
         <itw.corretto.archive>${project.build.directory}/downloads/corretto-windows-jdk.zip</itw.corretto.archive>
