@@ -35,7 +35,7 @@ if ($LASTEXITCODE -ne 0) {
     --env "ITW_PACKAGE_NAME=$env:ITW_PACKAGE_NAME" `
     --env "ITW_PACKAGE_MANUFACTURER=$env:ITW_PACKAGE_MANUFACTURER" `
     $ImageName `
-    pwsh -File "C:\workspace\packaging\windows\container-build-msi.ps1"
+    powershell -NoLogo -NoProfile -ExecutionPolicy Bypass -File "C:\workspace\packaging\windows\container-build-msi.ps1"
 if ($LASTEXITCODE -ne 0) {
     throw "Windows MSI Docker build failed."
 }

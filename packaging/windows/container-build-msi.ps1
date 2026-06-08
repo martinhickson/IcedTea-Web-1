@@ -121,7 +121,13 @@ $componentRefsXml
 </Wix>
 "@ | Set-Content -Path $WxsPath -Encoding UTF8
 
-wix build $WxsPath -arch x64 -o $MsiPath
+$WixExe = if (Test-Path "C:\Users\ContainerAdministrator\.dotnet\tools\wix.exe" -PathType Leaf) {
+    "C:\Users\ContainerAdministrator\.dotnet\tools\wix.exe"
+} else {
+    "wix"
+}
+
+& $WixExe build $WxsPath -arch x64 -o $MsiPath
 if ($LASTEXITCODE -ne 0) {
     throw "WiX MSI build failed."
 }

@@ -10,4 +10,5 @@ RUN [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tl
 ENV DOTNET_ROOT=C:\dotnet
 ENV PATH=C:\dotnet;C:\Users\ContainerAdministrator\.dotnet\tools;C:\Windows\System32;C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0
 
-RUN dotnet tool install --global wix
+RUN ["C:\\dotnet\\dotnet.exe", "tool", "install", "--global", "wix"]
+RUN if (-not (Test-Path C:\Users\ContainerAdministrator\.dotnet\tools\wix.exe)) { throw 'WiX tool install did not produce wix.exe' }
