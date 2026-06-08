@@ -1,16 +1,28 @@
-name: Build
+name: Release
 
 on:
   workflow_dispatch:
     inputs:
-      release:
-        description: 'Set to True if running a release'
+      release_version:
+        description: 'Release version for Maven and native packages (e.g., 1.8.8.22)'
         required: true
-        default: 'True'
-      version:
-        description: 'Release tag/version'
+        default: '1.8.8.22'
+        type: string
+      release_branch:
+        description: 'Release branch to create and build'
         required: true
-        default: 'icedtea-web-1.8.8.21'
+        default: 'release/icedtea-web-1.8.8.22'
+        type: string
+      release_tag:
+        description: 'Release tag to create'
+        required: true
+        default: 'icedtea-web-1.8.8.22'
+        type: string
+      release_name:
+        description: 'GitHub Release title'
+        required: true
+        default: 'IcedTea-Web 1.8.8.22'
+        type: string
       dotnet-self-contained:
         description: 'Bundle the .NET runtime in the launcher distribution'
         required: true
@@ -23,28 +35,99 @@ on:
     branches:
       - 1.8
 
+permissions:
+  contents: write
+  packages: read
+
+env:
+  RELEASE_VERSION: ${{ inputs.release_version || '1.0.1-SNAPSHOT' }}
+
 jobs:
   release:
-    if: github.event_name == 'workflow_dispatch' && inputs.release == 'True'
-    name: Create draft release
+    if: github.event_name == 'workflow_dispatch'
+    name: Prepare release branch and tag
     runs-on: ubuntu-latest
+    env:
+      RELEASE_VERSION: ${{ inputs.release_version }}
+      RELEASE_BRANCH: ${{ inputs.release_branch }}
+      RELEASE_TAG: ${{ inputs.release_tag }}
+      RELEASE_NAME: ${{ inputs.release_name }}
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Create release branch
+        run: |
+          if git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" >/dev/null 2>&1; then
+            git fetch origin "${RELEASE_BRANCH}"
+            git checkout -B "${RELEASE_BRANCH}" "origin/${RELEASE_BRANCH}"
+            echo "Using existing branch: ${RELEASE_BRANCH}"
+          else
+            git checkout -b "${RELEASE_BRANCH}"
+            echo "Created branch: ${RELEASE_BRANCH}"
+          fi
+
+      - name: Set up Corretto 11 for release preparation
+        uses: actions/setup-java@v5
+        with:
+          java-version: '11'
+          distribution: 'corretto'
+
+      - name: Update Maven versions
+        run: |
+          mvn -P maven-distribution versions:set \
+            -DnewVersion="${RELEASE_VERSION}" \
+            -DprocessAllModules \
+            -DgenerateBackupPoms=false
+
+      - name: Commit and push release branch
+        run: |
+          git add -A
+          if git diff --staged --quiet; then
+            echo "No release version changes to commit."
+          else
+            git commit -m "Release version ${RELEASE_VERSION}"
+          fi
+          git push origin "${RELEASE_BRANCH}"
+
+      - name: Create and push release tag
+        run: |
+          if git ls-remote --exit-code --tags origin "refs/tags/${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Using existing tag: ${RELEASE_TAG}"
+          else
+            git tag -a "${RELEASE_TAG}" -m "Release ${RELEASE_VERSION}"
+            git push origin "${RELEASE_TAG}"
+          fi
 
       - name: Create or update draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "${{ inputs.version }}" >/dev/null 2>&1; then
-            gh release edit "${{ inputs.version }}" \
+          notes="$(cat <<EOF
+          Automated Maven/.NET distribution build for ${RELEASE_VERSION}.
+
+          Release branch: ${RELEASE_BRANCH}
+          Tag: ${RELEASE_TAG}
+          EOF
+          )"
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            gh release edit "${RELEASE_TAG}" \
               --draft \
-              --title "Enhanced Release of ${{ inputs.version }}"
+              --title "${RELEASE_NAME}" \
+              --notes "${notes}"
           else
-            gh release create "${{ inputs.version }}" \
+            gh release create "${RELEASE_TAG}" \
               --draft \
-              --title "Enhanced Release of ${{ inputs.version }}" \
-              --notes "Automated Maven/.NET distribution build for ${{ inputs.version }}."
+              --title "${RELEASE_NAME}" \
+              --notes "${notes}"
           fi
 
   dotnet-distribution:
@@ -79,10 +162,12 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.release_branch || github.ref }}
 
       - name: Set up Corretto 11 compiler
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '11'
           distribution: 'corretto'
@@ -92,7 +177,7 @@ jobs:
         shell: pwsh
 
       - name: Set up Corretto 11 Maven runtime
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           java-version: '11'
           distribution: 'corretto'
@@ -102,7 +187,7 @@ jobs:
         shell: pwsh
 
       - name: Set up .NET SDK
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v5
         with:
           dotnet-version: '8.0.x'
 
@@ -127,7 +212,7 @@ jobs:
         shell: pwsh
 
       - name: Cache Maven dependencies
-        uses: actions/cache@v4
+        uses: actions/cache@v5
         with:
           path: ~/.m2
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
@@ -182,14 +267,17 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           chmod +x "${{ matrix.smoke-script }}"
-          ITW_SMOKE_BUILD_TEST_APP=false ITW_SMOKE_TIMEOUT_SECONDS=180 "${{ matrix.smoke-script }}"
+          ITW_VERSION="${{ env.RELEASE_VERSION }}" \
+          ITW_SMOKE_BUILD_TEST_APP=false \
+          ITW_SMOKE_TIMEOUT_SECONDS=180 \
+          "${{ matrix.smoke-script }}"
         shell: bash
 
       - name: Build Linux native packages in Docker
         if: runner.os == 'Linux'
         run: |
           chmod +x packaging/linux/build-native-packages.sh packaging/linux/container-build-package.sh
-          ITW_VERSION=1.0.1-SNAPSHOT \
+          ITW_VERSION="${{ env.RELEASE_VERSION }}" \
           ITW_PACKAGE_FORMATS="deb rpm" \
           packaging/linux/build-native-packages.sh
         shell: bash
@@ -197,6 +285,7 @@ jobs:
       - name: Run Windows JNLP smoke test from normal distribution ZIP
         if: runner.os == 'Windows'
         run: |
+          $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
           $env:ITW_SMOKE_BUILD_TEST_APP = "false"
           $env:ITW_SMOKE_TIMEOUT_SECONDS = "180"
           & "${{ matrix.smoke-script }}"
@@ -215,7 +304,7 @@ jobs:
       - name: Build Windows MSI in Windows Server Core Docker
         if: runner.os == 'Windows'
         run: |
-          $env:ITW_VERSION = "1.0.1-SNAPSHOT"
+          $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
           & packaging/windows/build-msi.ps1
         shell: pwsh
 
@@ -236,7 +325,7 @@ jobs:
         shell: pwsh
 
       - name: Upload distribution artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: icedtea-web-maven-${{ matrix.rid }}
           path: |
@@ -246,7 +335,7 @@ jobs:
 
       - name: Upload Linux native packages
         if: runner.os == 'Linux'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: icedtea-web-native-${{ matrix.rid }}
           path: |
@@ -258,7 +347,7 @@ jobs:
 
       - name: Upload Windows MSI
         if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: icedtea-web-msi-${{ matrix.rid }}
           path: |
@@ -267,7 +356,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload release assets
-        if: github.event_name == 'workflow_dispatch' && inputs.release == 'True'
+        if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -288,5 +377,5 @@ jobs:
           if ($files.Count -eq 0) {
             throw "No release assets found to upload."
           }
-          & gh release upload "${{ inputs.version }}" @files --clobber
+          & gh release upload "${{ inputs.release_tag }}" @files --clobber
         shell: pwsh
