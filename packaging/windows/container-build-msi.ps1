@@ -11,7 +11,7 @@ $Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "1.0.1-SNAPSHOT" }
 $DistDir = if ($env:ITW_DIST_DIR) {
     $env:ITW_DIST_DIR
 } else {
-    Join-Path $RootDir "icedtea-web-distribution\target\dist\icedtea-web-maven-$Version"
+    Join-Path $RootDir "icedtea-web-distribution\target\dist\icedtea-web-$Version"
 }
 $OutputDir = if ($env:ITW_NATIVE_OUTPUT_DIR) {
     $env:ITW_NATIVE_OUTPUT_DIR
@@ -33,8 +33,8 @@ if (-not (Test-Path (Join-Path $DistDir "bin\javaws.exe") -PathType Leaf)) {
 }
 
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
-$WxsPath = Join-Path $OutputDir "icedtea-web-dotnet.wxs"
-$MsiPath = Join-Path $OutputDir "icedtea-web-dotnet-$Version-win-x64.msi"
+$WxsPath = Join-Path $OutputDir "icedtea-web.wxs"
+$MsiPath = Join-Path $OutputDir "icedtea-web-$Version-win-x64.msi"
 
 function New-StableId {
     param([string]$Prefix, [string]$Value)

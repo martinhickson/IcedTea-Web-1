@@ -12,6 +12,10 @@ on:
           - 'true'
           - 'false'
 
+permissions:
+  contents: read
+  packages: read
+
 jobs:
   dotnet-distribution:
     name: Build ${{ matrix.rid }}
@@ -97,7 +101,7 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
-      - name: Build Maven .NET distribution
+      - name: Build distribution
         run: |
           $mvnArgs = @(
             "-P", "maven-distribution",
@@ -181,7 +185,7 @@ jobs:
       - name: Upload distribution artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: icedtea-web-maven-${{ matrix.rid }}
+          name: icedtea-web-${{ matrix.rid }}
           path: icedtea-web-distribution/target/*.zip
           if-no-files-found: error
 

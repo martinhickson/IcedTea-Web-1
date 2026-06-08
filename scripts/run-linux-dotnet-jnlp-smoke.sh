@@ -2,7 +2,7 @@
 #
 # Run a local Linux .NET-launcher JNLP smoke test.
 #
-# This consumes the normal Maven .NET Linux distribution artifact from
+# This consumes the normal IcedTea-Web Linux distribution artifact from
 # icedtea-web-distribution/target, extracts its javaws launcher, serves a JNLP
 # from a temporary local HTTP server, and streams javaws output.
 
@@ -10,7 +10,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${ITW_VERSION:-1.0.1-SNAPSHOT}"
-DIST_ZIP="${ITW_DOTNET_LINUX_ZIP:-$ROOT_DIR/icedtea-web-distribution/target/icedtea-web-maven-$VERSION-linux-x64.zip}"
+DIST_ZIP="${ITW_DOTNET_LINUX_ZIP:-$ROOT_DIR/icedtea-web-distribution/target/icedtea-web-$VERSION-linux-x64.zip}"
 DIST_DIR="${ITW_DOTNET_DIST_DIR:-}"
 JAVAWS_BIN="${ITW_JAVAWS_BIN:-}"
 APP_JAR="${ITW_HEADLESS_APP_JAR:-$ROOT_DIR/icedtea-web-integration/target/icedtea-web-integration-$VERSION-headless-app.jar}"

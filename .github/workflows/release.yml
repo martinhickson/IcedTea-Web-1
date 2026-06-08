@@ -4,24 +4,24 @@ on:
   workflow_dispatch:
     inputs:
       release_version:
-        description: 'Release version for Maven and native packages (e.g., 1.8.8.22)'
+        description: 'Release version for distribution and native packages (e.g., 1.8.8.23)'
         required: true
-        default: '1.8.8.22'
+        default: '1.8.8.23'
         type: string
       release_branch:
         description: 'Release branch to create and build'
         required: true
-        default: 'release/icedtea-web-1.8.8.22'
+        default: 'release/icedtea-web-1.8.8.23'
         type: string
       release_tag:
         description: 'Release tag to create'
         required: true
-        default: 'icedtea-web-1.8.8.22'
+        default: 'icedtea-web-1.8.8.23'
         type: string
       release_name:
         description: 'GitHub Release title'
         required: true
-        default: 'IcedTea-Web 1.8.8.22'
+        default: 'IcedTea-Web v1.8.8.23'
         type: string
       dotnet-self-contained:
         description: 'Bundle the .NET runtime in the launcher distribution'
@@ -112,7 +112,20 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           notes="$(cat <<EOF
-          Automated Maven/.NET distribution build for ${RELEASE_VERSION}.
+          IcedTea-Web ${RELEASE_VERSION} keeps Java Web Start practical on current desktop systems. It is for teams and users who still rely on JNLP applications and want a maintained, installable IcedTea-Web build without being pinned to an old Java 8 desktop setup.
+
+          This release focuses on the hard operational work around IcedTea-Web: repeatable builds, platform-specific packaging, bundled runtime support, and clear release provenance. The result is a set of ready-to-use Windows, Linux, and macOS artifacts built from a dedicated release branch and tag, with smoke tests and checksums produced as part of the release pipeline.
+
+          ## Highlights
+
+          - Runs JNLP applications through the familiar IcedTea-Web `javaws` flow, with packaged launchers for modern desktop environments.
+          - Provides platform builds for Windows x64, Linux x64, macOS Intel, and macOS Apple Silicon.
+          - Includes native packages where they matter: Windows MSI plus Linux DEB and RPM packages.
+          - Bundles Amazon Corretto 11 so installs are less dependent on a user-managed system JDK.
+          - Publishes SHA-256 checksum files for every release asset.
+          - Builds from a versioned release branch and annotated tag, then uploads the exact artifacts produced by CI.
+
+          This is deliberately not a wholesale replacement of IcedTea-Web. It is a practical continuation: preserve the proven JNLP core, modernize the release engineering around it, and make the downloads easier to trust and install.
 
           Release branch: ${RELEASE_BRANCH}
           Tag: ${RELEASE_TAG}
@@ -133,7 +146,7 @@ jobs:
   dotnet-distribution:
     if: always()
     needs: release
-    name: Maven .NET Distribution (${{ matrix.rid }})
+    name: Distribution (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -218,7 +231,7 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
-      - name: Build Maven .NET distribution
+      - name: Build distribution
         run: |
           $selfContained = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             "${{ inputs.dotnet-self-contained }}"
@@ -327,7 +340,7 @@ jobs:
       - name: Upload distribution artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: icedtea-web-maven-${{ matrix.rid }}
+          name: icedtea-web-${{ matrix.rid }}
           path: |
             icedtea-web-distribution/target/*.zip
             icedtea-web-distribution/target/*.zip.sha256.txt

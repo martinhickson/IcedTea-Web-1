@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 # Run a local Windows .NET-launcher JNLP smoke test.
 #
-# This consumes the normal Maven .NET Windows distribution artifact from
+# This consumes the normal IcedTea-Web Windows distribution artifact from
 # icedtea-web-distribution/target, extracts its javaws.exe launcher, serves a
 # JNLP from a temporary local HTTP server, and prints the javaws output.
 
@@ -11,7 +11,7 @@ $Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "1.0.1-SNAPSHOT" }
 $DistZip = if ($env:ITW_DOTNET_WINDOWS_ZIP) {
     $env:ITW_DOTNET_WINDOWS_ZIP
 } else {
-    Join-Path $RootDir "icedtea-web-distribution\target\icedtea-web-maven-$Version-win-x64.zip"
+    Join-Path $RootDir "icedtea-web-distribution\target\icedtea-web-$Version-win-x64.zip"
 }
 $DistDir = $env:ITW_DOTNET_DIST_DIR
 $JavawsBin = $env:ITW_JAVAWS_BIN
