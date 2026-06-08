@@ -5,7 +5,7 @@
   <parent>
     <groupId>net.sourceforge.icedtea-web</groupId>
     <artifactId>icedtea-web-parent</artifactId>
-    <version>1.0.1-SNAPSHOT</version>
+    <version>2.0.1-SNAPSHOT</version>
   </parent>
 
   <artifactId>icedtea-web</artifactId>
@@ -17,8 +17,11 @@
   <properties>
     <maven.build.helper.plugin.version>3.3.0</maven.build.helper.plugin.version>
     <maven.shade.plugin.version>3.5.1</maven.shade.plugin.version>
+    <exec.maven.plugin.version>3.1.1</exec.maven.plugin.version>
     <uberjar.mainClass>net.sourceforge.jnlp.runtime.JavawsUberLauncher</uberjar.mainClass>
     <uberjar.classifier>uber</uberjar.classifier>
+    <itw.generated.resources.dir>${project.build.directory}/generated-resources/net/sourceforge/jnlp/resources</itw.generated.resources.dir>
+    <itw.html.gen.changesets>140</itw.html.gen.changesets>
   </properties>
 
   <dependencies>
@@ -264,6 +267,17 @@
         <version>3.6.0</version>
         <executions>
           <execution>
+            <id>copy-runtime-deps-for-docgen</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/dependency-jars</outputDirectory>
+              <includeScope>runtime</includeScope>
+            </configuration>
+          </execution>
+          <execution>
             <id>copy-bytebuddy-agent</id>
             <phase>package</phase>
             <goals>
@@ -285,32 +299,119 @@
       </plugin>
 
       <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <version>3.1.0</version>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${exec.maven.plugin.version}</version>
         <executions>
+          <execution>
+            <id>generate-about-html</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <workingDirectory>${project.basedir}</workingDirectory>
+              <executable>bash</executable>
+              <arguments>
+                <argument>-c</argument>
+                <argument><![CDATA[
+set -euo pipefail
+OUT_DIR="target/generated-resources/net/sourceforge/jnlp/resources"
+WORK_DIR="target/html-gen-work"
+mkdir -p "$OUT_DIR" "$WORK_DIR/html-gen"
+cp ../AUTHORS ../NEWS ../COPYING ../ChangeLog "$WORK_DIR/html-gen/"
+(cd "$WORK_DIR" && bash ../../../html-gen.sh "${itw.html.gen.changesets}")
+cp "$WORK_DIR/html-gen"/*.html "$OUT_DIR/"
+                ]]></argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>generate-about-intro-pages</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <workingDirectory>${project.basedir}</workingDirectory>
+              <executable>bash</executable>
+              <arguments>
+                <argument>-c</argument>
+                <argument><![CDATA[
+set -euo pipefail
+OUT_DIR="target/generated-resources/net/sourceforge/jnlp/resources"
+mkdir -p "$OUT_DIR"
+case "$(uname -s 2>/dev/null || echo)" in
+  MINGW*|MSYS*|CYGWIN*) CP_SEP=';' ;;
+  *) CP_SEP=':' ;;
+esac
+TP_CLASSPATH="target/classes"
+for JAR in target/dependency-jars/*.jar; do
+  [ -f "$JAR" ] || continue
+  TP_CLASSPATH="${TP_CLASSPATH}${CP_SEP}${JAR}"
+done
+for LANG_ID in en_US.UTF-8 cs_CZ.UTF-8 pl_PL.UTF-8 de_DE.UTF-8; do
+  ID="${LANG_ID%%_*}"
+  LANG="$LANG_ID" java -cp "$TP_CLASSPATH" net.sourceforge.jnlp.util.docprovider.TextsProvider \
+    htmlIntro "$OUT_DIR/about_${ID}.html" false "${project.version}"
+done
+                ]]></argument>
+              </arguments>
+            </configuration>
+          </execution>
           <execution>
             <id>generate-javaws-launcher</id>
             <phase>package</phase>
             <goals>
-              <goal>run</goal>
+              <goal>exec</goal>
             </goals>
             <configuration>
-              <target>
-                <mkdir dir="${project.build.directory}/bin"/>
-                <copy file="${project.basedir}/../scripts/javaws.sh" tofile="${project.build.directory}/bin/javaws" overwrite="true" filtering="true">
-                  <filterset>
-                    <filter token="ITW_UBER_JAR" value="${project.build.directory}/${project.build.finalName}-${uberjar.classifier}.jar"/>
-                    <filter token="BYTEBUDDY_AGENT_JAR" value="${project.build.directory}/bin/byte-buddy-agent.jar"/>
-                    <filter token="MAIN_CLASS" value="${uberjar.mainClass}"/>
-                  </filterset>
-                </copy>
-                <chmod file="${project.build.directory}/bin/javaws" perm="ugo+rx"/>
-              </target>
+              <workingDirectory>${project.basedir}</workingDirectory>
+              <executable>bash</executable>
+              <arguments>
+                <argument>-c</argument>
+                <argument><![CDATA[
+set -euo pipefail
+OUT="target/bin/javaws"
+mkdir -p target/bin
+UBER_JAR="target/${project.build.finalName}-${uberjar.classifier}.jar"
+BYTEBUDDY_AGENT_JAR="target/bin/byte-buddy-agent.jar"
+sed \
+  -e "s|@ITW_UBER_JAR@|${UBER_JAR}|g" \
+  -e "s|@BYTEBUDDY_AGENT_JAR@|${BYTEBUDDY_AGENT_JAR}|g" \
+  -e "s|@MAIN_CLASS@|${uberjar.mainClass}|g" \
+  ../scripts/javaws.sh > "$OUT"
+chmod ugo+rx "$OUT"
+                ]]></argument>
+              </arguments>
             </configuration>
           </execution>
         </executions>
       </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>copy-generated-about-docs</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}/net/sourceforge/jnlp/resources</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${itw.generated.resources.dir}</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
     </plugins>
   </build>
 

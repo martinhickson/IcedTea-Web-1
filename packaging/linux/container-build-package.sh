@@ -3,7 +3,7 @@ set -euo pipefail
 
 FORMAT="${1:?Usage: container-build-package.sh deb|rpm}"
 ROOT_DIR="${ITW_WORKSPACE:-/workspace}"
-VERSION="${ITW_VERSION:-1.0.1-SNAPSHOT}"
+VERSION="${ITW_VERSION:-2.0.1-SNAPSHOT}"
 DIST_DIR="${ITW_DIST_DIR:-$ROOT_DIR/icedtea-web-distribution/target/dist/icedtea-web-$VERSION}"
 OUTPUT_DIR="${ITW_NATIVE_OUTPUT_DIR:-$ROOT_DIR/icedtea-web-distribution/target/native-packages}"
 PACKAGE_NAME="${ITW_PACKAGE_NAME:-icedtea-web}"

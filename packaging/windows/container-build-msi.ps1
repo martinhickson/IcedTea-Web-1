@@ -7,7 +7,7 @@ $pathEntries = @($env:DOTNET_ROOT, $dotnetTools, $env:PATH) | Where-Object { $_ 
 $env:PATH = ($pathEntries -join ";")
 
 $RootDir = if ($env:ITW_WORKSPACE) { $env:ITW_WORKSPACE } else { "C:\workspace" }
-$Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "1.0.1-SNAPSHOT" }
+$Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "2.0.1-SNAPSHOT" }
 $DistDir = if ($env:ITW_DIST_DIR) {
     $env:ITW_DIST_DIR
 } else {

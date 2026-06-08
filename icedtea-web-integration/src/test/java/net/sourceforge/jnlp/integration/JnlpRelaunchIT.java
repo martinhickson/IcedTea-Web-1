@@ -40,7 +40,7 @@ public class JnlpRelaunchIT {
         markerDir = Files.createTempDirectory("itw-relaunch");
         marker = markerDir.resolve("success.marker");
 
-        Path source = Paths.get("target", "icedtea-web-integration-1.0.1-SNAPSHOT-headless-app.jar");
+        Path source = Paths.get("target", "icedtea-web-integration-2.0.1-SNAPSHOT-headless-app.jar");
         assumeTrue(Files.exists(source));
         Files.copy(source, webRoot.resolve("headless-app.jar"));
 
