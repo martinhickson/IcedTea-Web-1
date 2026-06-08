@@ -151,44 +151,34 @@ function Start-Javaws {
     param(
         [string]$Launcher,
         [string]$JnlpUrl,
-        [string]$LogFile
+        [string]$OutLogFile,
+        [string]$ErrLogFile
     )
 
-    $psi = [System.Diagnostics.ProcessStartInfo]::new()
-    $psi.FileName = $Launcher
-    $psi.UseShellExecute = $false
-    $psi.RedirectStandardOutput = $true
-    $psi.RedirectStandardError = $true
-    foreach ($arg in @("-headless", "-verbose", "-Xtrustall", "-Xnofork", $JnlpUrl)) {
-        [void]$psi.ArgumentList.Add($arg)
-    }
+    Start-Process `
+        -FilePath $Launcher `
+        -ArgumentList @("-headless", "-verbose", "-Xtrustall", "-Xnofork", $JnlpUrl) `
+        -RedirectStandardOutput $OutLogFile `
+        -RedirectStandardError $ErrLogFile `
+        -PassThru `
+        -WindowStyle Hidden
+}
 
-    $process = [System.Diagnostics.Process]::new()
-    $process.StartInfo = $psi
-    $writer = [System.IO.StreamWriter]::new($LogFile, $false, [System.Text.Encoding]::UTF8)
-    $process.add_OutputDataReceived({
-        if ($null -ne $_.Data) {
-            $writer.WriteLine($_.Data)
-            $writer.Flush()
+function Test-LogForSuccess {
+    param([string[]]$LogFiles)
+
+    foreach ($logFile in $LogFiles) {
+        if ((Test-Path $logFile -PathType Leaf) -and (Select-String -Path $logFile -Pattern "ITW_INTEGRATION_SUCCESS" -Quiet)) {
+            return $true
         }
-    })
-    $process.add_ErrorDataReceived({
-        if ($null -ne $_.Data) {
-            $writer.WriteLine($_.Data)
-            $writer.Flush()
-        }
-    })
-    [void]$process.Start()
-    $process.BeginOutputReadLine()
-    $process.BeginErrorReadLine()
-    $process | Add-Member -NotePropertyName SmokeLogWriter -NotePropertyValue $writer
-    return $process
+    }
+    return $false
 }
 
 function Wait-ForLaunch {
     param(
         [string]$Marker,
-        [string]$LogFile
+        [string[]]$LogFiles
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -196,11 +186,11 @@ function Wait-ForLaunch {
         if ((Test-Path $Marker -PathType Leaf) -and ((Get-Item $Marker).Length -gt 0)) {
             return $true
         }
-        if ((Test-Path $LogFile -PathType Leaf) -and (Select-String -Path $LogFile -Pattern "ITW_INTEGRATION_SUCCESS" -Quiet)) {
+        if (Test-LogForSuccess -LogFiles $LogFiles) {
             return $true
         }
         if ($JavawsProcess.HasExited) {
-            return (Test-Path $LogFile -PathType Leaf) -and (Select-String -Path $LogFile -Pattern "ITW_INTEGRATION_SUCCESS" -Quiet)
+            return Test-LogForSuccess -LogFiles $LogFiles
         }
         Start-Sleep -Milliseconds 500
     }
@@ -223,7 +213,8 @@ try {
     $SelectedPort = Get-FreePort
     $Marker = Join-Path $WorkDir "success.marker"
     $MarkerForJnlp = $Marker -replace "\\", "/"
-    $JavawsLog = Join-Path $WorkDir "javaws.log"
+    $JavawsOutLog = Join-Path $WorkDir "javaws.out.log"
+    $JavawsErrLog = Join-Path $WorkDir "javaws.err.log"
     $ServerOutLog = Join-Path $WorkDir "server.out.log"
     $ServerErrLog = Join-Path $WorkDir "server.err.log"
     $Codebase = "http://127.0.0.1:$SelectedPort/"
@@ -253,23 +244,24 @@ try {
     Write-Host "Launching with .NET javaws: $JavawsBin"
     Write-Host "JNLP URL: $JnlpUrl"
     Write-Host "Marker: $Marker"
-    Write-Host "javaws log: $JavawsLog"
-    $JavawsProcess = Start-Javaws -Launcher $JavawsBin -JnlpUrl $JnlpUrl -LogFile $JavawsLog
+    Write-Host "javaws stdout log: $JavawsOutLog"
+    Write-Host "javaws stderr log: $JavawsErrLog"
+    $JavawsProcess = Start-Javaws -Launcher $JavawsBin -JnlpUrl $JnlpUrl -OutLogFile $JavawsOutLog -ErrLogFile $JavawsErrLog
 
-    $succeeded = Wait-ForLaunch -Marker $Marker -LogFile $JavawsLog
+    $succeeded = Wait-ForLaunch -Marker $Marker -LogFiles @($JavawsOutLog, $JavawsErrLog)
     if ($succeeded -and -not $JavawsProcess.HasExited) {
         [void]$JavawsProcess.WaitForExit(10000)
     }
-    if ($JavawsProcess.PSObject.Properties["SmokeLogWriter"]) {
-        $JavawsProcess.SmokeLogWriter.Dispose()
-    }
 
-    if (Test-Path $JavawsLog -PathType Leaf) {
-        Get-Content -Path $JavawsLog
+    if (Test-Path $JavawsOutLog -PathType Leaf) {
+        Get-Content -Path $JavawsOutLog
+    }
+    if (Test-Path $JavawsErrLog -PathType Leaf) {
+        Get-Content -Path $JavawsErrLog
     }
 
     if (-not $succeeded) {
-        Write-Error "JNLP launch did not report success within ${TimeoutSeconds}s. Full javaws log: $JavawsLog; server logs: $ServerOutLog, $ServerErrLog"
+        Write-Error "JNLP launch did not report success within ${TimeoutSeconds}s. javaws logs: $JavawsOutLog, $JavawsErrLog; server logs: $ServerOutLog, $ServerErrLog"
         exit 1
     }
 
@@ -280,9 +272,6 @@ try {
         Get-Content -Path $Marker
     }
 } finally {
-    if ($null -ne $JavawsProcess -and $JavawsProcess.PSObject.Properties["SmokeLogWriter"]) {
-        $JavawsProcess.SmokeLogWriter.Dispose()
-    }
     Stop-SmokeProcess $JavawsProcess
     Stop-SmokeProcess $ServerProcess
     if (-not $KeepWorkDir -and (Test-Path $WorkDir -PathType Container)) {
