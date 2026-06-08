@@ -17,8 +17,11 @@
   <properties>
     <maven.build.helper.plugin.version>3.3.0</maven.build.helper.plugin.version>
     <maven.shade.plugin.version>3.5.1</maven.shade.plugin.version>
+    <exec.maven.plugin.version>3.1.1</exec.maven.plugin.version>
     <uberjar.mainClass>net.sourceforge.jnlp.runtime.JavawsUberLauncher</uberjar.mainClass>
     <uberjar.classifier>uber</uberjar.classifier>
+    <itw.generated.resources.dir>${project.build.directory}/generated-resources/net/sourceforge/jnlp/resources</itw.generated.resources.dir>
+    <itw.html.gen.changesets>140</itw.html.gen.changesets>
   </properties>
 
   <dependencies>
@@ -264,6 +267,17 @@
         <version>3.6.0</version>
         <executions>
           <execution>
+            <id>copy-runtime-deps-for-docgen</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>copy-dependencies</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.directory}/dependency-jars</outputDirectory>
+              <includeScope>runtime</includeScope>
+            </configuration>
+          </execution>
+          <execution>
             <id>copy-bytebuddy-agent</id>
             <phase>package</phase>
             <goals>
@@ -285,10 +299,99 @@
       </plugin>
 
       <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>exec-maven-plugin</artifactId>
+        <version>${exec.maven.plugin.version}</version>
+        <executions>
+          <execution>
+            <id>generate-about-intro-pages</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <executable>bash</executable>
+              <arguments>
+                <argument>-c</argument>
+                <argument><![CDATA[
+set -euo pipefail
+OUT_DIR="${itw.generated.resources.dir}"
+mkdir -p "$OUT_DIR"
+TP_CLASSPATH="${project.build.outputDirectory}"
+for JAR in "${project.build.directory}/dependency-jars"/*.jar; do
+  [ -f "$JAR" ] || continue
+  TP_CLASSPATH="${TP_CLASSPATH}:$JAR"
+done
+for LANG_ID in en_US.UTF-8 cs_CZ.UTF-8 pl_PL.UTF-8 de_DE.UTF-8; do
+  ID="${LANG_ID%%_*}"
+  LANG="$LANG_ID" "${jdk11.home}/bin/java" -cp "$TP_CLASSPATH" net.sourceforge.jnlp.util.docprovider.TextsProvider \
+    htmlIntro "$OUT_DIR/about_${ID}.html" false "${project.version}"
+done
+                ]]></argument>
+              </arguments>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-resources-plugin</artifactId>
+        <version>3.3.1</version>
+        <executions>
+          <execution>
+            <id>copy-generated-about-docs</id>
+            <phase>process-classes</phase>
+            <goals>
+              <goal>copy-resources</goal>
+            </goals>
+            <configuration>
+              <outputDirectory>${project.build.outputDirectory}/net/sourceforge/jnlp/resources</outputDirectory>
+              <resources>
+                <resource>
+                  <directory>${itw.generated.resources.dir}</directory>
+                </resource>
+              </resources>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
+      <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-antrun-plugin</artifactId>
         <version>3.1.0</version>
         <executions>
+          <execution>
+            <id>generate-about-html</id>
+            <phase>generate-resources</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <mkdir dir="${itw.generated.resources.dir}"/>
+                <mkdir dir="${project.build.directory}/html-gen-work/html-gen"/>
+                <copy todir="${project.build.directory}/html-gen-work/html-gen" overwrite="true">
+                  <fileset dir="${project.basedir}/..">
+                    <include name="AUTHORS"/>
+                    <include name="NEWS"/>
+                    <include name="COPYING"/>
+                    <include name="ChangeLog"/>
+                  </fileset>
+                </copy>
+                <exec executable="bash" dir="${project.build.directory}/html-gen-work" failonerror="true">
+                  <arg value="${project.basedir}/../html-gen.sh"/>
+                  <arg value="${itw.html.gen.changesets}"/>
+                </exec>
+                <copy todir="${itw.generated.resources.dir}" overwrite="true">
+                  <fileset dir="${project.build.directory}/html-gen-work/html-gen">
+                    <include name="*.html"/>
+                  </fileset>
+                </copy>
+              </target>
+            </configuration>
+          </execution>
           <execution>
             <id>generate-javaws-launcher</id>
             <phase>package</phase>

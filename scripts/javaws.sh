@@ -66,16 +66,26 @@ if [ "${major:-0}" -ge 9 ] 2>/dev/null; then
     --add-exports java.base/sun.net.www.protocol.http=ALL-UNNAMED
     --add-exports java.desktop/sun.applet=ALL-UNNAMED
     --add-exports java.desktop/sun.awt=ALL-UNNAMED
-    --add-exports java.desktop/sun.awt.windows=ALL-UNNAMED
     --add-exports java.desktop/sun.awt.image=ALL-UNNAMED
-    --add-exports java.desktop/sun.awt.X11=ALL-UNNAMED
     --add-exports java.desktop/sun.swing.table=ALL-UNNAMED
     --add-exports java.desktop/sun.swing=ALL-UNNAMED
     --add-exports java.desktop/sun.swing.plaf=ALL-UNNAMED
-    --add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
     --add-exports java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED
     --add-opens java.base/java.lang=ALL-UNNAMED
   )
+  case "$(uname -s)" in
+    Linux)
+      MODULAR_ARGS+=(
+        --add-exports java.desktop/sun.awt.X11=ALL-UNNAMED
+      )
+      ;;
+    MINGW*|MSYS*|CYGWIN*)
+      MODULAR_ARGS+=(
+        --add-exports java.desktop/sun.awt.windows=ALL-UNNAMED
+        --add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
+      )
+      ;;
+  esac
 fi
 
 if [ "$USE_BOOTCLASSPATH" = "YES" ]; then
