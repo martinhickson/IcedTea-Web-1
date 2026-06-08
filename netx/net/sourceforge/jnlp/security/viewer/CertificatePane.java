@@ -305,10 +305,8 @@ public class CertificatePane extends JPanel {
             File resolved = src.getCanonicalFile();
             if (resolved.equals(src)) {
                 certPath.setText(keyStore.getPath());
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, keyStore.getPath());
             } else {
                 certPath.setText(keyStore.getPath() + " -> " + resolved.getCanonicalPath());
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, keyStore.getPath() + " -> " + resolved.getCanonicalPath());
             }
         } catch (Exception ex) {
             OutputController.getLogger().log(ex);

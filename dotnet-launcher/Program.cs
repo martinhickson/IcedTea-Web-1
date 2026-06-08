@@ -426,30 +426,46 @@ internal static class Program
         return int.TryParse(firstPart, out var major) ? major : 8;
     }
 
-    private static IEnumerable<string> ModularJdkArguments() => new[]
+    private static IEnumerable<string> ModularJdkArguments()
     {
-        "--add-exports", "java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
-        "--add-opens", "java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
-        "--add-exports", "java.base/sun.security.action=ALL-UNNAMED",
-        "--add-exports", "java.base/sun.security.provider=ALL-UNNAMED",
-        "--add-exports", "java.base/sun.security.util=ALL-UNNAMED",
-        "--add-exports", "java.base/sun.security.validator=ALL-UNNAMED",
-        "--add-exports", "java.base/sun.security.x509=ALL-UNNAMED",
-        "--add-exports", "java.base/jdk.internal.util.jar=ALL-UNNAMED",
-        "--add-opens", "java.base/jdk.internal.util.jar=ALL-UNNAMED",
-        "--add-exports", "java.base/sun.net.www.protocol.http=ALL-UNNAMED",
-        "--add-exports", "java.desktop/sun.applet=ALL-UNNAMED",
-        "--add-exports", "java.desktop/sun.awt=ALL-UNNAMED",
-        "--add-exports", "java.desktop/sun.awt.windows=ALL-UNNAMED",
-        "--add-exports", "java.desktop/sun.awt.image=ALL-UNNAMED",
-        "--add-exports", "java.desktop/sun.awt.X11=ALL-UNNAMED",
-        "--add-exports", "java.desktop/sun.swing.table=ALL-UNNAMED",
-        "--add-exports", "java.desktop/sun.swing=ALL-UNNAMED",
-        "--add-exports", "java.desktop/sun.swing.plaf=ALL-UNNAMED",
-        "--add-exports", "java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED",
-        "--add-exports", "java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED",
-        "--add-opens", "java.base/java.lang=ALL-UNNAMED",
-    };
+        var args = new List<string>
+        {
+            "--add-exports", "java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
+            "--add-opens", "java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.action=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.provider=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.util=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.validator=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.x509=ALL-UNNAMED",
+            "--add-exports", "java.base/jdk.internal.util.jar=ALL-UNNAMED",
+            "--add-opens", "java.base/jdk.internal.util.jar=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.net.www.protocol.http=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.applet=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.awt=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.awt.image=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.swing.table=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.swing=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.swing.plaf=ALL-UNNAMED",
+            "--add-exports", "java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED",
+            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+        };
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            args.Add("--add-exports");
+            args.Add("java.desktop/sun.awt.windows=ALL-UNNAMED");
+            args.Add("--add-exports");
+            args.Add("java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED");
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            args.Add("--add-exports");
+            args.Add("java.desktop/sun.awt.X11=ALL-UNNAMED");
+        }
+
+        return args;
+    }
 
     private static bool HasSecurityManagerCompatibilityFlag(IEnumerable<string> forwardedJvmArgs) =>
         forwardedJvmArgs.Any(arg => arg.StartsWith("-Djava.security.manager=", StringComparison.Ordinal));

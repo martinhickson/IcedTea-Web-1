@@ -101,6 +101,16 @@ jobs:
           key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2
 
+      - name: Set up Git Bash
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Test-Path "C:\Program Files\Git\bin\bash.exe")) {
+            choco install git.install -y --no-progress
+          }
+          echo "C:\Program Files\Git\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+        shell: pwsh
+
       - name: Build distribution
         run: |
           $mvnArgs = @(
