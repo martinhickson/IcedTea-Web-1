@@ -40,6 +40,7 @@ import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.jdk89acesses.JarIndexAccess;
 import net.sourceforge.jnlp.security.AppVerifier;
 import net.sourceforge.jnlp.security.JNLPAppVerifier;
+import net.sourceforge.jnlp.security.JdkSigningRequirementPolicy;
 import net.sourceforge.jnlp.security.PluginAppVerifier;
 import net.sourceforge.jnlp.security.appletextendedsecurity.UnsignedAppletTrustConfirmation;
 import net.sourceforge.jnlp.tools.JarCertVerifier;
@@ -685,6 +686,7 @@ public class JNLPClassLoader extends URLClassLoader {
             setSecurity();
             initializeManifestAttributesChecker();
             mac.checkAll();
+            JdkSigningRequirementPolicy.enforceSignedApplicationIfRequired(file, signing, jcv);
             return;
         }
 
@@ -858,6 +860,7 @@ public class JNLPClassLoader extends URLClassLoader {
             jarLocationSecurityMap.put(jarDesc.getLocation(), jarSecurity);
         }
 
+        JdkSigningRequirementPolicy.enforceSignedApplicationIfRequired(file, signing, jcv);
         activateJars(initialJars);
     }
 

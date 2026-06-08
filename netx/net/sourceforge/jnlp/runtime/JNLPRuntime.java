@@ -76,7 +76,7 @@ import net.sourceforge.jnlp.util.BasicExceptionDialog;
 import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.logging.JavaConsole;
 import net.sourceforge.jnlp.util.logging.LogConfig;
-import net.sourceforge.jnlp.util.logging.OutputController;
+import net.sourceforge.jnlp.util.JavaVersionUtils;
 import sun.net.www.protocol.jar.URLJarFile;
 
 /**
@@ -273,9 +273,14 @@ public class JNLPRuntime {
 
         doMainAppContextHacks();
 
-        if (securityEnabled) {
+        if (securityEnabled && JavaVersionUtils.isSecurityManagerSupported()) {
             Policy.setPolicy(policy); // do first b/c our SM blocks setPolicy
             System.setSecurityManager(security);
+        } else if (securityEnabled) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                    "SecurityManager is not supported on JDK "
+                            + JavaVersionUtils.getRunningMajorVersion()
+                            + "; only signed applications may launch.");
         }
 
         securityDialogMessageHandler = startSecurityThreads();

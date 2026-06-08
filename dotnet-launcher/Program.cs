@@ -254,7 +254,7 @@ internal static class Program
             command.AddRange(ModularJdkArguments());
         }
 
-        if (javaMajorVersion >= 18 && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
+        if (javaMajorVersion >= 18 && javaMajorVersion < 24 && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
         {
             command.Add("-Djava.security.manager=allow");
         }
