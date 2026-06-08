@@ -10,8 +10,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 VERSION="${ITW_VERSION:-2.0.1-SNAPSHOT}"
-DIST_ZIP="${ITW_DOTNET_LINUX_ZIP:-$ROOT_DIR/icedtea-web-distribution/target/icedtea-web-$VERSION-linux-x64.zip}"
-DIST_DIR="${ITW_DOTNET_DIST_DIR:-}"
+DIST_DIR="${ITW_DOTNET_DIST_DIR:-$ROOT_DIR/icedtea-web-distribution/target/dist/icedtea-web-$VERSION}"
+DIST_ZIP="${ITW_DOTNET_LINUX_ZIP:-}"
 JAVAWS_BIN="${ITW_JAVAWS_BIN:-}"
 APP_JAR="${ITW_HEADLESS_APP_JAR:-$ROOT_DIR/icedtea-web-integration/target/icedtea-web-integration-$VERSION-headless-app.jar}"
 BUILD_TEST_APP="${ITW_SMOKE_BUILD_TEST_APP:-true}"
@@ -53,52 +53,48 @@ prepare_dotnet_distribution() {
     return
   fi
 
-  if [ -n "$DIST_DIR" ]; then
+  if [ -d "$DIST_DIR" ] && [ -x "$DIST_DIR/bin/javaws" ]; then
     JAVAWS_BIN="$DIST_DIR/bin/javaws"
-    if [ ! -x "$JAVAWS_BIN" ]; then
-      echo "ITW_DOTNET_DIST_DIR is set but bin/javaws is not executable: $JAVAWS_BIN" >&2
-      exit 1
-    fi
-    echo "Using javaws from ITW_DOTNET_DIST_DIR: $JAVAWS_BIN"
+    echo "Using javaws from distribution directory: $JAVAWS_BIN"
     return
   fi
 
-  if [ ! -f "$DIST_ZIP" ]; then
-    cat >&2 <<EOF
-Linux .NET distribution artifact not found:
-  $DIST_ZIP
+  if [ -n "$DIST_ZIP" ] && [ -f "$DIST_ZIP" ]; then
+    local unpack_dir="$WORK_DIR/dotnet-dist"
+    mkdir -p "$unpack_dir"
+    echo "Extracting legacy Linux distribution ZIP: $DIST_ZIP"
+    unzip -q "$DIST_ZIP" -d "$unpack_dir"
+    DIST_DIR="$(find "$unpack_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+    JAVAWS_BIN="$DIST_DIR/bin/javaws"
+    if [ -f "$JAVAWS_BIN" ]; then
+      chmod +x "$JAVAWS_BIN"
+    fi
+    if [ -d "$DIST_DIR/runtime/corretto" ]; then
+      chmod -R u+rwX "$DIST_DIR/runtime/corretto"
+      chmod -R ugo+rx "$DIST_DIR/runtime/corretto"/*/bin 2>/dev/null || true
+    fi
+    if [ ! -x "$JAVAWS_BIN" ]; then
+      echo "Extracted artifact does not contain executable bin/javaws: $JAVAWS_BIN" >&2
+      exit 1
+    fi
+    echo "Using javaws from extracted ZIP: $JAVAWS_BIN"
+    return
+  fi
+
+  cat >&2 <<EOF
+Linux .NET distribution not found:
+  $DIST_DIR
 
 Build it first with:
-  export PATH="\$PWD/target/dotnet-sdk:\$PATH" # if using a locally installed SDK
   mvn -P maven-distribution -pl icedtea-web-distribution -am package \\
     -Dmaven.test.skip=true -DskipTests \\
     -Ditw.dotnet.runtime.identifier=linux-x64 \\
     -Ditw.dotnet.selfContained=true
 
-Or point this script at an existing artifact with ITW_DOTNET_LINUX_ZIP,
-ITW_DOTNET_DIST_DIR, or ITW_JAVAWS_BIN.
+Or point this script at an existing build with ITW_DOTNET_DIST_DIR,
+ITW_DOTNET_LINUX_ZIP, or ITW_JAVAWS_BIN.
 EOF
-    exit 1
-  fi
-
-  local unpack_dir="$WORK_DIR/dotnet-dist"
-  mkdir -p "$unpack_dir"
-  echo "Extracting normal Linux .NET distribution artifact: $DIST_ZIP"
-  unzip -q "$DIST_ZIP" -d "$unpack_dir"
-  DIST_DIR="$(find "$unpack_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-  JAVAWS_BIN="$DIST_DIR/bin/javaws"
-  if [ -f "$JAVAWS_BIN" ]; then
-    chmod +x "$JAVAWS_BIN"
-  fi
-  if [ -d "$DIST_DIR/runtime/corretto" ]; then
-    chmod -R u+rwX "$DIST_DIR/runtime/corretto"
-    chmod -R ugo+rx "$DIST_DIR/runtime/corretto"/*/bin 2>/dev/null || true
-  fi
-  if [ ! -x "$JAVAWS_BIN" ]; then
-    echo "Extracted artifact does not contain executable bin/javaws: $JAVAWS_BIN" >&2
-    exit 1
-  fi
-  echo "Using javaws from normal Linux .NET distribution artifact: $JAVAWS_BIN"
+  exit 1
 }
 
 ensure_headless_app() {

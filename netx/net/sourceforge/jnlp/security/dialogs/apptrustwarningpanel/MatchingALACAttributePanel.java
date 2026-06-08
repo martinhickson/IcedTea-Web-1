@@ -43,8 +43,7 @@ import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.HashSet;
 import java.util.Set;
-import javax.swing.ImageIcon;
-import javax.swing.JFrame;
+import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.ParseException;
 import net.sourceforge.jnlp.runtime.Translator;
@@ -78,8 +77,7 @@ public class MatchingALACAttributePanel extends AppTrustWarningPanel {
 
     @Override
     protected ImageIcon getInfoImage() {
-        final String location = "net/sourceforge/jnlp/resources/question.png";
-        return new ImageIcon(ClassLoader.getSystemClassLoader().getResource(location));
+        return SunMiscLauncher.getSecureImageIcon("net/sourceforge/jnlp/resources/question.png");
     }
 
     @Override

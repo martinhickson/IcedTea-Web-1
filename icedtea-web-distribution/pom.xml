@@ -190,18 +190,6 @@
 
                     <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
                     <unzip src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto"/>
-
-                    <delete file="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
-                    <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">
-                      <zipfileset dir="${project.build.directory}/dist">
-                        <exclude name="**/bin/*"/>
-                        <exclude name="**/runtime/corretto/**/bin/*"/>
-                      </zipfileset>
-                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
-                        <include name="**/bin/*"/>
-                        <include name="**/runtime/corretto/**/bin/*"/>
-                      </zipfileset>
-                    </zip>
                   </target>
                 </configuration>
               </execution>
@@ -256,18 +244,6 @@
                         <include name="**/bin/*"/>
                       </fileset>
                     </chmod>
-
-                    <delete file="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
-                    <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">
-                      <zipfileset dir="${project.build.directory}/dist">
-                        <exclude name="**/bin/*"/>
-                        <exclude name="**/runtime/corretto/**/bin/*"/>
-                      </zipfileset>
-                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
-                        <include name="**/bin/*"/>
-                        <include name="**/runtime/corretto/**/bin/*"/>
-                      </zipfileset>
-                    </zip>
                   </target>
                 </configuration>
               </execution>
@@ -328,20 +304,6 @@
                         <include name="**/Contents/Home/bin/*"/>
                       </fileset>
                     </chmod>
-
-                    <delete file="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
-                    <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">
-                      <zipfileset dir="${project.build.directory}/dist">
-                        <exclude name="**/bin/*"/>
-                        <exclude name="**/runtime/corretto/**/bin/*"/>
-                        <exclude name="**/runtime/corretto/**/Contents/Home/bin/*"/>
-                      </zipfileset>
-                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
-                        <include name="**/bin/*"/>
-                        <include name="**/runtime/corretto/**/bin/*"/>
-                        <include name="**/runtime/corretto/**/Contents/Home/bin/*"/>
-                      </zipfileset>
-                    </zip>
                   </target>
                 </configuration>
               </execution>

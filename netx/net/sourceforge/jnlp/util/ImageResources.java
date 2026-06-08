@@ -37,6 +37,7 @@ exception statement from your version. */
 
 package net.sourceforge.jnlp.util;
 
+import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import java.awt.Image;
 import java.io.IOException;
@@ -71,12 +72,7 @@ public enum ImageResources {
             return cache.get(APPLICATION_ICON_PATH);
         }
 
-        ClassLoader cl = this.getClass().getClassLoader();
-        if (cl == null) {
-            cl = ClassLoader.getSystemClassLoader();
-        }
-
-        InputStream in = cl.getResourceAsStream(APPLICATION_ICON_PATH);
+        InputStream in = SunMiscLauncher.getResourceAsStream(APPLICATION_ICON_PATH);
         if (in != null) {
             try {
                 Image image = ImageIO.read(in);

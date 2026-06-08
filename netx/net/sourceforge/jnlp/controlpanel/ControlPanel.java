@@ -51,6 +51,7 @@ import javax.swing.border.EmptyBorder;
 import javax.swing.event.ListSelectionEvent;
 import javax.swing.event.ListSelectionListener;
 
+import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.controlpanel.JVMPanel.JvmValidationResult;
@@ -368,14 +369,12 @@ public class ControlPanel extends JFrame {
         JPanel notImplementedPanel = new NamedBorderPanel("Unimplemented");
         notImplementedPanel.setLayout(new BorderLayout());
 
-        ClassLoader cl = getClass().getClassLoader();
-        if (cl == null) {
-            cl = ClassLoader.getSystemClassLoader();
-        }
-
-        URL imgUrl = cl.getResource("net/sourceforge/jnlp/resources/warning.png");
+        URL imgUrl = SunMiscLauncher.getResourceUrl("net/sourceforge/jnlp/resources/warning.png");
         Image img;
         try {
+            if (imgUrl == null) {
+                throw new IOException("Bundled warning icon not found");
+            }
             img = ImageIO.read(imgUrl);
             ImageIcon icon = new ImageIcon(img);
             JLabel label = new JLabel("Not Implemented", icon, SwingConstants.CENTER);
