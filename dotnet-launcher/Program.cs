@@ -45,7 +45,7 @@ internal static class Program
             var byteBuddyAgent = ResolveOptionalFile(installRoot, "ITW_BYTEBUDDY_AGENT_JAR",
                 Path.Combine("bin", "byte-buddy-agent.jar"));
 
-            var majorVersion = DetectJavaMajorVersion(javaExecutable);
+            var runtimeInfo = DetectJavaRuntimeInfo(javaExecutable);
             var launchJavaExecutable = ResolveLaunchJavaExecutable(javaExecutable);
             var command = ComposeJavaCommand(
                 launchJavaExecutable,
@@ -54,7 +54,7 @@ internal static class Program
                 executablePath,
                 launcherName,
                 mainClass,
-                majorVersion,
+                runtimeInfo,
                 javaArgs,
                 javawsArgs);
 
@@ -243,25 +243,25 @@ internal static class Program
         string launcherPath,
         string launcherName,
         string mainClass,
-        int javaMajorVersion,
+        JavaRuntimeInfo runtimeInfo,
         IReadOnlyCollection<string> forwardedJvmArgs,
         IReadOnlyCollection<string> javawsArgs)
     {
         var command = new List<string> { "-Xms8m" };
 
-        if (javaMajorVersion >= 9)
+        if (runtimeInfo.MajorVersion >= 9)
         {
-            command.AddRange(ModularJdkArguments());
+            command.AddRange(ModularJdkArguments(runtimeInfo));
         }
 
-        if (javaMajorVersion >= 18 && javaMajorVersion < 24 && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
+        if (runtimeInfo.MajorVersion >= 18 && runtimeInfo.MajorVersion < 24 && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
         {
             command.Add("-Djava.security.manager=allow");
         }
 
         command.AddRange(forwardedJvmArgs);
 
-        if (javaMajorVersion <= 8)
+        if (runtimeInfo.MajorVersion <= 8)
         {
             command.Add("-Xbootclasspath/a:" + uberJar);
         }
@@ -341,6 +341,7 @@ internal static class Program
         {
             FileName = javaExecutable,
             UseShellExecute = false,
+            CreateNoWindow = RuntimeInformation.IsOSPlatform(OSPlatform.Windows),
             RedirectStandardOutput = true,
             RedirectStandardError = true,
         };
@@ -391,12 +392,13 @@ internal static class Program
         }
     }
 
-    private static int DetectJavaMajorVersion(string javaExecutable)
+    private static JavaRuntimeInfo DetectJavaRuntimeInfo(string javaExecutable)
     {
         var startInfo = new ProcessStartInfo
         {
             FileName = javaExecutable,
             UseShellExecute = false,
+            CreateNoWindow = RuntimeInformation.IsOSPlatform(OSPlatform.Windows),
             RedirectStandardError = true,
             RedirectStandardOutput = true,
         };
@@ -412,7 +414,7 @@ internal static class Program
         var match = Regex.Match(output.ToString(), "version \"(?<version>[^\"]+)\"");
         if (!match.Success)
         {
-            return 8;
+            return new JavaRuntimeInfo(8);
         }
 
         var version = match.Groups["version"].Value;
@@ -420,51 +422,91 @@ internal static class Program
         if (firstPart == "1")
         {
             var parts = version.Split('.');
-            return parts.Length > 1 && int.TryParse(parts[1], out var legacyMajor) ? legacyMajor : 8;
+            return new JavaRuntimeInfo(
+                parts.Length > 1 && int.TryParse(parts[1], out var legacyMajor) ? legacyMajor : 8);
         }
 
-        return int.TryParse(firstPart, out var major) ? major : 8;
+        return new JavaRuntimeInfo(
+            int.TryParse(firstPart, out var major) ? major : 8);
     }
 
-    private static IEnumerable<string> ModularJdkArguments()
+    private sealed record JavaRuntimeInfo(int MajorVersion);
+
+    private static IEnumerable<string> ModularJdkArguments(JavaRuntimeInfo runtimeInfo)
     {
-        var args = new List<string>
-        {
-            "--add-exports", "java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
-            "--add-opens", "java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
-            "--add-exports", "java.base/sun.security.action=ALL-UNNAMED",
-            "--add-exports", "java.base/sun.security.provider=ALL-UNNAMED",
-            "--add-exports", "java.base/sun.security.util=ALL-UNNAMED",
-            "--add-exports", "java.base/sun.security.validator=ALL-UNNAMED",
-            "--add-exports", "java.base/sun.security.x509=ALL-UNNAMED",
-            "--add-exports", "java.base/jdk.internal.util.jar=ALL-UNNAMED",
-            "--add-opens", "java.base/jdk.internal.util.jar=ALL-UNNAMED",
-            "--add-exports", "java.base/sun.net.www.protocol.http=ALL-UNNAMED",
-            "--add-exports", "java.desktop/sun.applet=ALL-UNNAMED",
-            "--add-exports", "java.desktop/sun.awt=ALL-UNNAMED",
-            "--add-exports", "java.desktop/sun.awt.image=ALL-UNNAMED",
-            "--add-exports", "java.desktop/sun.swing.table=ALL-UNNAMED",
-            "--add-exports", "java.desktop/sun.swing=ALL-UNNAMED",
-            "--add-exports", "java.desktop/sun.swing.plaf=ALL-UNNAMED",
-            "--add-exports", "java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED",
-            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
-        };
+        var args = new List<string>();
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.net.www.protocol.jar");
+        AddModuleAccess(args, runtimeInfo, "--add-opens", "java.base", "sun.net.www.protocol.jar");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.action");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.provider");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.util");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.validator");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.x509");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "jdk.internal.util.jar");
+        AddModuleAccess(args, runtimeInfo, "--add-opens", "java.base", "jdk.internal.util.jar");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.net.www.protocol.http");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.applet");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.awt");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.awt.image");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.swing.table");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.swing");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.swing.plaf");
+        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.naming", "com.sun.jndi.toolkit.url");
+        AddModuleAccess(args, runtimeInfo, "--add-opens", "java.base", "java.lang");
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            args.Add("--add-exports");
-            args.Add("java.desktop/sun.awt.windows=ALL-UNNAMED");
-            args.Add("--add-exports");
-            args.Add("java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED");
+            AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.awt.windows");
+            AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "com.sun.java.swing.plaf.windows");
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            args.Add("--add-exports");
-            args.Add("java.desktop/sun.awt.X11=ALL-UNNAMED");
+            AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.awt.X11");
         }
 
         return args;
+    }
+
+    private static void AddModuleAccess(
+        ICollection<string> args,
+        JavaRuntimeInfo runtimeInfo,
+        string option,
+        string module,
+        string packageName)
+    {
+        if (IsKnownMissingPackage(runtimeInfo, module + "/" + packageName))
+        {
+            return;
+        }
+
+        args.Add(option);
+        args.Add(module + "/" + packageName + "=ALL-UNNAMED");
+    }
+
+    private static bool IsKnownMissingPackage(JavaRuntimeInfo runtimeInfo, string modulePackage)
+    {
+        return runtimeInfo.MajorVersion switch
+        {
+            11 => modulePackage is "java.base/sun.misc"
+                or "java.desktop/javax.jnlp",
+            17 => modulePackage is "java.base/com.sun.net.ssl.internal.ssl"
+                or "java.base/sun.misc"
+                or "java.desktop/sun.applet"
+                or "java.desktop/javax.jnlp",
+            21 => modulePackage is "java.base/com.sun.net.ssl.internal.ssl"
+                or "java.base/sun.misc"
+                or "java.base/jdk.internal.util.jar"
+                or "java.desktop/sun.applet"
+                or "java.desktop/javax.jnlp",
+            25 => modulePackage is "java.base/com.sun.net.ssl.internal.ssl"
+                or "java.base/sun.misc"
+                or "java.base/sun.security.action"
+                or "java.base/jdk.internal.util.jar"
+                or "java.desktop/sun.applet"
+                or "java.desktop/javax.jnlp",
+            _ => false,
+        };
     }
 
     private static bool HasSecurityManagerCompatibilityFlag(IEnumerable<string> forwardedJvmArgs) =>

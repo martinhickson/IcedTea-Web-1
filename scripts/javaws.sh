@@ -50,40 +50,71 @@ major="${version%%.*}"
 if [ "$major" = "1" ]; then
   major="$(echo "$version" | cut -d. -f2)"
 fi
+is_known_missing_package() {
+  local module_package="$1"
+  case "${major:-}" in
+    11)
+      case "$module_package" in
+        java.base/sun.misc|java.desktop/javax.jnlp) return 0 ;;
+      esac
+      ;;
+    17)
+      case "$module_package" in
+        java.base/com.sun.net.ssl.internal.ssl|java.base/sun.misc|java.desktop/sun.applet|java.desktop/javax.jnlp) return 0 ;;
+      esac
+      ;;
+    21|25)
+      case "$module_package" in
+        java.base/com.sun.net.ssl.internal.ssl|java.base/sun.misc|java.base/jdk.internal.util.jar|java.desktop/sun.applet|java.desktop/javax.jnlp) return 0 ;;
+      esac
+      ;;
+  esac
+  if [ "${major:-}" = "25" ]; then
+      case "$module_package" in
+        java.base/sun.security.action) return 0 ;;
+      esac
+  fi
+  return 1
+}
+
+add_module_access() {
+  local option="$1"
+  local module="$2"
+  local package_name="$3"
+  local module_package="${module}/${package_name}"
+  if is_known_missing_package "$module_package"; then
+    return
+  fi
+  MODULAR_ARGS+=("$option" "${module_package}=ALL-UNNAMED")
+}
+
 if [ "${major:-0}" -ge 9 ] 2>/dev/null; then
   USE_BOOTCLASSPATH="NO"
-  MODULAR_ARGS=(
-    --add-exports java.base/sun.net.www.protocol.jar=ALL-UNNAMED
-    --add-opens java.base/sun.net.www.protocol.jar=ALL-UNNAMED
-    --add-exports java.base/sun.security.action=ALL-UNNAMED
-    --add-exports java.base/sun.security.provider=ALL-UNNAMED
-    --add-exports java.base/sun.security.util=ALL-UNNAMED
-    --add-exports java.base/sun.security.validator=ALL-UNNAMED
-    --add-exports java.base/sun.security.x509=ALL-UNNAMED
-    --add-exports java.base/jdk.internal.util.jar=ALL-UNNAMED
-    --add-opens
-    java.base/jdk.internal.util.jar=ALL-UNNAMED
-    --add-exports java.base/sun.net.www.protocol.http=ALL-UNNAMED
-    --add-exports java.desktop/sun.applet=ALL-UNNAMED
-    --add-exports java.desktop/sun.awt=ALL-UNNAMED
-    --add-exports java.desktop/sun.awt.image=ALL-UNNAMED
-    --add-exports java.desktop/sun.swing.table=ALL-UNNAMED
-    --add-exports java.desktop/sun.swing=ALL-UNNAMED
-    --add-exports java.desktop/sun.swing.plaf=ALL-UNNAMED
-    --add-exports java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED
-    --add-opens java.base/java.lang=ALL-UNNAMED
-  )
+  add_module_access --add-exports java.base sun.net.www.protocol.jar
+  add_module_access --add-opens java.base sun.net.www.protocol.jar
+  add_module_access --add-exports java.base sun.security.action
+  add_module_access --add-exports java.base sun.security.provider
+  add_module_access --add-exports java.base sun.security.util
+  add_module_access --add-exports java.base sun.security.validator
+  add_module_access --add-exports java.base sun.security.x509
+  add_module_access --add-exports java.base jdk.internal.util.jar
+  add_module_access --add-opens java.base jdk.internal.util.jar
+  add_module_access --add-exports java.base sun.net.www.protocol.http
+  add_module_access --add-exports java.desktop sun.applet
+  add_module_access --add-exports java.desktop sun.awt
+  add_module_access --add-exports java.desktop sun.awt.image
+  add_module_access --add-exports java.desktop sun.swing.table
+  add_module_access --add-exports java.desktop sun.swing
+  add_module_access --add-exports java.desktop sun.swing.plaf
+  add_module_access --add-exports java.naming com.sun.jndi.toolkit.url
+  add_module_access --add-opens java.base java.lang
   case "$(uname -s)" in
     Linux)
-      MODULAR_ARGS+=(
-        --add-exports java.desktop/sun.awt.X11=ALL-UNNAMED
-      )
+      add_module_access --add-exports java.desktop sun.awt.X11
       ;;
     MINGW*|MSYS*|CYGWIN*)
-      MODULAR_ARGS+=(
-        --add-exports java.desktop/sun.awt.windows=ALL-UNNAMED
-        --add-exports java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED
-      )
+      add_module_access --add-exports java.desktop sun.awt.windows
+      add_module_access --add-exports java.desktop com.sun.java.swing.plaf.windows
       ;;
   esac
 fi
