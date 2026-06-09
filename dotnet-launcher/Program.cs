@@ -11,13 +11,23 @@ internal static class Program
     private const string SettingsMainClass = "net.sourceforge.jnlp.controlpanel.CommandLine";
     private const uint AttachParentProcess = 0xFFFFFFFF;
 
-    [DllImport("kernel32.dll", SetLastError = true)]
-    private static extern bool AttachConsole(uint dwProcessId);
+    // GUI / non-console launches: Rust used Stdio::null() (discard). Set true to capture Java
+    // stdout/stderr into per-launch log files under LocalApplicationData/IcedTea-Web/logs instead.
+    private const bool CaptureGuiStdioToLogFiles = false;
+
+    // Console-preserving launches: Rust blocked on child.wait() with inherited stdio. WinExe
+    // launchers often fail to pass inherited handles through, so we relay pipe-to-console.
+    // true  = blocking relay; process exit and all stdout/stderr drained before returning.
+    // false = CopyToAsync relay; still waits at end, but stream pumping uses async I/O.
+    private const bool WaitForJavaStdioSynchronously = true;
+
+    private static bool? insideConsole;
 
     private static int Main(string[] args)
     {
         try
         {
+            _ = InsideConsole();
             var executablePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName
                 ?? throw new InvalidOperationException("Unable to resolve launcher path");
             var executableFile = new FileInfo(executablePath);
@@ -39,18 +49,18 @@ internal static class Program
                 }
                 else
                 {
-                    javawsArgs.Add(NormalizeJavawsArgument(arg));
+                    javawsArgs.Add(NormalizeLauncherArg(arg));
                 }
             }
 
-            var preserveStdio = ShouldPreserveStdio(javawsArgs);
             var javaExecutable = ResolveJavaExecutable(installRoot, javawsArgs);
             var uberJar = ResolveRequiredFile(installRoot, "ITW_UBER_JAR",
                 Path.Combine("lib", "icedtea-web-uber.jar"));
             var byteBuddyAgent = ResolveOptionalFile(installRoot, "ITW_BYTEBUDDY_AGENT_JAR",
                 Path.Combine("bin", "byte-buddy-agent.jar"));
 
-            var runtimeInfo = DetectJavaRuntimeInfo(javaExecutable);
+            var majorVersion = DetectJavaMajorVersion(javaExecutable);
+            var preserveStdio = ShouldPreserveStdio(javawsArgs);
             var launchJavaExecutable = ResolveLaunchJavaExecutable(javaExecutable, preserveStdio);
             var command = ComposeJavaCommand(
                 launchJavaExecutable,
@@ -59,7 +69,7 @@ internal static class Program
                 executablePath,
                 launcherName,
                 mainClass,
-                runtimeInfo,
+                majorVersion,
                 javaArgs,
                 javawsArgs);
 
@@ -130,11 +140,6 @@ internal static class Program
 
     private static bool IsRelaunch(IEnumerable<string> javawsArgs) =>
         javawsArgs.Any(arg => arg.Equals("-Xnofork", StringComparison.OrdinalIgnoreCase));
-
-    private static string NormalizeJavawsArgument(string arg) =>
-        arg.Equals("--version", StringComparison.OrdinalIgnoreCase) ? "-version" :
-        arg.Equals("--help", StringComparison.OrdinalIgnoreCase) ? "-help" :
-        arg;
 
     private static string? ResolveConfiguredJavaExecutable()
     {
@@ -253,25 +258,25 @@ internal static class Program
         string launcherPath,
         string launcherName,
         string mainClass,
-        JavaRuntimeInfo runtimeInfo,
+        int javaMajorVersion,
         IReadOnlyCollection<string> forwardedJvmArgs,
         IReadOnlyCollection<string> javawsArgs)
     {
         var command = new List<string> { "-Xms8m" };
 
-        if (runtimeInfo.MajorVersion >= 9)
+        if (javaMajorVersion >= 9)
         {
-            command.AddRange(ModularJdkArguments(runtimeInfo));
+            command.AddRange(ModularJdkArguments());
         }
 
-        if (runtimeInfo.MajorVersion >= 18 && runtimeInfo.MajorVersion < 24 && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
+        if (javaMajorVersion >= 18 && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
         {
             command.Add("-Djava.security.manager=allow");
         }
 
         command.AddRange(forwardedJvmArgs);
 
-        if (runtimeInfo.MajorVersion <= 8)
+        if (javaMajorVersion <= 8)
         {
             command.Add("-Xbootclasspath/a:" + uberJar);
         }
@@ -306,15 +311,26 @@ internal static class Program
 
     private static int RunJava(string javaExecutable, IReadOnlyList<string> command, bool preserveStdio)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !preserveStdio)
+        if (!preserveStdio)
         {
-            return RunJavaWithRedirectedOutput(javaExecutable, command);
+            return CaptureGuiStdioToLogFiles
+                ? RunJavaWithRedirectedOutput(javaExecutable, command)
+                : RunJavaWithNullStdio(javaExecutable, command);
         }
+
+        return RunJavaWithPreservedStdio(javaExecutable, command);
+    }
+
+    private static int RunJavaWithPreservedStdio(string javaExecutable, IReadOnlyList<string> command)
+    {
+        PrepareAttachedConsole();
 
         var startInfo = new ProcessStartInfo
         {
             FileName = javaExecutable,
             UseShellExecute = false,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
         foreach (var arg in command)
         {
@@ -323,8 +339,26 @@ internal static class Program
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Unable to start Java process");
+
+        if (WaitForJavaStdioSynchronously)
+        {
+            return WaitForProcessWithDrainedStreams(
+                process,
+                process.StandardOutput.BaseStream,
+                process.StandardError.BaseStream,
+                Console.OpenStandardOutput(),
+                Console.OpenStandardError());
+        }
+
+#pragma warning disable CS0162 // Unreachable when WaitForJavaStdioSynchronously is true (default).
+        var stdoutRelay = RelayToAsync(process.StandardOutput.BaseStream, Console.OpenStandardOutput());
+        var stderrRelay = RelayToAsync(process.StandardError.BaseStream, Console.OpenStandardError());
         process.WaitForExit();
+        stdoutRelay.GetAwaiter().GetResult();
+        stderrRelay.GetAwaiter().GetResult();
+        FlushPreservedConsole();
         return process.ExitCode;
+#pragma warning restore CS0162
     }
 
     private static string ResolveLaunchJavaExecutable(string javaExecutable, bool preserveStdio)
@@ -339,42 +373,36 @@ internal static class Program
         return File.Exists(javaw) ? javaw : javaExecutable;
     }
 
-    private static bool ShouldPreserveStdio(IReadOnlyCollection<string> javawsArgs)
+    private static bool InsideConsole()
     {
-        if (IsTruthy(Environment.GetEnvironmentVariable("ITW_PRESERVE_STDIO")))
+        if (insideConsole.HasValue)
         {
-            TryAttachParentConsole();
-            return true;
+            return insideConsole.Value;
         }
 
-        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            && HasConsoleOutputIntent(javawsArgs)
-            && TryAttachParentConsole();
-    }
-
-    private static bool HasConsoleOutputIntent(IEnumerable<string> javawsArgs) =>
-        javawsArgs.Any(arg =>
-            arg.Equals("-version", StringComparison.OrdinalIgnoreCase)
-            || arg.Equals("--version", StringComparison.OrdinalIgnoreCase)
-            || arg.Equals("-help", StringComparison.OrdinalIgnoreCase)
-            || arg.Equals("--help", StringComparison.OrdinalIgnoreCase)
-            || arg.Equals("-?", StringComparison.OrdinalIgnoreCase));
-
-    private static bool TryAttachParentConsole()
-    {
         if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            return false;
+            insideConsole = HasInteractiveTerminal();
+            return insideConsole.Value;
         }
 
+        if (NativeMethods.AttachConsole(AttachParentProcess) || NativeMethods.GetConsoleWindow() != IntPtr.Zero)
+        {
+            insideConsole = true;
+            return true;
+        }
+
+        insideConsole = false;
+        return false;
+    }
+
+    private static bool HasInteractiveTerminal()
+    {
         try
         {
-            if (!AttachConsole(AttachParentProcess))
-            {
-                return false;
-            }
-            ResetConsoleStreams();
-            return true;
+            // Terminal launchers (bash, ssh) expose a TTY; .desktop / file-manager launches
+            // (Terminal=false) typically redirect or detach stdout/stderr.
+            return !Console.IsOutputRedirected || !Console.IsErrorRedirected;
         }
         catch
         {
@@ -382,19 +410,60 @@ internal static class Program
         }
     }
 
-    private static void ResetConsoleStreams()
+    private static bool ShouldPreserveStdio(IReadOnlyCollection<string> javawsArgs) =>
+        IsTruthy(Environment.GetEnvironmentVariable("ITW_PRESERVE_STDIO"))
+        || InsideConsole()
+        || javawsArgs.Any(IsConsoleOutputArg);
+
+    private static string NormalizeLauncherArg(string arg) =>
+        arg.Equals("--version", StringComparison.OrdinalIgnoreCase) ? "-version"
+        : arg.Equals("--about", StringComparison.OrdinalIgnoreCase) ? "-about"
+        : arg.Equals("--help", StringComparison.OrdinalIgnoreCase) ? "-help"
+        : arg;
+
+    private static bool IsConsoleOutputArg(string arg)
     {
-        try
+        if (arg.StartsWith("-J", StringComparison.Ordinal))
         {
-            var output = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
-            var error = new StreamWriter(Console.OpenStandardError()) { AutoFlush = true };
-            Console.SetOut(output);
-            Console.SetError(error);
+            return false;
         }
-        catch
+
+        var key = arg.Split(':', 2)[0];
+        return key.Equals("-version", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("--version", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("-about", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("--about", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("-verbose", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("-help", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("--help", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("-?", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int RunJavaWithNullStdio(string javaExecutable, IReadOnlyList<string> command)
+    {
+        var startInfo = new ProcessStartInfo
         {
-            // If stream reset fails, child-process stdio inheritance may still work.
+            FileName = javaExecutable,
+            UseShellExecute = false,
+            CreateNoWindow = RuntimeInformation.IsOSPlatform(OSPlatform.Windows),
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+        };
+        foreach (var arg in command)
+        {
+            startInfo.ArgumentList.Add(arg);
         }
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start Java process");
+        process.StandardInput.Close();
+        return WaitForProcessWithDrainedStreams(
+            process,
+            process.StandardOutput.BaseStream,
+            process.StandardError.BaseStream,
+            Stream.Null,
+            Stream.Null);
     }
 
     private static int RunJavaWithRedirectedOutput(string javaExecutable, IReadOnlyList<string> command)
@@ -419,12 +488,75 @@ internal static class Program
             ?? throw new InvalidOperationException("Unable to start Java process");
         using var stdout = File.Create(stdoutPath);
         using var stderr = File.Create(stderrPath);
-        var stdoutCopy = process.StandardOutput.BaseStream.CopyToAsync(stdout);
-        var stderrCopy = process.StandardError.BaseStream.CopyToAsync(stderr);
+        return WaitForProcessWithDrainedStreams(
+            process,
+            process.StandardOutput.BaseStream,
+            process.StandardError.BaseStream,
+            stdout,
+            stderr);
+    }
+
+    private static int WaitForProcessWithDrainedStreams(
+        Process process,
+        Stream stdoutSource,
+        Stream stderrSource,
+        Stream stdoutTarget,
+        Stream stderrTarget)
+    {
+        if (WaitForJavaStdioSynchronously)
+        {
+            var stdoutDrain = Task.Run(() => CopyStreamSynchronously(stdoutSource, stdoutTarget));
+            var stderrDrain = Task.Run(() => CopyStreamSynchronously(stderrSource, stderrTarget));
+            process.WaitForExit();
+            // Task.GetAwaiter().GetResult() is the .NET equivalent of Thread.Join on each drain thread.
+            stdoutDrain.GetAwaiter().GetResult();
+            stderrDrain.GetAwaiter().GetResult();
+            return process.ExitCode;
+        }
+
+#pragma warning disable CS0162 // Unreachable when WaitForJavaStdioSynchronously is true (default).
+        var stdoutRelay = stdoutSource.CopyToAsync(stdoutTarget);
+        var stderrRelay = stderrSource.CopyToAsync(stderrTarget);
         process.WaitForExit();
-        stdoutCopy.GetAwaiter().GetResult();
-        stderrCopy.GetAwaiter().GetResult();
+        stdoutRelay.GetAwaiter().GetResult();
+        stderrRelay.GetAwaiter().GetResult();
         return process.ExitCode;
+#pragma warning restore CS0162
+    }
+
+    private static void CopyStreamSynchronously(Stream source, Stream target)
+    {
+        source.CopyTo(target);
+        target.Flush();
+    }
+
+    private static Task RelayToAsync(Stream source, Stream target) =>
+        source.CopyToAsync(target);
+
+    private static void FlushPreservedConsole()
+    {
+        Console.Out.Flush();
+        Console.Error.Flush();
+    }
+
+    private static void PrepareAttachedConsole()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || !InsideConsole())
+        {
+            return;
+        }
+
+        try
+        {
+            // WinExe builds attach to the parent console in InsideConsole(), but Console.Out
+            // may still point nowhere until standard handles are reopened.
+            Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = WaitForJavaStdioSynchronously });
+            Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = WaitForJavaStdioSynchronously });
+        }
+        catch
+        {
+            // Fall back to inherited handles if reopening fails.
+        }
     }
 
     private static string CreateLauncherLogBasePath()
@@ -442,10 +574,6 @@ internal static class Program
 
     private static void WriteLauncherFailure(Exception ex)
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            return;
-        }
         try
         {
             var logPath = CreateLauncherLogBasePath() + ".launcher-error.log";
@@ -457,13 +585,12 @@ internal static class Program
         }
     }
 
-    private static JavaRuntimeInfo DetectJavaRuntimeInfo(string javaExecutable)
+    private static int DetectJavaMajorVersion(string javaExecutable)
     {
         var startInfo = new ProcessStartInfo
         {
             FileName = javaExecutable,
             UseShellExecute = false,
-            CreateNoWindow = RuntimeInformation.IsOSPlatform(OSPlatform.Windows),
             RedirectStandardError = true,
             RedirectStandardOutput = true,
         };
@@ -479,7 +606,7 @@ internal static class Program
         var match = Regex.Match(output.ToString(), "version \"(?<version>[^\"]+)\"");
         if (!match.Success)
         {
-            return new JavaRuntimeInfo(8);
+            return 8;
         }
 
         var version = match.Groups["version"].Value;
@@ -487,91 +614,51 @@ internal static class Program
         if (firstPart == "1")
         {
             var parts = version.Split('.');
-            return new JavaRuntimeInfo(
-                parts.Length > 1 && int.TryParse(parts[1], out var legacyMajor) ? legacyMajor : 8);
+            return parts.Length > 1 && int.TryParse(parts[1], out var legacyMajor) ? legacyMajor : 8;
         }
 
-        return new JavaRuntimeInfo(
-            int.TryParse(firstPart, out var major) ? major : 8);
+        return int.TryParse(firstPart, out var major) ? major : 8;
     }
 
-    private sealed record JavaRuntimeInfo(int MajorVersion);
-
-    private static IEnumerable<string> ModularJdkArguments(JavaRuntimeInfo runtimeInfo)
+    private static IEnumerable<string> ModularJdkArguments()
     {
-        var args = new List<string>();
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.net.www.protocol.jar");
-        AddModuleAccess(args, runtimeInfo, "--add-opens", "java.base", "sun.net.www.protocol.jar");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.action");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.provider");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.util");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.validator");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.security.x509");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "jdk.internal.util.jar");
-        AddModuleAccess(args, runtimeInfo, "--add-opens", "java.base", "jdk.internal.util.jar");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.base", "sun.net.www.protocol.http");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.applet");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.awt");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.awt.image");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.swing.table");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.swing");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.swing.plaf");
-        AddModuleAccess(args, runtimeInfo, "--add-exports", "java.naming", "com.sun.jndi.toolkit.url");
-        AddModuleAccess(args, runtimeInfo, "--add-opens", "java.base", "java.lang");
+        var args = new List<string>
+        {
+            "--add-exports", "java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
+            "--add-opens", "java.base/sun.net.www.protocol.jar=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.action=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.provider=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.util=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.validator=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.security.x509=ALL-UNNAMED",
+            "--add-exports", "java.base/jdk.internal.util.jar=ALL-UNNAMED",
+            "--add-opens", "java.base/jdk.internal.util.jar=ALL-UNNAMED",
+            "--add-exports", "java.base/sun.net.www.protocol.http=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.applet=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.awt=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.awt.image=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.swing.table=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.swing=ALL-UNNAMED",
+            "--add-exports", "java.desktop/sun.swing.plaf=ALL-UNNAMED",
+            "--add-exports", "java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED",
+            "--add-opens", "java.base/java.lang=ALL-UNNAMED",
+        };
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
-            AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.awt.windows");
-            AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "com.sun.java.swing.plaf.windows");
+            args.Add("--add-exports");
+            args.Add("java.desktop/sun.awt.windows=ALL-UNNAMED");
+            args.Add("--add-exports");
+            args.Add("java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED");
         }
 
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
         {
-            AddModuleAccess(args, runtimeInfo, "--add-exports", "java.desktop", "sun.awt.X11");
+            args.Add("--add-exports");
+            args.Add("java.desktop/sun.awt.X11=ALL-UNNAMED");
         }
 
         return args;
-    }
-
-    private static void AddModuleAccess(
-        ICollection<string> args,
-        JavaRuntimeInfo runtimeInfo,
-        string option,
-        string module,
-        string packageName)
-    {
-        if (IsKnownMissingPackage(runtimeInfo, module + "/" + packageName))
-        {
-            return;
-        }
-
-        args.Add(option);
-        args.Add(module + "/" + packageName + "=ALL-UNNAMED");
-    }
-
-    private static bool IsKnownMissingPackage(JavaRuntimeInfo runtimeInfo, string modulePackage)
-    {
-        return runtimeInfo.MajorVersion switch
-        {
-            11 => modulePackage is "java.base/sun.misc"
-                or "java.desktop/javax.jnlp",
-            17 => modulePackage is "java.base/com.sun.net.ssl.internal.ssl"
-                or "java.base/sun.misc"
-                or "java.desktop/sun.applet"
-                or "java.desktop/javax.jnlp",
-            21 => modulePackage is "java.base/com.sun.net.ssl.internal.ssl"
-                or "java.base/sun.misc"
-                or "java.base/jdk.internal.util.jar"
-                or "java.desktop/sun.applet"
-                or "java.desktop/javax.jnlp",
-            25 => modulePackage is "java.base/com.sun.net.ssl.internal.ssl"
-                or "java.base/sun.misc"
-                or "java.base/sun.security.action"
-                or "java.base/jdk.internal.util.jar"
-                or "java.desktop/sun.applet"
-                or "java.desktop/javax.jnlp",
-            _ => false,
-        };
     }
 
     private static bool HasSecurityManagerCompatibilityFlag(IEnumerable<string> forwardedJvmArgs) =>
@@ -584,4 +671,13 @@ internal static class Program
         value != null && (value.Equals("true", StringComparison.OrdinalIgnoreCase)
             || value.Equals("1", StringComparison.OrdinalIgnoreCase)
             || value.Equals("yes", StringComparison.OrdinalIgnoreCase));
+
+    private static class NativeMethods
+    {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool AttachConsole(uint dwProcessId);
+
+        [DllImport("kernel32.dll")]
+        public static extern IntPtr GetConsoleWindow();
+    }
 }
