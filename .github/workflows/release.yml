@@ -403,7 +403,6 @@ jobs:
       - name: Generate checksums
         run: |
           $patterns = @(
-            "icedtea-web-distribution/target/*.zip",
             "icedtea-web-distribution/target/native-packages/*.deb",
             "icedtea-web-distribution/target/native-packages/*.rpm",
             "icedtea-web-distribution/target/native-packages/*.msi",
@@ -416,15 +415,6 @@ jobs:
             }
           }
         shell: pwsh
-
-      - name: Upload distribution artifacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: icedtea-web-maven-${{ matrix.rid }}
-          path: |
-            icedtea-web-distribution/target/*.zip
-            icedtea-web-distribution/target/*.zip.sha256.txt
-          if-no-files-found: error
 
       - name: Upload Linux native packages
         if: runner.os == 'Linux'
@@ -464,12 +454,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $patterns = @(
-            "icedtea-web-distribution/target/*.zip",
             "icedtea-web-distribution/target/native-packages/*.deb",
             "icedtea-web-distribution/target/native-packages/*.rpm",
             "icedtea-web-distribution/target/native-packages/*.msi",
             "icedtea-web-distribution/target/native-packages/*.dmg",
-            "icedtea-web-distribution/target/*.zip.sha256.txt",
             "icedtea-web-distribution/target/native-packages/*.deb.sha256.txt",
             "icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt",
             "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt",
