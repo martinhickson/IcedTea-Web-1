@@ -9,6 +9,10 @@ internal static class Program
 {
     private const string JavawsMainClass = "net.sourceforge.jnlp.runtime.JavawsUberLauncher";
     private const string SettingsMainClass = "net.sourceforge.jnlp.controlpanel.CommandLine";
+    private const uint AttachParentProcess = 0xFFFFFFFF;
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AttachConsole(uint dwProcessId);
 
     private static int Main(string[] args)
     {
@@ -35,10 +39,11 @@ internal static class Program
                 }
                 else
                 {
-                    javawsArgs.Add(arg);
+                    javawsArgs.Add(NormalizeJavawsArgument(arg));
                 }
             }
 
+            var preserveStdio = ShouldPreserveStdio(javawsArgs);
             var javaExecutable = ResolveJavaExecutable(installRoot, javawsArgs);
             var uberJar = ResolveRequiredFile(installRoot, "ITW_UBER_JAR",
                 Path.Combine("lib", "icedtea-web-uber.jar"));
@@ -46,7 +51,7 @@ internal static class Program
                 Path.Combine("bin", "byte-buddy-agent.jar"));
 
             var runtimeInfo = DetectJavaRuntimeInfo(javaExecutable);
-            var launchJavaExecutable = ResolveLaunchJavaExecutable(javaExecutable);
+            var launchJavaExecutable = ResolveLaunchJavaExecutable(javaExecutable, preserveStdio);
             var command = ComposeJavaCommand(
                 launchJavaExecutable,
                 uberJar,
@@ -58,7 +63,7 @@ internal static class Program
                 javaArgs,
                 javawsArgs);
 
-            return RunJava(launchJavaExecutable, command);
+            return RunJava(launchJavaExecutable, command, preserveStdio);
         }
         catch (Exception ex)
         {
@@ -125,6 +130,11 @@ internal static class Program
 
     private static bool IsRelaunch(IEnumerable<string> javawsArgs) =>
         javawsArgs.Any(arg => arg.Equals("-Xnofork", StringComparison.OrdinalIgnoreCase));
+
+    private static string NormalizeJavawsArgument(string arg) =>
+        arg.Equals("--version", StringComparison.OrdinalIgnoreCase) ? "-version" :
+        arg.Equals("--help", StringComparison.OrdinalIgnoreCase) ? "-help" :
+        arg;
 
     private static string? ResolveConfiguredJavaExecutable()
     {
@@ -294,9 +304,9 @@ internal static class Program
             : JavawsMainClass;
     }
 
-    private static int RunJava(string javaExecutable, IReadOnlyList<string> command)
+    private static int RunJava(string javaExecutable, IReadOnlyList<string> command, bool preserveStdio)
     {
-        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !ShouldPreserveStdio())
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !preserveStdio)
         {
             return RunJavaWithRedirectedOutput(javaExecutable, command);
         }
@@ -317,9 +327,9 @@ internal static class Program
         return process.ExitCode;
     }
 
-    private static string ResolveLaunchJavaExecutable(string javaExecutable)
+    private static string ResolveLaunchJavaExecutable(string javaExecutable, bool preserveStdio)
     {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || ShouldPreserveStdio())
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || preserveStdio)
         {
             return javaExecutable;
         }
@@ -329,8 +339,63 @@ internal static class Program
         return File.Exists(javaw) ? javaw : javaExecutable;
     }
 
-    private static bool ShouldPreserveStdio() =>
-        IsTruthy(Environment.GetEnvironmentVariable("ITW_PRESERVE_STDIO"));
+    private static bool ShouldPreserveStdio(IReadOnlyCollection<string> javawsArgs)
+    {
+        if (IsTruthy(Environment.GetEnvironmentVariable("ITW_PRESERVE_STDIO")))
+        {
+            TryAttachParentConsole();
+            return true;
+        }
+
+        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            && HasConsoleOutputIntent(javawsArgs)
+            && TryAttachParentConsole();
+    }
+
+    private static bool HasConsoleOutputIntent(IEnumerable<string> javawsArgs) =>
+        javawsArgs.Any(arg =>
+            arg.Equals("-version", StringComparison.OrdinalIgnoreCase)
+            || arg.Equals("--version", StringComparison.OrdinalIgnoreCase)
+            || arg.Equals("-help", StringComparison.OrdinalIgnoreCase)
+            || arg.Equals("--help", StringComparison.OrdinalIgnoreCase)
+            || arg.Equals("-?", StringComparison.OrdinalIgnoreCase));
+
+    private static bool TryAttachParentConsole()
+    {
+        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return false;
+        }
+
+        try
+        {
+            if (!AttachConsole(AttachParentProcess))
+            {
+                return false;
+            }
+            ResetConsoleStreams();
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static void ResetConsoleStreams()
+    {
+        try
+        {
+            var output = new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = true };
+            var error = new StreamWriter(Console.OpenStandardError()) { AutoFlush = true };
+            Console.SetOut(output);
+            Console.SetError(error);
+        }
+        catch
+        {
+            // If stream reset fails, child-process stdio inheritance may still work.
+        }
+    }
 
     private static int RunJavaWithRedirectedOutput(string javaExecutable, IReadOnlyList<string> command)
     {
