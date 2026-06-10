@@ -1,41 +1,9 @@
-/* PluginPanel.java
+/* JVMPanel.java -- JVM settings in the IcedTea-Web control panel.
 Copyright (C) 2012, Red Hat, Inc.
-
-This file is part of IcedTea.
-
-IcedTea is free software; you can redistribute it and/or
-modify it under the terms of the GNU General Public License as published by
-the Free Software Foundation, version 2.
-
-IcedTea is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
-General Public License for more details.
-
-You should have received a copy of the GNU General Public License
-along with IcedTea; see the file COPYING.  If not, write to
-the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA
-02110-1301 USA.
-
-Linking this library statically or dynamically with other modules is
-making a combined work based on this library.  Thus, the terms and
-conditions of the GNU General Public License cover the whole
-combination.
-
-As a special exception, the copyright holders of this library give you
-permission to link this library with independent modules to produce an
-executable, regardless of the license terms of these independent
-modules, and to copy and distribute the resulting executable under
-terms of your choice, provided that you also meet, for each linked
-independent module, the terms and conditions of the license of that
-module.  An independent module is a module which is not derived from
-or based on this library.  If you modify this library, you may extend
-this exception to your version of the library, but you are not
-obligated to do so.  If you do not wish to do so, delete this
-exception statement from your version.
  */
 package net.sourceforge.jnlp.controlpanel;
 
+import java.awt.Color;
 import java.awt.Component;
 import java.awt.Dimension;
 import java.awt.GridBagConstraints;
@@ -44,19 +12,24 @@ import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.File;
+import java.util.ArrayList;
+import java.util.List;
 import javax.swing.Box;
 import javax.swing.JButton;
-import javax.swing.JCheckBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JScrollPane;
+import javax.swing.JTable;
 import javax.swing.JTextField;
-import javax.swing.event.DocumentEvent;
-import javax.swing.event.DocumentListener;
+import javax.swing.table.DefaultTableModel;
+import javax.swing.table.DefaultTableCellRenderer;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.runtime.Translator;
-import net.sourceforge.jnlp.util.logging.OutputController;
+import net.sourceforge.jnlp.util.JvmDescriptor;
 import net.sourceforge.jnlp.util.StreamUtils;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 @SuppressWarnings("serial")
 public class JVMPanel extends NamedBorderPanel {
@@ -75,74 +48,117 @@ public class JVMPanel extends NamedBorderPanel {
             this.formattedText = formattedText;
             this.stds = stdouts;
         }
+
+        public String getReportableOutput() {
+            return stds;
+        }
     }
+
+    private static final int COLUMN_STATUS = 0;
+    private static final int COLUMN_JDK = 1;
+    private static final int COLUMN_PATH = 2;
+
     private final DeploymentConfiguration config;
-    private File lastPath = new File("/usr/lib/jvm/java/jre/");
-    JTextField testFieldArgumentsExec;
+    private File lastPath = new File("/usr/lib/jvm/");
+    private final DefaultTableModel knownJvmModel;
+    private final JTable knownJvmTable;
+    private final List<JvmDescriptor> knownJvms = new ArrayList<>();
 
     JVMPanel(DeploymentConfiguration config) {
         super(Translator.R("CPHeadJVMSettings"), new GridBagLayout());
         this.config = config;
+        knownJvmModel = new DefaultTableModel(
+                new Object[] {
+                    Translator.R("CPJVMColStatus"),
+                    Translator.R("CPJVMColJdk"),
+                    Translator.R("CPJVMColPath")
+                }, 0) {
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return false;
+            }
+        };
+        knownJvmTable = new JTable(knownJvmModel);
+        knownJvmTable.getColumnModel().getColumn(COLUMN_STATUS).setMaxWidth(36);
+        knownJvmTable.getColumnModel().getColumn(COLUMN_STATUS).setMinWidth(36);
+        knownJvmTable.getColumnModel().getColumn(COLUMN_JDK).setPreferredWidth(220);
+        knownJvmTable.getColumnModel().getColumn(COLUMN_PATH).setPreferredWidth(360);
+        knownJvmTable.setRowHeight(22);
+        knownJvmTable.getColumnModel().getColumn(COLUMN_STATUS)
+                .setCellRenderer(new JvmStatusCellRenderer());
         addComponents();
+        reloadKnownJvmsFromConfig();
     }
 
     void resetTestFieldArgumentsExec() {
-        testFieldArgumentsExec.setText("");
+        reloadKnownJvmsFromConfig();
+    }
+
+    private void reloadKnownJvmsFromConfig() {
+        knownJvms.clear();
+        knownJvmModel.setRowCount(0);
+        for (String home : KnownJvmStore.getKnownJvmHomes(config)) {
+            addKnownJvm(home, false);
+        }
+    }
+
+    private void persistKnownJvms() {
+        List<String> homes = new ArrayList<>();
+        for (JvmDescriptor descriptor : knownJvms) {
+            homes.add(descriptor.getHomePath());
+        }
+        KnownJvmStore.setKnownJvmHomes(config, homes);
+    }
+
+    private void addKnownJvm(String homePath, boolean persist) {
+        String normalized = homePath == null ? "" : homePath.trim();
+        if (normalized.isEmpty()) {
+            return;
+        }
+        for (JvmDescriptor existing : knownJvms) {
+            if (existing.getHomePath().equals(normalized)) {
+                return;
+            }
+        }
+        JvmDescriptor descriptor = JvmDescriptor.describe(normalized);
+        knownJvms.add(descriptor);
+        knownJvmModel.addRow(new Object[] {
+            statusLabel(descriptor),
+            descriptor.getDisplayName(),
+            descriptor.getHomePath()
+        });
+        if (persist) {
+            persistKnownJvms();
+        }
+    }
+
+    private static String statusLabel(JvmDescriptor descriptor) {
+        return descriptor.isValid() ? "\u2713" : "\u2717";
+    }
+
+    private void removeSelectedJvm() {
+        int selected = knownJvmTable.getSelectedRow();
+        if (selected < 0 || selected >= knownJvms.size()) {
+            return;
+        }
+        knownJvms.remove(selected);
+        knownJvmModel.removeRow(selected);
+        persistKnownJvms();
     }
 
     private void addComponents() {
         final JLabel description = new JLabel("<html>" + Translator.R("CPJVMPluginArguments") + "<hr /></html>");
         final JTextField testFieldArguments = new JTextField(25);
-
-        testFieldArguments.getDocument().addDocumentListener(new DocumentAdapter(config, DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS));
+        testFieldArguments.getDocument().addDocumentListener(
+                new DocumentAdapter(config, DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS));
         testFieldArguments.setText(config.getProperty(DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS));
 
-        final JLabel descriptionExec = new JLabel("<html>" + Translator.R("CPJVMitwExec") + "<hr /></html>");
-        testFieldArgumentsExec = new JTextField(100);
-        final JLabel validationResult = new JLabel(resetValidationResult(testFieldArgumentsExec.getText(), "", "CPJVMnone"));
-        validationResult.setToolTipText("");
-        final JCheckBox allowTypoTimeValidation = new JCheckBox(Translator.R("CPJVMPluginAllowTTValidation"), true);
-        allowTypoTimeValidation.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                validationResult.setText(resetValidationResult(testFieldArgumentsExec.getText(), "", "CPJVMnone"));
-                validationResult.setToolTipText("");
-            }
-        });
-        testFieldArgumentsExec.getDocument().addDocumentListener(new DocumentListener() {
+        final JLabel descriptionExec = new JLabel("<html>" + Translator.R("CPJVMKnownListDescription") + "<hr /></html>");
+        final JScrollPane knownJvmScroll = new JScrollPane(knownJvmTable);
+        knownJvmScroll.setPreferredSize(new Dimension(520, 180));
 
-            @Override
-            public void insertUpdate(DocumentEvent e) {
-                if (allowTypoTimeValidation.isSelected()) {
-                    JvmValidationResult s = validateJvm(testFieldArgumentsExec.getText());
-                    validationResult.setText(resetValidationResult(testFieldArgumentsExec.getText(), s.formattedText, "CPJVMvalidated"));
-                    validationResult.setToolTipText(s.stds);
-                }
-            }
-
-            @Override
-            public void removeUpdate(DocumentEvent e) {
-                if (allowTypoTimeValidation.isSelected()) {
-                    JvmValidationResult s = validateJvm(testFieldArgumentsExec.getText());
-                    validationResult.setText(resetValidationResult(testFieldArgumentsExec.getText(), s.formattedText, "CPJVMvalidated"));
-                    validationResult.setToolTipText(s.stds);
-                }
-            }
-
-            @Override
-            public void changedUpdate(DocumentEvent e) {
-                if (allowTypoTimeValidation.isSelected()) {
-                    JvmValidationResult s = validateJvm(testFieldArgumentsExec.getText());
-                    validationResult.setText(resetValidationResult(testFieldArgumentsExec.getText(), s.formattedText, "CPJVMvalidated"));
-                    validationResult.setToolTipText(s.stds);
-                }
-            }
-        });
-        testFieldArgumentsExec.getDocument().addDocumentListener(new DocumentAdapter(config, DeploymentConfiguration.KEY_JRE_DIR));
-        testFieldArgumentsExec.setText(config.getProperty(DeploymentConfiguration.KEY_JRE_DIR));
-
-        final JButton selectJvm = new JButton(Translator.R("CPJVMPluginSelectExec"));
-        selectJvm.addActionListener(new ActionListener() {
+        final JButton addJvm = new JButton(Translator.R("CPJVMAdd"));
+        addJvm.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 JFileChooser jfch;
@@ -155,27 +171,19 @@ public class JVMPanel extends NamedBorderPanel {
                 int i = jfch.showOpenDialog(JVMPanel.this);
                 if (i == JFileChooser.APPROVE_OPTION && jfch.getSelectedFile() != null) {
                     lastPath = jfch.getSelectedFile().getParentFile();
-                    String nws = jfch.getSelectedFile().getAbsolutePath();
-                    String olds = testFieldArgumentsExec.getText();
-                    if (!nws.equals(olds)) {
-                        validationResult.setText(resetValidationResult(testFieldArgumentsExec.getText(), "", "CPJVMnone"));
-                        validationResult.setToolTipText("");
-                    }
-                    testFieldArgumentsExec.setText(nws);
+                    addKnownJvm(jfch.getSelectedFile().getAbsolutePath(), true);
                 }
             }
         });
-        final JButton validateJvm = new JButton(Translator.R("CPJVMitwExecValidation"));
-        validateJvm.addActionListener(new ActionListener() {
+
+        final JButton removeJvm = new JButton(Translator.R("CPJVMRemove"));
+        removeJvm.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                JvmValidationResult s = validateJvm(testFieldArgumentsExec.getText());
-                validationResult.setText(resetValidationResult(testFieldArgumentsExec.getText(), s.formattedText, "CPJVMvalidated"));
-                validationResult.setToolTipText(s.stds);
-
+                removeSelectedJvm();
             }
         });
-        // Filler to pack the bottom of the panel.
+
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.BOTH;
         c.weightx = 1;
@@ -190,29 +198,24 @@ public class JVMPanel extends NamedBorderPanel {
         c.gridy++;
         this.add(descriptionExec, c);
         c.gridy++;
-        this.add(testFieldArgumentsExec, c);
+        c.weighty = 0.35;
+        this.add(knownJvmScroll, c);
         c.gridy++;
-        GridBagConstraints cb1 = (GridBagConstraints) c.clone();
-        cb1.fill = GridBagConstraints.NONE;
-        cb1.gridwidth = 1;
-        this.add(selectJvm, cb1);
-        GridBagConstraints cb3 = (GridBagConstraints) c.clone();
-        cb3.fill = GridBagConstraints.NONE;
-        cb3.gridx = 2;
-        cb3.gridwidth = 1;
-        this.add(allowTypoTimeValidation, cb3);
-        GridBagConstraints cb2 = (GridBagConstraints) c.clone();
-        cb2.fill = GridBagConstraints.NONE;
-        cb2.gridx = 3;
-        cb2.gridwidth = 1;
-        this.add(validateJvm, cb2);
-        c.gridy++;
-        this.add(validationResult, c);
+        c.weighty = 0;
+        GridBagConstraints buttonRow = (GridBagConstraints) c.clone();
+        buttonRow.fill = GridBagConstraints.NONE;
+        buttonRow.gridwidth = 1;
+        buttonRow.weightx = 0;
+        this.add(addJvm, buttonRow);
+        GridBagConstraints removeButton = (GridBagConstraints) buttonRow.clone();
+        removeButton.gridx = 1;
+        this.add(removeJvm, removeButton);
 
-        // This is to keep it from expanding vertically if resized.
         Component filler = Box.createRigidArea(new Dimension(1, 1));
         c.gridy++;
-        c.weighty++;
+        c.gridx = 0;
+        c.gridwidth = 4;
+        c.weighty = 1;
         this.add(filler, c);
     }
 
@@ -340,11 +343,29 @@ public class JVMPanel extends NamedBorderPanel {
             validationResult += "<span color=\"green\">" + Translator.R("CPJVMoracleFound") + "</span>";
             return new JvmValidationResult(validationResult, JvmValidationResult.STATE.VALID_JDK, reportableOutputs);
         }
+        if (processErrorStream.contains("corretto") || processStdOutStream.contains("corretto")
+                || processErrorStream.contains("temurin") || processStdOutStream.contains("temurin")) {
+            validationResult += "<span color=\"#00EE00\">" + Translator.R("CPJVMopenJdkFound") + "</span>";
+            return new JvmValidationResult(validationResult, JvmValidationResult.STATE.VALID_JDK, reportableOutputs);
+        }
         validationResult += "<span color=\"orange\">" + Translator.R("CPJVMstrangeProcess") + "</span>";
         return new JvmValidationResult(validationResult, JvmValidationResult.STATE.NOT_VALID_JDK, reportableOutputs);
     }
 
-    private String resetValidationResult(final String value, String result, String headerKey) {
-        return "<html>" + Translator.R(headerKey) + ": <br />" + value + " <br />" + result + "<hr /></html>";
+    private static final class JvmStatusCellRenderer extends DefaultTableCellRenderer {
+        @Override
+        public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
+                boolean hasFocus, int row, int column) {
+            Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+            if ("\u2713".equals(String.valueOf(value))) {
+                setForeground(new Color(0, 140, 0));
+            } else if ("\u2717".equals(String.valueOf(value))) {
+                setForeground(new Color(180, 0, 0));
+            } else {
+                setForeground(table.getForeground());
+            }
+            setHorizontalAlignment(CENTER);
+            return component;
+        }
     }
 }

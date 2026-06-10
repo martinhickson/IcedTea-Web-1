@@ -43,7 +43,7 @@ internal static class Program
             // Rust WinExe path: AttachConsole(ATTACH_PARENT_PROCESS) → inherit stdio when launched from cmd.
             var preserveStdio = ResolveGuiPreserveStdio();
 #endif
-            var javaExecutable = ResolveJavaExecutable(installRoot, javawsArgs);
+            var javaExecutable = ResolveJavaExecutable(installRoot, javawsArgs, javaArgs);
             var uberJar = ResolveRequiredFile(installRoot, "ITW_UBER_JAR",
                 Path.Combine("lib", "icedtea-web-uber.jar"));
             var byteBuddyAgent = ResolveOptionalFile(installRoot, "ITW_BYTEBUDDY_AGENT_JAR",
@@ -111,7 +111,10 @@ internal static class Program
         }
     }
 
-    private static string ResolveJavaExecutable(DirectoryInfo installRoot, IReadOnlyCollection<string> javawsArgs)
+    private static string ResolveJavaExecutable(
+        DirectoryInfo installRoot,
+        IReadOnlyCollection<string> javawsArgs,
+        IReadOnlyCollection<string> javaArgs)
     {
         var forcedBundledJava = Environment.GetEnvironmentVariable("ITW_BUNDLED_JAVA");
         if (!string.IsNullOrWhiteSpace(forcedBundledJava) && File.Exists(forcedBundledJava))
@@ -121,7 +124,7 @@ internal static class Program
 
         if (IsRelaunch(javawsArgs))
         {
-            var configuredJava = ResolveConfiguredJavaExecutable();
+            var configuredJava = ResolveConfiguredJavaExecutable(javaArgs);
             if (!string.IsNullOrWhiteSpace(configuredJava))
             {
                 return configuredJava;
@@ -168,18 +171,8 @@ internal static class Program
     private static bool IsRelaunch(IEnumerable<string> javawsArgs) =>
         javawsArgs.Any(arg => arg.Equals("-Xnofork", StringComparison.OrdinalIgnoreCase));
 
-    private static string? ResolveConfiguredJavaExecutable()
+    private static string? ResolveConfiguredJavaExecutable(IReadOnlyCollection<string> javaArgs)
     {
-        var configuredJreDir = ReadDeploymentProperty("deployment.jre.dir");
-        if (!string.IsNullOrWhiteSpace(configuredJreDir))
-        {
-            var configuredJava = Path.Combine(configuredJreDir, "bin", JavaExecutableName());
-            if (File.Exists(configuredJava))
-            {
-                return configuredJava;
-            }
-        }
-
         var javaHome = Environment.GetEnvironmentVariable("JAVA_HOME");
         if (!string.IsNullOrWhiteSpace(javaHome))
         {
@@ -190,7 +183,175 @@ internal static class Program
             }
         }
 
+        var requestedJre = ExtractRequestedJreVersion(javaArgs);
+        var knownHomes = ReadKnownJvmHomes();
+        var selectedHome = SelectBestJvmHome(knownHomes, requestedJre);
+        if (!string.IsNullOrWhiteSpace(selectedHome))
+        {
+            var selectedJava = Path.Combine(selectedHome, "bin", JavaExecutableName());
+            if (File.Exists(selectedJava))
+            {
+                return selectedJava;
+            }
+        }
+
+        var configuredJreDir = ReadDeploymentProperty("deployment.jre.dir");
+        if (!string.IsNullOrWhiteSpace(configuredJreDir))
+        {
+            var configuredJava = Path.Combine(configuredJreDir, "bin", JavaExecutableName());
+            if (File.Exists(configuredJava))
+            {
+                return configuredJava;
+            }
+        }
+
         return null;
+    }
+
+    private static string? ExtractRequestedJreVersion(IReadOnlyCollection<string> javaArgs)
+    {
+        const string prefix = "-Dicedtea-web.relaunch.requestedJre=";
+        foreach (var arg in javaArgs)
+        {
+            if (arg.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                return arg[prefix.Length..];
+            }
+        }
+        return null;
+    }
+
+    private static IReadOnlyList<string> ReadKnownJvmHomes()
+    {
+        var homes = new List<string>();
+        var listed = ReadDeploymentProperty("deployment.jre.dirs");
+        if (!string.IsNullOrWhiteSpace(listed))
+        {
+            foreach (var entry in listed.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!string.IsNullOrWhiteSpace(entry))
+                {
+                    homes.Add(entry);
+                }
+            }
+        }
+
+        var legacy = ReadDeploymentProperty("deployment.jre.dir");
+        if (!string.IsNullOrWhiteSpace(legacy) && !homes.Contains(legacy, StringComparer.Ordinal))
+        {
+            homes.Add(legacy);
+        }
+
+        return homes;
+    }
+
+    private static string? SelectBestJvmHome(IReadOnlyList<string> homes, string? requestedVersion)
+    {
+        var candidates = new List<(string Home, int Major)>();
+        foreach (var home in homes)
+        {
+            var java = Path.Combine(home, "bin", JavaExecutableName());
+            if (!File.Exists(java))
+            {
+                continue;
+            }
+            candidates.Add((home, DetectJvmMajorVersion(home, java)));
+        }
+
+        if (candidates.Count == 0)
+        {
+            return null;
+        }
+
+        if (string.IsNullOrWhiteSpace(requestedVersion))
+        {
+            return candidates[0].Home;
+        }
+
+        var requestedMajor = ParseRequestedMajor(requestedVersion);
+        var matching = candidates.Where(c => requestedMajor == 0 || c.Major == requestedMajor || VersionMatches(requestedVersion, c.Major)).ToList();
+        if (matching.Count == 0)
+        {
+            return candidates[0].Home;
+        }
+
+        return matching.OrderByDescending(c => c.Major).First().Home;
+    }
+
+    private static bool VersionMatches(string requestedVersion, int major)
+    {
+        if (major <= 0)
+        {
+            return false;
+        }
+        return requestedVersion.Contains(major.ToString(), StringComparison.Ordinal)
+            || requestedVersion.Contains("1." + major, StringComparison.Ordinal);
+    }
+
+    private static int ParseRequestedMajor(string requestedVersion)
+    {
+        var token = requestedVersion.Split('.', '+', '-', '_')[0];
+        if (int.TryParse(token, out var major) && major > 1)
+        {
+            return major;
+        }
+        var parts = requestedVersion.Split('.', '+', '-', '_');
+        if (parts.Length > 1 && parts[0] == "1" && int.TryParse(parts[1], out var legacyMajor))
+        {
+            return legacyMajor;
+        }
+        return 0;
+    }
+
+    private static int DetectJvmMajorVersion(string home, string javaExecutable)
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = javaExecutable,
+                Arguments = "-version",
+                RedirectStandardError = true,
+                RedirectStandardOutput = true,
+                UseShellExecute = false,
+                CreateNoWindow = true,
+            };
+            using var process = Process.Start(startInfo);
+            if (process == null)
+            {
+                return ParseMajorFromPath(home);
+            }
+            var stderr = process.StandardError.ReadToEnd();
+            var stdout = process.StandardOutput.ReadToEnd();
+            process.WaitForExit();
+            var combined = stderr + "\n" + stdout;
+            var quoted = System.Text.RegularExpressions.Regex.Match(combined, "\"([^\"]+)\"");
+            if (quoted.Success)
+            {
+                return ParseRequestedMajor(quoted.Groups[1].Value);
+            }
+        }
+        catch
+        {
+            // Fall back to path-based detection.
+        }
+        return ParseMajorFromPath(home);
+    }
+
+    private static int ParseMajorFromPath(string home)
+    {
+        var name = Path.GetFileName(home);
+        var match = System.Text.RegularExpressions.Regex.Match(name, @"java-?(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success && int.TryParse(match.Groups[1].Value, out var major))
+        {
+            return major;
+        }
+        match = System.Text.RegularExpressions.Regex.Match(name, @"jdk-?(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (match.Success && int.TryParse(match.Groups[1].Value, out major))
+        {
+            return major;
+        }
+        return 0;
     }
 
     private static string? ReadDeploymentProperty(string key)
