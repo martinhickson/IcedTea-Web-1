@@ -22,6 +22,7 @@ import static java.lang.Integer.parseInt;
 import static java.lang.Long.parseLong;
 
 import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
@@ -83,6 +84,7 @@ public class TemporaryInternetFilesPanel extends NamedBorderPanel {
     private final JLabel lCacheSize;
     private final JButton bViewFiles;
     private final JButton bCleanByApp;
+    private final JButton bClearCache;
     private final JPanel diskSpacePanel;
 
     public TemporaryInternetFilesPanel(final DeploymentConfiguration config) {
@@ -112,7 +114,8 @@ public class TemporaryInternetFilesPanel extends NamedBorderPanel {
         location = new JTextField(PathsAndFiles.CACHE_DIR.getFullPath(config));
         locationDescription = new JLabel(Translator.R("TIFPLocationLabel") + ":");
         bViewFiles = new JButton(Translator.R("TIFPViewFiles"));
-        bCleanByApp = new JButton(Translator.R("TIFPCleanByApp"));
+        bCleanByApp = new JButton(Translator.R("TIFPClearByApp"));
+        bClearCache = new JButton(Translator.R("TIFPClearCache"));
 
         diskSpacePanel = new JPanel();
         diskSpacePanel.setLayout(new GridBagLayout());
@@ -249,6 +252,13 @@ public class TemporaryInternetFilesPanel extends NamedBorderPanel {
              }
         });
 
+        bClearCache.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                CacheClearUiHelper.clearEntireCache(TemporaryInternetFilesPanel.this);
+            }
+        });
+
 
         c.gridy = 4;
         c.gridx = 0;
@@ -265,10 +275,15 @@ public class TemporaryInternetFilesPanel extends NamedBorderPanel {
         c.weightx = 0.5;
         diskSpacePanel.add(bLocation, c);
         c.gridy = 6;
-        c.gridx = 1;
-        diskSpacePanel.add(bViewFiles, c);
-        c.gridx = 2;
-        diskSpacePanel.add(bCleanByApp, c);
+        c.gridx = 0;
+        c.gridwidth = 3;
+        c.weightx = 1;
+        JPanel cacheActions = new JPanel(new FlowLayout(FlowLayout.LEADING, 8, 0));
+        cacheActions.add(bViewFiles);
+        cacheActions.add(bCleanByApp);
+        cacheActions.add(bClearCache);
+        diskSpacePanel.add(cacheActions, c);
+        c.gridwidth = 1;
 
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout());
@@ -410,7 +425,10 @@ public class TemporaryInternetFilesPanel extends NamedBorderPanel {
         bLocation.setEnabled(bool);
         location.setEnabled(bool);
         locationDescription.setEnabled(bool);
-        bViewFiles.setEnabled(bool);
+        // Cache management actions stay available even when caching is disabled (size 0).
+        bViewFiles.setEnabled(true);
+        bCleanByApp.setEnabled(true);
+        bClearCache.setEnabled(true);
     }
 
     private void showCacheSizeSpinnerGUIElements(boolean bool){
