@@ -55,8 +55,9 @@ public class JVMPanel extends NamedBorderPanel {
     }
 
     private static final int COLUMN_STATUS = 0;
-    private static final int COLUMN_JDK = 1;
-    private static final int COLUMN_PATH = 2;
+    private static final int COLUMN_VENDOR = 1;
+    private static final int COLUMN_VERSION = 2;
+    private static final int COLUMN_PATH = 3;
 
     private final DeploymentConfiguration config;
     private File lastPath = new File("/usr/lib/jvm/");
@@ -81,7 +82,8 @@ public class JVMPanel extends NamedBorderPanel {
         knownJvmTable = new JTable(knownJvmModel);
         knownJvmTable.getColumnModel().getColumn(COLUMN_STATUS).setMaxWidth(36);
         knownJvmTable.getColumnModel().getColumn(COLUMN_STATUS).setMinWidth(36);
-        knownJvmTable.getColumnModel().getColumn(COLUMN_JDK).setPreferredWidth(220);
+        knownJvmTable.getColumnModel().getColumn(COLUMN_VENDOR).setPreferredWidth(160);
+        knownJvmTable.getColumnModel().getColumn(COLUMN_VERSION).setPreferredWidth(100);
         knownJvmTable.getColumnModel().getColumn(COLUMN_PATH).setPreferredWidth(360);
         knownJvmTable.setRowHeight(22);
         knownJvmTable.getColumnModel().getColumn(COLUMN_STATUS)
@@ -124,7 +126,8 @@ public class JVMPanel extends NamedBorderPanel {
         knownJvms.add(descriptor);
         knownJvmModel.addRow(new Object[] {
             statusLabel(descriptor),
-            descriptor.getDisplayName(),
+            vendorLabel(descriptor),
+            versionLabel(descriptor),
             descriptor.getHomePath()
         });
         if (persist) {
@@ -134,6 +137,58 @@ public class JVMPanel extends NamedBorderPanel {
 
     private static String statusLabel(JvmDescriptor descriptor) {
         return descriptor.isValid() ? "\u2713" : "\u2717";
+    }
+
+    private static String vendorLabel(JvmDescriptor descriptor) {
+        String flavour = descriptor.getFlavour();
+        return flavour.isEmpty() ? Translator.R("CPJVMUnknownVendor") : flavour;
+    }
+
+    private static String versionLabel(JvmDescriptor descriptor) {
+        return descriptor.getVersion();
+    }
+
+    private void updateJvmRow(int row, JvmDescriptor descriptor) {
+        knownJvms.set(row, descriptor);
+        knownJvmModel.setValueAt(statusLabel(descriptor), row, COLUMN_STATUS);
+        knownJvmModel.setValueAt(vendorLabel(descriptor), row, COLUMN_VENDOR);
+        knownJvmModel.setValueAt(versionLabel(descriptor), row, COLUMN_VERSION);
+        knownJvmModel.setValueAt(descriptor.getHomePath(), row, COLUMN_PATH);
+    }
+
+    private void editSelectedJvm() {
+        int selected = knownJvmTable.getSelectedRow();
+        if (selected < 0 || selected >= knownJvms.size()) {
+            return;
+        }
+        JvmDescriptor current = knownJvms.get(selected);
+        File startDir = new File(current.getHomePath());
+        if (!startDir.isDirectory()) {
+            startDir = startDir.getParentFile();
+        }
+        if (startDir == null || !startDir.exists()) {
+            startDir = lastPath;
+        }
+        JFileChooser jfch = startDir != null && startDir.exists()
+                ? new JFileChooser(startDir) : new JFileChooser();
+        jfch.setDialogTitle(Translator.R("CPJVMEdit"));
+        jfch.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        int i = jfch.showOpenDialog(JVMPanel.this);
+        if (i != JFileChooser.APPROVE_OPTION || jfch.getSelectedFile() == null) {
+            return;
+        }
+        String newPath = jfch.getSelectedFile().getAbsolutePath();
+        if (newPath.equals(current.getHomePath())) {
+            return;
+        }
+        for (int row = 0; row < knownJvms.size(); row++) {
+            if (row != selected && knownJvms.get(row).getHomePath().equals(newPath)) {
+                return;
+            }
+        }
+        lastPath = jfch.getSelectedFile().getParentFile();
+        updateJvmRow(selected, JvmDescriptor.describe(newPath));
+        persistKnownJvms();
     }
 
     private void removeSelectedJvm() {
@@ -176,6 +231,14 @@ public class JVMPanel extends NamedBorderPanel {
             }
         });
 
+        final JButton editJvm = new JButton(Translator.R("CPJVMEdit"));
+        editJvm.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                editSelectedJvm();
+            }
+        });
+
         final JButton removeJvm = new JButton(Translator.R("CPJVMRemove"));
         removeJvm.addActionListener(new ActionListener() {
             @Override
@@ -207,8 +270,11 @@ public class JVMPanel extends NamedBorderPanel {
         buttonRow.gridwidth = 1;
         buttonRow.weightx = 0;
         this.add(addJvm, buttonRow);
+        GridBagConstraints editButton = (GridBagConstraints) buttonRow.clone();
+        editButton.gridx = 1;
+        this.add(editJvm, editButton);
         GridBagConstraints removeButton = (GridBagConstraints) buttonRow.clone();
-        removeButton.gridx = 1;
+        removeButton.gridx = 2;
         this.add(removeJvm, removeButton);
 
         Component filler = Box.createRigidArea(new Dimension(1, 1));
