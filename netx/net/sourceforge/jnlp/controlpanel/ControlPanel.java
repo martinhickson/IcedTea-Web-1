@@ -129,7 +129,7 @@ public class ControlPanel extends JFrame {
         final double goldenRatio = 1.61803398875d;
         Dimension size = getSize();
         int width = size.width;
-        int height = Math.max(size.height, (int) Math.round(width * goldenRatio));
+        int height = (int) Math.round(width / goldenRatio);
         Dimension target = new Dimension(width, height);
         setMinimumSize(target);
         setSize(target);

@@ -318,6 +318,20 @@ jobs:
           "${{ matrix.smoke-script }}"
         shell: bash
 
+
+      - name: Install xvfb for control panel smoke test
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+        shell: bash
+
+      - name: Run Linux control panel smoke test from distribution tree
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x scripts/run-linux-control-panel-smoke.sh
+          ITW_DOTNET_DIST_DIR="${{ github.workspace }}/icedtea-web-distribution/target/dist/icedtea-web-${{ env.RELEASE_VERSION }}" \
+          scripts/run-linux-control-panel-smoke.sh
+        shell: bash
+
       - name: Build Linux native packages in Docker
         if: runner.os == 'Linux'
         run: |
