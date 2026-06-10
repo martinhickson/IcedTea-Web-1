@@ -129,6 +129,9 @@ jobs:
           * **Native packaging formats**
             Available as platform-native installers and archives for straightforward deployment in desktop and enterprise environments.
 
+          * **Desktop administration tools**
+            Registers IcedTea-Web Control Panel and Policy Editor in the application menu on Linux (Freedesktop/KDE/GNOME) and Windows (Start Menu), with themed icons for discoverable configuration and policy editing.
+
           * **Verifiable build outputs**
             Release artifacts include checksums to support integrity verification and secure distribution workflows.
 
