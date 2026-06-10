@@ -163,6 +163,20 @@ jobs:
           ITW_SMOKE_BUILD_TEST_APP=false ITW_SMOKE_TIMEOUT_SECONDS=180 "${{ matrix.smoke-script }}"
         shell: bash
 
+
+      - name: Install xvfb for control panel smoke test
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb
+        shell: bash
+
+      - name: Run Linux control panel smoke test from distribution tree
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x scripts/run-linux-control-panel-smoke.sh
+          ITW_DOTNET_DIST_DIR="${{ github.workspace }}/icedtea-web-distribution/target/dist/icedtea-web-2.0.1-SNAPSHOT" \
+          scripts/run-linux-control-panel-smoke.sh
+        shell: bash
+
       - name: Build Linux native packages in Docker
         if: runner.os == 'Linux'
         run: |
