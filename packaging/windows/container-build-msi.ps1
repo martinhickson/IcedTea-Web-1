@@ -132,7 +132,7 @@ foreach ($file in $files) {
         [void]$componentsXml.AppendLine("      <Shortcut Id=`"JavawsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Java Web Start`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")
     }
     if ($normalizedRelativeFile -ieq "bin\itweb-settings.exe") {
-        [void]$componentsXml.AppendLine("      <Shortcut Id=`"SettingsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Settings`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")
+        [void]$componentsXml.AppendLine("      <Shortcut Id=`"SettingsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Control Panel`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")
     }
     if ($normalizedRelativeFile -ieq "bin\policyeditor.exe") {
         [void]$componentsXml.AppendLine("      <Shortcut Id=`"PolicyEditorStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Policy Editor`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")

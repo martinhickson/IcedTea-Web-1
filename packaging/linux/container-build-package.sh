@@ -40,6 +40,20 @@ safe_rpm_version() {
   echo "$VERSION" | tr '-' '_'
 }
 
+install_hicolor_icons() {
+  local payload_root="$1"
+  local icon_name="$2"
+  local size
+  for size in 16 32 48 64 128 256; do
+    local src="$ROOT_DIR/packaging/icons/icedtea-web-${size}.png"
+    local dest_dir="$payload_root/usr/share/icons/hicolor/${size}x${size}/apps"
+    if [[ -f "$src" ]]; then
+      mkdir -p "$dest_dir"
+      cp "$src" "$dest_dir/${icon_name}.png"
+    fi
+  done
+}
+
 create_payload_root() {
   local payload_root="$1"
   rm -rf "$payload_root"
@@ -53,6 +67,9 @@ create_payload_root() {
   cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/javaws.png"
   cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/itweb-settings.png"
   cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/policyeditor.png"
+  install_hicolor_icons "$payload_root" javaws
+  install_hicolor_icons "$payload_root" itweb-settings
+  install_hicolor_icons "$payload_root" policyeditor
 
   cat > "$payload_root/usr/share/applications/icedtea-web-javaws.desktop" <<EOF
 [Desktop Entry]
@@ -60,32 +77,45 @@ Type=Application
 Name=IcedTea-Web Java Web Start
 Comment=Launch JNLP applications with IcedTea-Web
 Exec=$INSTALL_ROOT/bin/javaws %u
+TryExec=$INSTALL_ROOT/bin/javaws
 Icon=javaws
 Terminal=false
-Categories=Network;Java;
+Categories=Network;Utility;
 MimeType=application/x-java-jnlp-file;
 EOF
 
   cat > "$payload_root/usr/share/applications/icedtea-web-settings.desktop" <<EOF
 [Desktop Entry]
 Type=Application
-Name=IcedTea-Web Settings
-Comment=Configure IcedTea-Web
+Name=IcedTea-Web Control Panel
+Name[de]=IcedTea-Web Systemsteuerung
+Name[pl]=Panel sterowania IcedTea-Web
+Name[cs]=Ovládací panel IcedTea-Web
+GenericName=Control Panel
+Comment=Configure IcedTea-Web (javaws and plugin)
+Comment[de]=Konfiguriert IcedTea-Web (javaws und Plug-in)
+Comment[pl]=Konfiguruj IcedTea-Web (javaws i wtyczkę)
+Comment[cs]=Konfigurace aplikace IcedTea-Web (javaws a zásuvný modul)
 Exec=$INSTALL_ROOT/bin/itweb-settings
+TryExec=$INSTALL_ROOT/bin/itweb-settings
 Icon=itweb-settings
 Terminal=false
-Categories=Settings;Java;
+Categories=Settings;Utility;
+Keywords=IcedTea;IcedTea-Web;java;javaws;web;start;webstart;jnlp;settings;control panel;
 EOF
 
   cat > "$payload_root/usr/share/applications/icedtea-web-policyeditor.desktop" <<EOF
 [Desktop Entry]
 Type=Application
 Name=IcedTea-Web Policy Editor
+GenericName=Policy Tool
 Comment=Edit Java Applet policy and permission settings
 Exec=$INSTALL_ROOT/bin/policyeditor
+TryExec=$INSTALL_ROOT/bin/policyeditor
 Icon=policyeditor
 Terminal=false
-Categories=Settings;Java;
+Categories=Settings;Utility;
+Keywords=IcedTea;IcedTea-Web;java;javaws;web;start;webstart;jnlp;policy;security;permissions;
 EOF
 }
 
@@ -110,6 +140,17 @@ Description: $DESCRIPTION
  This package installs the Maven-built IcedTea-Web distribution, including
  the self-contained .NET launcher and bundled Amazon Corretto 11 runtime.
 EOF
+  cat > "$deb_root/DEBIAN/postinst" <<'EOF'
+#!/bin/sh
+set -e
+if command -v update-desktop-database >/dev/null 2>&1; then
+  update-desktop-database -q /usr/share/applications 2>/dev/null || true
+fi
+if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+  gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+fi
+EOF
+  chmod 755 "$deb_root/DEBIAN/postinst"
   dpkg-deb --build --root-owner-group "$deb_root" "$deb_file"
   rm -rf "$deb_root"
   echo "Built DEB: $deb_file"
@@ -167,6 +208,7 @@ $INSTALL_ROOT
 /usr/share/pixmaps/javaws.png
 /usr/share/pixmaps/itweb-settings.png
 /usr/share/pixmaps/policyeditor.png
+/usr/share/icons/hicolor
 EOF
 
   rpmbuild -bb --target "$RPM_ARCH" --define "_topdir $rpm_topdir" "$rpm_topdir/SPECS/${PACKAGE_NAME}.spec"

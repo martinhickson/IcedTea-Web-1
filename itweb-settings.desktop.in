@@ -12,5 +12,5 @@ Exec=PATH_TO_ITWEB_SETTINGS
 Icon=javaws
 Terminal=false
 Type=Application
-Categories=Settings;
+Categories=Settings;Utility;
 Keywords=IcedTea;IcedTea-Web;java;javaws;web;start;webstart;jnlp;
