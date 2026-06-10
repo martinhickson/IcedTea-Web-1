@@ -122,6 +122,17 @@ public class ControlPanel extends JFrame {
         add(buttonPanel, BorderLayout.PAGE_END);
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         pack();
+        applyGoldenRatioWindowSize();
+    }
+
+    private void applyGoldenRatioWindowSize() {
+        final double goldenRatio = 1.61803398875d;
+        Dimension size = getSize();
+        int width = size.width;
+        int height = Math.max(size.height, (int) Math.round(width * goldenRatio));
+        Dimension target = new Dimension(width, height);
+        setMinimumSize(target);
+        setSize(target);
     }
 
     private JPanel createTopPanel() {
