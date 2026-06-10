@@ -30,6 +30,10 @@ public final class JavawsUberLauncher {
     }
 
     public static void main(String[] args) throws Exception {
+        if (Boot.isJavaVersionProbe(args)) {
+            Boot.printJavaMajorVersionAndExit();
+        }
+
         ensureLauncherLocation();
         args = chooseJnlpFileWhenNoArguments(args);
         if (args == null) {
@@ -39,11 +43,16 @@ public final class JavawsUberLauncher {
     }
 
     private static String[] chooseJnlpFileWhenNoArguments(String[] args) throws Exception {
-        if (args.length > 0 || !"javaws".equals(System.getProperty("icedtea-web.bin.name"))) {
+        if (args.length > 0 || !isJavawsLauncherName(System.getProperty("icedtea-web.bin.name"))) {
             return args;
         }
         File selected = chooseJnlpFile();
         return selected == null ? null : new String[] { selected.getAbsolutePath() };
+    }
+
+    /** GUI ({@code javaws}) and console ({@code javawsc}) launchers share the no-args file chooser. */
+    private static boolean isJavawsLauncherName(String binName) {
+        return "javaws".equals(binName) || "javawsc".equals(binName);
     }
 
     private static File chooseJnlpFile() throws Exception {

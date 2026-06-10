@@ -62,6 +62,9 @@ import net.sourceforge.swing.SwingUtils;
  */
 public final class Boot implements PrivilegedAction<Void> {
 
+    /** Launcher-internal probe: print running JDK major version to stdout and exit (no AWT). */
+    public static final String JAVA_VERSION_PROBE_ARG = "--java-version";
+
     // todo: decide whether a spawned netx (external launch)
     // should inherit the same options as this instance (store argv?)
     public static final String name = Boot.class.getPackage().getImplementationTitle();
@@ -93,8 +96,74 @@ public final class Boot implements PrivilegedAction<Void> {
     public static OptionParser getOptionParser() {
         return optionParser;
     }
-    
-    
+
+    public static boolean isJavaVersionProbe(String[] args) {
+        if (args == null) {
+            return false;
+        }
+        for (String arg : args) {
+            if (JAVA_VERSION_PROBE_ARG.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static void printJavaMajorVersionAndExit() {
+        System.out.println(Integer.toString(detectRunningJavaMajorVersion()));
+        Runtime.getRuntime().halt(0);
+    }
+
+    private static void handleEarlyConsoleCommands(String[] argsIn) {
+        if (hasBareOption(argsIn, OptionsDefinitions.OPTIONS.VERSION.option)) {
+            System.out.println(nameAndVersion);
+            Runtime.getRuntime().halt(0);
+        }
+        if (hasBareOption(argsIn, OptionsDefinitions.OPTIONS.LICENSE.option)) {
+            System.out.print(miniLicense);
+            Runtime.getRuntime().halt(0);
+        }
+    }
+
+    private static boolean hasBareOption(String[] args, String option) {
+        if (args == null) {
+            return false;
+        }
+        for (String arg : args) {
+            if (option.equals(arg)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static int detectRunningJavaMajorVersion() {
+        try {
+            return Runtime.version().feature();
+        } catch (Throwable ignored) {
+            // Java 8 fallback
+        }
+        String version = System.getProperty("java.version", "1.8");
+        if (version.startsWith("1.")) {
+            int secondDot = version.indexOf('.', 2);
+            if (secondDot > 2) {
+                try {
+                    return Integer.parseInt(version.substring(2, secondDot));
+                } catch (NumberFormatException ignored) {
+                    // fall through
+                }
+            }
+        }
+        int dot = version.indexOf('.');
+        if (dot > 0) {
+            try {
+                return Integer.parseInt(version.substring(0, dot));
+            } catch (NumberFormatException ignored) {
+                // fall through
+            }
+        }
+        return 8;
+    }
 
     /**
      * Launch the JNLP file specified by the command-line arguments.
@@ -102,6 +171,14 @@ public final class Boot implements PrivilegedAction<Void> {
      * @param argsIn launching arguments
      */
     public static void main(String[] argsIn) throws UnevenParameterException {
+        if (isJavaVersionProbe(argsIn)) {
+            printJavaMajorVersionAndExit();
+        }
+
+        // -version/-license before OptionParser/OutputController/JNLPRuntime so cmd
+        // javaws --version never touches AWT or shutdown hooks (halt, not System.exit).
+        handleEarlyConsoleCommands(argsIn);
+
         // setup Swing EDT tracing:
         SwingUtils.setup();
 
@@ -113,6 +190,11 @@ public final class Boot implements PrivilegedAction<Void> {
 
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.VERBOSE)) {
             JNLPRuntime.setDebug(true);
+        }
+
+        if (optionParser.hasOption(OptionsDefinitions.OPTIONS.HELP1)) {
+            handleMessage();
+            Runtime.getRuntime().halt(0);
         }
 
         if (AppContext.getAppContext() == null) {
@@ -135,20 +217,6 @@ public final class Boot implements PrivilegedAction<Void> {
             }
         }
 
-        if (optionParser.hasOption(OptionsDefinitions.OPTIONS.VERSION)) {
-            OutputController.getLogger().printOutLn(nameAndVersion);
-            JNLPRuntime.exit(0);
-        }
-
-        if (optionParser.hasOption(OptionsDefinitions.OPTIONS.LICENSE)) {
-            OutputController.getLogger().printOutLn(miniLicense);
-            JNLPRuntime.exit(0);
-        }
-
-        if (optionParser.hasOption(OptionsDefinitions.OPTIONS.HELP1)) {
-            handleMessage();
-            JNLPRuntime.exit(0);
-        }
         List<String> properties = optionParser.getParams(OptionsDefinitions.OPTIONS.PROPERTY);
         if (properties != null) {
             for (String prop : properties) {
