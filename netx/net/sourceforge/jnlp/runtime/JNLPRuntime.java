@@ -74,6 +74,8 @@ import net.sourceforge.jnlp.security.SecurityUtil;
 import net.sourceforge.jnlp.services.XServiceManagerStub;
 import net.sourceforge.jnlp.util.BasicExceptionDialog;
 import net.sourceforge.jnlp.util.FileUtils;
+import net.sourceforge.jnlp.util.NetxRunningDetailsRegistry;
+import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 import net.sourceforge.jnlp.util.logging.JavaConsole;
 import net.sourceforge.jnlp.util.logging.LogConfig;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -850,7 +852,16 @@ public class JNLPRuntime {
      * acquiring a shared lock on it
      */
     public synchronized static void markNetxRunning() {
-        if (fileLock != null) return;
+        markNetxRunning(null);
+    }
+
+    public synchronized static void markNetxRunning(net.sourceforge.jnlp.JNLPFile jnlpFile) {
+        if (fileLock != null) {
+            if (jnlpFile != null) {
+                NetxRunningDetailsRegistry.registerProcess(jnlpFile);
+            }
+            return;
+        }
         try {
             String message = "This file is used to check if netx is running";
 
@@ -879,6 +890,12 @@ public class JNLPRuntime {
                 OutputController.getLogger().log("Acquired shared lock on " +
                             netxRunningFile.toString() + " to indicate javaws is running");
             }
+
+            if (jnlpFile != null) {
+                NetxRunningDetailsRegistry.registerProcess(jnlpFile);
+            } else {
+                NetxRunningDetailsRegistry.registerProcess(JnlpRunningProcessSupport.currentPid());
+            }
         } catch (IOException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
@@ -897,6 +914,7 @@ public class JNLPRuntime {
      * {@link DeploymentConfiguration#KEY_USER_NETX_RUNNING_FILE}.
      */
     private static void markNetxStopped() {
+        NetxRunningDetailsRegistry.unregisterProcess(JnlpRunningProcessSupport.currentPid());
         if (fileLock == null) {
             return;
         }

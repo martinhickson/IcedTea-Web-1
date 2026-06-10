@@ -48,6 +48,7 @@ import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.net.URL;
 
 import javax.swing.BorderFactory;
 import javax.swing.BoxLayout;
@@ -137,9 +138,15 @@ public class AccessWarningPane extends SecurityDialogPanel implements Rememberab
         }
 
         try {
-            from = !file.getInformation().getHomepage().toString().equals("") ? file.getInformation().getHomepage().toString() : file.getSourceLocation().getAuthority();
+            String homepage = file.getInformation().getHomepage() != null
+                    ? file.getInformation().getHomepage().toString() : "";
+            if (!homepage.isEmpty()) {
+                from = homepage;
+            } else {
+                from = originFromFile(file);
+            }
         } catch (Exception e) {
-            from = file.getSourceLocation().getAuthority();
+            from = originFromFile(file);
         }
 
         //Top label
@@ -521,6 +528,26 @@ public class AccessWarningPane extends SecurityDialogPanel implements Rememberab
         } else {
             return YesNo.yes().getAllowedValues().toString();
         }
+    }
+
+    private static String originFromFile(JNLPFile file) {
+        URL location = file.getSourceLocation() != null ? file.getSourceLocation() : file.getFileLocation();
+        if (location != null) {
+            String authority = location.getAuthority();
+            if (authority != null && !authority.isEmpty()) {
+                return authority;
+            }
+            return location.toString();
+        }
+        URL codebase = file.getCodeBase();
+        if (codebase != null) {
+            String authority = codebase.getAuthority();
+            if (authority != null && !authority.isEmpty()) {
+                return authority;
+            }
+            return codebase.toString();
+        }
+        return "";
     }
     
 }

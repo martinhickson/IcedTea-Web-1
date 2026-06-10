@@ -251,6 +251,13 @@ public class CacheUtil {
         return CacheLRUWrapper.getInstance().getCacheDir().getFile().isDirectory();
     }
 
+    /**
+     * @return true when another javaws/JNLP instance holds {@link PathsAndFiles#MAIN_LOCK}
+     */
+    public static boolean isCacheLockedByOtherInstance() {
+        return !okToClearCache();
+    }
+
     public static void removeWindowsShortcuts(String jnlpApp)
             throws IOException {
         OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Clearing Windows shortcuts");

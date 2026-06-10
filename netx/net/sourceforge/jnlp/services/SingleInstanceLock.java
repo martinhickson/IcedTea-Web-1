@@ -18,11 +18,7 @@ package net.sourceforge.jnlp.services;
 
 import static net.sourceforge.jnlp.runtime.Translator.R;
 
-import java.io.BufferedReader;
-import java.io.BufferedWriter;
 import java.io.File;
-import java.io.FileReader;
-import java.io.FileWriter;
 import java.io.IOException;
 import java.net.BindException;
 import java.net.ServerSocket;
@@ -30,6 +26,8 @@ import java.net.ServerSocket;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.util.FileUtils;
+import net.sourceforge.jnlp.util.JnlpLockMetadata;
+import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 
 /**
  * This class represents a Lock for single instance jnlp applications
@@ -65,14 +63,14 @@ class SingleInstanceLock {
      * @throws IOException on any io problems
      */
     public void createWithPort(int localPort) throws IOException {
-
         FileUtils.createRestrictedFile(lockFile, true);
-        BufferedWriter lockFileWriter = new BufferedWriter(new FileWriter(lockFile, false));
-        lockFileWriter.write(String.valueOf(localPort));
-        lockFileWriter.newLine();
-        lockFileWriter.flush();
-        lockFileWriter.close();
-
+        JnlpLockMetadata.write(
+                lockFile,
+                localPort,
+                JnlpRunningProcessSupport.currentPid(),
+                JnlpLockMetadata.extractJnlpPath(jnlpFile),
+                JnlpLockMetadata.extractAppTitle(jnlpFile),
+                JnlpLockMetadata.extractAppVersion(jnlpFile));
     }
 
     /**
@@ -175,10 +173,11 @@ class SingleInstanceLock {
      * @throws IOException
      */
     private void parseFile() throws NumberFormatException, IOException {
-        BufferedReader lockFileReader = new BufferedReader(new FileReader(lockFile));
-        int port = Integer.valueOf(lockFileReader.readLine());
-        lockFileReader.close();
-        this.port = port;
+        JnlpLockMetadata metadata = JnlpLockMetadata.read(lockFile);
+        if (metadata.getPort() == JnlpLockMetadata.INVALID_PORT) {
+            throw new NumberFormatException("Missing port in lock file");
+        }
+        this.port = metadata.getPort();
     }
 
     /**
