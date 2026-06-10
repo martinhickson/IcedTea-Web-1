@@ -22,7 +22,9 @@ $PackageName = if ($env:ITW_PACKAGE_NAME) { $env:ITW_PACKAGE_NAME } else { "Iced
 $Manufacturer = if ($env:ITW_PACKAGE_MANUFACTURER) { $env:ITW_PACKAGE_MANUFACTURER } else { "IcedTea-Web Maintainers" }
 $PackageId = "IcedTeaWeb"
 $UpgradeCode = "6F7858B2-4764-4D75-9F3A-E8B87BB71D89"
-$InstallDirName = "IcedTea-Web"
+# Match win-installer/installer.json.in: vendorDirName + installDirName (no hyphen in path).
+$VendorDirName = if ($env:ITW_VENDOR_DIR_NAME) { $env:ITW_VENDOR_DIR_NAME } else { "IcedTeaWeb" }
+$InstallDirName = if ($env:ITW_INSTALL_DIR_NAME) { $env:ITW_INSTALL_DIR_NAME } else { "WebStart" }
 $SafeVersion = ($Version -replace "-SNAPSHOT$", ".0" -replace "[^0-9.]", ".")
 if ($SafeVersion -notmatch "^\d+\.\d+\.\d+(\.\d+)?$") {
     $SafeVersion = "1.0.1.0"
@@ -124,6 +126,9 @@ foreach ($file in $files) {
     if ($normalizedRelativeFile -ieq "bin\itweb-settings.exe") {
         [void]$componentsXml.AppendLine("      <Shortcut Id=`"SettingsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Settings`" WorkingDirectory=`"INSTALLFOLDER`" Advertise=`"yes`" />")
     }
+    if ($normalizedRelativeFile -ieq "bin\policyeditor.exe") {
+        [void]$componentsXml.AppendLine("      <Shortcut Id=`"PolicyEditorStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Policy Editor`" WorkingDirectory=`"INSTALLFOLDER`" Advertise=`"yes`" />")
+    }
     [void]$componentsXml.AppendLine("    </Component>")
     [void]$componentRefsXml.AppendLine("      <ComponentRef Id=`"$componentId`" />")
 }
@@ -137,7 +142,9 @@ foreach ($file in $files) {
     <MediaTemplate EmbedCab="yes" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="$(Escape-Xml $InstallDirName)" />
+      <Directory Id="VENDORFOLDER" Name="$(Escape-Xml $VendorDirName)">
+        <Directory Id="INSTALLFOLDER" Name="$(Escape-Xml $InstallDirName)" />
+      </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
 

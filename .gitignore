@@ -28,3 +28,6 @@ target
 /itw-maven/stdout.log
 /jdk-src
 /dotnet-launcher/obj/
+/dotnet-launcher/publish/
+/test-dist/
+/tools/
