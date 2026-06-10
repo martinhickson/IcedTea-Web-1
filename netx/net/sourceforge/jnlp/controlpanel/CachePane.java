@@ -35,7 +35,6 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.nio.channels.FileLock;
-import java.text.DateFormat;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -66,6 +65,7 @@ import net.sourceforge.jnlp.cache.DirectoryNode;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.runtime.Translator;
+import net.sourceforge.jnlp.util.CacheDateTimeFormats;
 import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.PropertiesFile;
 import net.sourceforge.jnlp.util.StreamUtils;
@@ -160,8 +160,9 @@ public class CachePane extends JPanel {
                     super.setText(NumberFormat.getInstance().format(value));
                     break;
                     case 5: // last modified column
-                    // Render modify date formatted to default locale's date format
-                    super.setText(DateFormat.getDateInstance().format(value));
+                    super.setText(value instanceof Date
+                            ? CacheDateTimeFormats.formatDate((Date) value)
+                            : String.valueOf(value));
                 }
 
                 return this;
@@ -210,7 +211,7 @@ public class CachePane extends JPanel {
                     File selectedFile = fileNode.getFile();
                     File infoFile = new File(selectedFile + CacheDirectory.INFO_SUFFIX);
                     String info = StreamUtils.readStreamAsString(new FileInputStream(infoFile), true);
-                    t.setText(info);
+                    t.setText(formatCacheInfoContent(info));
                 } catch (Exception ex) {
                     t.setText(ex.toString());
                 }
@@ -299,76 +300,137 @@ public class CachePane extends JPanel {
      * {@link CacheViewer} have been instantiated and painted.
      * @see CachePane#cacheTable
      */
-    private  void invokeLaterDelete() {
+    private void invokeLaterDelete() {
+        final String jnlpPath = getSelectedJnlpPath();
         SwingUtils.invokeLater(new Runnable() {
             @Override
             public void run() {
                 try {
-                    FileLock fl = null;
-                    File netxRunningFile = new File(PathsAndFiles.MAIN_LOCK.getFullPath(config));
-                    if (!netxRunningFile.exists()) {
-                        try {
-                            FileUtils.createParentDir(netxRunningFile);
-                            FileUtils.createRestrictedFile(netxRunningFile, true);
-                        } catch (IOException e1) {
-                            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
-                        }
-                    }
-
-                    try {
-                        fl = FileUtils.getFileLock(netxRunningFile.getPath(), false, false);
-                    } catch (FileNotFoundException e1) {
-                    }
-
-                    int row = cacheTable.getSelectedRow();
-                    try {
-                        if (fl == null) {
-                            JOptionPane.showMessageDialog(parent, Translator.R("CCannotClearCache"));
-                            return;
-                        }
-                        int modelRow = cacheTable.convertRowIndexToModel(row);
-                        DirectoryNode fileNode = ((DirectoryNode) cacheTable.getModel().getValueAt(modelRow, 0));
-                        if (fileNode.getFile().delete()) {
-                            updateRecentlyUsed(fileNode.getFile());
-                            fileNode.getParent().removeChild(fileNode);
-                            FileUtils.deleteWithErrMesg(fileNode.getInfoFile());
-                            ((NonEditableTableModel) cacheTable.getModel()).removeRow(modelRow);
-                            cacheTable.getSelectionModel().clearSelection();
-                            CacheDirectory.cleanParent(fileNode);
-                        }
-                    } catch (Exception exception) {
-                        // ignore
-                    }
-
-                    if (fl != null) {
-                        try {
-                            fl.release();
-                            fl.channel().close();
-                        } catch (IOException e1) {
-                            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
-                        }
-                    }
+                    RunningJnlpProcessesDialog.runClearAfterProcessesStopped(
+                            parent,
+                            jnlpPath,
+                            Translator.R("CacheProceedClearSelected"),
+                            new Runnable() {
+                                @Override
+                                public void run() {
+                                    deleteSelectedCacheEntry();
+                                }
+                            });
                 } catch (Exception exception) {
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, exception);
+                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, exception);
                 } finally {
                     restoreDisabled();
                 }
             }
-
-            private void updateRecentlyUsed(File f) {
-                File recentlyUsedFile = new File(PathsAndFiles.getRecentlyUsedFile().getFullPath(config));
-                PropertiesFile pf = new PropertiesFile(recentlyUsedFile);
-                pf.load();
-                Enumeration<Object> en = pf.keys();
-                while (en.hasMoreElements()) {
-                    String key = (String) en.nextElement();
-                    if (pf.get(key).equals(f.getAbsolutePath())) {
-                        pf.remove(key);
-                    }
-                }
-                pf.store();
-            }
         });
+    }
+
+    private void deleteSelectedCacheEntry() {
+        FileLock fl = null;
+        File netxRunningFile = new File(PathsAndFiles.MAIN_LOCK.getFullPath(config));
+        if (!netxRunningFile.exists()) {
+            try {
+                FileUtils.createParentDir(netxRunningFile);
+                FileUtils.createRestrictedFile(netxRunningFile, true);
+            } catch (IOException e1) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
+            }
+        }
+
+        try {
+            fl = FileUtils.getFileLock(netxRunningFile.getPath(), false, false);
+        } catch (FileNotFoundException e1) {
+        }
+
+        int row = cacheTable.getSelectedRow();
+        try {
+            if (fl == null) {
+                JOptionPane.showMessageDialog(parent, Translator.R("CCannotClearCache"));
+                return;
+            }
+            int modelRow = cacheTable.convertRowIndexToModel(row);
+            DirectoryNode fileNode = ((DirectoryNode) cacheTable.getModel().getValueAt(modelRow, 0));
+            if (fileNode.getFile().delete()) {
+                updateRecentlyUsed(fileNode.getFile());
+                fileNode.getParent().removeChild(fileNode);
+                FileUtils.deleteWithErrMesg(fileNode.getInfoFile());
+                ((NonEditableTableModel) cacheTable.getModel()).removeRow(modelRow);
+                cacheTable.getSelectionModel().clearSelection();
+                CacheDirectory.cleanParent(fileNode);
+            }
+        } catch (Exception exception) {
+            // ignore
+        }
+
+        if (fl != null) {
+            try {
+                fl.release();
+                fl.channel().close();
+            } catch (IOException e1) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
+            }
+        }
+    }
+
+    private void updateRecentlyUsed(File f) {
+        File recentlyUsedFile = new File(PathsAndFiles.getRecentlyUsedFile().getFullPath(config));
+        PropertiesFile pf = new PropertiesFile(recentlyUsedFile);
+        pf.load();
+        Enumeration<Object> en = pf.keys();
+        while (en.hasMoreElements()) {
+            String key = (String) en.nextElement();
+            if (pf.get(key).equals(f.getAbsolutePath())) {
+                pf.remove(key);
+            }
+        }
+        pf.store();
+    }
+
+    private String getSelectedJnlpPath() {
+        int row = cacheTable.getSelectedRow();
+        if (row < 0) {
+            return null;
+        }
+        int modelRow = cacheTable.convertRowIndexToModel(row);
+        Object value = cacheTable.getModel().getValueAt(modelRow, 6);
+        if (value == null) {
+            return null;
+        }
+        String jnlpPath = value.toString().trim();
+        return jnlpPath.isEmpty() ? null : jnlpPath;
+    }
+
+    private static String formatCacheInfoContent(String raw) {
+        if (raw == null || raw.isEmpty()) {
+            return raw;
+        }
+        StringBuilder sb = new StringBuilder();
+        String[] lines = raw.split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (i > 0) {
+                sb.append('\n');
+            }
+            sb.append(formatCacheInfoLine(lines[i]));
+        }
+        return sb.toString();
+    }
+
+    private static String formatCacheInfoLine(String line) {
+        int eq = line.indexOf('=');
+        if (eq <= 0) {
+            return line;
+        }
+        String key = line.substring(0, eq).trim();
+        String value = line.substring(eq + 1).trim();
+        if (!"last-modified".equals(key) && !"last-updated".equals(key)) {
+            return line;
+        }
+        try {
+            long epochMillis = Long.parseLong(value);
+            return line + " (" + CacheDateTimeFormats.formatEpochMillis(epochMillis) + ")";
+        } catch (NumberFormatException ex) {
+            return line;
+        }
     }
 
     private void invokeLaterDeleteAll() {
@@ -376,8 +438,17 @@ public class CachePane extends JPanel {
             @Override
             public void run() {
                 try {
-                    visualCleanCache(parent);
-                    populateTable();
+                    RunningJnlpProcessesDialog.runClearAfterProcessesStopped(
+                            parent,
+                            null,
+                            Translator.R("CacheProceedClearAll"),
+                            new Runnable() {
+                                @Override
+                                public void run() {
+                                    visualCleanCache(parent);
+                                    populateTable();
+                                }
+                            });
                 } catch (Exception exception) {
                     OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, exception);
                 } finally {
@@ -527,7 +598,13 @@ public class CachePane extends JPanel {
             boolean success = CacheUtil.clearCache();
             if (!success) {
                 JOptionPane.showMessageDialog(parent, Translator.R("CCannotClearCache"));
+                return;
             }
+            JOptionPane.showMessageDialog(
+                    parent,
+                    Translator.R("CacheClearedSuccessfully"),
+                    Translator.R("CPHeadTempInternetFiles"),
+                    JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception ex) {
             JOptionPane.showMessageDialog(parent, Translator.R("CCannotClearCache"));
         }

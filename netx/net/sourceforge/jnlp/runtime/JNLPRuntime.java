@@ -74,6 +74,8 @@ import net.sourceforge.jnlp.security.SecurityUtil;
 import net.sourceforge.jnlp.services.XServiceManagerStub;
 import net.sourceforge.jnlp.util.BasicExceptionDialog;
 import net.sourceforge.jnlp.util.FileUtils;
+import net.sourceforge.jnlp.util.NetxRunningDetailsRegistry;
+import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 import net.sourceforge.jnlp.util.logging.JavaConsole;
 import net.sourceforge.jnlp.util.logging.LogConfig;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -879,6 +881,8 @@ public class JNLPRuntime {
                 OutputController.getLogger().log("Acquired shared lock on " +
                             netxRunningFile.toString() + " to indicate javaws is running");
             }
+
+            NetxRunningDetailsRegistry.registerProcess(JnlpRunningProcessSupport.currentPid());
         } catch (IOException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
@@ -897,6 +901,7 @@ public class JNLPRuntime {
      * {@link DeploymentConfiguration#KEY_USER_NETX_RUNNING_FILE}.
      */
     private static void markNetxStopped() {
+        NetxRunningDetailsRegistry.unregisterProcess(JnlpRunningProcessSupport.currentPid());
         if (fileLock == null) {
             return;
         }
