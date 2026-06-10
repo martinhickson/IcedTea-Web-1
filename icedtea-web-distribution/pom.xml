@@ -19,7 +19,6 @@
     <itw.distribution.platform>linux</itw.distribution.platform>
     <itw.dotnet.runtime.identifier>linux-x64</itw.dotnet.runtime.identifier>
     <itw.dotnet.framework>net8.0</itw.dotnet.framework>
-    <itw.dotnet.outputType>Exe</itw.dotnet.outputType>
     <itw.dotnet.selfContained>true</itw.dotnet.selfContained>
     <itw.launcher.extension></itw.launcher.extension>
     <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz</itw.corretto.url>
@@ -27,6 +26,8 @@
     <itw.uberjar.classifier>uber</itw.uberjar.classifier>
     <itw.native.packages.skip>true</itw.native.packages.skip>
     <itw.native.package.formats>deb rpm</itw.native.package.formats>
+    <itw.launcher.icon>${project.basedir}/../win-installer/icon.ico</itw.launcher.icon>
+    <itw.launcher.icon.png>${project.basedir}/../packaging/icons/icedtea-web.png</itw.launcher.icon.png>
   </properties>
 
   <dependencies>
@@ -90,7 +91,7 @@
         <version>3.2.0</version>
         <executions>
           <execution>
-            <id>publish-dotnet-launcher</id>
+            <id>publish-dotnet-launcher-gui</id>
             <phase>prepare-package</phase>
             <goals>
               <goal>exec</goal>
@@ -112,9 +113,70 @@
                 <argument>-p:PublishSingleFile=false</argument>
                 <argument>-p:PublishReadyToRun=true</argument>
                 <argument>-p:DebugType=none</argument>
-                <argument>-p:OutputType=${itw.dotnet.outputType}</argument>
                 <argument>--output</argument>
                 <argument>${project.build.directory}/dotnet-publish</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>clean-dotnet-launcher-shared-gui</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <workingDirectory>${project.basedir}/../dotnet-launcher</workingDirectory>
+              <executable>dotnet</executable>
+              <arguments>
+                <argument>clean</argument>
+                <argument>JavawsLauncher.csproj</argument>
+                <argument>--configuration</argument>
+                <argument>Release</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>clean-dotnet-launcher-shared-console</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <workingDirectory>${project.basedir}/../dotnet-launcher</workingDirectory>
+              <executable>dotnet</executable>
+              <arguments>
+                <argument>clean</argument>
+                <argument>JavawscLauncher.csproj</argument>
+                <argument>--configuration</argument>
+                <argument>Release</argument>
+              </arguments>
+            </configuration>
+          </execution>
+          <execution>
+            <id>publish-dotnet-launcher-console</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>exec</goal>
+            </goals>
+            <configuration>
+              <workingDirectory>${project.basedir}/../dotnet-launcher</workingDirectory>
+              <executable>dotnet</executable>
+              <arguments>
+                <argument>publish</argument>
+                <argument>JavawscLauncher.csproj</argument>
+                <argument>--configuration</argument>
+                <argument>Release</argument>
+                <argument>--framework</argument>
+                <argument>${itw.dotnet.framework}</argument>
+                <argument>--runtime</argument>
+                <argument>${itw.dotnet.runtime.identifier}</argument>
+                <argument>--self-contained</argument>
+                <argument>${itw.dotnet.selfContained}</argument>
+                <argument>-p:PublishSingleFile=false</argument>
+                <argument>-p:PublishReadyToRun=true</argument>
+                <argument>-p:DebugType=none</argument>
+                <argument>--output</argument>
+                <argument>${project.build.directory}/dotnet-publish-console</argument>
               </arguments>
             </configuration>
           </execution>
@@ -141,6 +203,30 @@
         </executions>
       </plugin>
 
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>merge-dotnet-console-launcher</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <copy todir="${project.build.directory}/dotnet-publish" overwrite="true">
+                  <fileset dir="${project.build.directory}/dotnet-publish-console">
+                    <include name="javawsc*"/>
+                  </fileset>
+                </copy>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+
     </plugins>
   </build>
 
@@ -155,7 +241,6 @@
       <properties>
         <itw.distribution.platform>windows</itw.distribution.platform>
         <itw.dotnet.runtime.identifier>win-x64</itw.dotnet.runtime.identifier>
-        <itw.dotnet.outputType>WinExe</itw.dotnet.outputType>
         <itw.launcher.extension>.exe</itw.launcher.extension>
         <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip</itw.corretto.url>
         <itw.corretto.archive>${project.build.directory}/downloads/corretto-windows-jdk.zip</itw.corretto.archive>
@@ -225,6 +310,7 @@
                     <delete dir="${itw.distribution.root}"/>
                     <mkdir dir="${itw.distribution.root}/bin"/>
                     <mkdir dir="${itw.distribution.root}/lib"/>
+                    <mkdir dir="${itw.distribution.root}/share/pixmaps"/>
                     <mkdir dir="${itw.distribution.root}/runtime/corretto"/>
                     <mkdir dir="${project.build.directory}/downloads"/>
 
@@ -233,7 +319,10 @@
                     </copy>
                     <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/itweb-settings"/>
                     <chmod file="${itw.distribution.root}/bin/javaws" perm="ugo+rx"/>
+                    <chmod file="${itw.distribution.root}/bin/javawsc" perm="ugo+rx"/>
                     <chmod file="${itw.distribution.root}/bin/itweb-settings" perm="ugo+rx"/>
+                    <copy file="${itw.launcher.icon.png}" tofile="${itw.distribution.root}/share/pixmaps/javaws.png"/>
+                    <copy file="${itw.launcher.icon.png}" tofile="${itw.distribution.root}/share/pixmaps/itweb-settings.png"/>
                     <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>
                     <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
 
@@ -284,6 +373,7 @@
                     <delete dir="${itw.distribution.root}"/>
                     <mkdir dir="${itw.distribution.root}/bin"/>
                     <mkdir dir="${itw.distribution.root}/lib"/>
+                    <mkdir dir="${itw.distribution.root}/share/icons"/>
                     <mkdir dir="${itw.distribution.root}/runtime/corretto"/>
                     <mkdir dir="${project.build.directory}/downloads"/>
 
@@ -292,7 +382,9 @@
                     </copy>
                     <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/itweb-settings"/>
                     <chmod file="${itw.distribution.root}/bin/javaws" perm="ugo+rx"/>
+                    <chmod file="${itw.distribution.root}/bin/javawsc" perm="ugo+rx"/>
                     <chmod file="${itw.distribution.root}/bin/itweb-settings" perm="ugo+rx"/>
+                    <copy file="${itw.launcher.icon.png}" tofile="${itw.distribution.root}/share/icons/icedtea-web.png"/>
                     <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>
                     <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
 

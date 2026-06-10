@@ -30,6 +30,10 @@ public final class JavawsUberLauncher {
     }
 
     public static void main(String[] args) throws Exception {
+        if (Boot.isJavaVersionProbe(args)) {
+            Boot.printJavaMajorVersionAndExit();
+        }
+
         ensureLauncherLocation();
         args = chooseJnlpFileWhenNoArguments(args);
         if (args == null) {
