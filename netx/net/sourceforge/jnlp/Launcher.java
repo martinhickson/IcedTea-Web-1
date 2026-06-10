@@ -43,6 +43,7 @@ import net.sourceforge.jnlp.services.ServiceUtil;
 
 import javax.swing.text.html.parser.ParserDelegator;
 import net.sourceforge.jnlp.splashscreen.SplashUtils;
+import net.sourceforge.jnlp.util.JvmSelector;
 import net.sourceforge.jnlp.util.StreamUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.swing.SwingUtils;
@@ -420,6 +421,10 @@ public class Launcher {
      * @throws LaunchException if there was an exception
      */
     public void launchExternal(List<String> vmArgs, List<String> javawsArgs) throws LaunchException {
+        launchExternal(vmArgs, javawsArgs, null);
+    }
+
+    private void launchExternal(List<String> vmArgs, List<String> javawsArgs, String javaHome) throws LaunchException {
         try {
 
             List<String> commands = new LinkedList<>();
@@ -437,6 +442,9 @@ public class Launcher {
 
             ProcessBuilder pb = new ProcessBuilder(command);
             pb.environment().put("ICEDTEA_WEB_SPLASH", "none");
+            if (javaHome != null && !javaHome.trim().isEmpty()) {
+                pb.environment().put("JAVA_HOME", javaHome);
+            }
             pb.inheritIO();
             Process p =pb.start();
             StreamUtils.waitForSafely(p);
@@ -514,7 +522,7 @@ public class Launcher {
                 return null;
             }
 
-            if (JNLPRuntime.getForksAllowed() && (file.needsNewVM() || needsConfiguredJreRelaunch())) {
+            if (JNLPRuntime.getForksAllowed() && (file.needsNewVM() || needsConfiguredJreRelaunch(file))) {
                 if (!JNLPRuntime.isHeadless()){
                     SplashScreen sp = SplashScreen.getSplashScreen();
                     if (sp!=null) {
@@ -524,7 +532,7 @@ public class Launcher {
                 List<String> netxArguments = new LinkedList<String>();
                 netxArguments.add("-Xnofork");
                 netxArguments.addAll(JNLPRuntime.getInitialArguments());
-                launchExternal(file.getNewVMArgs(), netxArguments);
+                launchExternal(file.getNewVMArgs(), netxArguments, resolveRelaunchJavaHome(file));
                 return null;
             }
 
@@ -902,8 +910,8 @@ public class Launcher {
         new ParserDelegator();
     }
 
-    private boolean needsConfiguredJreRelaunch() {
-        String configuredJreDir = JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_JRE_DIR);
+    private boolean needsConfiguredJreRelaunch(JNLPFile file) {
+        String configuredJreDir = resolveRelaunchJavaHome(file);
         if (configuredJreDir == null || configuredJreDir.trim().isEmpty()) {
             return false;
         }
@@ -917,6 +925,23 @@ public class Launcher {
                     "Relaunching with configured JRE: " + configuredJavaHome);
         }
         return needsRelaunch;
+    }
+
+    private String resolveRelaunchJavaHome(JNLPFile file) {
+        return JvmSelector.selectBestJvmHome(JNLPRuntime.getConfiguration(), extractRequestedJreVersion(file));
+    }
+
+    private String extractRequestedJreVersion(JNLPFile file) {
+        for (String arg : file.getNewVMArgs()) {
+            if (arg.startsWith("-Dicedtea-web.relaunch.requestedJre=")) {
+                return arg.substring("-Dicedtea-web.relaunch.requestedJre=".length());
+            }
+        }
+        JREDesc[] jres = file.getResources().getJREs();
+        if (jres.length > 0) {
+            return jres[0].getVersion().toString();
+        }
+        return null;
     }
 
        /**
