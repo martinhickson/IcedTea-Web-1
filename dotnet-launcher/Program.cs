@@ -1,33 +1,30 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
-using System.Text.RegularExpressions;
-
 namespace IcedTeaWeb.Launcher;
 
 internal static class Program
 {
     private const string JavawsMainClass = "net.sourceforge.jnlp.runtime.JavawsUberLauncher";
     private const string SettingsMainClass = "net.sourceforge.jnlp.controlpanel.CommandLine";
-    private const uint AttachParentProcess = 0xFFFFFFFF;
+    private const string JavaVersionProbeArg = "--java-version";
 
     // GUI / non-console launches: Rust used Stdio::null() (discard). Set true to capture Java
     // stdout/stderr into per-launch log files under LocalApplicationData/IcedTea-Web/logs instead.
     private const bool CaptureGuiStdioToLogFiles = false;
 
-    // Console-preserving launches: Rust blocked on child.wait() with inherited stdio. WinExe
-    // launchers often fail to pass inherited handles through, so we relay pipe-to-console.
-    // true  = blocking relay; process exit and all stdout/stderr drained before returning.
+    // Console-preserving launches: Rust blocked on child.wait() with inherited stdio after AttachConsole.
+    // true  = blocking stream drain for non-Windows / redirected fallback paths.
     // false = CopyToAsync relay; still waits at end, but stream pumping uses async I/O.
     private const bool WaitForJavaStdioSynchronously = true;
 
-    private static bool? insideConsole;
-
     private static int Main(string[] args)
     {
+        var exitCode = 1;
         try
         {
-            _ = InsideConsole();
+            SplitLauncherArgs(args, out var javaArgs, out var javawsArgs);
+
             var executablePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName
                 ?? throw new InvalidOperationException("Unable to resolve launcher path");
             var executableFile = new FileInfo(executablePath);
@@ -39,31 +36,23 @@ internal static class Program
                 ? binDirectory.Parent ?? binDirectory
                 : binDirectory;
 
-            var javaArgs = new List<string>();
-            var javawsArgs = new List<string>();
-            foreach (var arg in args)
-            {
-                if (arg.StartsWith("-J", StringComparison.Ordinal))
-                {
-                    javaArgs.Add(arg[2..]);
-                }
-                else
-                {
-                    javawsArgs.Add(NormalizeLauncherArg(arg));
-                }
-            }
-
+#if ITW_LAUNCHER_CONSOLE
+            const bool preserveStdio = true;
+#else
+            // Rust WinExe path: AttachConsole(ATTACH_PARENT_PROCESS) → inherit stdio when launched from cmd.
+            var preserveStdio = ResolveGuiPreserveStdio();
+#endif
             var javaExecutable = ResolveJavaExecutable(installRoot, javawsArgs);
             var uberJar = ResolveRequiredFile(installRoot, "ITW_UBER_JAR",
                 Path.Combine("lib", "icedtea-web-uber.jar"));
             var byteBuddyAgent = ResolveOptionalFile(installRoot, "ITW_BYTEBUDDY_AGENT_JAR",
                 Path.Combine("bin", "byte-buddy-agent.jar"));
 
-            var majorVersion = DetectJavaMajorVersion(javaExecutable);
-            var preserveStdio = ShouldPreserveStdio(javawsArgs);
-            var launchJavaExecutable = ResolveLaunchJavaExecutable(javaExecutable, preserveStdio);
+            // Uber-jar --java-version probe always uses JavawsUberLauncher (Boot); CommandLine does not handle it.
+            var majorVersion = DetectJavaMajorVersion(
+                javaExecutable, uberJar, preserveStdio, javawsArgs);
             var command = ComposeJavaCommand(
-                launchJavaExecutable,
+                javaExecutable,
                 uberJar,
                 byteBuddyAgent,
                 executablePath,
@@ -73,14 +62,51 @@ internal static class Program
                 javaArgs,
                 javawsArgs);
 
-            return RunJava(launchJavaExecutable, command, preserveStdio);
+            exitCode = RunJava(javaExecutable, command, preserveStdio);
         }
         catch (Exception ex)
         {
             WriteLauncherFailure(ex);
+#if ITW_LAUNCHER_CONSOLE
             Console.Error.WriteLine("IcedTea-Web .NET launcher failed: " + ex.Message);
             Console.Error.WriteLine(ex);
-            return 1;
+#endif
+            exitCode = 1;
+        }
+
+        return exitCode;
+    }
+
+#if !ITW_LAUNCHER_CONSOLE
+    private static bool ResolveGuiPreserveStdio()
+    {
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return NativeMethods.TryAttachParentConsole();
+        }
+
+        // Rust Linux::inside_console() is always true.
+        return true;
+    }
+#endif
+
+    private static void SplitLauncherArgs(
+        string[] args,
+        out List<string> javaArgs,
+        out List<string> javawsArgs)
+    {
+        javaArgs = new List<string>();
+        javawsArgs = new List<string>();
+        foreach (var arg in args)
+        {
+            if (arg.StartsWith("-J", StringComparison.Ordinal))
+            {
+                javaArgs.Add(arg[2..]);
+            }
+            else
+            {
+                javawsArgs.Add(NormalizeLauncherArg(arg));
+            }
         }
     }
 
@@ -311,26 +337,38 @@ internal static class Program
 
     private static int RunJava(string javaExecutable, IReadOnlyList<string> command, bool preserveStdio)
     {
-        if (!preserveStdio)
+#if ITW_LAUNCHER_CONSOLE
+        return RunJavaWithInheritedStdio(javaExecutable, command);
+#else
+#pragma warning disable CS0162 // CaptureGuiStdioToLogFiles is false by default.
+        if (CaptureGuiStdioToLogFiles)
         {
-            return CaptureGuiStdioToLogFiles
-                ? RunJavaWithRedirectedOutput(javaExecutable, command)
-                : RunJavaWithNullStdio(javaExecutable, command);
+            return RunJavaWithRedirectedOutput(javaExecutable, command);
+        }
+#pragma warning restore CS0162
+
+        if (preserveStdio)
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                && NativeMethods.TrySpawnProcessWithInheritedStdio(javaExecutable, command, out var exitCode))
+            {
+                return exitCode;
+            }
+
+            return RunJavaWithInheritedStdio(javaExecutable, command);
         }
 
-        return RunJavaWithPreservedStdio(javaExecutable, command);
+        return RunJavaWithNullStdio(javaExecutable, command);
+#endif
     }
 
-    private static int RunJavaWithPreservedStdio(string javaExecutable, IReadOnlyList<string> command)
+    private static int RunJavaWithInheritedStdio(string javaExecutable, IReadOnlyList<string> command)
     {
-        PrepareAttachedConsole();
-
+        // Inherited stdio: javawsc (console subsystem) or javaws when Rust-style inside_console.
         var startInfo = new ProcessStartInfo
         {
             FileName = javaExecutable,
             UseShellExecute = false,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
         };
         foreach (var arg in command)
         {
@@ -338,88 +376,10 @@ internal static class Program
         }
 
         using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Unable to start Java process");
-
-        if (WaitForJavaStdioSynchronously)
-        {
-            return WaitForProcessWithDrainedStreams(
-                process,
-                process.StandardOutput.BaseStream,
-                process.StandardError.BaseStream,
-                Console.OpenStandardOutput(),
-                Console.OpenStandardError());
-        }
-
-#pragma warning disable CS0162 // Unreachable when WaitForJavaStdioSynchronously is true (default).
-        var stdoutRelay = RelayToAsync(process.StandardOutput.BaseStream, Console.OpenStandardOutput());
-        var stderrRelay = RelayToAsync(process.StandardError.BaseStream, Console.OpenStandardError());
+            ?? throw new InvalidOperationException("Unable to start Java process: " + javaExecutable);
         process.WaitForExit();
-        stdoutRelay.GetAwaiter().GetResult();
-        stderrRelay.GetAwaiter().GetResult();
-        FlushPreservedConsole();
         return process.ExitCode;
-#pragma warning restore CS0162
     }
-
-    private static string ResolveLaunchJavaExecutable(string javaExecutable, bool preserveStdio)
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || preserveStdio)
-        {
-            return javaExecutable;
-        }
-
-        var javaFile = new FileInfo(javaExecutable);
-        var javaw = Path.Combine(javaFile.DirectoryName ?? string.Empty, "javaw.exe");
-        return File.Exists(javaw) ? javaw : javaExecutable;
-    }
-
-    private static bool InsideConsole()
-    {
-        if (insideConsole.HasValue)
-        {
-            return insideConsole.Value;
-        }
-
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-        {
-            insideConsole = HasInteractiveTerminal();
-            return insideConsole.Value;
-        }
-
-        if (NativeMethods.AttachConsole(AttachParentProcess) || NativeMethods.GetConsoleWindow() != IntPtr.Zero)
-        {
-            insideConsole = true;
-            return true;
-        }
-
-        insideConsole = false;
-        return false;
-    }
-
-    private static bool HasInteractiveTerminal()
-    {
-        try
-        {
-            // Terminal launchers (bash, ssh) expose a TTY; .desktop / file-manager launches
-            // (Terminal=false) typically redirect or detach stdout/stderr.
-            return !Console.IsOutputRedirected || !Console.IsErrorRedirected;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    private static bool ShouldPreserveStdio(IReadOnlyCollection<string> javawsArgs) =>
-        IsTruthy(Environment.GetEnvironmentVariable("ITW_PRESERVE_STDIO"))
-        || InsideConsole()
-        || javawsArgs.Any(IsConsoleOutputArg);
-
-    private static string NormalizeLauncherArg(string arg) =>
-        arg.Equals("--version", StringComparison.OrdinalIgnoreCase) ? "-version"
-        : arg.Equals("--about", StringComparison.OrdinalIgnoreCase) ? "-about"
-        : arg.Equals("--help", StringComparison.OrdinalIgnoreCase) ? "-help"
-        : arg;
 
     private static bool IsConsoleOutputArg(string arg)
     {
@@ -439,13 +399,24 @@ internal static class Program
             || key.Equals("-?", StringComparison.OrdinalIgnoreCase);
     }
 
+    private static string NormalizeLauncherArg(string arg) =>
+        arg.Equals("--version", StringComparison.OrdinalIgnoreCase) ? "-version"
+        : arg.Equals("--about", StringComparison.OrdinalIgnoreCase) ? "-about"
+        : arg.Equals("--help", StringComparison.OrdinalIgnoreCase) ? "-help"
+        : arg;
+
     private static int RunJavaWithNullStdio(string javaExecutable, IReadOnlyList<string> command)
     {
+        // Match rust-launcher GUI path: java.exe + CREATE_NO_WINDOW + Stdio::null() at CreateProcess.
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            return NativeMethods.SpawnProcessWithNullStdio(javaExecutable, command);
+        }
+
         var startInfo = new ProcessStartInfo
         {
             FileName = javaExecutable,
             UseShellExecute = false,
-            CreateNoWindow = RuntimeInformation.IsOSPlatform(OSPlatform.Windows),
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
@@ -530,35 +501,6 @@ internal static class Program
         target.Flush();
     }
 
-    private static Task RelayToAsync(Stream source, Stream target) =>
-        source.CopyToAsync(target);
-
-    private static void FlushPreservedConsole()
-    {
-        Console.Out.Flush();
-        Console.Error.Flush();
-    }
-
-    private static void PrepareAttachedConsole()
-    {
-        if (!RuntimeInformation.IsOSPlatform(OSPlatform.Windows) || !InsideConsole())
-        {
-            return;
-        }
-
-        try
-        {
-            // WinExe builds attach to the parent console in InsideConsole(), but Console.Out
-            // may still point nowhere until standard handles are reopened.
-            Console.SetOut(new StreamWriter(Console.OpenStandardOutput()) { AutoFlush = WaitForJavaStdioSynchronously });
-            Console.SetError(new StreamWriter(Console.OpenStandardError()) { AutoFlush = WaitForJavaStdioSynchronously });
-        }
-        catch
-        {
-            // Fall back to inherited handles if reopening fails.
-        }
-    }
-
     private static string CreateLauncherLogBasePath()
     {
         var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
@@ -585,39 +527,178 @@ internal static class Program
         }
     }
 
-    private static int DetectJavaMajorVersion(string javaExecutable)
+    private static int DetectJavaMajorVersion(
+        string javaExecutable,
+        string uberJar,
+        bool preserveStdio,
+        IReadOnlyCollection<string> javawsArgs)
+    {
+        if (preserveStdio && IsConsoleOnlyLaunch(javawsArgs))
+        {
+            return ProbeJavaMajorVersionFromJavaExecutable(javaExecutable);
+        }
+
+        return ProbeJavaMajorVersionFromUberJar(javaExecutable, uberJar, preserveStdio);
+    }
+
+    private static bool IsConsoleOnlyLaunch(IReadOnlyCollection<string> javawsArgs) =>
+        javawsArgs.Count > 0 && javawsArgs.All(IsConsoleOutputArg);
+
+    private static int ProbeJavaMajorVersionFromJavaExecutable(string javaExecutable)
+    {
+        var stderr = SpawnProcessCaptureStderrManaged(javaExecutable, new List<string> { "-version" });
+        return ParseJavaMajorVersionFromVersionOutput(stderr);
+    }
+
+    private static int ParseJavaMajorVersionFromVersionOutput(string output)
+    {
+        foreach (var line in output.Split('\n', '\r'))
+        {
+            if (!line.Contains("version", StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var quoteStart = line.IndexOf('"');
+            if (quoteStart < 0)
+            {
+                continue;
+            }
+
+            var version = line[(quoteStart + 1)..];
+            var quoteEnd = version.IndexOf('"');
+            if (quoteEnd > 0)
+            {
+                version = version[..quoteEnd];
+            }
+
+            if (version.StartsWith("1.", StringComparison.Ordinal))
+            {
+                var parts = version.Split('.');
+                if (parts.Length >= 2 && int.TryParse(parts[1], out var legacyMajor) && legacyMajor > 0)
+                {
+                    return legacyMajor;
+                }
+            }
+            else
+            {
+                var dot = version.IndexOf('.');
+                var majorToken = dot > 0 ? version[..dot] : version;
+                if (int.TryParse(majorToken, out var major) && major > 0)
+                {
+                    return major;
+                }
+            }
+        }
+
+        throw new InvalidOperationException(
+            "Unable to parse Java major version from java -version output: " + output);
+    }
+
+    private static int ProbeJavaMajorVersionFromUberJar(
+        string javaExecutable,
+        string uberJar,
+        bool preserveStdio)
+    {
+        // Uber jar --java-version prints java.version major (system property) to stdout and exits.
+        // Always via JavawsUberLauncher/Boot — not the launcher-specific main (e.g. CommandLine).
+        // GUI only: javaw.exe — Windows GUI JVM, no console subsystem.
+        var probeExecutable = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !preserveStdio
+            ? ResolveJavawExecutable(javaExecutable)
+            : javaExecutable;
+
+        var probeCommand = new List<string>
+        {
+            "-Xms8m",
+            "-cp",
+            uberJar,
+            JavawsMainClass,
+            JavaVersionProbeArg,
+        };
+
+        var stdout = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? NativeMethods.SpawnProcessCaptureStdout(probeExecutable, probeCommand)
+            : SpawnProcessCaptureStdoutManaged(probeExecutable, probeCommand);
+
+        var firstLine = stdout.Trim().Split('\n', '\r')[0].Trim();
+        if (int.TryParse(firstLine, out var major) && major > 0)
+        {
+            return major;
+        }
+
+        throw new InvalidOperationException(
+            "Unable to parse Java major version from uber jar probe output: " + stdout);
+    }
+
+    private static string SpawnProcessCaptureStdoutManaged(string executable, IReadOnlyList<string> command)
+    {
+        var startInfo = CreateCaptureProcessStartInfo(executable, command);
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start process for stdout capture");
+        process.StandardInput.Close();
+        var stdout = process.StandardOutput.ReadToEnd();
+        _ = process.StandardError.ReadToEnd();
+        process.WaitForExit(10_000);
+        return stdout;
+    }
+
+    private static string SpawnProcessCaptureStderrManaged(string executable, IReadOnlyList<string> command)
+    {
+        var startInfo = CreateCaptureProcessStartInfo(executable, command);
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start process for stderr capture");
+        process.StandardInput.Close();
+        _ = process.StandardOutput.ReadToEnd();
+        var stderr = process.StandardError.ReadToEnd();
+        process.WaitForExit(10_000);
+        return stderr;
+    }
+
+    private static ProcessStartInfo CreateCaptureProcessStartInfo(
+        string executable,
+        IReadOnlyList<string> command)
     {
         var startInfo = new ProcessStartInfo
         {
-            FileName = javaExecutable,
+            FileName = executable,
             UseShellExecute = false,
-            RedirectStandardError = true,
+            RedirectStandardInput = true,
             RedirectStandardOutput = true,
+            RedirectStandardError = true,
         };
-        startInfo.ArgumentList.Add("-version");
-
-        using var process = Process.Start(startInfo)
-            ?? throw new InvalidOperationException("Unable to start Java to detect version");
-        var output = new StringBuilder();
-        output.Append(process.StandardOutput.ReadToEnd());
-        output.Append(process.StandardError.ReadToEnd());
-        process.WaitForExit(10_000);
-
-        var match = Regex.Match(output.ToString(), "version \"(?<version>[^\"]+)\"");
-        if (!match.Success)
+        foreach (var arg in command)
         {
-            return 8;
+            startInfo.ArgumentList.Add(arg);
         }
 
-        var version = match.Groups["version"].Value;
-        var firstPart = version.Split('.', '-', '+')[0];
-        if (firstPart == "1")
+        return startInfo;
+    }
+
+    private static string ResolveJavawExecutable(string javaExecutable)
+    {
+        var javaDir = Path.GetDirectoryName(javaExecutable);
+        if (javaDir == null)
         {
-            var parts = version.Split('.');
-            return parts.Length > 1 && int.TryParse(parts[1], out var legacyMajor) ? legacyMajor : 8;
+            return javaExecutable;
         }
 
-        return int.TryParse(firstPart, out var major) ? major : 8;
+        var javaw = Path.Combine(javaDir, "javaw.exe");
+        return File.Exists(javaw) ? javaw : javaExecutable;
+    }
+
+    private static string QuoteCommandLineArg(string arg)
+    {
+        if (arg.Length == 0)
+        {
+            return "\"\"";
+        }
+
+        if (!arg.Any(static c => char.IsWhiteSpace(c) || c == '"'))
+        {
+            return arg;
+        }
+
+        return "\"" + arg.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
     }
 
     private static IEnumerable<string> ModularJdkArguments()
@@ -674,10 +755,636 @@ internal static class Program
 
     private static class NativeMethods
     {
+        public const int ErrorAccessDenied = 5;
+
+        private const uint CreateNoWindow = 0x08000000;
+        private const uint StartfUsestdhandles = 0x00000100;
+        private const uint GenericRead = 0x80000000;
+        private const uint GenericWrite = 0x40000000;
+        private const uint FileShareRead = 0x00000001;
+        private const uint FileShareWrite = 0x00000002;
+        private const uint OpenExisting = 3;
+        private const uint Infinite = 0xFFFFFFFF;
+        private const uint HandleFlagInherit = 0x00000001;
+
+        public const int StdInputHandle = -10;
+        public const int StdOutputHandle = -11;
+        public const int StdErrorHandle = -12;
+        public const int SwHide = 0;
+        private const ushort ConsoleKeyEvent = 0x0001;
+        private const ushort VkReturn = 0x000D;
+        private const uint InputKeyboard = 1;
+        private const uint KeyeventfKeyup = 0x0002;
+        public static readonly IntPtr InvalidHandleValue = new(-1);
+
+        private const uint FileTypeDisk = 0x00000001;
+        private const uint FileTypePipe = 0x00000003;
+
+        private static uint savedConsoleInputMode;
+        private static bool savedConsoleInputModeValid;
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint GetFileType(IntPtr hFile);
+
+        public static bool HasRedirectedStdoutFromParent()
+        {
+            var stdout = GetStdHandle(StdOutputHandle);
+            if (stdout == InvalidHandleValue || stdout == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            return GetFileType(stdout) is FileTypeDisk or FileTypePipe;
+        }
+
+        // INPUT must be 40 bytes on x64 (union sized for MOUSEINPUT); smaller structs make SendInput fail.
+        private static readonly int InputRecordSize = Marshal.SizeOf<SendInputRecord>();
+
+        private const uint AttachParentProcess = 0xFFFFFFFF;
+
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern bool AttachConsole(uint dwProcessId);
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern bool FreeConsole();
+
+        public static bool TryAttachParentConsole()
+        {
+            if (!AttachConsole(AttachParentProcess))
+            {
+                return false;
+            }
+
+            RebindStandardHandlesToAttachedConsole();
+            return true;
+        }
+
         [DllImport("kernel32.dll")]
         public static extern IntPtr GetConsoleWindow();
+
+        [DllImport("user32.dll")]
+        public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern IntPtr GetStdHandle(int nStdHandle);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetStdHandle(int nStdHandle, IntPtr hHandle);
+
+        public static void RebindStandardHandlesToAttachedConsole()
+        {
+            RebindConsoleDevice(StdInputHandle, "CONIN$", GenericRead | GenericWrite,
+                FileShareRead | FileShareWrite);
+            RebindConsoleDevice(StdOutputHandle, "CONOUT$", GenericWrite | GenericRead,
+                FileShareWrite);
+            RebindConsoleDevice(StdErrorHandle, "CONOUT$", GenericWrite | GenericRead,
+                FileShareWrite);
+        }
+
+        private static void RebindConsoleDevice(
+            int stdHandleType,
+            string deviceName,
+            uint desiredAccess,
+            uint shareMode)
+        {
+            var handle = CreateFileW(
+                deviceName,
+                desiredAccess,
+                shareMode,
+                IntPtr.Zero,
+                OpenExisting,
+                0,
+                IntPtr.Zero);
+            if (handle == InvalidHandleValue || handle == IntPtr.Zero)
+            {
+                throw new InvalidOperationException(
+                    "Unable to open " + deviceName + " after AttachConsole: " + Marshal.GetLastWin32Error());
+            }
+
+            if (!SetStdHandle(stdHandleType, handle))
+            {
+                CloseHandle(handle);
+                throw new InvalidOperationException(
+                    "SetStdHandle failed for " + deviceName + ": " + Marshal.GetLastWin32Error());
+            }
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetConsoleMode(IntPtr hConsoleHandle, out uint lpMode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetConsoleMode(IntPtr hConsoleHandle, uint dwMode);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool WriteConsole(
+            IntPtr hConsoleOutput,
+            string lpBuffer,
+            uint nNumberOfCharsToWrite,
+            out uint lpNumberOfCharsWritten,
+            IntPtr lpReserved);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool WriteConsoleInput(
+            IntPtr hConsoleInput,
+            ConsoleInputRecord[] lpBuffer,
+            uint nLength,
+            out uint lpNumberOfEventsWritten);
+
+        public static void SaveConsoleInputMode()
+        {
+            var stdin = GetStdHandle(StdInputHandle);
+            if (stdin != InvalidHandleValue && stdin != IntPtr.Zero
+                && GetConsoleMode(stdin, out var mode))
+            {
+                savedConsoleInputMode = mode;
+                savedConsoleInputModeValid = true;
+            }
+        }
+
+        public static void ReleaseAttachedConsoleForParentShell()
+        {
+            if (savedConsoleInputModeValid)
+            {
+                var stdin = GetStdHandle(StdInputHandle);
+                if (stdin != InvalidHandleValue && stdin != IntPtr.Zero)
+                {
+                    _ = SetConsoleMode(stdin, savedConsoleInputMode);
+                }
+            }
+
+            var stdout = GetStdHandle(StdOutputHandle);
+            if (stdout != InvalidHandleValue && stdout != IntPtr.Zero)
+            {
+                _ = WriteConsole(stdout, Environment.NewLine, (uint)Environment.NewLine.Length,
+                    out _, IntPtr.Zero);
+            }
+
+            SendEnterKeyToConsoleStdin();
+        }
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern bool CreateProcessW(
+            string? lpApplicationName,
+            StringBuilder lpCommandLine,
+            IntPtr lpProcessAttributes,
+            IntPtr lpThreadAttributes,
+            bool bInheritHandles,
+            uint dwCreationFlags,
+            IntPtr lpEnvironment,
+            string? lpCurrentDirectory,
+            ref StartupInfoW lpStartupInfo,
+            out ProcessInformation lpProcessInformation);
+
+        [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+        private static extern IntPtr CreateFileW(
+            string lpFileName,
+            uint dwDesiredAccess,
+            uint dwShareMode,
+            IntPtr lpSecurityAttributes,
+            uint dwCreationDisposition,
+            uint dwFlagsAndAttributes,
+            IntPtr hTemplateFile);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CloseHandle(IntPtr hObject);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint WaitForSingleObject(IntPtr hHandle, uint dwMilliseconds);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool GetExitCodeProcess(IntPtr hProcess, out uint lpExitCode);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool CreatePipe(
+            out IntPtr hReadPipe,
+            out IntPtr hWritePipe,
+            ref SecurityAttributes lpPipeAttributes,
+            uint nSize);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool ReadFile(
+            IntPtr hFile,
+            byte[] lpBuffer,
+            uint nNumberOfBytesToRead,
+            out uint lpNumberOfBytesRead,
+            IntPtr lpOverlapped);
+
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern bool SetHandleInformation(IntPtr hObject, uint dwMask, uint dwFlags);
+
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern uint SendInput(uint nInputs, SendInputRecord[] pInputs, int cbSize);
+
+        public static string SpawnProcessCaptureStdout(string executable, IReadOnlyList<string> command)
+        {
+            var securityAttributes = new SecurityAttributes
+            {
+                nLength = Marshal.SizeOf<SecurityAttributes>(),
+                bInheritHandle = true,
+            };
+            if (!CreatePipe(out var stdoutRead, out var stdoutWrite, ref securityAttributes, 0))
+            {
+                throw new InvalidOperationException(
+                    "CreatePipe failed for version probe: " + Marshal.GetLastWin32Error());
+            }
+
+            var nullHandle = CreateFileW(
+                "NUL",
+                GenericRead | GenericWrite,
+                FileShareRead,
+                IntPtr.Zero,
+                OpenExisting,
+                0,
+                IntPtr.Zero);
+            if (nullHandle == new IntPtr(-1) || nullHandle == IntPtr.Zero)
+            {
+                CloseHandle(stdoutRead);
+                CloseHandle(stdoutWrite);
+                throw new InvalidOperationException(
+                    "Unable to open NUL device for version probe: " + Marshal.GetLastWin32Error());
+            }
+
+            try
+            {
+                SetHandleInformation(stdoutRead, HandleFlagInherit, 0);
+
+                var commandLine = new StringBuilder();
+                commandLine.Append('"').Append(executable).Append('"');
+                foreach (var arg in command)
+                {
+                    commandLine.Append(' ').Append(QuoteCommandLineArg(arg));
+                }
+
+                var startupInfo = new StartupInfoW
+                {
+                    cb = (uint)Marshal.SizeOf<StartupInfoW>(),
+                    dwFlags = StartfUsestdhandles,
+                    hStdInput = nullHandle,
+                    hStdOutput = stdoutWrite,
+                    hStdError = nullHandle,
+                };
+
+                if (!CreateProcessW(
+                    null,
+                    commandLine,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    true,
+                    CreateNoWindow,
+                    IntPtr.Zero,
+                    null,
+                    ref startupInfo,
+                    out var processInfo))
+                {
+                    throw new InvalidOperationException(
+                        "CreateProcess failed for version probe: " + Marshal.GetLastWin32Error());
+                }
+
+                CloseHandle(stdoutWrite);
+                stdoutWrite = IntPtr.Zero;
+                CloseHandle(processInfo.hThread);
+
+                try
+                {
+                    _ = WaitForSingleObject(processInfo.hProcess, Infinite);
+                    return ReadPipeToString(stdoutRead);
+                }
+                finally
+                {
+                    CloseHandle(processInfo.hProcess);
+                }
+            }
+            finally
+            {
+                CloseHandle(stdoutRead);
+                if (stdoutWrite != IntPtr.Zero)
+                {
+                    CloseHandle(stdoutWrite);
+                }
+
+                CloseHandle(nullHandle);
+            }
+        }
+
+        private static string ReadPipeToString(IntPtr pipeRead)
+        {
+            var buffer = new byte[4096];
+            var builder = new StringBuilder();
+            while (ReadFile(pipeRead, buffer, (uint)buffer.Length, out var bytesRead, IntPtr.Zero) && bytesRead > 0)
+            {
+                builder.Append(Encoding.UTF8.GetString(buffer, 0, (int)bytesRead));
+            }
+
+            return builder.ToString();
+        }
+
+        public static bool TrySpawnProcessWithInheritedStdio(
+            string executable,
+            IReadOnlyList<string> command,
+            out int exitCode)
+        {
+            exitCode = 1;
+            var stdin = GetStdHandle(StdInputHandle);
+            var stdout = GetStdHandle(StdOutputHandle);
+            var stderr = GetStdHandle(StdErrorHandle);
+            if (stdin == InvalidHandleValue || stdin == IntPtr.Zero
+                || stdout == InvalidHandleValue || stdout == IntPtr.Zero
+                || stderr == InvalidHandleValue || stderr == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            _ = SetHandleInformation(stdin, HandleFlagInherit, HandleFlagInherit);
+            _ = SetHandleInformation(stdout, HandleFlagInherit, HandleFlagInherit);
+            _ = SetHandleInformation(stderr, HandleFlagInherit, HandleFlagInherit);
+
+            var commandLine = new StringBuilder();
+            commandLine.Append('"').Append(executable).Append('"');
+            foreach (var arg in command)
+            {
+                commandLine.Append(' ').Append(QuoteCommandLineArg(arg));
+            }
+
+            var startupInfo = new StartupInfoW
+            {
+                cb = (uint)Marshal.SizeOf<StartupInfoW>(),
+                dwFlags = StartfUsestdhandles,
+                hStdInput = stdin,
+                hStdOutput = stdout,
+                hStdError = stderr,
+            };
+
+            if (!CreateProcessW(
+                null,
+                commandLine,
+                IntPtr.Zero,
+                IntPtr.Zero,
+                true,
+                0,
+                IntPtr.Zero,
+                null,
+                ref startupInfo,
+                out var processInfo))
+            {
+                return false;
+            }
+
+            CloseHandle(processInfo.hThread);
+            try
+            {
+                _ = WaitForSingleObject(processInfo.hProcess, Infinite);
+                GetExitCodeProcess(processInfo.hProcess, out var rawExitCode);
+                exitCode = (int)rawExitCode;
+                return true;
+            }
+            finally
+            {
+                CloseHandle(processInfo.hProcess);
+            }
+        }
+
+        public static int SpawnProcessWithNullStdio(string executable, IReadOnlyList<string> command)
+        {
+            var nullHandle = CreateFileW(
+                "NUL",
+                GenericRead | GenericWrite,
+                FileShareRead,
+                IntPtr.Zero,
+                OpenExisting,
+                0,
+                IntPtr.Zero);
+            if (nullHandle == new IntPtr(-1) || nullHandle == IntPtr.Zero)
+            {
+                throw new InvalidOperationException(
+                    "Unable to open NUL device for null stdio: " + Marshal.GetLastWin32Error());
+            }
+
+            try
+            {
+                var commandLine = new StringBuilder();
+                commandLine.Append('"').Append(executable).Append('"');
+                foreach (var arg in command)
+                {
+                    commandLine.Append(' ').Append(QuoteCommandLineArg(arg));
+                }
+
+                var startupInfo = new StartupInfoW
+                {
+                    cb = (uint)Marshal.SizeOf<StartupInfoW>(),
+                    dwFlags = StartfUsestdhandles,
+                    hStdInput = nullHandle,
+                    hStdOutput = nullHandle,
+                    hStdError = nullHandle,
+                };
+
+                if (!CreateProcessW(
+                    null,
+                    commandLine,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    true,
+                    CreateNoWindow,
+                    IntPtr.Zero,
+                    null,
+                    ref startupInfo,
+                    out var processInfo))
+                {
+                    throw new InvalidOperationException(
+                        "CreateProcess failed for Java launch: " + Marshal.GetLastWin32Error());
+                }
+
+                try
+                {
+                    CloseHandle(processInfo.hThread);
+                    _ = WaitForSingleObject(processInfo.hProcess, Infinite);
+                    GetExitCodeProcess(processInfo.hProcess, out var exitCode);
+                    return (int)exitCode;
+                }
+                finally
+                {
+                    CloseHandle(processInfo.hProcess);
+                }
+            }
+            finally
+            {
+                CloseHandle(nullHandle);
+            }
+        }
+
+        [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+        private struct StartupInfoW
+        {
+            public uint cb;
+            public string? lpReserved;
+            public string? lpDesktop;
+            public string? lpTitle;
+            public uint dwX;
+            public uint dwY;
+            public uint dwXSize;
+            public uint dwYSize;
+            public uint dwXCountChars;
+            public uint dwYCountChars;
+            public uint dwFillAttribute;
+            public uint dwFlags;
+            public ushort wShowWindow;
+            public ushort cbReserved2;
+            public IntPtr lpReserved2;
+            public IntPtr hStdInput;
+            public IntPtr hStdOutput;
+            public IntPtr hStdError;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ProcessInformation
+        {
+            public IntPtr hProcess;
+            public IntPtr hThread;
+            public uint dwProcessId;
+            public uint dwThreadId;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SecurityAttributes
+        {
+            public int nLength;
+            public IntPtr lpSecurityDescriptor;
+            public bool bInheritHandle;
+        }
+
+        public static void SendEnterKeyToConsoleStdin()
+        {
+            try
+            {
+                // Tillett pattern: both synthetic keyboard Enter and console input-buffer Enter.
+                SendReturnViaSendInput();
+                TryWriteReturnToConsoleInput();
+            }
+            catch
+            {
+            }
+        }
+
+        private static bool TryWriteReturnToConsoleInput()
+        {
+            var stdin = GetStdHandle(StdInputHandle);
+            if (stdin == InvalidHandleValue || stdin == IntPtr.Zero)
+            {
+                return false;
+            }
+
+            var records = new ConsoleInputRecord[]
+            {
+                new()
+                {
+                    EventType = ConsoleKeyEvent,
+                    KeyEvent = new ConsoleKeyEventRecord
+                    {
+                        bKeyDown = true,
+                        wRepeatCount = 1,
+                        wVirtualKeyCode = VkReturn,
+                        wUnicodeChar = VkReturn,
+                    },
+                },
+                new()
+                {
+                    EventType = ConsoleKeyEvent,
+                    KeyEvent = new ConsoleKeyEventRecord
+                    {
+                        bKeyDown = false,
+                        wRepeatCount = 1,
+                        wVirtualKeyCode = VkReturn,
+                    },
+                },
+            };
+
+            return WriteConsoleInput(stdin, records, (uint)records.Length, out var written)
+                && written == records.Length;
+        }
+
+        private static void SendReturnViaSendInput()
+        {
+            var down = new SendInputRecord
+            {
+                type = InputKeyboard,
+                u = new InputUnion
+                {
+                    ki = new KeyboardInput { wVk = VkReturn },
+                },
+            };
+            var up = new SendInputRecord
+            {
+                type = InputKeyboard,
+                u = new InputUnion
+                {
+                    ki = new KeyboardInput { wVk = VkReturn, dwFlags = KeyeventfKeyup },
+                },
+            };
+
+            if (SendInput(2, new[] { down, up }, InputRecordSize) == 0)
+            {
+                _ = Marshal.GetLastWin32Error();
+            }
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        private struct ConsoleInputRecord
+        {
+            [FieldOffset(0)]
+            public ushort EventType;
+
+            [FieldOffset(4)]
+            public ConsoleKeyEventRecord KeyEvent;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ConsoleKeyEventRecord
+        {
+            [MarshalAs(UnmanagedType.Bool)]
+            public bool bKeyDown;
+
+            public ushort wRepeatCount;
+            public ushort wVirtualKeyCode;
+            public ushort wUnicodeChar;
+            public ushort wVirtualScanCode;
+            public uint dwControlKeyState;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct SendInputRecord
+        {
+            public uint type;
+            public InputUnion u;
+        }
+
+        [StructLayout(LayoutKind.Explicit)]
+        private struct InputUnion
+        {
+            [FieldOffset(0)]
+            public MouseInput mi;
+
+            [FieldOffset(0)]
+            public KeyboardInput ki;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct KeyboardInput
+        {
+            public ushort wVk;
+            public ushort wScan;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct MouseInput
+        {
+            public int dx;
+            public int dy;
+            public uint mouseData;
+            public uint dwFlags;
+            public uint time;
+            public IntPtr dwExtraInfo;
+        }
     }
 }

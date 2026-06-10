@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Windows: embed win-installer/icon.ico in PE. Linux/macOS use packaging/icons (see LAUNCHERS.md). -->
+    <ItwLauncherIcon Condition="'$(ItwLauncherIcon)' == ''">$(MSBuildThisFileDirectory)..\win-installer\icon.ico</ItwLauncherIcon>
+    <ApplicationIcon Condition="'$(RuntimeIdentifier)' != '' and $([System.String]::Copy('$(RuntimeIdentifier)').StartsWith('win')) and Exists('$(ItwLauncherIcon)')">$(ItwLauncherIcon)</ApplicationIcon>
+  </PropertyGroup>
+</Project>
