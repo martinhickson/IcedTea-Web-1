@@ -23,6 +23,17 @@ if [[ ! -x "$DIST_DIR/bin/javaws" ]]; then
   exit 1
 fi
 
+if [[ ! -x "$DIST_DIR/bin/javawsc" ]]; then
+  echo "Distribution does not contain console launcher bin/javawsc: $DIST_DIR" >&2
+  exit 1
+fi
+
+ICON_PNG="$ROOT_DIR/packaging/icons/icedtea-web.png"
+if [[ ! -f "$ICON_PNG" ]]; then
+  echo "Launcher icon not found: $ICON_PNG" >&2
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 safe_rpm_version() {
@@ -32,11 +43,14 @@ safe_rpm_version() {
 create_payload_root() {
   local payload_root="$1"
   rm -rf "$payload_root"
-  mkdir -p "$payload_root$INSTALL_ROOT" "$payload_root/usr/bin" "$payload_root/usr/share/applications"
+  mkdir -p "$payload_root$INSTALL_ROOT" "$payload_root/usr/bin" "$payload_root/usr/share/applications" "$payload_root/usr/share/pixmaps"
   cp -a "$DIST_DIR/." "$payload_root$INSTALL_ROOT/"
-  chmod +x "$payload_root$INSTALL_ROOT/bin/javaws" "$payload_root$INSTALL_ROOT/bin/itweb-settings"
+  chmod +x "$payload_root$INSTALL_ROOT/bin/javaws" "$payload_root$INSTALL_ROOT/bin/javawsc" "$payload_root$INSTALL_ROOT/bin/itweb-settings"
   ln -s "$INSTALL_ROOT/bin/javaws" "$payload_root/usr/bin/javaws"
+  ln -s "$INSTALL_ROOT/bin/javawsc" "$payload_root/usr/bin/javawsc"
   ln -s "$INSTALL_ROOT/bin/itweb-settings" "$payload_root/usr/bin/itweb-settings"
+  cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/javaws.png"
+  cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/itweb-settings.png"
 
   cat > "$payload_root/usr/share/applications/icedtea-web-javaws.desktop" <<EOF
 [Desktop Entry]
@@ -44,6 +58,7 @@ Type=Application
 Name=IcedTea-Web Java Web Start
 Comment=Launch JNLP applications with IcedTea-Web
 Exec=$INSTALL_ROOT/bin/javaws %u
+Icon=javaws
 Terminal=false
 Categories=Network;Java;
 MimeType=application/x-java-jnlp-file;
@@ -55,6 +70,7 @@ Type=Application
 Name=IcedTea-Web Settings
 Comment=Configure IcedTea-Web
 Exec=$INSTALL_ROOT/bin/itweb-settings
+Icon=itweb-settings
 Terminal=false
 Categories=Settings;Java;
 EOF
@@ -129,9 +145,12 @@ cp -a . %{buildroot}/
 %files
 $INSTALL_ROOT
 /usr/bin/javaws
+/usr/bin/javawsc
 /usr/bin/itweb-settings
 /usr/share/applications/icedtea-web-javaws.desktop
 /usr/share/applications/icedtea-web-settings.desktop
+/usr/share/pixmaps/javaws.png
+/usr/share/pixmaps/itweb-settings.png
 EOF
 
   rpmbuild -bb --target "$RPM_ARCH" --define "_topdir $rpm_topdir" "$rpm_topdir/SPECS/${PACKAGE_NAME}.spec"
