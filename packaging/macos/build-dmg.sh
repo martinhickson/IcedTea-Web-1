@@ -17,6 +17,11 @@ if [[ ! -x "$DIST_DIR/bin/javaws" ]]; then
   exit 1
 fi
 
+if [[ ! -x "$DIST_DIR/bin/javawsc" ]]; then
+  echo "Distribution does not contain console launcher bin/javawsc: $DIST_DIR" >&2
+  exit 1
+fi
+
 mkdir -p "$OUTPUT_DIR"
 
 APP_NAME="IcedTea-Web"
@@ -31,6 +36,15 @@ mkdir -p "$APP_ROOT/MacOS" "$APP_ROOT/Resources/opt/icedtea-web" "$DMG_LAYOUT"
 cp -a "$DIST_DIR/." "$APP_ROOT/Resources/opt/icedtea-web/"
 chmod +x "$APP_ROOT/Resources/opt/icedtea-web/bin/"* 2>/dev/null || true
 
+ICON_SCRIPT="$ROOT_DIR/packaging/macos/prepare-macos-icon.sh"
+ICON_ICNS="$ROOT_DIR/packaging/icons/icedtea-web.icns"
+if [[ -x "$ICON_SCRIPT" ]]; then
+  "$ICON_SCRIPT"
+fi
+if [[ -f "$ICON_ICNS" ]]; then
+  cp "$ICON_ICNS" "$APP_ROOT/Resources/icedtea-web.icns"
+fi
+
 cat > "$APP_ROOT/MacOS/javaws" <<'EOF'
 #!/usr/bin/env bash
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -43,7 +57,29 @@ APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 exec "$APP_DIR/Resources/opt/icedtea-web/bin/itweb-settings" "$@"
 EOF
 
-chmod +x "$APP_ROOT/MacOS/javaws" "$APP_ROOT/MacOS/itweb-settings"
+cat > "$APP_ROOT/MacOS/javawsc" <<'EOF'
+#!/usr/bin/env bash
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$APP_DIR/Resources/opt/icedtea-web/bin/javawsc" "$@"
+EOF
+
+cat > "$APP_ROOT/MacOS/policyeditor" <<'EOF'
+#!/usr/bin/env bash
+APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+exec "$APP_DIR/Resources/opt/icedtea-web/bin/policyeditor" "$@"
+EOF
+
+chmod +x "$APP_ROOT/MacOS/javaws" "$APP_ROOT/MacOS/itweb-settings" "$APP_ROOT/MacOS/javawsc" "$APP_ROOT/MacOS/policyeditor"
+
+ICON_PLIST=""
+if [[ -f "$APP_ROOT/Resources/icedtea-web.icns" ]]; then
+  ICON_PLIST="$(cat <<'PLIST'
+
+  <key>CFBundleIconFile</key>
+  <string>icedtea-web</string>
+PLIST
+)"
+fi
 
 cat > "$APP_ROOT/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -63,7 +99,7 @@ cat > "$APP_ROOT/Info.plist" <<EOF
   <key>CFBundlePackageType</key>
   <string>APPL</string>
   <key>CFBundleExecutable</key>
-  <string>javaws</string>
+  <string>javaws</string>${ICON_PLIST}
   <key>CFBundleDocumentTypes</key>
   <array>
     <dict>

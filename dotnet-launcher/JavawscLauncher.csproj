@@ -1,10 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <!-- WinExe GUI launcher (Explorer/JNLP). Console CLI: use javawsc.exe instead. -->
-    <OutputType>WinExe</OutputType>
-    <DefineConstants>$(DefineConstants);ITW_LAUNCHER_GUI</DefineConstants>
+    <!-- Console subsystem (CUI): cmd/bash wait naturally. Canonical CLI entry (java.exe / javaw / javawsc). -->
+    <OutputType>Exe</OutputType>
     <TargetFramework>net8.0</TargetFramework>
-    <AssemblyName>javaws</AssemblyName>
+    <AssemblyName>javawsc</AssemblyName>
     <RootNamespace>IcedTeaWeb.Launcher</RootNamespace>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
@@ -13,6 +12,6 @@
     <PublishSingleFile>false</PublishSingleFile>
     <SelfContained>true</SelfContained>
     <PublishReadyToRun>true</PublishReadyToRun>
+    <DefineConstants>$(DefineConstants);ITW_LAUNCHER_CONSOLE</DefineConstants>
   </PropertyGroup>
-
 </Project>
