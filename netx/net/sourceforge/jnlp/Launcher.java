@@ -225,7 +225,7 @@ public class Launcher {
 
         mergeExtraInformation(file, extra);
 
-        JNLPRuntime.markNetxRunning();
+        JNLPRuntime.markNetxRunning(file);
 
         if (!JNLPRuntime.isOfflineForced()) {
             //Xoffline NOT specified

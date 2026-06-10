@@ -381,12 +381,7 @@ public final class Parser {
     private JREDesc getJRE(Node node) throws ParseException {
         Version version = getVersion(node, "version", null);
         URL location = getURL(node, "href", base);
-        String vmArgs = getAttribute(node, "java-vm-args", null);
-        try {
-            checkVMArgs(vmArgs);
-        } catch (IllegalArgumentException argumentException) {
-            vmArgs = null;
-        }
+        String vmArgs = sanitizeVMArgs(getAttribute(node, "java-vm-args", null));
         String initialHeap = getAttribute(node, "initial-heap-size", null);
         String maxHeap = getAttribute(node, "max-heap-size", null);
         List<ResourcesDesc> resources = getResources(node, true);
@@ -1212,37 +1207,62 @@ public final class Parser {
      * Check that the VM args are valid and safe
      *
      * @param vmArgs a string containing the args
-     * @throws ParseException if the VM arguments are invalid or dangerous
+     * @throws IllegalArgumentException if the VM arguments are invalid or dangerous
      */
     private void checkVMArgs(String vmArgs) throws IllegalArgumentException {
         if (vmArgs == null) {
             return;
         }
 
-        List<String> validArguments = Arrays.asList(getValidVMArguments());
-        List<String> validStartingArguments = Arrays.asList(getValidStartingVMArguments());
-
         String[] arguments = vmArgs.split(" ");
-        boolean argumentIsValid;
         for (String argument : arguments) {
-            argumentIsValid = false;
-
-            if (validArguments.contains(argument)) {
-                argumentIsValid = true;
-            } else {
-                for (String validStartingArgument : validStartingArguments) {
-                    if (argument.startsWith(validStartingArgument)) {
-                        argumentIsValid = true;
-                        break;
-                    }
-                }
+            if (argument.isBlank()) {
+                continue;
             }
-
-            if (!argumentIsValid) {
+            if (!isValidVMArg(argument)) {
                 throw new IllegalArgumentException(argument);
             }
         }
+    }
 
+    /**
+     * Drop unsupported java-vm-args instead of rejecting the entire attribute.
+     * A single unknown flag (e.g. {@code -XX:+UseZGC}) previously caused ITW to
+     * ignore all JVM args including {@code -Xmx}.
+     */
+    private String sanitizeVMArgs(String vmArgs) {
+        if (vmArgs == null || vmArgs.isBlank()) {
+            return null;
+        }
+
+        List<String> kept = new ArrayList<>();
+        for (String argument : vmArgs.split(" ")) {
+            if (argument.isBlank()) {
+                continue;
+            }
+            if (isValidVMArg(argument)) {
+                kept.add(argument);
+            } else {
+                OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                        "Ignoring unsupported java-vm-args entry: " + argument);
+            }
+        }
+        return kept.isEmpty() ? null : String.join(" ", kept);
+    }
+
+    private boolean isValidVMArg(String argument) {
+        List<String> validArguments = Arrays.asList(getValidVMArguments());
+        List<String> validStartingArguments = Arrays.asList(getValidStartingVMArguments());
+
+        if (validArguments.contains(argument)) {
+            return true;
+        }
+        for (String validStartingArgument : validStartingArguments) {
+            if (argument.startsWith(validStartingArgument)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1306,6 +1326,17 @@ public final class Parser {
             "-XX:MaxPermSize", /* set max size of permanent gen */
             "-XX:MaxHeapFreeRatio", /* heap free percentage (default 70) */
             "-XX:MinHeapFreeRatio", /* heap free percentage (default 40) */
+            "-XX:SoftMaxHeapSize", /* soft max heap (Java 13+) */
+            "-XX:MaxMetaspaceSize", /* max metaspace (Java 8+) */
+            "-XX:CompressedClassSpaceSize", /* compressed class space */
+            "-XX:+UseG1GC",
+            "-XX:-UseG1GC",
+            "-XX:+UseZGC",
+            "-XX:-UseZGC",
+            "-XX:+ExplicitGCInvokesConcurrent",
+            "-XX:-ExplicitGCInvokesConcurrent",
+            "-XX:G1UncommitDelay",
+            "-XX:ZUncommitDelay",
             "-XX:UseSerialGC", /* use serial garbage collection */
             "-XX:ThreadStackSize", /* thread stack size (in KB) */
             "-XX:MaxInlineSize", /* set max num of bytecodes to inline */
