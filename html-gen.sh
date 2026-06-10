@@ -173,4 +173,8 @@ sed -i -r 's|(\*\ .*):|<u>\1</u>:|' ChangeLog.html # Underline changed files in 
 end_time="$(date +%s.%N)"
 
 print_debug "HTML generation complete"
-print_debug "Total elapsed time: $(echo "$end_time - $start_time" | bc )"
+if command -v bc >/dev/null 2>&1; then
+    print_debug "Total elapsed time: $(echo "$end_time - $start_time" | bc)"
+else
+    print_debug "Total elapsed time: unavailable (bc not installed)"
+fi
