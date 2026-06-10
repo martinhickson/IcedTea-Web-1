@@ -27,21 +27,25 @@ jobs:
           - os: windows-2022
             rid: win-x64
             launcher: bin/javaws.exe
+            cli-launcher: bin/javawsc.exe
             smoke-script: scripts/run-windows-dotnet-jnlp-smoke.ps1
             corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip
           - os: ubuntu-latest
             rid: linux-x64
             launcher: bin/javaws
+            cli-launcher: bin/javawsc
             smoke-script: scripts/run-linux-dotnet-jnlp-smoke.sh
             corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz
           - os: macos-15-intel
             rid: osx-x64
             launcher: bin/javaws
+            cli-launcher: bin/javawsc
             smoke-script: ''
             corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz
           - os: macos-15
             rid: osx-arm64
             launcher: bin/javaws
+            cli-launcher: bin/javawsc
             smoke-script: ''
             corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-macos-jdk.tar.gz
 
@@ -141,13 +145,13 @@ jobs:
           & mvn @mvnArgs
         shell: pwsh
 
-      - name: Smoke test packaged javaws launcher
+      - name: Smoke test packaged javawsc CLI launcher
         run: |
           $dist = Get-ChildItem "icedtea-web-distribution/target/dist" -Directory | Select-Object -First 1
           if ($null -eq $dist) {
             throw "Distribution directory not found"
           }
-          $launcher = Join-Path $dist.FullName "${{ matrix.launcher }}"
+          $launcher = Join-Path $dist.FullName "${{ matrix.cli-launcher }}"
           & $launcher -version
         shell: pwsh
 
@@ -197,7 +201,7 @@ jobs:
       - name: Build macOS DMG
         if: runner.os == 'macOS'
         run: |
-          chmod +x packaging/macos/build-dmg.sh
+          chmod +x packaging/macos/build-dmg.sh packaging/macos/prepare-macos-icon.sh
           ITW_VERSION=2.0.1-SNAPSHOT \
           ITW_MACOS_RID="${{ matrix.rid }}" \
           packaging/macos/build-dmg.sh

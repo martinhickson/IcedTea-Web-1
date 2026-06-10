@@ -22,14 +22,18 @@ $PackageName = if ($env:ITW_PACKAGE_NAME) { $env:ITW_PACKAGE_NAME } else { "Iced
 $Manufacturer = if ($env:ITW_PACKAGE_MANUFACTURER) { $env:ITW_PACKAGE_MANUFACTURER } else { "IcedTea-Web Maintainers" }
 $PackageId = "IcedTeaWeb"
 $UpgradeCode = "6F7858B2-4764-4D75-9F3A-E8B87BB71D89"
-$InstallDirName = "IcedTea-Web"
+# Match win-installer/installer.json.in: vendorDirName + installDirName (no hyphen in path).
+$VendorDirName = if ($env:ITW_VENDOR_DIR_NAME) { $env:ITW_VENDOR_DIR_NAME } else { "IcedTeaWeb" }
+$InstallDirName = if ($env:ITW_INSTALL_DIR_NAME) { $env:ITW_INSTALL_DIR_NAME } else { "WebStart" }
 $SafeVersion = ($Version -replace "-SNAPSHOT$", ".0" -replace "[^0-9.]", ".")
 if ($SafeVersion -notmatch "^\d+\.\d+\.\d+(\.\d+)?$") {
     $SafeVersion = "1.0.1.0"
 }
 
-if (-not (Test-Path (Join-Path $DistDir "bin\javaws.exe") -PathType Leaf)) {
-    throw "Distribution does not contain bin\javaws.exe: $DistDir"
+foreach ($required in @("javaws.exe", "javawsc.exe", "itweb-settings.exe", "policyeditor.exe")) {
+    if (-not (Test-Path (Join-Path $DistDir "bin\$required") -PathType Leaf)) {
+        throw "Distribution does not contain bin\$required`: $DistDir"
+    }
 }
 
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
@@ -106,6 +110,10 @@ foreach ($entry in $directories.GetEnumerator() | Sort-Object { ($_.Key -split "
     [void]$dirXml.AppendLine("    </DirectoryRef>")
 }
 
+$launcherIconId = "IcedTeaWebIcon.exe"
+$launcherIconSource = Escape-Xml (Convert-ToWixPath (Join-Path $DistDir "bin\javaws.exe"))
+$iconsXml = "    <Icon Id=`"$launcherIconId`" SourceFile=`"$launcherIconSource`" />`n"
+
 $componentsXml = New-Object System.Text.StringBuilder
 $componentRefsXml = New-Object System.Text.StringBuilder
 foreach ($file in $files) {
@@ -118,11 +126,16 @@ foreach ($file in $files) {
     $source = Escape-Xml (Convert-ToWixPath $file.FullName)
     [void]$componentsXml.AppendLine("    <Component Id=`"$componentId`" Directory=`"$directoryId`" Guid=`"*`">")
     [void]$componentsXml.AppendLine("      <File Id=`"$fileId`" Source=`"$source`" KeyPath=`"yes`" />")
+    # Non-advertised shortcuts: advertised + byte-identical javaws copies caused flaky installs
+    # (policyeditor components sometimes not laid down on first pass).
     if ($normalizedRelativeFile -ieq "bin\javaws.exe") {
-        [void]$componentsXml.AppendLine("      <Shortcut Id=`"JavawsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Java Web Start`" WorkingDirectory=`"INSTALLFOLDER`" Advertise=`"yes`" />")
+        [void]$componentsXml.AppendLine("      <Shortcut Id=`"JavawsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Java Web Start`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")
     }
     if ($normalizedRelativeFile -ieq "bin\itweb-settings.exe") {
-        [void]$componentsXml.AppendLine("      <Shortcut Id=`"SettingsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Settings`" WorkingDirectory=`"INSTALLFOLDER`" Advertise=`"yes`" />")
+        [void]$componentsXml.AppendLine("      <Shortcut Id=`"SettingsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Settings`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")
+    }
+    if ($normalizedRelativeFile -ieq "bin\policyeditor.exe") {
+        [void]$componentsXml.AppendLine("      <Shortcut Id=`"PolicyEditorStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Policy Editor`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")
     }
     [void]$componentsXml.AppendLine("    </Component>")
     [void]$componentRefsXml.AppendLine("      <ComponentRef Id=`"$componentId`" />")
@@ -136,8 +149,11 @@ foreach ($file in $files) {
     <MajorUpgrade DowngradeErrorMessage="A newer version of $(Escape-Xml $PackageName) is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+$iconsXml
     <StandardDirectory Id="ProgramFiles64Folder">
-      <Directory Id="INSTALLFOLDER" Name="$(Escape-Xml $InstallDirName)" />
+      <Directory Id="VENDORFOLDER" Name="$(Escape-Xml $VendorDirName)">
+        <Directory Id="INSTALLFOLDER" Name="$(Escape-Xml $InstallDirName)" />
+      </Directory>
     </StandardDirectory>
     <StandardDirectory Id="ProgramMenuFolder" />
 
