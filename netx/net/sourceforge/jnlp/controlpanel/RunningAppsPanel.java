@@ -9,7 +9,11 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -33,10 +37,12 @@ public class RunningAppsPanel extends NamedBorderPanel {
 
     private static final int MEMORY_BAR_WIDTH = 190;
     private static final int MEMORY_BAR_HEIGHT = 18;
+    private static final int REFRESH_INTERVAL_MS = 10_000;
 
     private final JPanel listPanel = new JPanel(new GridBagLayout());
     private final JLabel statusLabel = new JLabel();
     private final Timer refreshTimer;
+    private final Map<Integer, ProcessRowWidgets> rowWidgetsByPid = new LinkedHashMap<>();
 
     RunningAppsPanel(DeploymentConfiguration config) {
         super(Translator.R("CPHeadRunningApps"), new GridBagLayout());
@@ -65,7 +71,7 @@ public class RunningAppsPanel extends NamedBorderPanel {
         c.weighty = 1;
         add(filler, c);
 
-        refreshTimer = new Timer(2000, new ActionListener() {
+        refreshTimer = new Timer(REFRESH_INTERVAL_MS, new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 refreshList();
@@ -88,27 +94,37 @@ public class RunningAppsPanel extends NamedBorderPanel {
             public void ancestorMoved(javax.swing.event.AncestorEvent event) {
             }
         });
-        refreshList();
     }
 
     private void refreshList() {
         List<RunningProcess> processes = JnlpRunningProcessSupport.listRunningJnlpProcesses();
-        listPanel.removeAll();
         GridBagConstraints c = new GridBagConstraints();
         c.gridx = 0;
         c.weightx = 1;
         c.fill = GridBagConstraints.HORIZONTAL;
         c.insets = new Insets(4, 4, 4, 4);
 
+        listPanel.removeAll();
         if (processes.isEmpty()) {
+            rowWidgetsByPid.clear();
             c.gridy = 0;
             listPanel.add(new JLabel(Translator.R("CPRunningAppsNone")), c);
             statusLabel.setText("");
         } else {
+            Set<Integer> activePids = new HashSet<>();
+            for (RunningProcess process : processes) {
+                activePids.add(process.getPid());
+            }
+            rowWidgetsByPid.keySet().retainAll(activePids);
+
             int row = 0;
             for (RunningProcess process : processes) {
+                ProcessRowWidgets widgets = rowWidgetsByPid.get(process.getPid());
+                if (widgets == null) {
+                    widgets = buildProcessRow(process);
+                    rowWidgetsByPid.put(process.getPid(), widgets);
+                }
                 c.gridy = row++;
-                ProcessRowWidgets widgets = buildProcessRow(process);
                 listPanel.add(widgets.panel, c);
                 widgets.loadMemory();
             }
@@ -294,7 +310,8 @@ public class RunningAppsPanel extends NamedBorderPanel {
             bar.setStringPainted(true);
             bar.setPreferredSize(new Dimension(MEMORY_BAR_WIDTH, MEMORY_BAR_HEIGHT));
             bar.setMinimumSize(new Dimension(MEMORY_BAR_WIDTH, MEMORY_BAR_HEIGHT));
-            bar.setString(Translator.R("CPRunningAppsMemoryLoading"));
+            bar.setValue(0);
+            bar.setString("");
             return bar;
         }
     }
