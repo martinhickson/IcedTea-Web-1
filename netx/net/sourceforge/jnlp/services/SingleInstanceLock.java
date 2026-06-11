@@ -26,6 +26,7 @@ import java.net.ServerSocket;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.util.FileUtils;
+import net.sourceforge.jnlp.util.JnlpLockFileNames;
 import net.sourceforge.jnlp.util.JnlpLockMetadata;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 
@@ -135,30 +136,7 @@ class SingleInstanceLock {
             }
         }
 
-        String lockFileName = getLockFileName();
-        File applicationLockFile = new File(baseDir, lockFileName);
-        return applicationLockFile;
-    }
-
-    /**
-     * Returns the name of the lock file.
-     */
-    private String getLockFileName() {
-        String initialName = "";
-
-        if (jnlpFile.getSourceLocation() != null) {
-            initialName = initialName + jnlpFile.getSourceLocation();
-        } else {
-            initialName = initialName + jnlpFile.getFileLocation();
-        }
-
-        if (jnlpFile.getFileVersion() != null) {
-            initialName = initialName + jnlpFile.getFileVersion().toString();
-        }
-
-        initialName = initialName + getCurrentDisplay();
-        return FileUtils.sanitizeFileName(initialName);
-
+        return JnlpLockFileNames.lockFileFor(jnlpFile);
     }
 
     /**
@@ -173,19 +151,6 @@ class SingleInstanceLock {
             throw new NumberFormatException("Missing port in lock file");
         }
         this.port = metadata.getPort();
-    }
-
-    /**
-     * Returns a string identifying this display.
-     *
-     * Implementation note: On systems with X support, this is the DISPLAY
-     * variable
-     *
-     * @return a string that is guaranteed to be not null.
-     */
-    private String getCurrentDisplay() {
-        String display = System.getenv("DISPLAY");
-        return (display == null) ? "" : display;
     }
 
 }

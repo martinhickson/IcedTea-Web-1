@@ -52,6 +52,7 @@ import javax.jnlp.DownloadServiceListener;
 import net.sourceforge.jnlp.Version;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.PathsAndFiles;
+import net.sourceforge.jnlp.util.JnlpAppTuningRegistry;
 import net.sourceforge.jnlp.controlpanel.CachePane;
 import net.sourceforge.jnlp.runtime.ApplicationInstance;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
@@ -170,6 +171,7 @@ public class CacheUtil {
             }
             FileUtils.recursiveDelete(cacheDir, cacheDir);
             cacheDir.mkdir();
+            JnlpAppTuningRegistry.deleteAllTuningFiles();
             lruHandler.clearLRUSortedEntries();
             lruHandler.store();
         } catch (IOException e) {
@@ -239,6 +241,7 @@ public class CacheUtil {
             if (JNLPRuntime.isWindows()) {
                 removeWindowsShortcuts(application.toLowerCase());
             }
+            JnlpAppTuningRegistry.deleteTuningForApplication(application);
             // Remove entries marked for deletion even when unrelated JNLP apps hold MAIN_LOCK
             cleanCache();
 

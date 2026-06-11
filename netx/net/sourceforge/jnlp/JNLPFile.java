@@ -37,6 +37,7 @@ import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.runtime.JNLPClassLoader;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.ClasspathMatcher;
+import net.sourceforge.jnlp.util.JnlpAppTuningRegistry;
 import net.sourceforge.jnlp.util.UrlUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
@@ -951,6 +952,7 @@ public class JNLPFile {
             }
         }
 
+        JnlpAppTuningRegistry.applyTuningOverrides(this, newVMArgs);
         return newVMArgs;
     }
 

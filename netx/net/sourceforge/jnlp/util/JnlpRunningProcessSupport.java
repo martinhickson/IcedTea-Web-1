@@ -251,7 +251,8 @@ public final class JnlpRunningProcessSupport {
         File mainLock = PathsAndFiles.MAIN_LOCK.getFile();
         File runningDetails = NetxRunningDetailsRegistry.getDetailsFile();
         for (File lockFile : files) {
-            if (!lockFile.isFile() || lockFile.equals(mainLock) || lockFile.equals(runningDetails)) {
+            if (!lockFile.isFile() || lockFile.equals(mainLock) || lockFile.equals(runningDetails)
+                    || lockFile.getName().endsWith(JnlpLockFileNames.TUNING_SUFFIX)) {
                 continue;
             }
             RunningProcess running = processFromLockFile(lockFile, selfPid);
@@ -624,7 +625,7 @@ public final class JnlpRunningProcessSupport {
         return -1;
     }
 
-    private static boolean isProcessAlive(int pid) {
+    public static boolean isProcessAlive(int pid) {
         Optional<ProcessHandle> handle = ProcessHandle.of(pid);
         return handle.isPresent() && handle.get().isAlive();
     }

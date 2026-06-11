@@ -166,12 +166,15 @@ public class RunningAppsPanel extends NamedBorderPanel {
         row.add(details, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
+        JButton tune = new JButton(Translator.R("CPRunningAppsTune"));
+        tune.addActionListener(e -> RunningAppsTuneDialog.showDialog(RunningAppsPanel.this, process, jvmContext));
         JButton trimHeap = new JButton(Translator.R("CPRunningAppsTrimHeap"));
         trimHeap.addActionListener(e -> trimHeap(process, widgets));
         JButton stop = new JButton(Translator.R("CPRunningAppsStop"));
         stop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), false));
         JButton forceStop = new JButton(Translator.R("CPRunningAppsForceStop"));
         forceStop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), true));
+        actions.add(tune);
         actions.add(trimHeap);
         actions.add(stop);
         actions.add(forceStop);

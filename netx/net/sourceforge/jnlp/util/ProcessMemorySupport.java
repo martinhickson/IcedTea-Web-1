@@ -22,6 +22,8 @@ public final class ProcessMemorySupport {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern MAX_HEAP_FLAG = Pattern.compile("MaxHeapSize\\s*=\\s*(\\d+)",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern SOFT_MAX_HEAP_FLAG = Pattern.compile("SoftMaxHeapSize\\s*=\\s*(\\d+)",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern JAVA_EXECUTABLE = Pattern.compile(
             "([A-Za-z]:[^\\s\"']+|/[^\\s\"']+)[/\\\\]bin[/\\\\]java(?:\\.exe)?",
             Pattern.CASE_INSENSITIVE);
@@ -62,6 +64,30 @@ public final class ProcessMemorySupport {
 
         public static ProcessJvmContext unknown() {
             return new ProcessJvmContext(null, null, "", "");
+        }
+    }
+
+    public static final class LiveJvmSettings {
+        private final long maxHeapBytes;
+        private final String gcType;
+        private final long softMaxHeapBytes;
+
+        public LiveJvmSettings(long maxHeapBytes, String gcType, long softMaxHeapBytes) {
+            this.maxHeapBytes = Math.max(0, maxHeapBytes);
+            this.gcType = gcType == null ? "" : gcType;
+            this.softMaxHeapBytes = Math.max(0, softMaxHeapBytes);
+        }
+
+        public long getMaxHeapBytes() {
+            return maxHeapBytes;
+        }
+
+        public String getGcType() {
+            return gcType;
+        }
+
+        public long getSoftMaxHeapBytes() {
+            return softMaxHeapBytes;
         }
     }
 
@@ -146,6 +172,27 @@ public final class ProcessMemorySupport {
             }
         }
         return ok;
+    }
+
+    public static LiveJvmSettings readLiveJvmSettings(int pid, ProcessJvmContext jvmContext) {
+        long heapMax = 0;
+        long softMax = 0;
+        String gcType = JnlpAppTuningRegistry.GC_G1;
+        if (pid > 0 && jvmContext != null && jvmContext.hasJcmd()) {
+            String jcmd = jvmContext.getJcmdPath();
+            String heapInfo = runJcmdCapture(jcmd, pid, "GC.heap_info");
+            if (heapInfo != null && !heapInfo.isEmpty()) {
+                long[] heap = parseHeapFromHeapInfo(heapInfo);
+                heapMax = heap[1];
+            }
+            String flags = runJcmdCapture(jcmd, pid, "VM.flags");
+            if (heapMax <= 0) {
+                heapMax = parseMaxHeapFromFlags(flags);
+            }
+            softMax = parseSoftMaxHeapFromFlags(flags);
+            gcType = parseGcTypeFromFlags(flags);
+        }
+        return new LiveJvmSettings(heapMax, gcType, softMax);
     }
 
     public static MemoryInfo readMemoryInfo(int pid, ProcessJvmContext jvmContext) {
@@ -342,6 +389,28 @@ public final class ProcessMemorySupport {
             return Long.parseLong(matcher.group(1));
         }
         return 0;
+    }
+
+    private static long parseSoftMaxHeapFromFlags(String flags) {
+        if (flags == null || flags.isEmpty()) {
+            return 0;
+        }
+        Matcher matcher = SOFT_MAX_HEAP_FLAG.matcher(flags);
+        if (matcher.find()) {
+            return Long.parseLong(matcher.group(1));
+        }
+        return 0;
+    }
+
+    private static String parseGcTypeFromFlags(String flags) {
+        if (flags == null || flags.isEmpty()) {
+            return JnlpAppTuningRegistry.GC_G1;
+        }
+        String lower = flags.toLowerCase(Locale.ROOT);
+        if (lower.contains("+usezgc") || lower.contains(" usezgc ")) {
+            return JnlpAppTuningRegistry.GC_ZGC;
+        }
+        return JnlpAppTuningRegistry.GC_G1;
     }
 
     private static long readRssBytes(int pid) {
