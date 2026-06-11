@@ -518,10 +518,20 @@ public class Defaults {
                         "deployment.launcher.rust.bootcp.remove",
                         new BasicValueValidators.RustCpValidator(),
                         ""
-                }
+                },
                 //**************
                 //* Native (rust) only - end
                 //**************
+                {
+                        DeploymentConfiguration.KEY_KEEP_JAVAWS_PROCESS,
+                        BasicValueValidators.getBooleanValidator(),
+                        "false"
+                },
+                {
+                        DeploymentConfiguration.KEY_KEEP_JAVA_PRELAUNCH_PROCESS,
+                        BasicValueValidators.getBooleanValidator(),
+                        "false"
+                }
         };
 
         HashMap<String, Setting<String>> result = new HashMap<>();

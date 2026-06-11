@@ -241,6 +241,8 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_PLUGIN_JVM_ARGUMENTS= "deployment.plugin.jvm.arguments";
     public static final String KEY_JRE_DIR= "deployment.jre.dir";
+    public static final String KEY_KEEP_JAVAWS_PROCESS = "deployment.keepJavawsProcess";
+    public static final String KEY_KEEP_JAVA_PRELAUNCH_PROCESS = "deployment.keepjavaPrelaunchProcess";
     /**
      * remote configuration properties
      */

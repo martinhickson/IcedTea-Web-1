@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading.Tasks;
 namespace IcedTeaWeb.Launcher;
 
 internal static class Program
@@ -18,6 +19,10 @@ internal static class Program
     // true  = blocking stream drain for non-Windows / redirected fallback paths.
     // false = CopyToAsync relay; still waits at end, but stream pumping uses async I/O.
     private const bool WaitForJavaStdioSynchronously = true;
+
+    private const string KeepJavawsProcessProperty = "deployment.keepJavawsProcess";
+    private const string KeepJavaPrelaunchProcessProperty = "deployment.keepjavaPrelaunchProcess";
+    private const int PrelaunchProbeTimeoutMs = 15_000;
 
     private static int Main(string[] args)
     {
@@ -63,7 +68,7 @@ internal static class Program
                 javaArgs,
                 javawsArgs);
 
-            exitCode = RunJava(javaExecutable, command, preserveStdio);
+            exitCode = RunJava(javaExecutable, command, preserveStdio, javawsArgs);
         }
         catch (Exception ex)
         {
@@ -506,7 +511,11 @@ internal static class Program
         return JavawsMainClass;
     }
 
-    private static int RunJava(string javaExecutable, IReadOnlyList<string> command, bool preserveStdio)
+    private static int RunJava(
+        string javaExecutable,
+        IReadOnlyList<string> command,
+        bool preserveStdio,
+        IReadOnlyCollection<string> javawsArgs)
     {
 #if ITW_LAUNCHER_CONSOLE
         return RunJavaWithInheritedStdio(javaExecutable, command);
@@ -517,6 +526,11 @@ internal static class Program
             return RunJavaWithRedirectedOutput(javaExecutable, command);
         }
 #pragma warning restore CS0162
+
+        if (!ShouldKeepJavawsProcess() && !IsConsoleOnlyLaunch(javawsArgs))
+        {
+            return LaunchJavaDetachedAndExit(javaExecutable, command, "main");
+        }
 
         if (preserveStdio)
         {
@@ -685,6 +699,298 @@ internal static class Program
         return Path.Combine(logDirectory, "javaws-" + stamp + "-" + Environment.ProcessId);
     }
 
+    private static bool ShouldKeepJavawsProcess() =>
+        ReadDeploymentBooleanProperty(KeepJavawsProcessProperty, defaultValue: false);
+
+    private static bool ShouldKeepJavaPrelaunchProcess() =>
+        ReadDeploymentBooleanProperty(KeepJavaPrelaunchProcessProperty, defaultValue: false);
+
+    private static bool ReadDeploymentBooleanProperty(string key, bool defaultValue)
+    {
+        var raw = ReadDeploymentProperty(key);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return defaultValue;
+        }
+
+        return raw.Equals("true", StringComparison.OrdinalIgnoreCase)
+            || raw.Equals("1", StringComparison.Ordinal)
+            || raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static int LaunchJavaDetachedAndExit(
+        string javaExecutable,
+        IReadOnlyList<string> command,
+        string launchKind)
+    {
+        var logBase = CreateLauncherLogBasePath() + (launchKind == "prelaunch" ? "-prelaunch" : "");
+        var stdoutPath = logBase + ".out.log";
+        var stderrPath = logBase + ".err.log";
+        var launchLogPath = logBase + ".launch.log";
+
+        var childPid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? NativeMethods.SpawnProcessWithFileStdio(javaExecutable, command, stdoutPath, stderrPath)
+            : SpawnProcessWithFileStdioManaged(javaExecutable, command, stdoutPath, stderrPath);
+
+        if (childPid <= 0)
+        {
+            throw new InvalidOperationException(
+                "Unable to start detached Java process for " + launchKind + ": " + javaExecutable);
+        }
+
+        var jvm = DescribeJvm(javaExecutable);
+        WriteLaunchRecord(
+            launchLogPath,
+            launchKind,
+            childPid,
+            javaExecutable,
+            command,
+            stdoutPath,
+            stderrPath,
+            jvm.Vendor,
+            jvm.Version);
+        return 0;
+    }
+
+    private static string ProbeUberJarWithDetachedPrelaunch(
+        string probeExecutable,
+        IReadOnlyList<string> command)
+    {
+        var logBase = CreateLauncherLogBasePath() + "-prelaunch";
+        var stdoutPath = logBase + ".out.log";
+        var stderrPath = logBase + ".err.log";
+        var launchLogPath = logBase + ".launch.log";
+
+        var childPid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? NativeMethods.SpawnProcessWithFileStdio(probeExecutable, command, stdoutPath, stderrPath)
+            : SpawnProcessWithFileStdioManaged(probeExecutable, command, stdoutPath, stderrPath);
+
+        if (childPid <= 0)
+        {
+            throw new InvalidOperationException(
+                "Unable to start detached Java prelaunch probe: " + probeExecutable);
+        }
+
+        var jvm = DescribeJvm(probeExecutable);
+        WriteLaunchRecord(
+            launchLogPath,
+            "prelaunch",
+            childPid,
+            probeExecutable,
+            command,
+            stdoutPath,
+            stderrPath,
+            jvm.Vendor,
+            jvm.Version);
+
+        return ReadFirstStdoutLineFromLog(stdoutPath, childPid, PrelaunchProbeTimeoutMs);
+    }
+
+    private static string ReadFirstStdoutLineFromLog(string stdoutPath, int childPid, int timeoutMs)
+    {
+        var deadline = Environment.TickCount64 + timeoutMs;
+        while (Environment.TickCount64 < deadline)
+        {
+            if (File.Exists(stdoutPath))
+            {
+                var text = File.ReadAllText(stdoutPath);
+                foreach (var line in text.Split('\n', '\r'))
+                {
+                    var trimmed = line.Trim();
+                    if (!string.IsNullOrEmpty(trimmed))
+                    {
+                        return trimmed;
+                    }
+                }
+            }
+
+            try
+            {
+                using var process = Process.GetProcessById(childPid);
+                if (process.HasExited)
+                {
+                    break;
+                }
+            }
+            catch (ArgumentException)
+            {
+                break;
+            }
+
+            Thread.Sleep(50);
+        }
+
+        if (File.Exists(stdoutPath))
+        {
+            return File.ReadAllText(stdoutPath);
+        }
+
+        return string.Empty;
+    }
+
+    private static int SpawnProcessWithFileStdioManaged(
+        string executable,
+        IReadOnlyList<string> command,
+        string stdoutPath,
+        string stderrPath)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(stdoutPath) ?? ".");
+        Directory.CreateDirectory(Path.GetDirectoryName(stderrPath) ?? ".");
+
+        var stdoutTarget = new FileStream(
+            stdoutPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.ReadWrite);
+        var stderrTarget = new FileStream(
+            stderrPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.ReadWrite);
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = executable,
+            UseShellExecute = false,
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            CreateNoWindow = true,
+        };
+        foreach (var arg in command)
+        {
+            startInfo.ArgumentList.Add(arg);
+        }
+
+        var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("Unable to start process: " + executable);
+        process.StandardInput.Close();
+
+        _ = Task.Run(() => PumpStreamToFile(process.StandardOutput.BaseStream, stdoutTarget));
+        _ = Task.Run(() => PumpStreamToFile(process.StandardError.BaseStream, stderrTarget));
+        return process.Id;
+    }
+
+    private static void PumpStreamToFile(Stream source, Stream target)
+    {
+        try
+        {
+            var buffer = new byte[8192];
+            int read;
+            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+            {
+                target.Write(buffer, 0, read);
+                target.Flush();
+            }
+        }
+        catch
+        {
+            // Detached launcher must not fail if the child closes streams early.
+        }
+        finally
+        {
+            try
+            {
+                target.Flush();
+                target.Dispose();
+            }
+            catch
+            {
+            }
+        }
+    }
+
+    private readonly struct JvmDescription
+    {
+        public JvmDescription(string vendor, string version)
+        {
+            Vendor = vendor;
+            Version = version;
+        }
+
+        public string Vendor { get; }
+        public string Version { get; }
+    }
+
+    private static JvmDescription DescribeJvm(string javaExecutable)
+    {
+        try
+        {
+            var output = SpawnProcessCaptureStderrManaged(javaExecutable, new List<string> { "-version" });
+            return ParseJvmDescription(output);
+        }
+        catch
+        {
+            return new JvmDescription("unknown", "unknown");
+        }
+    }
+
+    private static JvmDescription ParseJvmDescription(string output)
+    {
+        var vendor = "unknown";
+        var version = "unknown";
+        foreach (var line in output.Split('\n', '\r'))
+        {
+            if (line.Contains("version", StringComparison.OrdinalIgnoreCase))
+            {
+                var quoteStart = line.IndexOf('"');
+                if (quoteStart >= 0)
+                {
+                    var remainder = line[(quoteStart + 1)..];
+                    var quoteEnd = remainder.IndexOf('"');
+                    version = quoteEnd > 0 ? remainder[..quoteEnd] : remainder.Trim();
+                }
+
+                var open = line.IndexOf('(');
+                var close = line.IndexOf(')');
+                if (open >= 0 && close > open)
+                {
+                    var runtime = line[(open + 1)..close];
+                    var slash = runtime.IndexOf('/');
+                    vendor = slash > 0 ? runtime[..slash].Trim() : runtime.Trim();
+                }
+                break;
+            }
+        }
+
+        return new JvmDescription(vendor, version);
+    }
+
+    private static void WriteLaunchRecord(
+        string launchLogPath,
+        string launchKind,
+        int childPid,
+        string javaExecutable,
+        IReadOnlyList<string> command,
+        string stdoutPath,
+        string stderrPath,
+        string jvmVendor,
+        string jvmVersion)
+    {
+        var launcherProcess = Process.GetCurrentProcess();
+        var builder = new StringBuilder();
+        builder.AppendLine("IcedTea-Web .NET launcher " + launchKind + " launch record");
+        builder.AppendLine(".NET runtime: " + RuntimeInformation.FrameworkDescription);
+        builder.AppendLine(".NET version: " + Environment.Version);
+        builder.AppendLine("Launcher process ID: " + launcherProcess.Id);
+        builder.AppendLine("Launcher process name: " + launcherProcess.ProcessName);
+        builder.AppendLine("Launcher executable: " + (Environment.ProcessPath ?? "unknown"));
+        builder.AppendLine("Launched JDK process ID: " + childPid);
+        builder.AppendLine("JDK executable: " + javaExecutable);
+        builder.AppendLine("JDK vendor: " + jvmVendor);
+        builder.AppendLine("JDK version: " + jvmVersion);
+        builder.AppendLine("Standard Output stream written to: " + Path.GetFullPath(stdoutPath));
+        builder.AppendLine("Standard Error stream written to: " + Path.GetFullPath(stderrPath));
+        builder.AppendLine("Launch log written to: " + Path.GetFullPath(launchLogPath));
+        builder.AppendLine("Working directory: " + Environment.CurrentDirectory);
+        builder.AppendLine("OS: " + RuntimeInformation.OSDescription);
+        builder.AppendLine("Architecture: " + RuntimeInformation.OSArchitecture);
+        builder.AppendLine("Command:");
+        builder.AppendLine(javaExecutable + " " + string.Join(' ', command));
+        builder.AppendLine("Exiting launcher without waiting for the launched JDK process.");
+        File.WriteAllText(launchLogPath, builder.ToString());
+    }
+
     private static void WriteLauncherFailure(Exception ex)
     {
         try
@@ -716,7 +1022,7 @@ internal static class Program
             }
         }
 
-        return ProbeJavaMajorVersionFromUberJar(javaExecutable, uberJar, preserveStdio);
+        return ProbeJavaMajorVersionFromUberJar(javaExecutable, uberJar, preserveStdio, javawsArgs);
     }
 
     private static bool IsConsoleOnlyLaunch(IReadOnlyCollection<string> javawsArgs) =>
@@ -776,7 +1082,8 @@ internal static class Program
     private static int ProbeJavaMajorVersionFromUberJar(
         string javaExecutable,
         string uberJar,
-        bool preserveStdio)
+        bool preserveStdio,
+        IReadOnlyCollection<string> javawsArgs)
     {
         // Uber jar --java-version prints java.version major (system property) to stdout and exits.
         // Always via JavawsUberLauncher/Boot — not the launcher-specific main (e.g. CommandLine).
@@ -792,9 +1099,17 @@ internal static class Program
         probeCommand.Add(JavawsMainClass);
         probeCommand.Add(JavaVersionProbeArg);
 
-        var stdout = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? NativeMethods.SpawnProcessCaptureStdout(probeExecutable, probeCommand)
-            : SpawnProcessCaptureStdoutManaged(probeExecutable, probeCommand);
+        string stdout;
+        if (ShouldKeepJavaPrelaunchProcess() || IsConsoleOnlyLaunch(javawsArgs))
+        {
+            stdout = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? NativeMethods.SpawnProcessCaptureStdout(probeExecutable, probeCommand)
+                : SpawnProcessCaptureStdoutManaged(probeExecutable, probeCommand);
+        }
+        else
+        {
+            stdout = ProbeUberJarWithDetachedPrelaunch(probeExecutable, probeCommand);
+        }
 
         var firstLine = stdout.Trim().Split('\n', '\r')[0].Trim();
         if (int.TryParse(firstLine, out var major) && major > 0)
@@ -940,6 +1255,8 @@ internal static class Program
         private const uint FileShareRead = 0x00000001;
         private const uint FileShareWrite = 0x00000002;
         private const uint OpenExisting = 3;
+        private const uint CreateAlways = 2;
+        private const uint FileAttributeNormal = 0x00000080;
         private const uint Infinite = 0xFFFFFFFF;
         private const uint HandleFlagInherit = 0x00000001;
 
@@ -1316,6 +1633,111 @@ internal static class Program
             finally
             {
                 CloseHandle(processInfo.hProcess);
+            }
+        }
+
+        public static int SpawnProcessWithFileStdio(
+            string executable,
+            IReadOnlyList<string> command,
+            string stdoutPath,
+            string stderrPath)
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(stdoutPath) ?? ".");
+            Directory.CreateDirectory(Path.GetDirectoryName(stderrPath) ?? ".");
+
+            var stdoutHandle = CreateFileW(
+                stdoutPath,
+                GenericWrite,
+                FileShareRead | FileShareWrite,
+                IntPtr.Zero,
+                CreateAlways,
+                FileAttributeNormal,
+                IntPtr.Zero);
+            var stderrHandle = CreateFileW(
+                stderrPath,
+                GenericWrite,
+                FileShareRead | FileShareWrite,
+                IntPtr.Zero,
+                CreateAlways,
+                FileAttributeNormal,
+                IntPtr.Zero);
+            if (stdoutHandle == InvalidHandleValue || stdoutHandle == IntPtr.Zero
+                || stderrHandle == InvalidHandleValue || stderrHandle == IntPtr.Zero)
+            {
+                if (stdoutHandle != InvalidHandleValue && stdoutHandle != IntPtr.Zero)
+                {
+                    CloseHandle(stdoutHandle);
+                }
+
+                if (stderrHandle != InvalidHandleValue && stderrHandle != IntPtr.Zero)
+                {
+                    CloseHandle(stderrHandle);
+                }
+
+                throw new InvalidOperationException(
+                    "Unable to open log files for detached launch: " + Marshal.GetLastWin32Error());
+            }
+
+            var nullHandle = CreateFileW(
+                "NUL",
+                GenericRead | GenericWrite,
+                FileShareRead,
+                IntPtr.Zero,
+                OpenExisting,
+                0,
+                IntPtr.Zero);
+            if (nullHandle == InvalidHandleValue || nullHandle == IntPtr.Zero)
+            {
+                CloseHandle(stdoutHandle);
+                CloseHandle(stderrHandle);
+                throw new InvalidOperationException(
+                    "Unable to open NUL device for detached launch: " + Marshal.GetLastWin32Error());
+            }
+
+            try
+            {
+                var commandLine = new StringBuilder();
+                commandLine.Append('"').Append(executable).Append('"');
+                foreach (var arg in command)
+                {
+                    commandLine.Append(' ').Append(QuoteCommandLineArg(arg));
+                }
+
+                var startupInfo = new StartupInfoW
+                {
+                    cb = (uint)Marshal.SizeOf<StartupInfoW>(),
+                    dwFlags = StartfUsestdhandles,
+                    hStdInput = nullHandle,
+                    hStdOutput = stdoutHandle,
+                    hStdError = stderrHandle,
+                };
+
+                if (!CreateProcessW(
+                    null,
+                    commandLine,
+                    IntPtr.Zero,
+                    IntPtr.Zero,
+                    true,
+                    CreateNoWindow,
+                    IntPtr.Zero,
+                    null,
+                    ref startupInfo,
+                    out var processInfo))
+                {
+                    throw new InvalidOperationException(
+                        "CreateProcess failed for detached launch: " + Marshal.GetLastWin32Error());
+                }
+
+                var childPid = (int)processInfo.dwProcessId;
+                CloseHandle(processInfo.hThread);
+                CloseHandle(processInfo.hProcess);
+                return childPid;
+            }
+            finally
+            {
+                CloseHandle(stdoutHandle);
+                CloseHandle(stderrHandle);
+                CloseHandle(nullHandle);
             }
         }
 
