@@ -200,12 +200,14 @@ public class CacheUtil {
         }
         if (found == 0) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, Translator.R("BXSingleCacheClearNotFound", application));
+            return false;
         }
         if (found > 1) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, Translator.R("BXSingleCacheMoreThenOneId", application));
         }
         OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, Translator.R("BXSingleCacheFileCount", files));
         final CacheLRUWrapper lruHandler = CacheLRUWrapper.getInstance();
+        final int[] markedForDeletion = {0};
         synchronized (lruHandler) {
         lruHandler.lock();
         try {
@@ -224,15 +226,20 @@ public class CacheUtil {
                         if (application.equalsIgnoreCase(jnlpPath) || application.equalsIgnoreCase(getDomain(path))) {
                             pf.setProperty("delete", "true");
                             pf.store();
+                            markedForDeletion[0]++;
                             OutputController.getLogger().log("marked for deletion: " + path);
                         }
                     }
                 }
             });
+            if (markedForDeletion[0] == 0) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, Translator.R("BXSingleCacheClearNotFound", application));
+                return false;
+            }
             if (JNLPRuntime.isWindows()) {
                 removeWindowsShortcuts(application.toLowerCase());
             }
-            // clean the cache of entries now marked for deletion
+            // Remove entries marked for deletion even when unrelated JNLP apps hold MAIN_LOCK
             cleanCache();
 
         } catch (IOException e) {
@@ -933,86 +940,90 @@ public class CacheUtil {
      * This will remove all old cache items.
      */
     public static void cleanCache() {
+        processCacheCleanup(okToClearCache());
+    }
+
+    /**
+     * Removes cache entries marked for deletion always; LRU size enforcement only when allowed.
+     */
+    private static void processCacheCleanup(boolean enforceLruLimit) {
         CacheLRUWrapper lruHandler = CacheLRUWrapper.getInstance();
-        if (okToClearCache()) {
-            // First we want to figure out which stuff we need to delete.
-            HashSet<String> keep = new HashSet<>();
-            HashSet<String> remove = new HashSet<>();
-            synchronized (lruHandler) {
+        HashSet<String> keep = new HashSet<>();
+        HashSet<String> remove = new HashSet<>();
+        synchronized (lruHandler) {
+        try {
+            lruHandler.lock();
+            lruHandler.load();
+
+            long maxSize = -1; // Default
             try {
-                lruHandler.lock();
-                lruHandler.load();
+                maxSize = Long.parseLong(JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_CACHE_MAX_SIZE));
+            } catch (NumberFormatException nfe) {
+            }
 
-                long maxSize = -1; // Default
-                try {
-                    maxSize = Long.parseLong(JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_CACHE_MAX_SIZE));
-                } catch (NumberFormatException nfe) {
+            maxSize = maxSize << 20; // Convert from megabyte to byte (Negative values will be considered unlimited.)
+            long curSize = 0;
+
+            for (Entry<String, String> e : lruHandler.getLRUSortedEntries()) {
+                // Check if the item is contained in cacheOrder.
+                final String key = e.getKey();
+                final String path = e.getValue();
+
+                File file = new File(path);
+                PropertiesFile pf = new PropertiesFile(new File(path + CacheDirectory.INFO_SUFFIX));
+                boolean delete = Boolean.parseBoolean(pf.getProperty("delete"));
+
+            /*
+             * This will get me the root directory specific to this cache item.
+             * Example:
+             *  cacheDir = /home/user1/.icedtea/cache
+             *  file.getPath() = /home/user1/.icedtea/cache/0/http/www.example.com/subdir/a.jar
+             *  rStr first becomes: /0/http/www.example.com/subdir/a.jar
+             *  then rstr becomes: /home/user1/.icedtea/cache/0
+             */
+                String rStr = file.getPath().substring(lruHandler.getCacheDir().getFullPath().length());
+                rStr = lruHandler.getCacheDir().getFullPath()+ rStr.substring(0, rStr.indexOf(File.separatorChar, 1));
+                long len = file.length();
+
+                if (keep.contains(path)) {
+                    lruHandler.removeEntry(key);
+                    continue;
                 }
 
-                maxSize = maxSize << 20; // Convert from megabyte to byte (Negative values will be considered unlimited.)
-                long curSize = 0;
+            /*
+             * we remove entries from our lru if any of the following condition is met.
+             * Conditions:
+             *  - delete: file has been marked for deletion.
+             *  - !file.isFile(): if someone tampered with the directory, file doesn't exist.
+             *  - maxSize >= 0 && curSize + len > maxSize: If a limit was set and the new size
+             *  on disk would exceed the maximum size (only when enforceLruLimit is true).
+             */
+                if (delete || !file.isFile() || (enforceLruLimit && maxSize >= 0 && curSize + len > maxSize)) {
+                    lruHandler.removeEntry(key);
+                    remove.add(rStr);
+                    continue;
+                }
 
-                for (Entry<String, String> e : lruHandler.getLRUSortedEntries()) {
-                    // Check if the item is contained in cacheOrder.
-                    final String key = e.getKey();
-                    final String path = e.getValue();
+                curSize += len;
+                keep.add(path);
 
-                    File file = new File(path);
-                    PropertiesFile pf = new PropertiesFile(new File(path + CacheDirectory.INFO_SUFFIX));
-                    boolean delete = Boolean.parseBoolean(pf.getProperty("delete"));
-
-                /*
-                 * This will get me the root directory specific to this cache item.
-                 * Example:
-                 *  cacheDir = /home/user1/.icedtea/cache
-                 *  file.getPath() = /home/user1/.icedtea/cache/0/http/www.example.com/subdir/a.jar
-                 *  rStr first becomes: /0/http/www.example.com/subdir/a.jar
-                 *  then rstr becomes: /home/user1/.icedtea/cache/0
-                 */
-                    String rStr = file.getPath().substring(lruHandler.getCacheDir().getFullPath().length());
-                    rStr = lruHandler.getCacheDir().getFullPath()+ rStr.substring(0, rStr.indexOf(File.separatorChar, 1));
-                    long len = file.length();
-
-                    if (keep.contains(path)) {
-                        lruHandler.removeEntry(key);
-                        continue;
-                    }
-
-                /*
-                 * we remove entries from our lru if any of the following condition is met.
-                 * Conditions:
-                 *  - delete: file has been marked for deletion.
-                 *  - !file.isFile(): if someone tampered with the directory, file doesn't exist.
-                 *  - maxSize >= 0 && curSize + len > maxSize: If a limit was set and the new size
-                 *  on disk would exceed the maximum size.
-                 */
-                    if (delete || !file.isFile() || (maxSize >= 0 && curSize + len > maxSize)) {
-                        lruHandler.removeEntry(key);
-                        remove.add(rStr);
-                        continue;
-                    }
-
-                    curSize += len;
-                    keep.add(path);
-
-                    for (File f : file.getParentFile().listFiles()) {
-                        if (!(f.equals(file) || f.equals(pf.getStoreFile()))) {
-                            try {
-                                FileUtils.recursiveDelete(f, f);
-                            } catch (IOException e1) {
-                                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
-                            }
+                for (File f : file.getParentFile().listFiles()) {
+                    if (!(f.equals(file) || f.equals(pf.getStoreFile()))) {
+                        try {
+                            FileUtils.recursiveDelete(f, f);
+                        } catch (IOException e1) {
+                            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
                         }
-
                     }
+
                 }
-                lruHandler.store();
-            } finally {
-                lruHandler.unlock();
             }
-            }
-            removeSetOfDirectories(remove);
+            lruHandler.store();
+        } finally {
+            lruHandler.unlock();
         }
+        }
+        removeSetOfDirectories(remove);
     }
 
     private static void removeSetOfDirectories(Set<String> remove) {
