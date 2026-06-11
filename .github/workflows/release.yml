@@ -64,16 +64,11 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create release branch
+      - name: Create release branch from latest 1.8
         run: |
-          if git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" >/dev/null 2>&1; then
-            git fetch origin "${RELEASE_BRANCH}"
-            git checkout -B "${RELEASE_BRANCH}" "origin/${RELEASE_BRANCH}"
-            echo "Using existing branch: ${RELEASE_BRANCH}"
-          else
-            git checkout -b "${RELEASE_BRANCH}"
-            echo "Created branch: ${RELEASE_BRANCH}"
-          fi
+          git fetch origin 1.8
+          git checkout -B "${RELEASE_BRANCH}" "origin/1.8"
+          echo "Release branch ${RELEASE_BRANCH} based on origin/1.8 ($(git rev-parse --short HEAD))"
 
       - name: Set up Corretto 11 for release preparation
         uses: actions/setup-java@v5
@@ -135,6 +130,9 @@ jobs:
 
           * **Cache operations with process coordination**
             Cache maintenance workflows identify running JNLP applications that may retain cached artifacts and provide stop and force-stop controls, enabling administrators to clear application-specific or global cache entries in a deliberate, coordinated manner.
+
+          * **Detached .NET launcher with launch audit logs**
+            By default the .NET javaws launcher exits after confirming the JDK child process has started, writing a launch record with .NET and JDK versions, child PID, and full paths to redirected standard output and standard error logs. Set deployment.keepJavawsProcess=true or deployment.keepjavaPrelaunchProcess=true to retain the previous blocking launcher behavior.
 
           * **Verifiable build outputs**
             Release artifacts include checksums to support integrity verification and secure distribution workflows.
@@ -365,13 +363,23 @@ jobs:
           & packaging/windows/build-msi.ps1
         shell: pwsh
 
+      - name: Build macOS DMG
+        if: runner.os == 'macOS'
+        run: |
+          chmod +x packaging/macos/build-dmg.sh packaging/macos/prepare-macos-icon.sh
+          ITW_VERSION="${{ env.RELEASE_VERSION }}" \
+          ITW_MACOS_RID="${{ matrix.rid }}" \
+          packaging/macos/build-dmg.sh
+        shell: bash
+
       - name: Generate checksums
         run: |
           $patterns = @(
             "icedtea-web-distribution/target/*.zip",
             "icedtea-web-distribution/target/native-packages/*.deb",
             "icedtea-web-distribution/target/native-packages/*.rpm",
-            "icedtea-web-distribution/target/native-packages/*.msi"
+            "icedtea-web-distribution/target/native-packages/*.msi",
+            "icedtea-web-distribution/target/native-packages/*.dmg"
           )
           foreach ($pattern in $patterns) {
             Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
@@ -412,6 +420,16 @@ jobs:
             icedtea-web-distribution/target/native-packages/*.msi.sha256.txt
           if-no-files-found: error
 
+      - name: Upload macOS DMG
+        if: runner.os == 'macOS'
+        uses: actions/upload-artifact@v7
+        with:
+          name: icedtea-web-dmg-${{ matrix.rid }}
+          path: |
+            icedtea-web-distribution/target/native-packages/*.dmg
+            icedtea-web-distribution/target/native-packages/*.dmg.sha256.txt
+          if-no-files-found: error
+
       - name: Upload release assets
         if: github.event_name == 'workflow_dispatch'
         env:
@@ -423,9 +441,11 @@ jobs:
             "icedtea-web-distribution/target/native-packages/*.deb",
             "icedtea-web-distribution/target/native-packages/*.rpm",
             "icedtea-web-distribution/target/native-packages/*.msi",
+            "icedtea-web-distribution/target/native-packages/*.dmg",
             "icedtea-web-distribution/target/native-packages/*.deb.sha256.txt",
             "icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt"
+            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt",
+            "icedtea-web-distribution/target/native-packages/*.dmg.sha256.txt"
           )
           $files = @()
           foreach ($pattern in $patterns) {
