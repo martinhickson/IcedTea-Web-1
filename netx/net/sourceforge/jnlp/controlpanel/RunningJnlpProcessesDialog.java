@@ -66,7 +66,8 @@ public final class RunningJnlpProcessesDialog extends JDialog {
         proceedButton = new JButton(proceedLabelKey);
         proceedButton.setEnabled(false);
         proceedButton.addActionListener(e -> {
-            if (!tracked.isEmpty() || CacheUtil.isCacheLockedByOtherInstance()) {
+            if (!tracked.isEmpty()
+                    || (requiresGlobalCacheLockClear() && CacheUtil.isCacheLockedByOtherInstance())) {
                 return;
             }
             proceedClicked = true;
@@ -141,8 +142,21 @@ public final class RunningJnlpProcessesDialog extends JDialog {
     }
 
     private static boolean canClearCacheNow(String jnlpPathFilter) {
-        return !CacheUtil.isCacheLockedByOtherInstance()
-                && JnlpRunningProcessSupport.listRunningJnlpProcesses(jnlpPathFilter).isEmpty();
+        if (!JnlpRunningProcessSupport.listRunningJnlpProcesses(jnlpPathFilter).isEmpty()) {
+            return false;
+        }
+        if (!requiresGlobalCacheLockClear(jnlpPathFilter)) {
+            return true;
+        }
+        return !CacheUtil.isCacheLockedByOtherInstance();
+    }
+
+    private boolean requiresGlobalCacheLockClear() {
+        return requiresGlobalCacheLockClear(jnlpPathFilter);
+    }
+
+    private static boolean requiresGlobalCacheLockClear(String jnlpPathFilter) {
+        return jnlpPathFilter == null || jnlpPathFilter.trim().isEmpty();
     }
 
     public static void runClearAfterProcessesStopped(Component parent, Runnable clearAction) {
@@ -163,7 +177,7 @@ public final class RunningJnlpProcessesDialog extends JDialog {
 
         if (tracked.isEmpty()) {
             c.gridy = 0;
-            if (CacheUtil.isCacheLockedByOtherInstance()) {
+            if (requiresGlobalCacheLockClear() && CacheUtil.isCacheLockedByOtherInstance()) {
                 processListPanel.add(new JLabel(Translator.R("CacheRunningJnlpLockHeld")), c);
                 statusLabel.setText(Translator.R("CacheRunningJnlpLockHeld"));
                 proceedButton.setEnabled(false);

@@ -182,8 +182,9 @@ public class CacheUtil {
     }
 
     public static boolean clearCache(final String application, boolean jnlpPath, boolean domain) {
-        // clear one app
-        if (!checkToClearCache()) {
+        // clear one app — only block when this application's JNLP processes are still running
+        if (!canClearApplicationCache(application)) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, R("CCannotClearCache"));
             return false;
         }
 
@@ -249,6 +250,18 @@ public class CacheUtil {
             return false;
         }
         return CacheLRUWrapper.getInstance().getCacheDir().getFile().isDirectory();
+    }
+
+    /**
+     * @return true when cache entries for {@code application} may be cleared without stopping unrelated JNLP apps
+     */
+    public static boolean canClearApplicationCache(String application) {
+        if (application == null || application.trim().isEmpty()) {
+            return false;
+        }
+        return net.sourceforge.jnlp.util.JnlpRunningProcessSupport
+                .listRunningJnlpProcesses(application).isEmpty()
+                && CacheLRUWrapper.getInstance().getCacheDir().getFile().isDirectory();
     }
 
     /**
