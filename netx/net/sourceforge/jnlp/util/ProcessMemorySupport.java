@@ -135,19 +135,6 @@ public final class ProcessMemorySupport {
         return resolveJavaHome(-1, commandLine);
     }
 
-    public static boolean trimHeap(int pid, ProcessJvmContext jvmContext) {
-        if (pid <= 0 || jvmContext == null || !jvmContext.hasJcmd()) {
-            return false;
-        }
-        boolean ok = true;
-        for (int i = 0; i < 4; i++) {
-            if (!runJcmd(jvmContext.getJcmdPath(), pid, "GC.run")) {
-                ok = false;
-            }
-        }
-        return ok;
-    }
-
     public static MemoryInfo readMemoryInfo(int pid, ProcessJvmContext jvmContext) {
         long rss = readRssBytes(pid);
         long systemTotal = readSystemMemoryBytes();

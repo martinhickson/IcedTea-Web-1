@@ -166,32 +166,16 @@ public class RunningAppsPanel extends NamedBorderPanel {
         row.add(details, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
-        JButton trimHeap = new JButton(Translator.R("CPRunningAppsTrimHeap"));
-        trimHeap.addActionListener(e -> trimHeap(process, widgets));
         JButton stop = new JButton(Translator.R("CPRunningAppsStop"));
         stop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), false));
         JButton forceStop = new JButton(Translator.R("CPRunningAppsForceStop"));
         forceStop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), true));
-        actions.add(trimHeap);
         actions.add(stop);
         actions.add(forceStop);
         row.add(actions, BorderLayout.EAST);
 
         widgets.panel = row;
         return widgets;
-    }
-
-    private void trimHeap(RunningProcess process, ProcessRowWidgets widgets) {
-        boolean ok = ProcessMemorySupport.trimHeap(process.getPid(), widgets.jvmContext);
-        if (!ok) {
-            JOptionPane.showMessageDialog(this, Translator.R("CPRunningAppsTrimHeapFailed"),
-                    Translator.R("CPHeadRunningApps"), JOptionPane.WARNING_MESSAGE);
-            return;
-        }
-        widgets.loadMemory();
-        Timer followUp = new Timer(600, e -> widgets.loadMemory());
-        followUp.setRepeats(false);
-        followUp.start();
     }
 
     private static String formatTitleLabel(String title, String version) {
