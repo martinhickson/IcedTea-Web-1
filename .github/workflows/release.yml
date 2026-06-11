@@ -31,11 +31,6 @@ on:
         options:
           - 'true'
           - 'false'
-      sign-windows-artifacts:
-        description: 'Sign Windows EXE/MSI release artifacts with Azure Key Vault'
-        required: true
-        default: false
-        type: boolean
   pull_request:
     branches:
       - 1.8
@@ -43,7 +38,6 @@ on:
 permissions:
   contents: write
   packages: read
-  id-token: write
 
 env:
   RELEASE_VERSION: ${{ inputs.release_version || '2.0.1-SNAPSHOT' }}
@@ -62,7 +56,6 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v6
         with:
-          ref: 1.8
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
@@ -71,11 +64,16 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create release branch from latest 1.8
+      - name: Create release branch
         run: |
-          git fetch origin 1.8
-          git checkout -B "${RELEASE_BRANCH}" "origin/1.8"
-          echo "Release branch ${RELEASE_BRANCH} based on origin/1.8 ($(git rev-parse --short HEAD))"
+          if git ls-remote --exit-code --heads origin "${RELEASE_BRANCH}" >/dev/null 2>&1; then
+            git fetch origin "${RELEASE_BRANCH}"
+            git checkout -B "${RELEASE_BRANCH}" "origin/${RELEASE_BRANCH}"
+            echo "Using existing branch: ${RELEASE_BRANCH}"
+          else
+            git checkout -b "${RELEASE_BRANCH}"
+            echo "Created branch: ${RELEASE_BRANCH}"
+          fi
 
       - name: Set up Corretto 11 for release preparation
         uses: actions/setup-java@v5
@@ -132,6 +130,12 @@ jobs:
           * **Desktop administration tools**
             Registers IcedTea-Web Control Panel and Policy Editor in the application menu on Linux (Freedesktop/KDE/GNOME) and Windows (Start Menu), with themed icons for discoverable configuration and policy editing.
 
+          * **Application runtime visibility**
+            The control panel Running Apps tab presents live heap and resident memory utilization inline for each active JNLP session, refreshing automatically when the tab is opened and immediately after heap trim actions so administrators can observe memory reclamation without auxiliary dialogs.
+
+          * **Cache operations with process coordination**
+            Cache maintenance workflows identify running JNLP applications that may retain cached artifacts and provide stop and force-stop controls, enabling administrators to clear application-specific or global cache entries in a deliberate, coordinated manner.
+
           * **Verifiable build outputs**
             Release artifacts include checksums to support integrity verification and secure distribution workflows.
 
@@ -172,25 +176,21 @@ jobs:
           - os: windows-2022
             rid: win-x64
             launcher: bin/javaws.exe
-            cli-launcher: bin/javawsc.exe
             smoke-script: scripts/run-windows-dotnet-jnlp-smoke.ps1
             corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip
           - os: ubuntu-latest
             rid: linux-x64
             launcher: bin/javaws
-            cli-launcher: bin/javawsc
             smoke-script: scripts/run-linux-dotnet-jnlp-smoke.sh
             corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz
           - os: macos-15-intel
             rid: osx-x64
             launcher: bin/javaws
-            cli-launcher: bin/javawsc
             smoke-script: ''
             corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz
           - os: macos-15
             rid: osx-arm64
             launcher: bin/javaws
-            cli-launcher: bin/javawsc
             smoke-script: ''
             corretto-url: https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-macos-jdk.tar.gz
 
@@ -297,27 +297,25 @@ jobs:
           & mvn @mvnArgs
         shell: pwsh
 
-      - name: Smoke test packaged javawsc CLI launcher
+      - name: Smoke test packaged javaws launcher
         run: |
           $dist = Get-ChildItem "icedtea-web-distribution/target/dist" -Directory | Select-Object -First 1
           if ($null -eq $dist) {
             throw "Distribution directory not found"
           }
-          $launcher = Join-Path $dist.FullName "${{ matrix.cli-launcher }}"
+          $launcher = Join-Path $dist.FullName "${{ matrix.launcher }}"
           & $launcher -version
         shell: pwsh
 
-      - name: Run Linux JNLP smoke test from distribution tree
+      - name: Run Linux JNLP smoke test from normal distribution ZIP
         if: runner.os == 'Linux'
         run: |
           chmod +x "${{ matrix.smoke-script }}"
           ITW_VERSION="${{ env.RELEASE_VERSION }}" \
-          ITW_DOTNET_DIST_DIR="${{ github.workspace }}/icedtea-web-distribution/target/dist/icedtea-web-${{ env.RELEASE_VERSION }}" \
           ITW_SMOKE_BUILD_TEST_APP=false \
           ITW_SMOKE_TIMEOUT_SECONDS=180 \
           "${{ matrix.smoke-script }}"
         shell: bash
-
 
       - name: Install xvfb for control panel smoke test
         if: runner.os == 'Linux'
@@ -328,8 +326,8 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           chmod +x scripts/run-linux-control-panel-smoke.sh
-          ITW_DOTNET_DIST_DIR="${{ github.workspace }}/icedtea-web-distribution/target/dist/icedtea-web-${{ env.RELEASE_VERSION }}" \
-          scripts/run-linux-control-panel-smoke.sh
+          DIST_DIR="$(find icedtea-web-distribution/target/dist -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          ITW_DOTNET_DIST_DIR="$DIST_DIR" scripts/run-linux-control-panel-smoke.sh
         shell: bash
 
       - name: Build Linux native packages in Docker
@@ -341,11 +339,10 @@ jobs:
           packaging/linux/build-native-packages.sh
         shell: bash
 
-      - name: Run Windows JNLP smoke test from distribution tree
+      - name: Run Windows JNLP smoke test from normal distribution ZIP
         if: runner.os == 'Windows'
         run: |
           $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
-          $env:ITW_DOTNET_DIST_DIR = "${{ github.workspace }}\icedtea-web-distribution\target\dist\icedtea-web-${{ env.RELEASE_VERSION }}"
           $env:ITW_SMOKE_BUILD_TEST_APP = "false"
           $env:ITW_SMOKE_TIMEOUT_SECONDS = "180"
           & "${{ matrix.smoke-script }}"
@@ -368,66 +365,13 @@ jobs:
           & packaging/windows/build-msi.ps1
         shell: pwsh
 
-      - name: Validate Windows signing secrets
-        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
-        run: |
-          $required = @{
-            AZURE_CLIENT_ID = "${{ secrets.AZURE_CLIENT_ID }}"
-            AZURE_TENANT_ID = "${{ secrets.AZURE_TENANT_ID }}"
-            AZURE_SUBSCRIPTION_ID = "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
-            KEYVAULT_URL = "${{ secrets.KEYVAULT_URL }}"
-            JNLP_JCA_SIGN_ALIAS = "${{ secrets.JNLP_JCA_SIGN_ALIAS }}"
-            JNLP_JCA_TSA_URL = "${{ secrets.JNLP_JCA_TSA_URL }}"
-          }
-          $missing = $required.GetEnumerator() |
-            Where-Object { [string]::IsNullOrWhiteSpace($_.Value) } |
-            ForEach-Object { $_.Key }
-          if ($missing.Count -gt 0) {
-            Write-Warning "Windows artifact signing was requested, but these GitHub secrets are missing: $($missing -join ', ')"
-            throw "Cannot sign Windows artifacts because required signing secrets are missing."
-          }
-        shell: pwsh
-
-      - name: Azure login for Windows artifact signing
-        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Install AzureSignTool
-        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
-        run: |
-          dotnet tool install --global AzureSignTool
-          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        shell: pwsh
-
-      - name: Sign Windows EXE and MSI release artifacts
-        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
-        env:
-          KEYVAULT_URL: ${{ secrets.KEYVAULT_URL }}
-          JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
-          JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
-        run: '& scripts/sign-windows-azure-keyvault.ps1'
-        shell: pwsh
-
-      - name: Build macOS DMG
-        if: runner.os == 'macOS'
-        run: |
-          chmod +x packaging/macos/build-dmg.sh packaging/macos/prepare-macos-icon.sh
-          ITW_VERSION="${{ env.RELEASE_VERSION }}" \
-          ITW_MACOS_RID="${{ matrix.rid }}" \
-          packaging/macos/build-dmg.sh
-        shell: bash
-
       - name: Generate checksums
         run: |
           $patterns = @(
+            "icedtea-web-distribution/target/*.zip",
             "icedtea-web-distribution/target/native-packages/*.deb",
             "icedtea-web-distribution/target/native-packages/*.rpm",
-            "icedtea-web-distribution/target/native-packages/*.msi",
-            "icedtea-web-distribution/target/native-packages/*.dmg"
+            "icedtea-web-distribution/target/native-packages/*.msi"
           )
           foreach ($pattern in $patterns) {
             Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
@@ -436,6 +380,15 @@ jobs:
             }
           }
         shell: pwsh
+
+      - name: Upload distribution artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: icedtea-web-${{ matrix.rid }}
+          path: |
+            icedtea-web-distribution/target/*.zip
+            icedtea-web-distribution/target/*.zip.sha256.txt
+          if-no-files-found: error
 
       - name: Upload Linux native packages
         if: runner.os == 'Linux'
@@ -459,30 +412,20 @@ jobs:
             icedtea-web-distribution/target/native-packages/*.msi.sha256.txt
           if-no-files-found: error
 
-      - name: Upload macOS DMG
-        if: runner.os == 'macOS'
-        uses: actions/upload-artifact@v7
-        with:
-          name: icedtea-web-dmg-${{ matrix.rid }}
-          path: |
-            icedtea-web-distribution/target/native-packages/*.dmg
-            icedtea-web-distribution/target/native-packages/*.dmg.sha256.txt
-          if-no-files-found: error
-
       - name: Upload release assets
         if: github.event_name == 'workflow_dispatch'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $patterns = @(
+            "icedtea-web-distribution/target/*.zip",
+            "icedtea-web-distribution/target/*.zip.sha256.txt",
             "icedtea-web-distribution/target/native-packages/*.deb",
             "icedtea-web-distribution/target/native-packages/*.rpm",
             "icedtea-web-distribution/target/native-packages/*.msi",
-            "icedtea-web-distribution/target/native-packages/*.dmg",
             "icedtea-web-distribution/target/native-packages/*.deb.sha256.txt",
             "icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.dmg.sha256.txt"
+            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt"
           )
           $files = @()
           foreach ($pattern in $patterns) {

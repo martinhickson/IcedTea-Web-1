@@ -13,16 +13,15 @@ import java.util.List;
 import javax.swing.BorderFactory;
 import javax.swing.Box;
 import javax.swing.JButton;
-import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JProgressBar;
 import javax.swing.JScrollPane;
-import javax.swing.SwingUtilities;
 import javax.swing.Timer;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.Translator;
+import net.sourceforge.jnlp.util.JnlpLockMetadata;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport.RunningProcess;
 import net.sourceforge.jnlp.util.ProcessMemorySupport;
@@ -31,6 +30,9 @@ import net.sourceforge.jnlp.util.ProcessMemorySupport.ProcessJvmContext;
 
 @SuppressWarnings("serial")
 public class RunningAppsPanel extends NamedBorderPanel {
+
+    private static final int MEMORY_BAR_WIDTH = 190;
+    private static final int MEMORY_BAR_HEIGHT = 18;
 
     private final JPanel listPanel = new JPanel(new GridBagLayout());
     private final JLabel statusLabel = new JLabel();
@@ -51,7 +53,7 @@ public class RunningAppsPanel extends NamedBorderPanel {
         c.weighty = 1;
         listPanel.setLayout(new GridBagLayout());
         JScrollPane scroll = new JScrollPane(listPanel);
-        scroll.setPreferredSize(new Dimension(560, 260));
+        scroll.setPreferredSize(new Dimension(720, 280));
         add(scroll, c);
 
         c.gridy++;
@@ -106,7 +108,9 @@ public class RunningAppsPanel extends NamedBorderPanel {
             int row = 0;
             for (RunningProcess process : processes) {
                 c.gridy = row++;
-                listPanel.add(buildProcessRow(process), c);
+                ProcessRowWidgets widgets = buildProcessRow(process);
+                listPanel.add(widgets.panel, c);
+                widgets.loadMemory();
             }
             statusLabel.setText(Translator.R("CPRunningAppsCount", processes.size()));
         }
@@ -114,13 +118,22 @@ public class RunningAppsPanel extends NamedBorderPanel {
         listPanel.repaint();
     }
 
-    private JPanel buildProcessRow(final RunningProcess process) {
+    private ProcessRowWidgets buildProcessRow(final RunningProcess process) {
         JPanel row = new JPanel(new BorderLayout(8, 4));
         row.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createEtchedBorder(),
                 BorderFactory.createEmptyBorder(6, 8, 6, 8)));
 
         ProcessJvmContext jvmContext = ProcessMemorySupport.resolveJvmContext(process);
+
+        JPanel details = new JPanel(new GridBagLayout());
+        GridBagConstraints dc = new GridBagConstraints();
+        dc.gridx = 0;
+        dc.gridy = 0;
+        dc.anchor = GridBagConstraints.WEST;
+        dc.insets = new Insets(0, 0, 4, 0);
+        dc.fill = GridBagConstraints.HORIZONTAL;
+        dc.weightx = 1;
 
         JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
         String title = process.getAppTitle();
@@ -129,111 +142,45 @@ public class RunningAppsPanel extends NamedBorderPanel {
         }
         titlePanel.add(new JLabel(formatTitleLabel(title, process.getAppVersion())));
         titlePanel.add(new JLabel(formatJvmLabel(jvmContext)));
-        row.add(titlePanel, BorderLayout.CENTER);
+        details.add(titlePanel, dc);
+
+        dc.gridy = 1;
+        ProcessRowWidgets widgets = new ProcessRowWidgets(process.getPid(), jvmContext);
+        details.add(widgets.memoryPanel, dc);
+        row.add(details, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
-        final ProcessJvmContext rowJvmContext = jvmContext;
         JButton trimHeap = new JButton(Translator.R("CPRunningAppsTrimHeap"));
-        trimHeap.addActionListener(e -> trimHeap(process, rowJvmContext));
+        trimHeap.addActionListener(e -> trimHeap(process, widgets));
         JButton stop = new JButton(Translator.R("CPRunningAppsStop"));
         stop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), false));
         JButton forceStop = new JButton(Translator.R("CPRunningAppsForceStop"));
         forceStop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), true));
-        JButton info = new JButton(Translator.R("CPRunningAppsInfo"));
-        info.addActionListener(e -> showInfo(process, rowJvmContext));
         actions.add(trimHeap);
         actions.add(stop);
         actions.add(forceStop);
-        actions.add(info);
         row.add(actions, BorderLayout.EAST);
-        return row;
+
+        widgets.panel = row;
+        return widgets;
     }
 
-    private void trimHeap(RunningProcess process, ProcessJvmContext jvmContext) {
-        boolean ok = ProcessMemorySupport.trimHeap(process.getPid(), jvmContext);
-        if (ok) {
-            JOptionPane.showMessageDialog(this, Translator.R("CPRunningAppsTrimHeapDone"));
-        } else {
+    private void trimHeap(RunningProcess process, ProcessRowWidgets widgets) {
+        boolean ok = ProcessMemorySupport.trimHeap(process.getPid(), widgets.jvmContext);
+        if (!ok) {
             JOptionPane.showMessageDialog(this, Translator.R("CPRunningAppsTrimHeapFailed"),
                     Translator.R("CPHeadRunningApps"), JOptionPane.WARNING_MESSAGE);
+            return;
         }
-    }
-
-    private void showInfo(final RunningProcess process, final ProcessJvmContext jvmContext) {
-        final java.awt.Window owner = SwingUtilities.getWindowAncestor(this);
-        final JDialog dialog = new JDialog(owner, Translator.R("CPRunningAppsInfoTitle"), JDialog.ModalityType.APPLICATION_MODAL);
-        dialog.setLayout(new BorderLayout(8, 8));
-        JPanel content = new JPanel(new GridBagLayout());
-        content.setBorder(BorderFactory.createEmptyBorder(12, 12, 12, 12));
-        GridBagConstraints c = new GridBagConstraints();
-        c.gridx = 0;
-        c.gridy = 0;
-        c.weightx = 1;
-        c.fill = GridBagConstraints.HORIZONTAL;
-        c.insets = new Insets(4, 4, 4, 4);
-        content.add(new JLabel(Translator.R("CPRunningAppsInfoLoading")), c);
-
-        dialog.add(content, BorderLayout.CENTER);
-        JPanel buttons = new JPanel(new FlowLayout(FlowLayout.TRAILING));
-        JButton close = new JButton(Translator.R("ButClose"));
-        close.addActionListener(e -> dialog.dispose());
-        buttons.add(close);
-        dialog.add(buttons, BorderLayout.SOUTH);
-        dialog.pack();
-        dialog.setMinimumSize(new Dimension(420, 180));
-        dialog.setLocationRelativeTo(this);
-
-        new Thread(new Runnable() {
-            @Override
-            public void run() {
-                final MemoryInfo info = ProcessMemorySupport.readMemoryInfo(process.getPid(), jvmContext);
-                SwingUtilities.invokeLater(new Runnable() {
-                    @Override
-                    public void run() {
-                        content.removeAll();
-                        if (!info.isAvailable()) {
-                            c.gridy = 0;
-                            content.add(new JLabel(Translator.R("CPRunningAppsInfoUnavailable")), c);
-                        } else {
-                            addMemoryRow(content, c, 0,
-                                    Translator.R("CPRunningAppsHeap"),
-                                    info.getHeapUsedBytes(), info.getHeapMaxBytes());
-                            addMemoryRow(content, c, 2,
-                                    Translator.R("CPRunningAppsRss"),
-                                    info.getRssBytes(), info.getSystemTotalBytes());
-                        }
-                        content.revalidate();
-                        content.repaint();
-                        dialog.pack();
-                    }
-                });
-            }
-        }, "itw-running-app-info").start();
-
-        dialog.setVisible(true);
-    }
-
-    private static void addMemoryRow(JPanel panel, GridBagConstraints c, int row,
-            String label, long usedBytes, long maxBytes) {
-        c.gridy = row;
-        c.gridx = 0;
-        c.gridwidth = 2;
-        String valueText = ProcessMemorySupport.formatMegabytes(usedBytes) + " / "
-                + ProcessMemorySupport.formatMegabytes(maxBytes);
-        panel.add(new JLabel(label + ": " + valueText), c);
-
-        c.gridy = row + 1;
-        JProgressBar bar = new JProgressBar(0, 100);
-        bar.setStringPainted(true);
-        int percent = maxBytes > 0 ? (int) Math.min(100, Math.round((usedBytes * 100.0) / maxBytes)) : 0;
-        bar.setValue(percent);
-        bar.setString(percent + "%");
-        panel.add(bar, c);
+        widgets.loadMemory();
+        Timer followUp = new Timer(600, e -> widgets.loadMemory());
+        followUp.setRepeats(false);
+        followUp.start();
     }
 
     private static String formatTitleLabel(String title, String version) {
         StringBuilder label = new StringBuilder(title == null ? "" : title.trim());
-        String normalizedVersion = net.sourceforge.jnlp.util.JnlpLockMetadata.normalizeConcreteVersion(version);
+        String normalizedVersion = JnlpLockMetadata.normalizeConcreteVersion(version);
         if (normalizedVersion != null) {
             label.append(" v").append(normalizedVersion);
         }
@@ -256,5 +203,99 @@ public class RunningAppsPanel extends NamedBorderPanel {
             return vendor;
         }
         return vendor + " " + jvmVersion;
+    }
+
+    private static final class ProcessRowWidgets {
+        private JPanel panel;
+        private final JPanel memoryPanel;
+        private final int pid;
+        private final ProcessJvmContext jvmContext;
+        private final JProgressBar heapBar;
+        private final JProgressBar rssBar;
+
+        private ProcessRowWidgets(int pid, ProcessJvmContext jvmContext) {
+            this.pid = pid;
+            this.jvmContext = jvmContext;
+            memoryPanel = new JPanel(new GridBagLayout());
+            GridBagConstraints mc = new GridBagConstraints();
+            mc.gridy = 0;
+            mc.insets = new Insets(0, 0, 0, 8);
+            mc.anchor = GridBagConstraints.WEST;
+
+            mc.gridx = 0;
+            memoryPanel.add(new JLabel(Translator.R("CPRunningAppsHeap")), mc);
+
+            mc.gridx = 1;
+            mc.weightx = 0.5;
+            mc.fill = GridBagConstraints.HORIZONTAL;
+            heapBar = createMemoryBar();
+            memoryPanel.add(heapBar, mc);
+
+            mc.gridx = 2;
+            mc.weightx = 0;
+            mc.fill = GridBagConstraints.NONE;
+            mc.insets = new Insets(0, 12, 0, 8);
+            memoryPanel.add(new JLabel(Translator.R("CPRunningAppsRss")), mc);
+
+            mc.gridx = 3;
+            mc.weightx = 0.5;
+            mc.fill = GridBagConstraints.HORIZONTAL;
+            mc.insets = new Insets(0, 0, 0, 0);
+            rssBar = createMemoryBar();
+            memoryPanel.add(rssBar, mc);
+        }
+
+        private void loadMemory() {
+            new Thread(new Runnable() {
+                @Override
+                public void run() {
+                    final MemoryInfo info = ProcessMemorySupport.readMemoryInfo(pid, jvmContext);
+                    javax.swing.SwingUtilities.invokeLater(new Runnable() {
+                        @Override
+                        public void run() {
+                            updateBars(info);
+                        }
+                    });
+                }
+            }, "itw-running-app-mem-" + pid).start();
+        }
+
+        private void updateBars(MemoryInfo info) {
+            if (!info.isAvailable()) {
+                applyBar(heapBar, 0, Translator.R("CPRunningAppsMemoryUnavailable"));
+                applyBar(rssBar, 0, Translator.R("CPRunningAppsMemoryUnavailable"));
+                return;
+            }
+            applyBar(heapBar, percent(info.getHeapUsedBytes(), info.getHeapMaxBytes()),
+                    formatBarCaption(info.getHeapUsedBytes(), info.getHeapMaxBytes()));
+            applyBar(rssBar, percent(info.getRssBytes(), info.getSystemTotalBytes()),
+                    formatBarCaption(info.getRssBytes(), info.getSystemTotalBytes()));
+        }
+
+        private static int percent(long usedBytes, long maxBytes) {
+            if (maxBytes <= 0) {
+                return 0;
+            }
+            return (int) Math.min(100, Math.round((usedBytes * 100.0) / maxBytes));
+        }
+
+        private static String formatBarCaption(long usedBytes, long maxBytes) {
+            return ProcessMemorySupport.formatMegabytes(usedBytes) + " / "
+                    + ProcessMemorySupport.formatMegabytes(maxBytes);
+        }
+
+        private static void applyBar(JProgressBar bar, int percent, String caption) {
+            bar.setValue(percent);
+            bar.setString(caption);
+        }
+
+        private static JProgressBar createMemoryBar() {
+            JProgressBar bar = new JProgressBar(0, 100);
+            bar.setStringPainted(true);
+            bar.setPreferredSize(new Dimension(MEMORY_BAR_WIDTH, MEMORY_BAR_HEIGHT));
+            bar.setMinimumSize(new Dimension(MEMORY_BAR_WIDTH, MEMORY_BAR_HEIGHT));
+            bar.setString(Translator.R("CPRunningAppsMemoryLoading"));
+            return bar;
+        }
     }
 }
