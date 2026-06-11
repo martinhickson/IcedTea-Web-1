@@ -158,16 +158,52 @@ public final class JnlpRunningProcessSupport {
             collectFromProcessListing(byPid, selfPid);
         }
 
-        if (jnlpPathFilter == null || jnlpPathFilter.trim().isEmpty()) {
-            return new ArrayList<>(byPid.values());
-        }
         List<RunningProcess> filtered = new ArrayList<>();
         for (RunningProcess process : byPid.values()) {
-            if (process.matchesJnlpPath(jnlpPathFilter)) {
+            if (isInfrastructureProcess(process)) {
+                continue;
+            }
+            if (jnlpPathFilter == null || jnlpPathFilter.trim().isEmpty()
+                    || process.matchesJnlpPath(jnlpPathFilter)) {
                 filtered.add(process);
             }
         }
         return filtered;
+    }
+
+    public static boolean isInfrastructureProcess(RunningProcess process) {
+        if (process == null) {
+            return true;
+        }
+        return isInfrastructureProcess(process.getCommandLine(), process.getAppTitle(), process.getJnlpPath());
+    }
+
+    public static boolean isInfrastructureProcess(String commandLine, String appTitle, String jnlpPath) {
+        if (isSettingsProcess(commandLine)) {
+            return true;
+        }
+        if (appTitle != null) {
+            String titleLower = appTitle.trim().toLowerCase(Locale.ROOT);
+            if (titleLower.contains("icedtea-web control panel")
+                    || titleLower.contains("icedtea control panel")
+                    || titleLower.contains("policy editor")
+                    || titleLower.equals("icedtea-web systemsteuerung")
+                    || titleLower.equals("panel sterowania icedtea-web")) {
+                return true;
+            }
+        }
+        if (jnlpPath != null && !jnlpPath.trim().isEmpty()) {
+            return false;
+        }
+        if (commandLine == null || commandLine.trim().isEmpty()) {
+            return appTitle == null || appTitle.trim().isEmpty();
+        }
+        String lower = commandLine.toLowerCase(Locale.ROOT);
+        return lower.contains("icedtea-web.bin.name=itweb-settings")
+                || lower.contains("icedtea-web.bin.name=policyeditor")
+                || (lower.contains("icedtea-web-uber")
+                && !lower.contains(".jnlp")
+                && (lower.contains("controlpanel") || lower.contains("policyeditor")));
     }
 
     public static boolean stopProcess(int pid, boolean force) {
@@ -219,7 +255,7 @@ public final class JnlpRunningProcessSupport {
                 continue;
             }
             RunningProcess running = processFromLockFile(lockFile, selfPid);
-            if (running != null) {
+            if (running != null && !isInfrastructureProcess(running)) {
                 byPid.put(running.getPid(), running);
             }
         }
@@ -238,7 +274,10 @@ public final class JnlpRunningProcessSupport {
                 continue;
             }
             String commandLine = resolveCommandLine(pid);
-            byPid.put(pid, toRunningProcess(pid, commandLine, entry));
+            RunningProcess running = toRunningProcess(pid, commandLine, entry);
+            if (!isInfrastructureProcess(running)) {
+                byPid.put(pid, running);
+            }
         }
     }
 
@@ -268,27 +307,33 @@ public final class JnlpRunningProcessSupport {
             return null;
         }
 
-        return toRunningProcess(pid, commandLine, metadata);
+        RunningProcess running = toRunningProcess(pid, commandLine, metadata);
+        if (isInfrastructureProcess(running)) {
+            return null;
+        }
+        return running;
     }
 
     private static RunningProcess toRunningProcess(int pid, String commandLine, JnlpLockMetadata metadata) {
         return toRunningProcess(pid, commandLine, metadata.getJnlpPath(), metadata.getAppTitle(),
-                metadata.getAppVersion(), metadata.getJvmHome(), metadata.getJvmVendor(), metadata.getJvmVersion());
+                metadata.getAppVersion(), metadata.getJarVersion(),
+                metadata.getJvmHome(), metadata.getJvmVendor(), metadata.getJvmVersion());
     }
 
     private static RunningProcess toRunningProcess(int pid, String commandLine, JnlpLockMetadata.ProcessEntry entry) {
         return toRunningProcess(pid, commandLine, entry.getJnlpPath(), entry.getAppTitle(), entry.getAppVersion(),
-                entry.getJvmHome(), entry.getJvmVendor(), entry.getJvmVersion());
+                entry.getJarVersion(), entry.getJvmHome(), entry.getJvmVendor(), entry.getJvmVersion());
     }
 
     private static RunningProcess toRunningProcess(int pid, String commandLine, String jnlpPath,
-            String appTitle, String appVersion, String jvmHome, String jvmVendor, String jvmVersion) {
+            String appTitle, String appVersion, String jarVersion,
+            String jvmHome, String jvmVendor, String jvmVersion) {
         String resolvedJnlpPath = jnlpPath;
         if (resolvedJnlpPath == null || resolvedJnlpPath.trim().isEmpty()) {
             resolvedJnlpPath = JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine);
         }
         String resolvedTitle = appTitle;
-        String resolvedVersion = appVersion;
+        String resolvedVersion = resolveDisplayVersion(appVersion, jarVersion);
         if (resolvedTitle == null || resolvedTitle.trim().isEmpty()
                 || resolvedVersion == null || resolvedVersion.trim().isEmpty()) {
             JnlpLockMetadata.ProcessEntry resolved = JnlpLockMetadata.resolveApplicationInfo(resolvedJnlpPath);
@@ -296,11 +341,19 @@ public final class JnlpRunningProcessSupport {
                 resolvedTitle = resolved.getAppTitle();
             }
             if (resolvedVersion == null || resolvedVersion.trim().isEmpty()) {
-                resolvedVersion = resolved.getAppVersion();
+                resolvedVersion = resolveDisplayVersion(resolved.getAppVersion(), resolved.getJarVersion());
             }
         }
         return new RunningProcess(pid, resolvedTitle, resolvedVersion, commandLine, resolvedJnlpPath,
                 jvmHome, jvmVendor, jvmVersion);
+    }
+
+    private static String resolveDisplayVersion(String appVersion, String jarVersion) {
+        String normalizedApp = JnlpLockMetadata.normalizeConcreteVersion(appVersion);
+        if (normalizedApp != null) {
+            return normalizedApp;
+        }
+        return JnlpLockMetadata.normalizeConcreteVersion(jarVersion);
     }
 
     private static void collectFromProcessListing(Map<Integer, RunningProcess> byPid, int selfPid) {
@@ -381,7 +434,7 @@ public final class JnlpRunningProcessSupport {
             return null;
         }
         String commandLine = trimmed.substring(space + 1).trim();
-        if (!isLikelyJnlpProcess(commandLine) || isSettingsProcess(commandLine)) {
+        if (!isLikelyJnlpProcess(commandLine) || isInfrastructureProcess(commandLine, null, null)) {
             return null;
         }
         return new RunningProcess(pid, JnlpLockMetadata.shortNameFromCommandLine(commandLine), commandLine);
@@ -412,11 +465,11 @@ public final class JnlpRunningProcessSupport {
         if (commandLine.isEmpty()) {
             commandLine = imageName;
         }
-        if (isSettingsProcess(commandLine)) {
+        if (isInfrastructureProcess(commandLine, null, JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine))) {
             return null;
         }
         return toRunningProcess(pid, commandLine,
-                JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine), null, null, null, null, null);
+                JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine), null, null, null, null, null, null);
     }
 
     private static String[] parseCsvLine(String line) {
@@ -632,10 +685,15 @@ public final class JnlpRunningProcessSupport {
     }
 
     private static boolean isSettingsProcess(String commandLine) {
+        if (commandLine == null || commandLine.trim().isEmpty()) {
+            return false;
+        }
         String lower = commandLine.toLowerCase(Locale.ROOT);
         return lower.contains("controlpanel.commandline")
                 || lower.contains("controlpanel.controlpanel")
                 || lower.contains("policyeditor.policyeditor")
-                || lower.contains("itweb-settings");
+                || lower.contains("itweb-settings")
+                || lower.contains("icedtea-web.bin.name=itweb-settings")
+                || lower.contains("icedtea-web.bin.name=policyeditor");
     }
 }

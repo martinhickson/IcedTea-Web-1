@@ -55,6 +55,10 @@ public final class NetxRunningDetailsRegistry {
         if (entry == null || entry.getProcessId() <= 0) {
             return;
         }
+        if (JnlpRunningProcessSupport.isInfrastructureProcess(
+                null, entry.getAppTitle(), entry.getJnlpPath())) {
+            return;
+        }
         try {
             updateRegistry(entry, true);
         } catch (IOException ex) {
@@ -133,6 +137,7 @@ public final class NetxRunningDetailsRegistry {
                 prefer(incoming.getJnlpPath(), existing.getJnlpPath()),
                 prefer(incoming.getAppTitle(), existing.getAppTitle()),
                 prefer(incoming.getAppVersion(), existing.getAppVersion()),
+                prefer(incoming.getJarVersion(), existing.getJarVersion()),
                 prefer(incoming.getJvmHome(), existing.getJvmHome()),
                 prefer(incoming.getJvmVendor(), existing.getJvmVendor()),
                 prefer(incoming.getJvmVersion(), existing.getJvmVersion()));

@@ -45,7 +45,7 @@ public class RunningAppsPanel extends NamedBorderPanel {
         c.gridx = 0;
         c.gridy = 0;
         c.insets = new Insets(2, 2, 4, 4);
-        add(new JLabel("<html>" + Translator.R("CPRunningAppsDescription") + "<hr /></html>"), c);
+        add(new JLabel(Translator.R("CPRunningAppsDescription")), c);
 
         c.gridy++;
         c.weighty = 1;
@@ -122,27 +122,13 @@ public class RunningAppsPanel extends NamedBorderPanel {
 
         ProcessJvmContext jvmContext = ProcessMemorySupport.resolveJvmContext(process);
 
-        JPanel titlePanel = new JPanel(new GridBagLayout());
-        GridBagConstraints tc = new GridBagConstraints();
-        tc.gridx = 0;
-        tc.gridy = 0;
-        tc.anchor = GridBagConstraints.WEST;
-        tc.insets = new Insets(0, 0, 2, 12);
+        JPanel titlePanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
         String title = process.getAppTitle();
         if (title == null || title.trim().isEmpty()) {
             title = process.getDisplayName();
         }
-        titlePanel.add(new JLabel("<b>" + escapeHtml(title) + "</b>"), tc);
-        tc.gridx = 1;
-        String version = process.getAppVersion();
-        if (version == null || version.trim().isEmpty()) {
-            version = "\u2014";
-        }
-        titlePanel.add(new JLabel(Translator.R("CPRunningAppsVersionLabel", version)), tc);
-        tc.gridx = 0;
-        tc.gridy = 1;
-        tc.gridwidth = 2;
-        titlePanel.add(new JLabel(formatJvmLabel(jvmContext)), tc);
+        titlePanel.add(new JLabel(formatTitleLabel(title, process.getAppVersion())));
+        titlePanel.add(new JLabel(formatJvmLabel(jvmContext)));
         row.add(titlePanel, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
@@ -245,6 +231,15 @@ public class RunningAppsPanel extends NamedBorderPanel {
         panel.add(bar, c);
     }
 
+    private static String formatTitleLabel(String title, String version) {
+        StringBuilder label = new StringBuilder(title == null ? "" : title.trim());
+        String normalizedVersion = net.sourceforge.jnlp.util.JnlpLockMetadata.normalizeConcreteVersion(version);
+        if (normalizedVersion != null) {
+            label.append(" v").append(normalizedVersion);
+        }
+        return label.toString();
+    }
+
     private static String formatJvmLabel(ProcessJvmContext jvmContext) {
         if (jvmContext == null) {
             return Translator.R("CPRunningAppsJvmUnknown");
@@ -258,12 +253,8 @@ public class RunningAppsPanel extends NamedBorderPanel {
             vendor = Translator.R("CPJVMUnknownVendor");
         }
         if (jvmVersion == null || jvmVersion.isEmpty()) {
-            jvmVersion = "\u2014";
+            return vendor;
         }
-        return Translator.R("CPRunningAppsJvmLabel", vendor, jvmVersion);
-    }
-
-    private static String escapeHtml(String text) {
-        return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;");
+        return vendor + " " + jvmVersion;
     }
 }
