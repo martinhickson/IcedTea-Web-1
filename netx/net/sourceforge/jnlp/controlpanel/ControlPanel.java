@@ -261,6 +261,7 @@ public class ControlPanel extends JFrame {
                 new SettingsPanel(Translator.R("CPTabDebugging"), createDebugSettingsPanel()),
                 new SettingsPanel(Translator.R("CPTabDesktopIntegration"), createDesktopSettingsPanel()),
                 new SettingsPanel(Translator.R("CPTabJVMSettings"),jvmPanel),
+                new SettingsPanel(Translator.R("CPTabRunningApps"), new RunningAppsPanel(this.config)),
                 new SettingsPanel(Translator.R("CPTabNetwork"), createNetworkSettingsPanel()),
                 // TODO: This is commented out since this is not implemented yet
                 // new SettingsPanel(Translator.R("CPTabRuntimes"), createRuntimesSettingsPanel()),

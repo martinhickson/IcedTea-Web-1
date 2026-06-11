@@ -31,17 +31,28 @@ public final class JnlpRunningProcessSupport {
         private final String appVersion;
         private final String commandLine;
         private final String jnlpPath;
+        private final String jvmHome;
+        private final String jvmVendor;
+        private final String jvmVersion;
 
         public RunningProcess(int pid, String appTitle, String commandLine) {
-            this(pid, appTitle, null, commandLine, null);
+            this(pid, appTitle, null, commandLine, null, null, null, null);
         }
 
         public RunningProcess(int pid, String appTitle, String appVersion, String commandLine, String jnlpPath) {
+            this(pid, appTitle, appVersion, commandLine, jnlpPath, null, null, null);
+        }
+
+        public RunningProcess(int pid, String appTitle, String appVersion, String commandLine, String jnlpPath,
+                String jvmHome, String jvmVendor, String jvmVersion) {
             this.pid = pid;
             this.appTitle = appTitle;
             this.appVersion = appVersion;
             this.commandLine = commandLine == null ? "" : commandLine;
             this.jnlpPath = jnlpPath;
+            this.jvmHome = jvmHome;
+            this.jvmVendor = jvmVendor;
+            this.jvmVersion = jvmVersion;
         }
 
         public int getPid() {
@@ -62,6 +73,18 @@ public final class JnlpRunningProcessSupport {
 
         public String getJnlpPath() {
             return jnlpPath;
+        }
+
+        public String getJvmHome() {
+            return jvmHome;
+        }
+
+        public String getJvmVendor() {
+            return jvmVendor;
+        }
+
+        public String getJvmVersion() {
+            return jvmVersion;
         }
 
         public String getDisplayName() {
@@ -215,8 +238,7 @@ public final class JnlpRunningProcessSupport {
                 continue;
             }
             String commandLine = resolveCommandLine(pid);
-            byPid.put(pid, toRunningProcess(pid, commandLine, entry.getJnlpPath(),
-                    entry.getAppTitle(), entry.getAppVersion()));
+            byPid.put(pid, toRunningProcess(pid, commandLine, entry));
         }
     }
 
@@ -246,12 +268,21 @@ public final class JnlpRunningProcessSupport {
             return null;
         }
 
-        return toRunningProcess(pid, commandLine, metadata.getJnlpPath(),
-                metadata.getAppTitle(), metadata.getAppVersion());
+        return toRunningProcess(pid, commandLine, metadata);
+    }
+
+    private static RunningProcess toRunningProcess(int pid, String commandLine, JnlpLockMetadata metadata) {
+        return toRunningProcess(pid, commandLine, metadata.getJnlpPath(), metadata.getAppTitle(),
+                metadata.getAppVersion(), metadata.getJvmHome(), metadata.getJvmVendor(), metadata.getJvmVersion());
+    }
+
+    private static RunningProcess toRunningProcess(int pid, String commandLine, JnlpLockMetadata.ProcessEntry entry) {
+        return toRunningProcess(pid, commandLine, entry.getJnlpPath(), entry.getAppTitle(), entry.getAppVersion(),
+                entry.getJvmHome(), entry.getJvmVendor(), entry.getJvmVersion());
     }
 
     private static RunningProcess toRunningProcess(int pid, String commandLine, String jnlpPath,
-            String appTitle, String appVersion) {
+            String appTitle, String appVersion, String jvmHome, String jvmVendor, String jvmVersion) {
         String resolvedJnlpPath = jnlpPath;
         if (resolvedJnlpPath == null || resolvedJnlpPath.trim().isEmpty()) {
             resolvedJnlpPath = JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine);
@@ -268,7 +299,8 @@ public final class JnlpRunningProcessSupport {
                 resolvedVersion = resolved.getAppVersion();
             }
         }
-        return new RunningProcess(pid, resolvedTitle, resolvedVersion, commandLine, resolvedJnlpPath);
+        return new RunningProcess(pid, resolvedTitle, resolvedVersion, commandLine, resolvedJnlpPath,
+                jvmHome, jvmVendor, jvmVersion);
     }
 
     private static void collectFromProcessListing(Map<Integer, RunningProcess> byPid, int selfPid) {
@@ -384,7 +416,7 @@ public final class JnlpRunningProcessSupport {
             return null;
         }
         return toRunningProcess(pid, commandLine,
-                JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine), null, null);
+                JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine), null, null, null, null, null);
     }
 
     private static String[] parseCsvLine(String line) {

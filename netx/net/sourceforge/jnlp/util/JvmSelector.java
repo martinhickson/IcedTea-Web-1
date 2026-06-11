@@ -51,6 +51,7 @@ public final class JvmSelector {
             return valid.get(0);
         }
         Version requirement = new Version(requestedVersion.trim());
+        int requestedMajor = parseMajor(requestedVersion.trim());
         List<JvmDescriptor> matching = new ArrayList<>();
         for (JvmDescriptor candidate : valid) {
             String version = candidate.getVersion();
@@ -58,6 +59,8 @@ public final class JvmSelector {
                 continue;
             }
             if (requirement.matchesAny(version) || requirement.matchesAny("1." + version + ".0")) {
+                matching.add(candidate);
+            } else if (requestedMajor > 0 && parseMajor(version) == requestedMajor) {
                 matching.add(candidate);
             }
         }

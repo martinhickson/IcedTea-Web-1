@@ -64,13 +64,8 @@ class SingleInstanceLock {
      */
     public void createWithPort(int localPort) throws IOException {
         FileUtils.createRestrictedFile(lockFile, true);
-        JnlpLockMetadata.write(
-                lockFile,
-                localPort,
-                JnlpRunningProcessSupport.currentPid(),
-                JnlpLockMetadata.extractJnlpPath(jnlpFile),
-                JnlpLockMetadata.extractAppTitle(jnlpFile),
-                JnlpLockMetadata.extractAppVersion(jnlpFile));
+        JnlpLockMetadata.write(lockFile, localPort,
+                JnlpLockMetadata.entryFromJnlpFile(jnlpFile, JnlpRunningProcessSupport.currentPid()));
     }
 
     /**

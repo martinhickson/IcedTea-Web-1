@@ -457,7 +457,8 @@ internal static class Program
             command.AddRange(ModularJdkArguments());
         }
 
-        if (javaMajorVersion >= 18 && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
+        if (javaMajorVersion >= 18 && javaMajorVersion < 24
+            && !HasSecurityManagerCompatibilityFlag(forwardedJvmArgs))
         {
             command.Add("-Djava.security.manager=allow");
         }
@@ -703,9 +704,16 @@ internal static class Program
         bool preserveStdio,
         IReadOnlyCollection<string> javawsArgs)
     {
-        if (preserveStdio && IsConsoleOnlyLaunch(javawsArgs))
+        try
         {
             return ProbeJavaMajorVersionFromJavaExecutable(javaExecutable);
+        }
+        catch (InvalidOperationException)
+        {
+            if (preserveStdio && IsConsoleOnlyLaunch(javawsArgs))
+            {
+                throw;
+            }
         }
 
         return ProbeJavaMajorVersionFromUberJar(javaExecutable, uberJar, preserveStdio);
@@ -777,14 +785,12 @@ internal static class Program
             ? ResolveJavawExecutable(javaExecutable)
             : javaExecutable;
 
-        var probeCommand = new List<string>
-        {
-            "-Xms8m",
-            "-cp",
-            uberJar,
-            JavawsMainClass,
-            JavaVersionProbeArg,
-        };
+        var probeCommand = new List<string> { "-Xms8m" };
+        probeCommand.AddRange(ModularJdkArguments());
+        probeCommand.Add("-cp");
+        probeCommand.Add(uberJar);
+        probeCommand.Add(JavawsMainClass);
+        probeCommand.Add(JavaVersionProbeArg);
 
         var stdout = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? NativeMethods.SpawnProcessCaptureStdout(probeExecutable, probeCommand)

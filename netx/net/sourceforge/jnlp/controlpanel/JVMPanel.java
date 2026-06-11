@@ -415,6 +415,10 @@ public class JVMPanel extends NamedBorderPanel {
             validationResult += "<span color=\"#00EE00\">" + Translator.R("CPJVMopenJdkFound") + "</span>";
             return new JvmValidationResult(validationResult, JvmValidationResult.STATE.VALID_JDK, reportableOutputs);
         }
+        if (jdk9up && latestOne != JvmValidationResult.STATE.NOT_DIR) {
+            validationResult += "<span color=\"#00EE00\">" + Translator.R("CPJVMopenJdkFound") + "</span>";
+            return new JvmValidationResult(validationResult, JvmValidationResult.STATE.VALID_JDK, reportableOutputs);
+        }
         validationResult += "<span color=\"orange\">" + Translator.R("CPJVMstrangeProcess") + "</span>";
         return new JvmValidationResult(validationResult, JvmValidationResult.STATE.NOT_VALID_JDK, reportableOutputs);
     }

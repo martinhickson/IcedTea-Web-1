@@ -26,6 +26,9 @@ public final class JnlpLockMetadata {
     public static final String KEY_JNLP_PATH = "jnlpPath";
     public static final String KEY_APP_TITLE = "appTitle";
     public static final String KEY_APP_VERSION = "appVersion";
+    public static final String KEY_JVM_HOME = "jvmHome";
+    public static final String KEY_JVM_VENDOR = "jvmVendor";
+    public static final String KEY_JVM_VERSION = "jvmVersion";
 
     public static final int INVALID_PORT = Integer.MIN_VALUE;
 
@@ -34,16 +37,27 @@ public final class JnlpLockMetadata {
         private final String jnlpPath;
         private final String appTitle;
         private final String appVersion;
+        private final String jvmHome;
+        private final String jvmVendor;
+        private final String jvmVersion;
 
         public ProcessEntry(int processId, String jnlpPath) {
-            this(processId, jnlpPath, null, null);
+            this(processId, jnlpPath, null, null, null, null, null);
         }
 
         public ProcessEntry(int processId, String jnlpPath, String appTitle, String appVersion) {
+            this(processId, jnlpPath, appTitle, appVersion, null, null, null);
+        }
+
+        public ProcessEntry(int processId, String jnlpPath, String appTitle, String appVersion,
+                String jvmHome, String jvmVendor, String jvmVersion) {
             this.processId = processId;
             this.jnlpPath = jnlpPath;
             this.appTitle = appTitle;
             this.appVersion = appVersion;
+            this.jvmHome = jvmHome;
+            this.jvmVendor = jvmVendor;
+            this.jvmVersion = jvmVersion;
         }
 
         public int getProcessId() {
@@ -61,6 +75,18 @@ public final class JnlpLockMetadata {
         public String getAppVersion() {
             return appVersion;
         }
+
+        public String getJvmHome() {
+            return jvmHome;
+        }
+
+        public String getJvmVendor() {
+            return jvmVendor;
+        }
+
+        public String getJvmVersion() {
+            return jvmVersion;
+        }
     }
 
     private int processId = -1;
@@ -68,6 +94,9 @@ public final class JnlpLockMetadata {
     private String jnlpPath;
     private String appTitle;
     private String appVersion;
+    private String jvmHome;
+    private String jvmVendor;
+    private String jvmVersion;
 
     public int getProcessId() {
         return processId;
@@ -87,6 +116,18 @@ public final class JnlpLockMetadata {
 
     public String getAppVersion() {
         return appVersion;
+    }
+
+    public String getJvmHome() {
+        return jvmHome;
+    }
+
+    public String getJvmVendor() {
+        return jvmVendor;
+    }
+
+    public String getJvmVersion() {
+        return jvmVersion;
     }
 
     public static JnlpLockMetadata read(File lockFile) {
@@ -128,28 +169,51 @@ public final class JnlpLockMetadata {
 
     public static void write(File lockFile, int port, int processId, String jnlpPath,
             String appTitle, String appVersion) throws IOException {
+        write(lockFile, port, new ProcessEntry(processId, jnlpPath, appTitle, appVersion));
+    }
+
+    public static void write(File lockFile, int port, ProcessEntry entry) throws IOException {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(lockFile, false))) {
             if (port != INVALID_PORT) {
                 writer.write(KEY_PORT + "=" + port);
                 writer.newLine();
             }
-            if (processId > 0) {
-                writer.write(KEY_PROCESS_ID + "=" + processId);
-                writer.newLine();
-            }
-            if (jnlpPath != null && !jnlpPath.trim().isEmpty()) {
-                writer.write(KEY_JNLP_PATH + "=" + jnlpPath.trim());
-                writer.newLine();
-            }
-            if (appTitle != null && !appTitle.trim().isEmpty()) {
-                writer.write(KEY_APP_TITLE + "=" + appTitle.trim());
-                writer.newLine();
-            }
-            if (appVersion != null && !appVersion.trim().isEmpty()) {
-                writer.write(KEY_APP_VERSION + "=" + appVersion.trim());
-                writer.newLine();
-            }
+            writeEntryFields(writer, entry);
             writer.flush();
+        }
+    }
+
+    private static void writeEntryFields(BufferedWriter writer, ProcessEntry entry) throws IOException {
+        if (entry == null) {
+            return;
+        }
+        if (entry.getProcessId() > 0) {
+            writer.write(KEY_PROCESS_ID + "=" + entry.getProcessId());
+            writer.newLine();
+        }
+        if (entry.getJnlpPath() != null && !entry.getJnlpPath().trim().isEmpty()) {
+            writer.write(KEY_JNLP_PATH + "=" + entry.getJnlpPath().trim());
+            writer.newLine();
+        }
+        if (entry.getAppTitle() != null && !entry.getAppTitle().trim().isEmpty()) {
+            writer.write(KEY_APP_TITLE + "=" + entry.getAppTitle().trim());
+            writer.newLine();
+        }
+        if (entry.getAppVersion() != null && !entry.getAppVersion().trim().isEmpty()) {
+            writer.write(KEY_APP_VERSION + "=" + entry.getAppVersion().trim());
+            writer.newLine();
+        }
+        if (entry.getJvmHome() != null && !entry.getJvmHome().trim().isEmpty()) {
+            writer.write(KEY_JVM_HOME + "=" + entry.getJvmHome().trim());
+            writer.newLine();
+        }
+        if (entry.getJvmVendor() != null && !entry.getJvmVendor().trim().isEmpty()) {
+            writer.write(KEY_JVM_VENDOR + "=" + entry.getJvmVendor().trim());
+            writer.newLine();
+        }
+        if (entry.getJvmVersion() != null && !entry.getJvmVersion().trim().isEmpty()) {
+            writer.write(KEY_JVM_VERSION + "=" + entry.getJvmVersion().trim());
+            writer.newLine();
         }
     }
 
@@ -163,6 +227,9 @@ public final class JnlpLockMetadata {
             String pendingJnlpPath = null;
             String pendingAppTitle = null;
             String pendingAppVersion = null;
+            String pendingJvmHome = null;
+            String pendingJvmVendor = null;
+            String pendingJvmVersion = null;
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -177,7 +244,8 @@ public final class JnlpLockMetadata {
                 String value = line.substring(equals + 1).trim();
                 if (KEY_PROCESS_ID.equalsIgnoreCase(key)) {
                     if (pendingPid > 0) {
-                        entries.add(new ProcessEntry(pendingPid, pendingJnlpPath, pendingAppTitle, pendingAppVersion));
+                        entries.add(new ProcessEntry(pendingPid, pendingJnlpPath, pendingAppTitle, pendingAppVersion,
+                                pendingJvmHome, pendingJvmVendor, pendingJvmVersion));
                     }
                     try {
                         pendingPid = Integer.parseInt(value);
@@ -187,16 +255,26 @@ public final class JnlpLockMetadata {
                     pendingJnlpPath = null;
                     pendingAppTitle = null;
                     pendingAppVersion = null;
+                    pendingJvmHome = null;
+                    pendingJvmVendor = null;
+                    pendingJvmVersion = null;
                 } else if (KEY_JNLP_PATH.equalsIgnoreCase(key)) {
                     pendingJnlpPath = value;
                 } else if (KEY_APP_TITLE.equalsIgnoreCase(key)) {
                     pendingAppTitle = value;
                 } else if (KEY_APP_VERSION.equalsIgnoreCase(key)) {
                     pendingAppVersion = value;
+                } else if (KEY_JVM_HOME.equalsIgnoreCase(key)) {
+                    pendingJvmHome = value;
+                } else if (KEY_JVM_VENDOR.equalsIgnoreCase(key)) {
+                    pendingJvmVendor = value;
+                } else if (KEY_JVM_VERSION.equalsIgnoreCase(key)) {
+                    pendingJvmVersion = value;
                 }
             }
             if (pendingPid > 0) {
-                entries.add(new ProcessEntry(pendingPid, pendingJnlpPath, pendingAppTitle, pendingAppVersion));
+                entries.add(new ProcessEntry(pendingPid, pendingJnlpPath, pendingAppTitle, pendingAppVersion,
+                        pendingJvmHome, pendingJvmVendor, pendingJvmVersion));
             }
         } catch (IOException ex) {
             // Return partial list.
@@ -213,20 +291,7 @@ public final class JnlpLockMetadata {
                 }
             }
             for (ProcessEntry entry : entries) {
-                writer.write(KEY_PROCESS_ID + "=" + entry.getProcessId());
-                writer.newLine();
-                if (entry.getJnlpPath() != null && !entry.getJnlpPath().trim().isEmpty()) {
-                    writer.write(KEY_JNLP_PATH + "=" + entry.getJnlpPath().trim());
-                    writer.newLine();
-                }
-                if (entry.getAppTitle() != null && !entry.getAppTitle().trim().isEmpty()) {
-                    writer.write(KEY_APP_TITLE + "=" + entry.getAppTitle().trim());
-                    writer.newLine();
-                }
-                if (entry.getAppVersion() != null && !entry.getAppVersion().trim().isEmpty()) {
-                    writer.write(KEY_APP_VERSION + "=" + entry.getAppVersion().trim());
-                    writer.newLine();
-                }
+                writeEntryFields(writer, entry);
             }
             writer.flush();
         }
@@ -251,15 +316,32 @@ public final class JnlpLockMetadata {
             metadata.appTitle = value;
         } else if (KEY_APP_VERSION.equalsIgnoreCase(key)) {
             metadata.appVersion = value;
+        } else if (KEY_JVM_HOME.equalsIgnoreCase(key)) {
+            metadata.jvmHome = value;
+        } else if (KEY_JVM_VENDOR.equalsIgnoreCase(key)) {
+            metadata.jvmVendor = value;
+        } else if (KEY_JVM_VERSION.equalsIgnoreCase(key)) {
+            metadata.jvmVersion = value;
         }
     }
 
     public static ProcessEntry entryFromJnlpFile(JNLPFile jnlpFile, int processId) {
+        JvmDescriptor jvm = JvmDescriptor.describeCurrentRuntime();
         return new ProcessEntry(
                 processId,
                 extractJnlpPath(jnlpFile),
                 extractAppTitle(jnlpFile),
-                extractAppVersion(jnlpFile));
+                extractAppVersion(jnlpFile),
+                jvm.getHomePath(),
+                jvm.getFlavour(),
+                jvm.getVersion());
+    }
+
+    public static ProcessEntry entryFromCurrentRuntime(int processId, String jnlpPath,
+            String appTitle, String appVersion) {
+        JvmDescriptor jvm = JvmDescriptor.describeCurrentRuntime();
+        return new ProcessEntry(processId, jnlpPath, appTitle, appVersion,
+                jvm.getHomePath(), jvm.getFlavour(), jvm.getVersion());
     }
 
     public static String extractAppTitle(JNLPFile jnlpFile) {

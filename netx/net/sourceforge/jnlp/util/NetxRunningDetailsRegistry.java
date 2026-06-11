@@ -40,7 +40,7 @@ public final class NetxRunningDetailsRegistry {
     }
 
     public static void registerProcess(int processId, String jnlpPath) {
-        registerProcess(new JnlpLockMetadata.ProcessEntry(processId, jnlpPath));
+        registerProcess(JnlpLockMetadata.entryFromCurrentRuntime(processId, jnlpPath, null, null));
     }
 
     public static void registerProcess(JNLPFile jnlpFile) {
@@ -132,7 +132,10 @@ public final class NetxRunningDetailsRegistry {
                 incoming.getProcessId(),
                 prefer(incoming.getJnlpPath(), existing.getJnlpPath()),
                 prefer(incoming.getAppTitle(), existing.getAppTitle()),
-                prefer(incoming.getAppVersion(), existing.getAppVersion()));
+                prefer(incoming.getAppVersion(), existing.getAppVersion()),
+                prefer(incoming.getJvmHome(), existing.getJvmHome()),
+                prefer(incoming.getJvmVendor(), existing.getJvmVendor()),
+                prefer(incoming.getJvmVersion(), existing.getJvmVersion()));
     }
 
     private static String prefer(String primary, String fallback) {

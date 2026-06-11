@@ -61,6 +61,29 @@ public final class JvmDescriptor {
         return validationState;
     }
 
+    public static JvmDescriptor describeCurrentRuntime() {
+        String home = System.getProperty("java.home", "").trim();
+        String combined = (safeProperty("java.runtime.name") + " "
+                + safeProperty("java.runtime.version") + " "
+                + safeProperty("java.vm.name") + " "
+                + safeProperty("java.vm.version") + " "
+                + safeProperty("java.vm.vendor")).toLowerCase(Locale.ROOT);
+        String flavour = detectFlavour(combined);
+        String version = detectVersion(combined);
+        if (version.isEmpty()) {
+            version = detectVersionFromPath(home);
+        }
+        if (version.isEmpty()) {
+            version = Integer.toString(JavaVersionUtils.getRunningMajorVersion());
+        }
+        return new JvmDescriptor(home, flavour, version, true, JvmValidationResult.STATE.VALID_JDK);
+    }
+
+    private static String safeProperty(String name) {
+        String value = System.getProperty(name);
+        return value == null ? "" : value;
+    }
+
     public static JvmDescriptor describe(String homePath) {
         if (homePath == null || homePath.trim().isEmpty()) {
             return new JvmDescriptor("", "", "", false, JvmValidationResult.STATE.EMPTY);
