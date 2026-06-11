@@ -130,7 +130,8 @@ public final class JnlpAppTuningRegistry {
                 return JnlpLockFileNames.tuningFileForLockFile(lockFile);
             }
         }
-        return JnlpLockFileNames.tuningFileFor(process.getJnlpPath(), process.getAppVersion());
+        String jnlpPath = resolveJnlpPath(process);
+        return JnlpLockFileNames.tuningFileFor(jnlpPath, process.getAppVersion());
     }
 
     public static AppTuning read(File tuningFile) {
@@ -165,7 +166,7 @@ public final class JnlpAppTuningRegistry {
         boolean hasStored = tuningFile != null && tuningFile.isFile();
         LiveJvmSettings live = ProcessMemorySupport.readLiveJvmSettings(process.getPid(), jvmContext);
         AppTuning result = new AppTuning();
-        result.jnlpPath = process.getJnlpPath();
+        result.jnlpPath = resolveJnlpPath(process);
 
         long liveMax = live.getMaxHeapBytes();
         if (liveMax <= 0) {
@@ -205,7 +206,7 @@ public final class JnlpAppTuningRegistry {
     public static void saveTunedValues(File tuningFile, AppTuning baseline, long maxHeapBytes,
             String gcType, long softMaxHeapBytes) throws IOException {
         if (baseline == null) {
-            return;
+            throw new IOException("Tuning values are not loaded yet.");
         }
         AppTuning tuning = new AppTuning();
         tuning.jnlpPath = baseline.jnlpPath;
@@ -220,13 +221,23 @@ public final class JnlpAppTuningRegistry {
 
     public static void write(File tuningFile, AppTuning tuning) throws IOException {
         if (tuningFile == null || tuning == null) {
-            return;
+            throw new IOException("Tuning file path is unknown for this application.");
         }
         File parent = tuningFile.getParentFile();
-        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
-            throw new IOException("Cannot create tuning directory: " + parent);
+        if (parent != null) {
+            if (!parent.isDirectory()) {
+                if (!parent.mkdirs() && !parent.isDirectory()) {
+                    FileUtils.createRestrictedDirectory(parent);
+                }
+            }
         }
-        FileUtils.createRestrictedFile(tuningFile, true);
+        File staleTemp = new File(tuningFile.getCanonicalPath() + ".temp");
+        if (staleTemp.exists() && !staleTemp.delete()) {
+            throw new IOException("Cannot remove stale tuning temp file: " + staleTemp);
+        }
+        if (!tuningFile.isFile()) {
+            FileUtils.createRestrictedFile(tuningFile, true);
+        }
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(tuningFile, false))) {
             if (tuning.jnlpPath != null && !tuning.jnlpPath.trim().isEmpty()) {
                 writer.write(KEY_JNLP_PATH + "=" + tuning.jnlpPath.trim());
@@ -408,7 +419,7 @@ public final class JnlpAppTuningRegistry {
         return lower.startsWith("javaws") && !lower.contains("settings") && !lower.contains("policy");
     }
 
-    private static String resolveJnlpPath(RunningProcess process) {
+    static String resolveJnlpPath(RunningProcess process) {
         String jnlpPath = process.getJnlpPath();
         if (jnlpPath != null && !jnlpPath.trim().isEmpty()) {
             return jnlpPath.trim();

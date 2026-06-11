@@ -37,6 +37,7 @@ final class RunningAppsTuneDialog extends JDialog {
     private final JComboBox<String> gcCombo;
     private final JLabel defaultMaxLabel;
     private final JLabel defaultSoftMaxLabel;
+    private final JButton relaunchButton;
     private AppTuning loadedTuning;
 
     RunningAppsTuneDialog(Window owner, RunningProcess process, ProcessJvmContext jvmContext) {
@@ -79,10 +80,12 @@ final class RunningAppsTuneDialog extends JDialog {
         JButton reset = new JButton(Translator.R("CPRunningAppsTuneReset"));
         reset.addActionListener(e -> confirmAndReset());
         JButton relaunch = new JButton(Translator.R("CPRunningAppsTuneRelaunch"));
+        relaunch.setEnabled(false);
         relaunch.addActionListener(e -> confirmAndRelaunch());
         buttons.add(cancel);
         buttons.add(reset);
         buttons.add(relaunch);
+        this.relaunchButton = relaunch;
         add(buttons, BorderLayout.SOUTH);
 
         setDefaultCloseOperation(DISPOSE_ON_CLOSE);
@@ -136,6 +139,7 @@ final class RunningAppsTuneDialog extends JDialog {
         gcCombo.setSelectedItem(tuning.getGcType());
         maxHeapSpinner.addChangeListener(e -> updateSoftMaxForCurrentMax());
         statusLabel.setText("");
+        relaunchButton.setEnabled(true);
     }
 
     private void updateSoftMaxForCurrentMax() {
@@ -167,7 +171,11 @@ final class RunningAppsTuneDialog extends JDialog {
             }
             dispose();
         } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, Translator.R("CPRunningAppsTuneSaveFailed"),
+            String detail = ex.getMessage();
+            String message = detail == null || detail.trim().isEmpty()
+                    ? Translator.R("CPRunningAppsTuneSaveFailed")
+                    : Translator.R("CPRunningAppsTuneSaveFailedDetail", detail);
+            JOptionPane.showMessageDialog(this, message,
                     Translator.R("CPRunningAppsTuneTitle"), JOptionPane.WARNING_MESSAGE);
         }
     }
