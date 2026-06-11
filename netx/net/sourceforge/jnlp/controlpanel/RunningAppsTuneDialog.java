@@ -160,7 +160,8 @@ final class RunningAppsTuneDialog extends JDialog {
         try {
             saveTuningFromForm();
             if (!JnlpAppTuningRegistry.relaunchApplication(process)) {
-                JOptionPane.showMessageDialog(this, Translator.R("CPRunningAppsTuneRelaunchFailed"),
+                JOptionPane.showMessageDialog(this,
+                        JnlpAppTuningRegistry.getRelaunchFailureMessage(process),
                         Translator.R("CPRunningAppsTuneTitle"), JOptionPane.WARNING_MESSAGE);
                 return;
             }
@@ -183,7 +184,8 @@ final class RunningAppsTuneDialog extends JDialog {
         }
         JnlpAppTuningRegistry.delete(JnlpAppTuningRegistry.tuningFileFor(process));
         if (!JnlpAppTuningRegistry.relaunchApplication(process)) {
-            JOptionPane.showMessageDialog(this, Translator.R("CPRunningAppsTuneRelaunchFailed"),
+            JOptionPane.showMessageDialog(this,
+                    JnlpAppTuningRegistry.getRelaunchFailureMessage(process),
                     Translator.R("CPRunningAppsTuneTitle"), JOptionPane.WARNING_MESSAGE);
             return;
         }

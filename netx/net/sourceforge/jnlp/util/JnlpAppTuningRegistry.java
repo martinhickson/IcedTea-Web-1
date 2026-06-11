@@ -16,6 +16,8 @@ import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.Launcher;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.runtime.Translator;
+import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport.RunningProcess;
 import net.sourceforge.jnlp.util.ProcessMemorySupport.LiveJvmSettings;
 import net.sourceforge.jnlp.util.ProcessMemorySupport.ProcessJvmContext;
@@ -313,12 +315,36 @@ public final class JnlpAppTuningRegistry {
         }
     }
 
+    public static String getRelaunchFailureMessage(RunningProcess process) {
+        if (process == null) {
+            return Translator.R("CPRunningAppsTuneRelaunchFailed");
+        }
+        if (resolveJnlpPath(process) == null) {
+            return Translator.R("CPRunningAppsTuneRelaunchNoJnlp");
+        }
+        if (resolveJavawsLauncherPath() == null) {
+            return Translator.R("CPRunningAppsTuneRelaunchNoLauncher");
+        }
+        return Translator.R("CPRunningAppsTuneRelaunchFailed");
+    }
+
     public static boolean relaunchApplication(RunningProcess process) {
         if (process == null) {
             return false;
         }
-        String jnlpPath = process.getJnlpPath();
-        if (jnlpPath == null || jnlpPath.trim().isEmpty()) {
+        String jnlpPath = resolveJnlpPath(process);
+        String javaws = resolveJavawsLauncherPath();
+        if (jnlpPath == null || javaws == null) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                    "Relaunch preflight failed for pid " + process.getPid()
+                            + " jnlpPath=" + jnlpPath + " javaws=" + javaws);
+            return false;
+        }
+        List<String> vmArgs;
+        try {
+            vmArgs = openJnlpFile(jnlpPath).getNewVMArgs();
+        } catch (Exception ex) {
+            OutputController.getLogger().log(ex);
             return false;
         }
         int pid = process.getPid();
@@ -328,18 +354,75 @@ public final class JnlpAppTuningRegistry {
             JnlpRunningProcessSupport.stopProcess(pid, true);
             waitForProcessExit(pid, 5000);
         }
-        return launchJnlp(jnlpPath.trim());
+        return launchJnlp(jnlpPath, javaws, vmArgs);
     }
 
-    private static boolean launchJnlp(String jnlpPath) {
-        try {
-            JNLPFile file = openJnlpFile(jnlpPath);
-            List<String> vmArgs = file.getNewVMArgs();
-            List<String> commands = new ArrayList<>();
-            String javaws = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
-            if (javaws == null || javaws.trim().isEmpty()) {
-                return false;
+    /**
+     * Control panel runs as {@code itweb-settings}, so {@link Launcher#KEY_JAVAWS_LOCATION} points at
+     * the settings binary. Relaunch must use the sibling {@code javaws} launcher instead.
+     */
+    static String resolveJavawsLauncherPath() {
+        String location = System.getProperty(Launcher.KEY_JAVAWS_LOCATION, "").trim();
+        if (!location.isEmpty()) {
+            File launcher = new File(location);
+            if (isJavawsLauncher(launcher)) {
+                return launcher.getAbsolutePath();
             }
+            File binDir = launcher.getParentFile();
+            if (binDir != null && binDir.isDirectory()) {
+                String[] names = JNLPRuntime.isWindows()
+                        ? new String[] { "javaws.exe", "javawsc.exe" }
+                        : new String[] { "javaws", "javawsc" };
+                for (String name : names) {
+                    File candidate = new File(binDir, name);
+                    if (candidate.isFile()) {
+                        return candidate.getAbsolutePath();
+                    }
+                }
+            }
+        }
+        String path = System.getenv("PATH");
+        if (path != null && !path.trim().isEmpty()) {
+            for (String entry : path.split(File.pathSeparator)) {
+                if (entry == null || entry.trim().isEmpty()) {
+                    continue;
+                }
+                File candidate = new File(entry.trim(), JNLPRuntime.isWindows() ? "javaws.exe" : "javaws");
+                if (candidate.isFile()) {
+                    return candidate.getAbsolutePath();
+                }
+            }
+        }
+        File installed = new File("/opt/icedtea-web/bin/javaws");
+        if (installed.isFile()) {
+            return installed.getAbsolutePath();
+        }
+        return null;
+    }
+
+    private static boolean isJavawsLauncher(File launcher) {
+        if (launcher == null || !launcher.isFile()) {
+            return false;
+        }
+        String lower = launcher.getName().toLowerCase(Locale.ROOT);
+        return lower.startsWith("javaws") && !lower.contains("settings") && !lower.contains("policy");
+    }
+
+    private static String resolveJnlpPath(RunningProcess process) {
+        String jnlpPath = process.getJnlpPath();
+        if (jnlpPath != null && !jnlpPath.trim().isEmpty()) {
+            return jnlpPath.trim();
+        }
+        jnlpPath = JnlpLockMetadata.extractJnlpPathFromCommandLine(process.getCommandLine());
+        if (jnlpPath != null && !jnlpPath.trim().isEmpty()) {
+            return jnlpPath.trim();
+        }
+        return null;
+    }
+
+    private static boolean launchJnlp(String jnlpPath, String javaws, List<String> vmArgs) {
+        try {
+            List<String> commands = new ArrayList<>();
             commands.add(javaws);
             for (String arg : vmArgs) {
                 commands.add("-J" + arg);
@@ -350,6 +433,7 @@ public final class JnlpAppTuningRegistry {
             builder.start();
             return true;
         } catch (Exception ex) {
+            OutputController.getLogger().log(ex);
             return false;
         }
     }
