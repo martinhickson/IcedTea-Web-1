@@ -91,7 +91,7 @@ jobs:
           else
             git commit -m "Release version ${RELEASE_VERSION}"
           fi
-          git push origin "${RELEASE_BRANCH}"
+          git push --force-with-lease origin "${RELEASE_BRANCH}"
 
       - name: Create and push release tag
         run: |

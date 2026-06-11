@@ -315,13 +315,18 @@ try {
     Stop-SmokeProcess $JavawsProcess
     Stop-SmokeProcess $ServerProcess
     if (-not $KeepWorkDir -and (Test-Path $WorkDir -PathType Container)) {
-        for ($attempt = 0; $attempt -lt 5; $attempt++) {
+        $removed = $false
+        for ($attempt = 0; $attempt -lt 10; $attempt++) {
             try {
                 Remove-Item -Path $WorkDir -Recurse -Force -ErrorAction Stop
+                $removed = $true
                 break
             } catch {
                 Start-Sleep -Milliseconds 500
             }
+        }
+        if (-not $removed) {
+            Write-Host "Smoke-test work dir left in place after cleanup retries: $WorkDir"
         }
     } elseif (Test-Path $WorkDir -PathType Container) {
         Write-Host "Kept smoke-test work dir: $WorkDir"
