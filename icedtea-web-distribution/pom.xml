@@ -275,6 +275,18 @@
                     <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
 
                     <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
+
+                    <delete file="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
+                    <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">
+                      <zipfileset dir="${project.build.directory}/dist">
+                        <exclude name="**/bin/*"/>
+                        <exclude name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
+                        <include name="**/bin/*"/>
+                        <include name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                    </zip>
                     <unzip src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto"/>
                   </target>
                 </configuration>
@@ -332,6 +344,18 @@
 
                     <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
                     <untar src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto" compression="gzip"/>
+
+                    <delete file="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
+                    <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">
+                      <zipfileset dir="${project.build.directory}/dist">
+                        <exclude name="**/bin/*"/>
+                        <exclude name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
+                        <include name="**/bin/*"/>
+                        <include name="**/runtime/corretto/**/bin/*"/>
+                      </zipfileset>
+                    </zip>
                     <chmod perm="ugo+rx">
                       <fileset dir="${itw.distribution.root}/runtime/corretto">
                         <include name="**/bin/*"/>
@@ -396,6 +420,20 @@
 
                     <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
                     <untar src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto" compression="gzip"/>
+
+                    <delete file="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
+                    <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">
+                      <zipfileset dir="${project.build.directory}/dist">
+                        <exclude name="**/bin/*"/>
+                        <exclude name="**/runtime/corretto/**/bin/*"/>
+                        <exclude name="**/runtime/corretto/**/Contents/Home/bin/*"/>
+                      </zipfileset>
+                      <zipfileset dir="${project.build.directory}/dist" filemode="755">
+                        <include name="**/bin/*"/>
+                        <include name="**/runtime/corretto/**/bin/*"/>
+                        <include name="**/runtime/corretto/**/Contents/Home/bin/*"/>
+                      </zipfileset>
+                    </zip>
                     <chmod perm="ugo+rx">
                       <fileset dir="${itw.distribution.root}/runtime/corretto">
                         <include name="**/bin/*"/>

@@ -8,12 +8,12 @@ $ErrorActionPreference = "Stop"
 
 $RootDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "2.0.1-SNAPSHOT" }
-$DistDir = if ($env:ITW_DOTNET_DIST_DIR) {
-    $env:ITW_DOTNET_DIST_DIR
+$DistZip = if ($env:ITW_DOTNET_WINDOWS_ZIP) {
+    $env:ITW_DOTNET_WINDOWS_ZIP
 } else {
-    Join-Path $RootDir "icedtea-web-distribution\target\dist\icedtea-web-$Version"
+    Join-Path $RootDir "icedtea-web-distribution\target\icedtea-web-$Version-win-x64.zip"
 }
-$DistZip = $env:ITW_DOTNET_WINDOWS_ZIP
+$DistDir = $env:ITW_DOTNET_DIST_DIR
 $JavawsBin = $env:ITW_JAVAWS_BIN
 $AppJar = if ($env:ITW_HEADLESS_APP_JAR) {
     $env:ITW_HEADLESS_APP_JAR
@@ -48,45 +48,49 @@ function Prepare-DotnetDistribution {
         return $JavawsBin
     }
 
-    if ($DistDir -and (Test-Path (Join-Path $DistDir "bin\javaws.exe") -PathType Leaf)) {
+    if ($DistDir) {
         $candidate = Join-Path $DistDir "bin\javaws.exe"
-        Write-Host "Using javaws from distribution directory: $candidate"
-        return $candidate
-    }
-
-    if ($DistZip -and (Test-Path $DistZip -PathType Leaf)) {
-        $unpackDir = Join-Path $WorkDir "dotnet-dist"
-        New-Item -ItemType Directory -Path $unpackDir -Force | Out-Null
-        Write-Host "Extracting legacy Windows distribution ZIP: $DistZip"
-        Expand-Archive -Path $DistZip -DestinationPath $unpackDir -Force
-
-        $root = Get-ChildItem -Path $unpackDir -Directory | Select-Object -First 1
-        if ($null -eq $root) {
-            throw "Extracted artifact did not contain a distribution directory: $DistZip"
-        }
-
-        $candidate = Join-Path $root.FullName "bin\javaws.exe"
         if (-not (Test-Path $candidate -PathType Leaf)) {
-            throw "Extracted artifact does not contain bin\javaws.exe: $candidate"
+            throw "ITW_DOTNET_DIST_DIR is set but bin\javaws.exe does not exist: $candidate"
         }
-
-        Write-Host "Using javaws from extracted ZIP: $candidate"
+        Write-Host "Using javaws from ITW_DOTNET_DIST_DIR: $candidate"
         return $candidate
     }
 
-    throw @"
-Windows .NET distribution not found:
-  $DistDir
+    if (-not (Test-Path $DistZip -PathType Leaf)) {
+        throw @"
+Windows .NET distribution artifact not found:
+  $DistZip
 
 Build it first with:
   mvn -P maven-distribution -pl icedtea-web-distribution -am install `
     -Dmaven.test.skip=true -DskipTests `
+    "-Djdk8.home=`$env:JAVA_HOME" `
     "-Ditw.dotnet.runtime.identifier=win-x64" `
     "-Ditw.dotnet.selfContained=true"
 
-Or point this script at an existing build with ITW_DOTNET_DIST_DIR,
-ITW_DOTNET_WINDOWS_ZIP, or ITW_JAVAWS_BIN.
+Or point this script at an existing artifact with ITW_DOTNET_WINDOWS_ZIP,
+ITW_DOTNET_DIST_DIR, or ITW_JAVAWS_BIN.
 "@
+    }
+
+    $unpackDir = Join-Path $WorkDir "dotnet-dist"
+    New-Item -ItemType Directory -Path $unpackDir -Force | Out-Null
+    Write-Host "Extracting normal Windows .NET distribution artifact: $DistZip"
+    Expand-Archive -Path $DistZip -DestinationPath $unpackDir -Force
+
+    $root = Get-ChildItem -Path $unpackDir -Directory | Select-Object -First 1
+    if ($null -eq $root) {
+        throw "Extracted artifact did not contain a distribution directory: $DistZip"
+    }
+
+    $candidate = Join-Path $root.FullName "bin\javaws.exe"
+    if (-not (Test-Path $candidate -PathType Leaf)) {
+        throw "Extracted artifact does not contain bin\javaws.exe: $candidate"
+    }
+
+    Write-Host "Using javaws from normal Windows .NET distribution artifact: $candidate"
+    return $candidate
 }
 
 function Ensure-HeadlessApp {
@@ -173,9 +177,43 @@ function Test-LogForSuccess {
     return $false
 }
 
+function Get-LaunchLogFiles {
+    param(
+        [string]$LogsDir,
+        [string[]]$Existing
+    )
+
+    $files = @($Existing)
+    if (-not (Test-Path $LogsDir -PathType Container)) {
+        return $files
+    }
+
+    $launchLog = Get-ChildItem -Path $LogsDir -Filter "*.launch.log" -File |
+        Where-Object { $_.Name -notlike "*-prelaunch.launch.log" } |
+        Sort-Object LastWriteTimeUtc |
+        Select-Object -Last 1
+    if ($null -eq $launchLog) {
+        return $files
+    }
+
+    $stdoutPath = Select-String -Path $launchLog.FullName -Pattern "^Standard Output stream written to: (.+)$" |
+        ForEach-Object { $_.Matches[0].Groups[1].Value } |
+        Select-Object -Last 1
+    $stderrPath = Select-String -Path $launchLog.FullName -Pattern "^Standard Error stream written to: (.+)$" |
+        ForEach-Object { $_.Matches[0].Groups[1].Value } |
+        Select-Object -Last 1
+    foreach ($path in @($stdoutPath, $stderrPath, $launchLog.FullName)) {
+        if ($path -and (Test-Path $path -PathType Leaf)) {
+            $files += $path
+        }
+    }
+    return $files
+}
+
 function Wait-ForLaunch {
     param(
         [string]$Marker,
+        [string]$LogsDir,
         [string[]]$LogFiles
     )
 
@@ -184,11 +222,9 @@ function Wait-ForLaunch {
         if ((Test-Path $Marker -PathType Leaf) -and ((Get-Item $Marker).Length -gt 0)) {
             return $true
         }
+        $LogFiles = Get-LaunchLogFiles -LogsDir $LogsDir -Existing $LogFiles
         if (Test-LogForSuccess -LogFiles $LogFiles) {
             return $true
-        }
-        if ($JavawsProcess.HasExited) {
-            return Test-LogForSuccess -LogFiles $LogFiles
         }
         Start-Sleep -Milliseconds 500
     }
@@ -239,14 +275,20 @@ try {
     $ServerProcess = Start-Process -FilePath "python" -ArgumentList @("-m", "http.server", "$SelectedPort", "--bind", "127.0.0.1") -WorkingDirectory $WebRoot -RedirectStandardOutput $ServerOutLog -RedirectStandardError $ServerErrLog -PassThru -WindowStyle Hidden
     Wait-ForServer $JnlpUrl
 
+    $LocalAppDataDir = Join-Path $WorkDir "LocalAppData"
+    New-Item -ItemType Directory -Path $LocalAppDataDir -Force | Out-Null
+    $env:LOCALAPPDATA = $LocalAppDataDir
+
     Write-Host "Launching with .NET javaws: $JavawsBin"
     Write-Host "JNLP URL: $JnlpUrl"
     Write-Host "Marker: $Marker"
     Write-Host "javaws stdout log: $JavawsOutLog"
     Write-Host "javaws stderr log: $JavawsErrLog"
+    Write-Host "LOCALAPPDATA: $LocalAppDataDir"
     $JavawsProcess = Start-Javaws -Launcher $JavawsBin -JnlpUrl $JnlpUrl -OutLogFile $JavawsOutLog -ErrLogFile $JavawsErrLog
 
-    $succeeded = Wait-ForLaunch -Marker $Marker -LogFiles @($JavawsOutLog, $JavawsErrLog)
+    $launcherLogsDir = Join-Path $LocalAppDataDir "IcedTea-Web\logs"
+    $succeeded = Wait-ForLaunch -Marker $Marker -LogsDir $launcherLogsDir -LogFiles @($JavawsOutLog, $JavawsErrLog)
     if ($succeeded -and -not $JavawsProcess.HasExited) {
         [void]$JavawsProcess.WaitForExit(10000)
     }
@@ -273,7 +315,14 @@ try {
     Stop-SmokeProcess $JavawsProcess
     Stop-SmokeProcess $ServerProcess
     if (-not $KeepWorkDir -and (Test-Path $WorkDir -PathType Container)) {
-        Remove-Item -Path $WorkDir -Recurse -Force
+        for ($attempt = 0; $attempt -lt 5; $attempt++) {
+            try {
+                Remove-Item -Path $WorkDir -Recurse -Force -ErrorAction Stop
+                break
+            } catch {
+                Start-Sleep -Milliseconds 500
+            }
+        }
     } elseif (Test-Path $WorkDir -PathType Container) {
         Write-Host "Kept smoke-test work dir: $WorkDir"
     }
