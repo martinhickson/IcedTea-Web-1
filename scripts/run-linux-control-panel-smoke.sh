@@ -78,18 +78,54 @@ EOF
   echo "Using itweb-settings from distribution artifact: $SETTINGS_BIN"
 }
 
+collect_launch_log_files() {
+  local logs_dir="$1"
+  shift
+  local -a files=("$@")
+  if [ ! -d "$logs_dir" ]; then
+    printf '%s\n' "${files[@]}"
+    return
+  fi
+
+  local launch_log
+  launch_log="$(find "$logs_dir" -maxdepth 1 -name '*.launch.log' ! -name '*-prelaunch.launch.log' -type f 2>/dev/null | sort | tail -n 1)"
+  if [ -n "$launch_log" ] && [ -f "$launch_log" ]; then
+    local stdout_path stderr_path child_pid
+    stdout_path="$(sed -n 's/^Standard Output stream written to: //p' "$launch_log" | tail -n 1)"
+    stderr_path="$(sed -n 's/^Standard Error stream written to: //p' "$launch_log" | tail -n 1)"
+    child_pid="$(sed -n 's/^Launched JDK process ID: //p' "$launch_log" | tail -n 1)"
+    if [ -n "$stdout_path" ] && [ -f "$stdout_path" ]; then
+      files+=("$stdout_path")
+    fi
+    if [ -n "$stderr_path" ] && [ -f "$stderr_path" ]; then
+      files+=("$stderr_path")
+    fi
+    files+=("$launch_log")
+    if [ -n "$child_pid" ]; then
+      printf '%s\n' "${files[@]}"
+      printf 'CHILD_PID=%s\n' "$child_pid"
+      return
+    fi
+  fi
+
+  printf '%s\n' "${files[@]}"
+}
+
 assert_no_control_panel_crash() {
-  local log_file="$1"
-  if grep -q "Exception in thread" "$log_file"; then
-    echo "Control panel smoke test failed; launcher log:" >&2
-    cat "$log_file" >&2
-    exit 1
-  fi
-  if grep -q "ArrayIndexOutOfBoundsException" "$log_file"; then
-    echo "Control panel smoke test failed; launcher log:" >&2
-    cat "$log_file" >&2
-    exit 1
-  fi
+  local log_file
+  for log_file in "$@"; do
+    [ -f "$log_file" ] || continue
+    if grep -q "Exception in thread" "$log_file"; then
+      echo "Control panel smoke test failed; log: $log_file" >&2
+      cat "$log_file" >&2
+      exit 1
+    fi
+    if grep -q "ArrayIndexOutOfBoundsException" "$log_file"; then
+      echo "Control panel smoke test failed; log: $log_file" >&2
+      cat "$log_file" >&2
+      exit 1
+    fi
+  done
 }
 
 main() {
@@ -100,26 +136,60 @@ main() {
 
   prepare_distribution
 
-  local log_file
+  local log_file xdg_data launcher_logs_dir
   log_file="$(mktemp "${TMPDIR:-/tmp}/itw-control-panel-smoke.XXXXXX.log")"
+  xdg_data="$(mktemp -d "${TMPDIR:-/tmp}/itw-control-panel-xdg.XXXXXX")"
+  launcher_logs_dir="$xdg_data/IcedTea-Web/logs"
 
   echo "Launching control panel smoke test for ${WAIT_SECONDS}s"
-  xvfb-run -a "$SETTINGS_BIN" >"$log_file" 2>&1 &
+  echo "XDG_DATA_HOME: $xdg_data"
+  XDG_DATA_HOME="$xdg_data" xvfb-run -a "$SETTINGS_BIN" >"$log_file" 2>&1 &
   SETTINGS_PID=$!
 
-  local deadline=$((SECONDS + WAIT_SECONDS))
+  local child_pid=""
+  local deadline=$((SECONDS + 30))
   while [ "$SECONDS" -lt "$deadline" ]; do
-    assert_no_control_panel_crash "$log_file"
     if ! kill -0 "$SETTINGS_PID" 2>/dev/null; then
-      assert_no_control_panel_crash "$log_file"
-      echo "Control panel exited before smoke window elapsed"
-      cat "$log_file"
+      break
+    fi
+    sleep 0.25
+  done
+
+  local collected child_line
+  collected="$(collect_launch_log_files "$launcher_logs_dir" "$log_file")"
+  child_line="$(printf '%s\n' "$collected" | sed -n 's/^CHILD_PID=//p' | tail -n 1)"
+  mapfile -t watch_logs < <(printf '%s\n' "$collected" | grep -v '^CHILD_PID=')
+  if [ -n "$child_line" ]; then
+    child_pid="$child_line"
+  fi
+
+  if [ -z "$child_pid" ]; then
+    echo "Control panel smoke test failed; no JDK child PID in launch log" >&2
+    printf '%s\n' "${watch_logs[@]}" >&2
+    for log_file in "${watch_logs[@]}"; do
+      [ -f "$log_file" ] && cat "$log_file" >&2
+    done
+    exit 1
+  fi
+
+  echo "Monitoring detached JDK control panel PID: $child_pid"
+  deadline=$((SECONDS + WAIT_SECONDS))
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    mapfile -t watch_logs < <(collect_launch_log_files "$launcher_logs_dir" "$log_file" | grep -v '^CHILD_PID=')
+    assert_no_control_panel_crash "${watch_logs[@]}"
+    if ! kill -0 "$child_pid" 2>/dev/null; then
+      assert_no_control_panel_crash "${watch_logs[@]}"
+      echo "Control panel JDK child exited before smoke window elapsed"
+      for log_file in "${watch_logs[@]}"; do
+        [ -f "$log_file" ] && cat "$log_file"
+      done
       exit 1
     fi
     sleep 0.5
   done
 
-  assert_no_control_panel_crash "$log_file"
+  mapfile -t watch_logs < <(collect_launch_log_files "$launcher_logs_dir" "$log_file" | grep -v '^CHILD_PID=')
+  assert_no_control_panel_crash "${watch_logs[@]}"
   echo "Control panel smoke test passed"
 }
 
