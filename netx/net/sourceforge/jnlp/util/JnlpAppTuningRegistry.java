@@ -6,7 +6,11 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.net.URI;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.List;
@@ -37,6 +41,10 @@ public final class JnlpAppTuningRegistry {
 
     public static final String GC_G1 = "G1";
     public static final String GC_ZGC = "ZGC";
+    public static final String RELAUNCH_LOG_SUFFIX = ".relaunch.log";
+    private static final long RELAUNCH_VERIFY_TIMEOUT_MS = 30_000;
+
+    private static volatile String lastRelaunchDetail;
 
     public static final class AppTuning {
         private String jnlpPath;
@@ -336,36 +344,53 @@ public final class JnlpAppTuningRegistry {
         if (resolveJavawsLauncherPath() == null) {
             return Translator.R("CPRunningAppsTuneRelaunchNoLauncher");
         }
+        String detail = lastRelaunchDetail;
+        if (detail != null && !detail.trim().isEmpty()) {
+            return Translator.R("CPRunningAppsTuneRelaunchFailedDetail", detail);
+        }
         return Translator.R("CPRunningAppsTuneRelaunchFailed");
     }
 
+    public static File relaunchLogFileFor(RunningProcess process) {
+        File tuningFile = tuningFileFor(process);
+        if (tuningFile == null) {
+            return null;
+        }
+        return new File(tuningFile.getParentFile(), tuningFile.getName() + RELAUNCH_LOG_SUFFIX);
+    }
+
     public static boolean relaunchApplication(RunningProcess process) {
+        lastRelaunchDetail = null;
         if (process == null) {
+            lastRelaunchDetail = "process unavailable";
             return false;
         }
         String jnlpPath = resolveJnlpPath(process);
         String javaws = resolveJavawsLauncherPath();
         if (jnlpPath == null || javaws == null) {
+            lastRelaunchDetail = "jnlpPath=" + jnlpPath + ", javaws=" + javaws;
             OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
                     "Relaunch preflight failed for pid " + process.getPid()
-                            + " jnlpPath=" + jnlpPath + " javaws=" + javaws);
+                            + " " + lastRelaunchDetail);
+            writeRelaunchLog(process, null, jnlpPath, javaws, null, process.getPid(), -1,
+                    null, "preflight failed: " + lastRelaunchDetail);
             return false;
         }
-        List<String> vmArgs;
-        try {
-            vmArgs = openJnlpFile(jnlpPath).getNewVMArgs();
-        } catch (Exception ex) {
-            OutputController.getLogger().log(ex);
+        List<String> vmArgs = vmArgsForRelaunch(process, jnlpPath);
+        if (vmArgs == null) {
+            lastRelaunchDetail = "could not build JVM arguments for " + jnlpPath;
+            writeRelaunchLog(process, null, jnlpPath, javaws, vmArgs, process.getPid(), -1,
+                    null, lastRelaunchDetail);
             return false;
         }
-        int pid = process.getPid();
-        JnlpRunningProcessSupport.stopProcess(pid, false);
-        waitForProcessExit(pid, 15000);
-        if (JnlpRunningProcessSupport.isProcessAlive(pid)) {
-            JnlpRunningProcessSupport.stopProcess(pid, true);
-            waitForProcessExit(pid, 5000);
+        int oldPid = process.getPid();
+        JnlpRunningProcessSupport.stopProcess(oldPid, false);
+        waitForProcessExit(oldPid, 15000);
+        if (JnlpRunningProcessSupport.isProcessAlive(oldPid)) {
+            JnlpRunningProcessSupport.stopProcess(oldPid, true);
+            waitForProcessExit(oldPid, 5000);
         }
-        return launchJnlp(jnlpPath, javaws, vmArgs);
+        return launchAndVerifyRelaunch(process, jnlpPath, javaws, vmArgs, oldPid);
     }
 
     /**
@@ -431,22 +456,173 @@ public final class JnlpAppTuningRegistry {
         return null;
     }
 
-    private static boolean launchJnlp(String jnlpPath, String javaws, List<String> vmArgs) {
+    private static List<String> vmArgsForRelaunch(RunningProcess process, String jnlpPath) {
         try {
-            List<String> commands = new ArrayList<>();
-            commands.add(javaws);
-            for (String arg : vmArgs) {
-                commands.add("-J" + arg);
-            }
-            commands.add(jnlpPath);
-            ProcessBuilder builder = new ProcessBuilder(commands);
-            builder.environment().put("ICEDTEA_WEB_SPLASH", "none");
-            builder.start();
-            return true;
+            return openJnlpFile(jnlpPath).getNewVMArgs();
         } catch (Exception ex) {
             OutputController.getLogger().log(ex);
-            return false;
         }
+        AppTuning tuning = read(tuningFileFor(process));
+        if (!tuning.hasStoredTuning()) {
+            return null;
+        }
+        List<String> vmArgs = new ArrayList<>();
+        applyTuningValues(vmArgs, tuning);
+        return vmArgs;
+    }
+
+    private static void applyTuningValues(List<String> vmArgs, AppTuning tuning) {
+        if (tuning.maxHeapBytes > 0) {
+            vmArgs.add("-Xmx" + formatHeapArg(tuning.maxHeapBytes));
+        }
+        appendGcArgs(vmArgs, normalizeGc(tuning.gcType));
+        if (tuning.softMaxHeapBytes > 0) {
+            vmArgs.add("-XX:SoftMaxHeapSize=" + tuning.softMaxHeapBytes);
+        }
+    }
+
+    private static boolean launchAndVerifyRelaunch(RunningProcess process, String jnlpPath,
+            String javaws, List<String> vmArgs, int oldPid) {
+        List<String> commands = buildRelaunchCommand(javaws, vmArgs, jnlpPath);
+        Process launcherProcess = null;
+        String spawnDetail = "spawn not attempted";
+        try {
+            ProcessBuilder builder = new ProcessBuilder(commands);
+            builder.environment().put("ICEDTEA_WEB_SPLASH", "none");
+            launcherProcess = builder.start();
+            spawnDetail = "launcherPid=" + launcherProcess.pid();
+        } catch (Exception ex) {
+            spawnDetail = "spawn failed: " + ex.getMessage();
+            OutputController.getLogger().log(ex);
+        }
+
+        RunningProcess relaunched = waitForRelaunchedInstance(jnlpPath, oldPid, RELAUNCH_VERIFY_TIMEOUT_MS);
+        if (relaunched != null) {
+            ProcessJvmContext context = ProcessMemorySupport.resolveJvmContext(relaunched);
+            LiveJvmSettings live = ProcessMemorySupport.readLiveJvmSettings(relaunched.getPid(), context);
+            writeRelaunchLog(process, commands, jnlpPath, javaws, vmArgs, oldPid, relaunched.getPid(),
+                    live, "success " + spawnDetail);
+            return true;
+        }
+
+        lastRelaunchDetail = spawnDetail + "; no replacement JNLP process detected within "
+                + (RELAUNCH_VERIFY_TIMEOUT_MS / 1000) + "s";
+        writeRelaunchLog(process, commands, jnlpPath, javaws, vmArgs, oldPid, -1, null, lastRelaunchDetail);
+        return false;
+    }
+
+    private static List<String> buildRelaunchCommand(String javaws, List<String> vmArgs, String jnlpPath) {
+        List<String> commands = new ArrayList<>();
+        commands.add(javaws);
+        for (String arg : vmArgs) {
+            commands.add("-J" + arg);
+        }
+        commands.add("-jnlp");
+        commands.add(toLaunchJnlpArgument(jnlpPath));
+        return commands;
+    }
+
+    private static RunningProcess waitForRelaunchedInstance(String jnlpPath, int oldPid, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        String normalized = normalizeJnlpPath(jnlpPath);
+        while (System.currentTimeMillis() < deadline) {
+            for (RunningProcess candidate : JnlpRunningProcessSupport.listRunningJnlpProcesses()) {
+                if (candidate.getPid() == oldPid || !JnlpRunningProcessSupport.isProcessAlive(candidate.getPid())) {
+                    continue;
+                }
+                if (JnlpRunningProcessSupport.isInfrastructureProcess(candidate)) {
+                    continue;
+                }
+                String candidatePath = resolveJnlpPath(candidate);
+                if (candidatePath != null
+                        && normalizeJnlpPath(candidatePath).equalsIgnoreCase(normalized)) {
+                    return candidate;
+                }
+                if (candidate.matchesJnlpPath(jnlpPath) || candidate.matchesJnlpPath(normalized)) {
+                    return candidate;
+                }
+            }
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private static void writeRelaunchLog(RunningProcess process, List<String> command, String jnlpPath,
+            String javaws, List<String> vmArgs, int oldPid, int newPid, LiveJvmSettings live, String outcome) {
+        File logFile = relaunchLogFileFor(process);
+        if (logFile == null) {
+            return;
+        }
+        try {
+            File parent = logFile.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                return;
+            }
+            StringBuilder sb = new StringBuilder();
+            sb.append("timestamp=").append(Instant.now()).append('\n');
+            sb.append("outcome=").append(outcome).append('\n');
+            sb.append("jnlpPath=").append(jnlpPath).append('\n');
+            sb.append("javaws=").append(javaws).append('\n');
+            if (command != null) {
+                sb.append("command=");
+                for (int i = 0; i < command.size(); i++) {
+                    if (i > 0) {
+                        sb.append(' ');
+                    }
+                    sb.append(command.get(i));
+                }
+                sb.append('\n');
+            }
+            sb.append("oldPid=").append(oldPid).append('\n');
+            sb.append("newPid=").append(newPid).append('\n');
+            if (vmArgs != null) {
+                sb.append("vmArgs=");
+                for (int i = 0; i < vmArgs.size(); i++) {
+                    if (i > 0) {
+                        sb.append(' ');
+                    }
+                    sb.append(vmArgs.get(i));
+                }
+                sb.append('\n');
+            }
+            if (live != null) {
+                sb.append("jcmd.maxHeapBytes=").append(live.getMaxHeapBytes()).append('\n');
+                sb.append("jcmd.gcType=").append(live.getGcType()).append('\n');
+                sb.append("jcmd.softMaxHeapBytes=").append(live.getSoftMaxHeapBytes()).append('\n');
+            }
+            Files.write(logFile.toPath(), sb.toString().getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ex) {
+            OutputController.getLogger().log(ex);
+        }
+    }
+
+    static String normalizeJnlpPath(String jnlpPath) {
+        if (jnlpPath == null) {
+            return "";
+        }
+        String trimmed = jnlpPath.trim();
+        if (!trimmed.startsWith("file:")) {
+            return trimmed;
+        }
+        try {
+            URI uri = new URL(trimmed).toURI();
+            return new File(uri).getPath();
+        } catch (Exception ex) {
+            return trimmed.startsWith("file:") ? trimmed.substring(5) : trimmed;
+        }
+    }
+
+    private static String toLaunchJnlpArgument(String jnlpPath) {
+        String normalized = normalizeJnlpPath(jnlpPath);
+        if (!normalized.isEmpty()) {
+            return normalized;
+        }
+        return jnlpPath.trim();
     }
 
     private static JNLPFile openJnlpFile(String jnlpPath) throws Exception {
