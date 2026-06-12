@@ -36,9 +36,9 @@ class JdkAssignmentJavawsLaunchIT {
         File jdk21 = JnlpLaunchTestSupport.jdkHome(21);
         File jdk25 = JnlpLaunchTestSupport.jdkHome(25);
 
-        NzsdDeploymentConfigSupport.seedTwoKnownJdksWithMaximumStrategy(jdk21, jdk25);
+        ControlPanelTestSupport.seedTwoKnownJdksWithMaximumStrategy(jdk21, jdk25);
         String jnlpUrl = JnlpLaunchTestSupport.jnlpUrl("java21-app").toExternalForm();
-        NzsdDeploymentConfigSupport.assignJnlpToJdkIndex(jnlpUrl, 1, 1);
+        ControlPanelTestSupport.assignJnlpToJdkIndex(jnlpUrl, 1, 1);
 
         long startedAt = System.currentTimeMillis();
         Process process = JnlpLaunchTestSupport.launchJnlpViaJavaws("java21-app", 3, jdk25);
@@ -64,7 +64,7 @@ class JdkAssignmentJavawsLaunchIT {
         File jdk21 = JnlpLaunchTestSupport.jdkHome(21);
         File jdk25 = JnlpLaunchTestSupport.jdkHome(25);
 
-        NzsdDeploymentConfigSupport.seedTwoKnownJdksWithMaximumStrategy(jdk21, jdk25);
+        ControlPanelTestSupport.seedTwoKnownJdksWithMaximumStrategy(jdk21, jdk25);
 
         long startedAt = System.currentTimeMillis();
         Process process = JnlpLaunchTestSupport.launchJnlpViaJavaws("java21-app", 3, jdk21);

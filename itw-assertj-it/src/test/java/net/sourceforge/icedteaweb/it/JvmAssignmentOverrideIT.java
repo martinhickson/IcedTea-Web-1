@@ -56,8 +56,8 @@ class JvmAssignmentOverrideIT {
         String jnlpUrl = JnlpLaunchTestSupport.jnlpUrl("java21-app").toExternalForm();
 
         ControlPanelTestSupport.resetDeploymentConfig();
-        NzsdDeploymentConfigSupport.seedTwoKnownJdksWithMaximumStrategy(jdk21, jdk25);
-        NzsdDeploymentConfigSupport.assignJnlpToJdkIndex(jnlpUrl, 1, 1);
+        ControlPanelTestSupport.seedTwoKnownJdksWithMaximumStrategy(jdk21, jdk25);
+        ControlPanelTestSupport.assignJnlpToJdkIndex(jnlpUrl, 1, 1);
 
         assertThat(JvmSelectionTestSupport.selectBestJvmHomeForJnlp("21+", jnlpUrl))
                 .isEqualTo(jdk21.getAbsolutePath());

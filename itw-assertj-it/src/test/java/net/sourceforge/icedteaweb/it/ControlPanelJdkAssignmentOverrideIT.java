@@ -29,9 +29,9 @@ class ControlPanelJdkAssignmentOverrideIT {
         ControlPanelTestSupport.resetDeploymentConfig();
         File jdk21 = JnlpLaunchTestSupport.jdkHome(21);
         File jdk25 = JnlpLaunchTestSupport.jdkHome(25);
-        NzsdDeploymentConfigSupport.seedTwoKnownJdksWithMaximumStrategy(jdk21, jdk25);
+        ControlPanelTestSupport.seedTwoKnownJdksWithMaximumStrategy(jdk21, jdk25);
         String jnlpUrl = JnlpLaunchTestSupport.jnlpUrl("java21-app").toExternalForm();
-        NzsdDeploymentConfigSupport.assignJnlpToJdkIndex(jnlpUrl, 1, 1);
+        ControlPanelTestSupport.assignJnlpToJdkIndex(jnlpUrl, 1, 1);
 
         robot = BasicRobot.robotWithCurrentAwtHierarchy();
         controlPanel = ControlPanelTestSupport.launchControlPanel();

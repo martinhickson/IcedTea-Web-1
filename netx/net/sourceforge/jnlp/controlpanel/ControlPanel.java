@@ -29,6 +29,8 @@ import java.awt.GridLayout;
 import java.awt.Image;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.WindowAdapter;
+import java.awt.event.WindowEvent;
 import java.io.IOException;
 import java.net.URL;
 import java.util.ArrayList;
@@ -152,7 +154,13 @@ public class ControlPanel extends JFrame {
         add(topPanel, BorderLayout.PAGE_START);
         add(mainPanel, BorderLayout.CENTER);
         add(buttonPanel, BorderLayout.PAGE_END);
-        setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
+        setDefaultCloseOperation(WindowConstants.DO_NOTHING_ON_CLOSE);
+        addWindowListener(new WindowAdapter() {
+            @Override
+            public void windowClosing(WindowEvent e) {
+                handleWindowCloseRequest();
+            }
+        });
         pack();
         applyGoldenRatioWindowSize();
         updateEditorButtons();
@@ -212,28 +220,14 @@ public class ControlPanel extends JFrame {
     }
 
     /**
-     * Creates the "ok" "apply" and "cancel" buttons.
-     * 
-     * @return A panel with the "ok" "apply" and "cancel" button.
+     * Creates the apply and revert buttons.
+     *
+     * @return A panel with apply and revert buttons.
      */
     private JPanel createButtonPanel() {
         JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.TRAILING));
 
         List<JButton> buttons = new ArrayList<JButton>();
-
-        JButton okButton = new JButton(Translator.R("ButOk"));
-        okButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                ControlPanel.this.saveConfiguration();
-                int validationResult = validateJdk();
-                if (validationResult!= JOptionPane.OK_OPTION){
-                    return;
-                }
-                JNLPRuntime.exit(0);
-            }
-        });
-        buttons.add(okButton);
 
         revertButton = new JButton(Translator.R("ButRevert"));
         revertButton.setName("controlPanelRevertButton");
@@ -250,28 +244,10 @@ public class ControlPanel extends JFrame {
         applyButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                ControlPanel.this.saveConfiguration();
-                int validationResult = validateJdk();
-                if (validationResult != JOptionPane.OK_OPTION) {
-                    int i = JOptionPane.showConfirmDialog(ControlPanel.this,
-                            Translator.R("CPJVMconfirmReset"),
-                            Translator.R("CPJVMconfirmReset"), JOptionPane.OK_CANCEL_OPTION);
-                    if (i == JOptionPane.OK_OPTION) {
-                        jvmPanel.resetTestFieldArgumentsExec();
-                    }
-                }
+                performApply();
             }
         });
         buttons.add(applyButton);
-
-        JButton cancelButton = new JButton(Translator.R("ButCancel"));
-        cancelButton.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                JNLPRuntime.exit(0);
-            }
-        });
-        buttons.add(cancelButton);
 
         int maxWidth = 0;
         int maxHeight = 0;
@@ -478,6 +454,47 @@ public class ControlPanel extends JFrame {
             config.endSuppressedPropertyUpdates();
         }
         updateEditorButtons();
+    }
+
+    private void performApply() {
+        saveConfiguration();
+        int validationResult = validateJdk();
+        if (validationResult != JOptionPane.OK_OPTION) {
+            int i = JOptionPane.showConfirmDialog(ControlPanel.this,
+                    Translator.R("CPJVMconfirmReset"),
+                    Translator.R("CPJVMconfirmReset"), JOptionPane.OK_CANCEL_OPTION);
+            if (i == JOptionPane.OK_OPTION) {
+                jvmPanel.resetTestFieldArgumentsExec();
+            }
+        }
+    }
+
+    private void handleWindowCloseRequest() {
+        if (!config.hasPendingChanges()) {
+            JNLPRuntime.exit(0);
+            return;
+        }
+
+        Object[] options = {
+            Translator.R("ButApply"),
+            Translator.R("CPDiscardChanges"),
+            Translator.R("ButCancel")
+        };
+        int choice = JOptionPane.showOptionDialog(
+                this,
+                Translator.R("CPUnsavedChangesCloseMessage"),
+                Translator.R("CPUnsavedChangesCloseTitle"),
+                JOptionPane.DEFAULT_OPTION,
+                JOptionPane.QUESTION_MESSAGE,
+                null,
+                options,
+                options[0]);
+
+        if (choice == 0) {
+            performApply();
+        } else if (choice == 1) {
+            JNLPRuntime.exit(0);
+        }
     }
 
     /**

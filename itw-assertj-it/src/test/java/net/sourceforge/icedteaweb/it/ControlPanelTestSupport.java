@@ -2,9 +2,15 @@ package net.sourceforge.icedteaweb.it;
 
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.net.URL;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Properties;
+import net.sourceforge.jnlp.util.JnlpAssignmentLauncher;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
@@ -36,6 +42,65 @@ final class ControlPanelTestSupport {
         File deploymentFile = deploymentPropertiesFile();
         if (deploymentFile.isFile() && !deploymentFile.delete()) {
             throw new IllegalStateException("Failed to delete " + deploymentFile);
+        }
+    }
+
+    static File icedteaWebCacheDir() {
+        String cacheHome = System.getenv("XDG_CACHE_HOME");
+        if (cacheHome == null || cacheHome.trim().isEmpty()) {
+            cacheHome = System.getProperty("user.home") + File.separator + ".cache";
+        }
+        return new File(cacheHome + File.separator + "icedtea-web" + File.separator + "cache");
+    }
+
+    static void resetCacheDir() throws IOException {
+        File cacheDir = icedteaWebCacheDir();
+        if (cacheDir.isDirectory()) {
+            Files.walk(cacheDir.toPath())
+                    .sorted(Comparator.reverseOrder())
+                    .forEach(path -> {
+                        try {
+                            Files.deleteIfExists(path);
+                        } catch (IOException ex) {
+                            throw new IllegalStateException("Failed to delete " + path, ex);
+                        }
+                    });
+        }
+        if (!cacheDir.mkdirs() && !cacheDir.isDirectory()) {
+            throw new IllegalStateException("Failed to create " + cacheDir);
+        }
+    }
+
+    /**
+     * Seeds minimal cache entries ({@code jnlp-path} in {@code .info} files) so
+     * {@link net.sourceforge.jnlp.cache.CachedJnlpUrlDiscovery} finds sample apps.
+     * File-protocol launches do not populate the cache; HTTP would, but seeding is
+     * enough to exercise JDK Assignments listing with Default.
+     */
+    static void seedCachedJnlpDiscoveryEntries(String... sampleNames) throws Exception {
+        resetCacheDir();
+        int slot = 0;
+        for (String sampleName : sampleNames) {
+            URL jnlpUrl = JnlpLaunchTestSupport.jnlpUrl(sampleName);
+            String canonicalUrl = JnlpAssignmentLauncher.canonicalizeJnlpUrl(jnlpUrl.toExternalForm());
+
+            File leaf = new File(icedteaWebCacheDir(),
+                    slot + File.separator + "http" + File.separator + "itw-test"
+                            + File.separator + sampleName + File.separator + "app.jnlp");
+            if (!leaf.getParentFile().mkdirs()) {
+                throw new IllegalStateException("Failed to create " + leaf.getParentFile());
+            }
+            if (!leaf.createNewFile() && !leaf.isFile()) {
+                throw new IllegalStateException("Failed to create " + leaf);
+            }
+
+            Properties info = new Properties();
+            info.setProperty("jnlp-path", canonicalUrl);
+            File infoFile = new File(leaf.getPath() + ".info");
+            try (FileOutputStream out = new FileOutputStream(infoFile)) {
+                info.store(out, "itw-assertj-it");
+            }
+            slot++;
         }
     }
 
@@ -131,6 +196,40 @@ final class ControlPanelTestSupport {
         props.setProperty("deployment.jdk" + jdkIndex + ".assignment" + assignmentSlot,
                 jnlp.toURI().toURL().toExternalForm());
         writeDeploymentProperties(props);
+    }
+
+    /** Seeds known JVM paths only — no JNLP assignments. */
+    static void seedKnownJvmsOnly() throws Exception {
+        resetDeploymentConfig();
+        Properties props = new Properties();
+        int idx = 1;
+        for (File home : discoverValidJdkHomes()) {
+            props.setProperty("deployment.jdk." + idx++, home.getAbsolutePath());
+        }
+        props.setProperty("deployment.jdk.matchStrategy", "MAXIMUM");
+        writeDeploymentProperties(props);
+    }
+
+    static void seedTwoKnownJdksWithMaximumStrategy(File firstJdk, File secondJdk) throws Exception {
+        resetDeploymentConfig();
+        Properties props = new Properties();
+        props.setProperty("deployment.jdk.1", firstJdk.getAbsolutePath());
+        props.setProperty("deployment.jdk.2", secondJdk.getAbsolutePath());
+        props.setProperty("deployment.jdk.matchStrategy", "MAXIMUM");
+        enableFileLoggingForIntegrationTests(props);
+        writeDeploymentProperties(props);
+    }
+
+    static void assignJnlpToJdkIndex(String jnlpUrl, int jdkIndex, int assignmentSlot) throws Exception {
+        Properties props = loadDeploymentProperties();
+        props.setProperty("deployment.jdk" + jdkIndex + ".assignment" + assignmentSlot, jnlpUrl);
+        writeDeploymentProperties(props);
+    }
+
+    static void enableFileLoggingForIntegrationTests(Properties props) {
+        props.setProperty("deployment.log", "true");
+        props.setProperty("deployment.log.file", "true");
+        props.setProperty("deployment.log.file.clientapp", "true");
     }
 
     /** Seeds all built bytecode and GUI sample apps (same set as seed-interactive-home.sh). */

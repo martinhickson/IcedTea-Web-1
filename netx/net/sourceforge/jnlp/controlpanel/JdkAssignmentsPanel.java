@@ -13,7 +13,11 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import javax.swing.AbstractCellEditor;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
@@ -30,6 +34,7 @@ import javax.swing.table.TableCellEditor;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.KnownJvmAssignmentStore;
 import net.sourceforge.jnlp.config.KnownJvmStore;
+import net.sourceforge.jnlp.cache.CachedJnlpUrlDiscovery;
 import net.sourceforge.jnlp.runtime.Translator;
 import net.sourceforge.jnlp.util.JnlpAssignmentLauncher;
 import net.sourceforge.jnlp.util.JnlpAssignmentLauncher.LaunchResult;
@@ -66,8 +71,24 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
     public void reloadFromConfiguration() {
         refreshJdkChoices();
         assignmentRows.clear();
+
+        Map<String, Integer> assignedByUrl = new HashMap<>();
         for (KnownJvmAssignmentStore.JvmAssignment assignment : KnownJvmAssignmentStore.getAssignments(config)) {
-            assignmentRows.add(new AssignmentRow(assignment.getJnlpUrl(), assignment.getJdkIndex()));
+            assignedByUrl.put(
+                    JnlpAssignmentLauncher.canonicalizeJnlpUrl(assignment.getJnlpUrl()),
+                    assignment.getJdkIndex());
+        }
+
+        Set<String> seenUrls = new LinkedHashSet<>();
+        for (String cachedUrl : CachedJnlpUrlDiscovery.discoverCachedJnlpUrls()) {
+            seenUrls.add(cachedUrl);
+            assignmentRows.add(new AssignmentRow(cachedUrl, assignedByUrl.getOrDefault(cachedUrl, 0)));
+        }
+        for (KnownJvmAssignmentStore.JvmAssignment assignment : KnownJvmAssignmentStore.getAssignments(config)) {
+            String url = JnlpAssignmentLauncher.canonicalizeJnlpUrl(assignment.getJnlpUrl());
+            if (!seenUrls.contains(url)) {
+                assignmentRows.add(new AssignmentRow(url, assignment.getJdkIndex()));
+            }
         }
         assignmentModel.fireTableDataChanged();
     }
@@ -79,6 +100,7 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
 
     private void refreshJdkChoices() {
         jdkChoices = new ArrayList<>();
+        jdkChoices.add(new JdkChoice(0, Translator.R("CPJDKAssignmentsDefault"), null));
         List<String> homes = KnownJvmStore.getKnownJvmHomes(config);
         for (int i = 0; i < homes.size(); i++) {
             JvmDescriptor descriptor = JvmDescriptor.describe(homes.get(i));
@@ -96,12 +118,10 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
         addButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                int defaultJdkIndex = jdkChoices.isEmpty() ? 0 : jdkChoices.get(0).jdkIndex;
-                assignmentRows.add(new AssignmentRow("", defaultJdkIndex));
+                assignmentRows.add(new AssignmentRow("", 0));
                 assignmentModel.fireTableDataChanged();
                 int row = assignmentRows.size() - 1;
                 assignmentTable.getSelectionModel().setSelectionInterval(row, row);
-                persistAssignments();
             }
         });
 
@@ -303,12 +323,15 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
     }
 
     private String labelForJdkIndex(int jdkIndex) {
+        if (jdkIndex <= 0) {
+            return Translator.R("CPJDKAssignmentsDefault");
+        }
         for (JdkChoice choice : jdkChoices) {
             if (choice.jdkIndex == jdkIndex) {
                 return choice.label;
             }
         }
-        return jdkIndex > 0 ? Translator.R("CPJDKAssignmentsMissingJdk", jdkIndex) : "";
+        return Translator.R("CPJDKAssignmentsMissingJdk", jdkIndex);
     }
 
     private final class AssignmentTableModel extends AbstractTableModel {
@@ -332,9 +355,6 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
 
         @Override
         public boolean isCellEditable(int row, int column) {
-            if (column == COLUMN_JDK) {
-                return !jdkChoices.isEmpty();
-            }
             return true;
         }
 
@@ -396,7 +416,6 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
             for (JdkChoice choice : jdkChoices) {
                 comboBox.addItem(choice);
             }
-            comboBox.setEnabled(!jdkChoices.isEmpty());
             int rowIndex = table.convertRowIndexToModel(row);
             int jdkIndex = assignmentRows.get(rowIndex).jdkIndex;
             for (int i = 0; i < comboBox.getItemCount(); i++) {
@@ -428,14 +447,7 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
         @Override
         public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected,
                 boolean hasFocus, int row, int column) {
-            Component component = super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
-            boolean enabled = !jdkChoices.isEmpty();
-            component.setEnabled(enabled);
-            if (!enabled) {
-                setText("");
-                setForeground(table.getBackground().darker());
-            }
-            return component;
+            return super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
         }
     }
 }
