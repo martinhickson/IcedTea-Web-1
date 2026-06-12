@@ -56,7 +56,7 @@ import net.sourceforge.jnlp.runtime.Translator;
  * 
  */
 @SuppressWarnings("serial")
-public class NetworkSettingsPanel extends JPanel implements ActionListener {
+public class NetworkSettingsPanel extends JPanel implements ActionListener, SettingsPanelReloader {
 
     private final DeploymentConfiguration config;
 
@@ -84,6 +84,15 @@ public class NetworkSettingsPanel extends JPanel implements ActionListener {
         setLayout(new BorderLayout());
 
         addComponents();
+    }
+
+    @Override
+    public void reloadFromConfiguration() {
+        proxyPanels.clear();
+        removeAll();
+        addComponents();
+        revalidate();
+        repaint();
     }
 
     /**

@@ -50,7 +50,7 @@ import net.sourceforge.jnlp.util.logging.LogConfig;
  * @author Andrew Su (asu@redhat.com, andrew.su@utoronto.ca)
  * 
  */
-public class DebuggingPanel extends NamedBorderPanel implements ItemListener {
+public class DebuggingPanel extends NamedBorderPanel implements ItemListener, SettingsPanelReloader {
 
     /** List of properties used by checkboxes in this panel */
     public static String[] properties = {
@@ -78,6 +78,14 @@ public class DebuggingPanel extends NamedBorderPanel implements ItemListener {
         this.config = config;
 
         addComponents();
+    }
+
+    @Override
+    public void reloadFromConfiguration() {
+        removeAll();
+        addComponents();
+        revalidate();
+        repaint();
     }
     
     

@@ -46,20 +46,38 @@ public class RunningAppsPanel extends NamedBorderPanel {
 
     RunningAppsPanel(DeploymentConfiguration config) {
         super(Translator.R("CPHeadRunningApps"), new GridBagLayout());
+        listPanel.setName("runningAppsListPanel");
+        statusLabel.setName("runningAppsStatusLabel");
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.BOTH;
         c.weightx = 1;
-        c.gridwidth = 1;
+        c.gridwidth = 2;
         c.gridx = 0;
         c.gridy = 0;
         c.insets = new Insets(2, 2, 4, 4);
         add(new JLabel(Translator.R("CPRunningAppsDescription")), c);
 
+        c.gridx = 2;
+        c.gridwidth = 1;
+        c.weightx = 0;
+        c.fill = GridBagConstraints.NONE;
+        c.anchor = GridBagConstraints.EAST;
+        JButton refreshButton = new JButton(Translator.R("CPRunningAppsRefresh"));
+        refreshButton.setName("runningAppsRefreshButton");
+        refreshButton.addActionListener(e -> refreshList());
+        add(refreshButton, c);
+
+        c.gridx = 0;
+        c.gridwidth = 3;
+        c.weightx = 1;
+        c.fill = GridBagConstraints.BOTH;
+        c.anchor = GridBagConstraints.WEST;
         c.gridy++;
         c.weighty = 1;
         listPanel.setLayout(new GridBagLayout());
         JScrollPane scroll = new JScrollPane(listPanel);
         scroll.setPreferredSize(new Dimension(720, 280));
+        scroll.setName("runningAppsScrollPane");
         add(scroll, c);
 
         c.gridy++;
@@ -108,7 +126,9 @@ public class RunningAppsPanel extends NamedBorderPanel {
         if (processes.isEmpty()) {
             rowWidgetsByPid.clear();
             c.gridy = 0;
-            listPanel.add(new JLabel(Translator.R("CPRunningAppsNone")), c);
+            JLabel emptyLabel = new JLabel(Translator.R("CPRunningAppsNone"));
+            emptyLabel.setName("runningAppsEmptyLabel");
+            listPanel.add(emptyLabel, c);
             statusLabel.setText("");
         } else {
             Set<Integer> activePids = new HashSet<>();
@@ -136,6 +156,7 @@ public class RunningAppsPanel extends NamedBorderPanel {
 
     private ProcessRowWidgets buildProcessRow(final RunningProcess process) {
         JPanel row = new JPanel(new BorderLayout(8, 4));
+        row.setName("runningAppRow-" + process.getPid());
         row.setBorder(BorderFactory.createCompoundBorder(
                 BorderFactory.createEtchedBorder(),
                 BorderFactory.createEmptyBorder(6, 8, 6, 8)));
@@ -157,7 +178,9 @@ public class RunningAppsPanel extends NamedBorderPanel {
             title = process.getDisplayName();
         }
         titlePanel.add(new JLabel(formatTitleLabel(title, process.getAppVersion())));
-        titlePanel.add(new JLabel(formatJvmLabel(jvmContext)));
+        JLabel jvmLabel = new JLabel(formatJvmLabel(jvmContext));
+        jvmLabel.setName("runningAppJvmLabel-" + process.getPid());
+        titlePanel.add(jvmLabel);
         details.add(titlePanel, dc);
 
         dc.gridy = 1;
@@ -167,10 +190,13 @@ public class RunningAppsPanel extends NamedBorderPanel {
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
         JButton trimHeap = new JButton(Translator.R("CPRunningAppsTrimHeap"));
+        trimHeap.setName("runningAppTrimHeap-" + process.getPid());
         trimHeap.addActionListener(e -> trimHeap(process, widgets));
         JButton stop = new JButton(Translator.R("CPRunningAppsStop"));
+        stop.setName("runningAppStop-" + process.getPid());
         stop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), false));
         JButton forceStop = new JButton(Translator.R("CPRunningAppsForceStop"));
+        forceStop.setName("runningAppForceStop-" + process.getPid());
         forceStop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), true));
         actions.add(trimHeap);
         actions.add(stop);
@@ -186,12 +212,8 @@ public class RunningAppsPanel extends NamedBorderPanel {
         if (!ok) {
             JOptionPane.showMessageDialog(this, Translator.R("CPRunningAppsTrimHeapFailed"),
                     Translator.R("CPHeadRunningApps"), JOptionPane.WARNING_MESSAGE);
-            return;
         }
         widgets.loadMemory();
-        Timer followUp = new Timer(600, e -> widgets.loadMemory());
-        followUp.setRepeats(false);
-        followUp.start();
     }
 
     private static String formatTitleLabel(String title, String version) {

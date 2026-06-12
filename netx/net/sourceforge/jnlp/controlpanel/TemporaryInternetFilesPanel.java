@@ -62,7 +62,7 @@ import net.sourceforge.jnlp.runtime.Translator;
  *
  */
 @SuppressWarnings("serial")
-public class TemporaryInternetFilesPanel extends NamedBorderPanel {
+public class TemporaryInternetFilesPanel extends NamedBorderPanel implements SettingsPanelReloader {
 
     private static final Long CACHE_UNLIMITED_SIZE = -1l;
     private static final Long CACHE_MIN_SIZE = 0l;
@@ -130,6 +130,28 @@ public class TemporaryInternetFilesPanel extends NamedBorderPanel {
                 showCompressionAndLocationGUIElements(true);
             }
 
+        } else {
+            showCacheSizeSpinnerGUIElements(false);
+            showCompressionAndLocationGUIElements(true);
+        }
+    }
+
+    @Override
+    public void reloadFromConfiguration() {
+        final Long configCacheSize = parseLong(config.getProperty(DeploymentConfiguration.KEY_CACHE_MAX_SIZE));
+        final Long initialCacheSize = configCacheSize < CACHE_MIN_SIZE ? CACHE_MIN_SIZE : configCacheSize;
+        cbCompression.setSelectedIndex(parseInt(config.getProperty(DeploymentConfiguration.KEY_CACHE_COMPRESSION_ENABLED)));
+        ((SpinnerNumberModel) cacheSizeSpinner.getModel()).setValue(initialCacheSize);
+        limitCacheSizeCheckBox.setSelected(configCacheSize >= CACHE_MIN_SIZE);
+        location.setText(PathsAndFiles.CACHE_DIR.getFullPath(config));
+
+        if (limitCacheSizeCheckBox.isSelected()) {
+            showCacheSizeSpinnerGUIElements(true);
+            if (parseLong(cacheSizeSpinner.getValue().toString()) == 0) {
+                showCompressionAndLocationGUIElements(false);
+            } else {
+                showCompressionAndLocationGUIElements(true);
+            }
         } else {
             showCacheSizeSpinnerGUIElements(false);
             showCompressionAndLocationGUIElements(true);

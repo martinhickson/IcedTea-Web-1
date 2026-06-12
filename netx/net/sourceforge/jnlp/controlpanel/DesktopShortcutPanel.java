@@ -42,7 +42,7 @@ import net.sourceforge.swing.SwingUtils;
  * This class provides the panel that allows the user to set whether they want
  * to create a desktop shortcut for javaws.
  */
-public class DesktopShortcutPanel extends NamedBorderPanel implements ItemListener {
+public class DesktopShortcutPanel extends NamedBorderPanel implements ItemListener, SettingsPanelReloader {
 
     private final DeploymentConfiguration config;
     private FreeDesktopIntegrationEditorFrame integrationManagment;
@@ -57,6 +57,14 @@ public class DesktopShortcutPanel extends NamedBorderPanel implements ItemListen
         this.config = config;
 
         addComponents();
+    }
+
+    @Override
+    public void reloadFromConfiguration() {
+        removeAll();
+        addComponents();
+        revalidate();
+        repaint();
     }
 
     public static ComboItem deploymentJavawsShortcutToComboItem(String i) {

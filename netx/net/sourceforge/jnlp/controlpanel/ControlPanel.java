@@ -53,6 +53,8 @@ import javax.swing.event.ListSelectionListener;
 
 import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.DeploymentConfiguration.PendingChangeListener;
+import net.sourceforge.jnlp.config.ItwFeatureFlags;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.controlpanel.JVMPanel.JvmValidationResult;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
@@ -70,7 +72,21 @@ import net.sourceforge.swing.SwingUtils;
  * 
  */
 public class ControlPanel extends JFrame {
+    private static final String APPLY_MARK_SAVED = "\u2713 ";
+    private static final String APPLY_MARK_PENDING = "\u25cf ";
+
+    private JdkAssignmentsPanel jdkAssignmentsPanel;
+    private JvmTuningPanel jvmTuningPanel;
     private JVMPanel jvmPanel;
+    private JButton applyButton;
+    private JButton revertButton;
+    private final List<SettingsPanelReloader> settingsReloaders = new ArrayList<>();
+    private UnsignedAppletsTrustingListPanel extendedAppletSecurityPanel;
+    private TemporaryInternetFilesPanel cachePanel;
+    private DebuggingPanel debuggingPanel;
+    private NetworkSettingsPanel networkSettingsPanel;
+    private SecuritySettingsPanel securitySettingsPanel;
+    private DesktopShortcutPanel desktopShortcutPanel;
 
     /**
      * Class for keeping track of the panels and their associated text.
@@ -112,9 +128,27 @@ public class ControlPanel extends JFrame {
         setIconImages(ImageResources.INSTANCE.getApplicationImages());
 
         this.config = config;
+        this.config.beginEditorSession();
+        this.config.addPendingChangeListener(new PendingChangeListener() {
+            @Override
+            public void onPendingChangesChanged() {
+                SwingUtils.invokeLater(new Runnable() {
+                    @Override
+                    public void run() {
+                        updateEditorButtons();
+                    }
+                });
+            }
+        });
 
         JPanel topPanel = createTopPanel();
-        JPanel mainPanel = createMainSettingsPanel();
+        config.beginSuppressedPropertyUpdates();
+        JPanel mainPanel;
+        try {
+            mainPanel = createMainSettingsPanel();
+        } finally {
+            config.endSuppressedPropertyUpdates();
+        }
         JPanel buttonPanel = createButtonPanel();
 
         add(topPanel, BorderLayout.PAGE_START);
@@ -123,6 +157,7 @@ public class ControlPanel extends JFrame {
         setDefaultCloseOperation(WindowConstants.EXIT_ON_CLOSE);
         pack();
         applyGoldenRatioWindowSize();
+        updateEditorButtons();
     }
 
     private void applyGoldenRatioWindowSize() {
@@ -202,7 +237,18 @@ public class ControlPanel extends JFrame {
         });
         buttons.add(okButton);
 
-        JButton applyButton = new JButton(Translator.R("ButApply"));
+        revertButton = new JButton(Translator.R("ButRevert"));
+        revertButton.setName("controlPanelRevertButton");
+        revertButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                revertConfiguration();
+            }
+        });
+        buttons.add(revertButton);
+
+        applyButton = new JButton(Translator.R("ButApply"));
+        applyButton.setName("controlPanelApplyButton");
         applyButton.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -252,24 +298,25 @@ public class ControlPanel extends JFrame {
      * @return A panel with all the components in place.
      */
     private JPanel createMainSettingsPanel() {
-        jvmPanel =  (JVMPanel) createJVMSettingsPanel();
-        SettingsPanel[] panels = new SettingsPanel[] { new SettingsPanel(Translator.R("CPTabAbout"), createAboutPanel()),
-                new SettingsPanel(Translator.R("CPTabCache"), createCacheSettingsPanel()),
-                new SettingsPanel(Translator.R("CPTabCertificate"), createCertificatesSettingsPanel()),
-                // TODO: This is commented out since this is not implemented yet
-                // new SettingsPanel(Translator.R("CPTabClassLoader"), createClassLoaderSettingsPanel()),
-                new SettingsPanel(Translator.R("CPTabDebugging"), createDebugSettingsPanel()),
-                new SettingsPanel(Translator.R("CPTabDesktopIntegration"), createDesktopSettingsPanel()),
-                new SettingsPanel(Translator.R("CPTabJVMSettings"),jvmPanel),
-                new SettingsPanel(Translator.R("CPTabRunningApps"), new RunningAppsPanel(this.config)),
-                new SettingsPanel(Translator.R("CPTabNetwork"), createNetworkSettingsPanel()),
-                // TODO: This is commented out since this is not implemented yet
-                // new SettingsPanel(Translator.R("CPTabRuntimes"), createRuntimesSettingsPanel()),
-                new SettingsPanel(Translator.R("CPTabSecurity"), createSecuritySettingsPanel()),
-                //todo refactor to work with tmp file and apply as asu designed it
-                new SettingsPanel(Translator.R("CPTabPolicy"), createPolicySettingsPanel()),
-                new SettingsPanel(Translator.R("APPEXTSECControlPanelExtendedAppletSecurityTitle"), new UnsignedAppletsTrustingListPanel(PathsAndFiles.APPLET_TRUST_SETTINGS_SYS.getFile(), PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile(), this.config))
-        };
+        createExtendedAppletSecurityPanel();
+        List<SettingsPanel> panelList = new ArrayList<>();
+        panelList.add(new SettingsPanel(Translator.R("CPTabAbout"), createAboutPanel()));
+        panelList.add(new SettingsPanel(Translator.R("CPTabCache"), createCacheSettingsPanel()));
+        panelList.add(new SettingsPanel(Translator.R("CPTabCertificate"), createCertificatesSettingsPanel()));
+        panelList.add(new SettingsPanel(Translator.R("CPTabDebugging"), createDebugSettingsPanel()));
+        panelList.add(new SettingsPanel(Translator.R("CPTabDesktopIntegration"), createDesktopSettingsPanel()));
+        panelList.add(new SettingsPanel(Translator.R("CPTabJDKAssignments"), createJdkAssignmentsPanel()));
+        if (ItwFeatureFlags.isJvmTuningTabEnabled()) {
+            panelList.add(new SettingsPanel(Translator.R("CPTabJvmTuning"), createJvmTuningPanel()));
+        }
+        panelList.add(new SettingsPanel(Translator.R("CPTabJDKSettings"), createJVMSettingsPanel()));
+        panelList.add(new SettingsPanel(Translator.R("CPTabRunningApps"), new RunningAppsPanel(this.config)));
+        panelList.add(new SettingsPanel(Translator.R("CPTabNetwork"), createNetworkSettingsPanel()));
+        panelList.add(new SettingsPanel(Translator.R("CPTabSecurity"), createSecuritySettingsPanel()));
+        panelList.add(new SettingsPanel(Translator.R("CPTabPolicy"), createPolicySettingsPanel()));
+        panelList.add(new SettingsPanel(Translator.R("APPEXTSECControlPanelExtendedAppletSecurityTitle"),
+                extendedAppletSecurityPanel));
+        SettingsPanel[] panels = panelList.toArray(new SettingsPanel[0]);
 
         // Add panels.
         final JPanel settingsPanel = new JPanel(new CardLayout());
@@ -296,12 +343,25 @@ public class ControlPanel extends JFrame {
         }
 
         final JList<SettingsPanel> settingsList = new JList<>(panels);
+        settingsList.setName("controlPanelSettingsList");
         settingsList.addListSelectionListener(new ListSelectionListener() {
             @Override
             public void valueChanged(ListSelectionEvent e) {
+                if (e.getValueIsAdjusting()) {
+                    return;
+                }
                 @SuppressWarnings("unchecked")
                 JList<SettingsPanel> list = (JList<SettingsPanel>) e.getSource();
                 SettingsPanel panel = list.getSelectedValue();
+                if (panel == null) {
+                    return;
+                }
+                if (panel.getPanel() == jdkAssignmentsPanel) {
+                    jdkAssignmentsPanel.refreshJdkChoiceList();
+                }
+                if (jvmTuningPanel != null && panel.getPanel() == jvmTuningPanel) {
+                    jvmTuningPanel.refreshJdkChoiceList();
+                }
                 CardLayout cl = (CardLayout) settingsPanel.getLayout();
                 cl.show(settingsPanel, panel.toString());
             }
@@ -329,7 +389,9 @@ public class ControlPanel extends JFrame {
     }
 
     private JPanel createCacheSettingsPanel() {
-        return new TemporaryInternetFilesPanel(this.config);
+        cachePanel = new TemporaryInternetFilesPanel(this.config);
+        registerSettingsReloader(cachePanel);
+        return cachePanel;
     }
 
     private JPanel createCertificatesSettingsPanel() {
@@ -343,15 +405,21 @@ public class ControlPanel extends JFrame {
     }
 
     private JPanel createDebugSettingsPanel() {
-        return new DebuggingPanel(this.config);
+        debuggingPanel = new DebuggingPanel(this.config);
+        registerSettingsReloader(debuggingPanel);
+        return debuggingPanel;
     }
 
     private JPanel createDesktopSettingsPanel() {
-        return new DesktopShortcutPanel(this.config);
+        desktopShortcutPanel = new DesktopShortcutPanel(this.config);
+        registerSettingsReloader(desktopShortcutPanel);
+        return desktopShortcutPanel;
     }
 
     private JPanel createNetworkSettingsPanel() {
-        return new NetworkSettingsPanel(this.config);
+        networkSettingsPanel = new NetworkSettingsPanel(this.config);
+        registerSettingsReloader(networkSettingsPanel);
+        return networkSettingsPanel;
     }
 
     private JPanel createRuntimesSettingsPanel() {
@@ -359,15 +427,71 @@ public class ControlPanel extends JFrame {
     }
 
     private JPanel createSecuritySettingsPanel() {
-        return new SecuritySettingsPanel(this.config);
+        securitySettingsPanel = new SecuritySettingsPanel(this.config);
+        registerSettingsReloader(securitySettingsPanel);
+        return securitySettingsPanel;
     }
 
     private JPanel createPolicySettingsPanel() {
         return new PolicyPanel(this, this.config);
     }
 
+    private JPanel createJdkAssignmentsPanel() {
+        jdkAssignmentsPanel = new JdkAssignmentsPanel(this.config);
+        registerSettingsReloader(jdkAssignmentsPanel);
+        return jdkAssignmentsPanel;
+    }
+
+    private JPanel createJvmTuningPanel() {
+        jvmTuningPanel = new JvmTuningPanel(this.config);
+        registerSettingsReloader(jvmTuningPanel);
+        return jvmTuningPanel;
+    }
+
     private JPanel createJVMSettingsPanel() {
-        return new JVMPanel(this.config);
+        jvmPanel = new JVMPanel(this.config);
+        registerSettingsReloader(jvmPanel);
+        return jvmPanel;
+    }
+
+    private void createExtendedAppletSecurityPanel() {
+        extendedAppletSecurityPanel = new UnsignedAppletsTrustingListPanel(
+                PathsAndFiles.APPLET_TRUST_SETTINGS_SYS.getFile(),
+                PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile(),
+                this.config);
+        registerSettingsReloader(extendedAppletSecurityPanel);
+    }
+
+    private void registerSettingsReloader(SettingsPanelReloader reloader) {
+        settingsReloaders.add(reloader);
+    }
+
+    private void updateEditorButtons() {
+        if (applyButton == null || revertButton == null) {
+            return;
+        }
+        boolean pending = config.hasPendingChanges();
+        if (pending) {
+            applyButton.setText(APPLY_MARK_PENDING + Translator.R("ButApply"));
+            applyButton.setToolTipText(Translator.R("CPApplyPendingTip"));
+        } else {
+            applyButton.setText(APPLY_MARK_SAVED + Translator.R("ButApply"));
+            applyButton.setToolTipText(Translator.R("CPApplySavedTip"));
+        }
+        revertButton.setEnabled(pending);
+    }
+
+    private void revertConfiguration() {
+        config.revertPendingChanges();
+        config.beginSuppressedPropertyUpdates();
+        try {
+            for (SettingsPanelReloader reloader : settingsReloaders) {
+                reloader.reloadFromConfiguration();
+            }
+        } finally {
+            config.endSuppressedPropertyUpdates();
+        }
+        updateEditorButtons();
     }
 
     /**
@@ -402,7 +526,8 @@ public class ControlPanel extends JFrame {
      */
     private void saveConfiguration() {
         try {
-            config.save();
+            config.applyPendingChanges();
+            updateEditorButtons();
         } catch (IOException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
             JOptionPane.showMessageDialog(this, e);

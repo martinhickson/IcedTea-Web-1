@@ -11,11 +11,14 @@ import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.awt.event.ItemEvent;
+import java.awt.event.ItemListener;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.Box;
 import javax.swing.JButton;
+import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
 import javax.swing.JScrollPane;
@@ -23,16 +26,19 @@ import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
+import javax.swing.DefaultListCellRenderer;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.JdkMatchStrategy;
 import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.runtime.Translator;
+import net.sourceforge.jnlp.util.JvmAutodetector;
 import net.sourceforge.jnlp.util.JvmDescriptor;
 import net.sourceforge.jnlp.util.StreamUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 @SuppressWarnings("serial")
-public class JVMPanel extends NamedBorderPanel {
+public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader {
 
     public static class JvmValidationResult {
 
@@ -64,9 +70,11 @@ public class JVMPanel extends NamedBorderPanel {
     private final DefaultTableModel knownJvmModel;
     private final JTable knownJvmTable;
     private final List<JvmDescriptor> knownJvms = new ArrayList<>();
+    private JTextField pluginJvmArgumentsField;
+    private JComboBox<JdkMatchStrategy> matchStrategyCombo;
 
     JVMPanel(DeploymentConfiguration config) {
-        super(Translator.R("CPHeadJVMSettings"), new GridBagLayout());
+        super(Translator.R("CPHeadJDKSettings"), new GridBagLayout());
         this.config = config;
         knownJvmModel = new DefaultTableModel(
                 new Object[] {
@@ -87,10 +95,24 @@ public class JVMPanel extends NamedBorderPanel {
         knownJvmTable.getColumnModel().getColumn(COLUMN_VERSION).setPreferredWidth(100);
         knownJvmTable.getColumnModel().getColumn(COLUMN_PATH).setPreferredWidth(360);
         knownJvmTable.setRowHeight(22);
+        knownJvmTable.setName("jvmKnownTable");
         knownJvmTable.getColumnModel().getColumn(COLUMN_STATUS)
                 .setCellRenderer(new JvmStatusCellRenderer());
         addComponents();
         reloadKnownJvmsFromConfig();
+    }
+
+    @Override
+    public void reloadFromConfiguration() {
+        reloadKnownJvmsFromConfig();
+        if (pluginJvmArgumentsField != null) {
+            String args = config.getProperty(DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS);
+            pluginJvmArgumentsField.setText(args == null ? "" : args);
+        }
+        if (matchStrategyCombo != null) {
+            ControlPanelUiUtils.setComboBoxSelectionWithoutNotify(
+                    matchStrategyCombo, KnownJvmStore.getMatchStrategy(config));
+        }
     }
 
     void resetTestFieldArgumentsExec() {
@@ -170,10 +192,7 @@ public class JVMPanel extends NamedBorderPanel {
         if (startDir == null || !startDir.exists()) {
             startDir = lastPath;
         }
-        JFileChooser jfch = startDir != null && startDir.exists()
-                ? new JFileChooser(startDir) : new JFileChooser();
-        jfch.setDialogTitle(Translator.R("CPJVMEdit"));
-        jfch.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        JFileChooser jfch = createJvmDirectoryChooser(startDir, Translator.R("CPJVMEdit"));
         int i = jfch.showOpenDialog(JVMPanel.this);
         if (i != JFileChooser.APPROVE_OPTION || jfch.getSelectedFile() == null) {
             return;
@@ -202,28 +221,81 @@ public class JVMPanel extends NamedBorderPanel {
         persistKnownJvms();
     }
 
+    private void autodetectKnownJvms() {
+        int added = 0;
+        for (String home : JvmAutodetector.discoverValidJvmHomes()) {
+            int before = knownJvms.size();
+            addKnownJvm(home, false);
+            if (knownJvms.size() > before) {
+                added++;
+            }
+        }
+        if (added > 0) {
+            persistKnownJvms();
+        }
+    }
+
+    private static JFileChooser createJvmDirectoryChooser(File startDir, String dialogTitle) {
+        JFileChooser jfch = startDir != null && startDir.exists()
+                ? new JFileChooser(startDir) : new JFileChooser();
+        jfch.setDialogTitle(dialogTitle);
+        jfch.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        jfch.setApproveButtonText(Translator.R("ButSelect"));
+        return jfch;
+    }
+
     private void addComponents() {
+        matchStrategyCombo = new JComboBox<>(JdkMatchStrategy.values());
+        matchStrategyCombo.setName("jdkMatchStrategyCombo");
+        matchStrategyCombo.setRenderer(new DefaultListCellRenderer() {
+            @Override
+            public Component getListCellRendererComponent(javax.swing.JList<?> list, Object value,
+                    int index, boolean isSelected, boolean cellHasFocus) {
+                super.getListCellRendererComponent(list, value, index, isSelected, cellHasFocus);
+                if (value instanceof JdkMatchStrategy) {
+                    setText(((JdkMatchStrategy) value).getConfigValue());
+                }
+                return this;
+            }
+        });
+        matchStrategyCombo.addItemListener(new ItemListener() {
+            @Override
+            public void itemStateChanged(ItemEvent e) {
+                if (e.getStateChange() == ItemEvent.SELECTED) {
+                    JdkMatchStrategy selected = (JdkMatchStrategy) matchStrategyCombo.getSelectedItem();
+                    KnownJvmStore.setMatchStrategy(config, selected);
+                }
+            }
+        });
+        ControlPanelUiUtils.setComboBoxSelectionWithoutNotify(
+                matchStrategyCombo, KnownJvmStore.getMatchStrategy(config));
+
+        final JLabel matchStrategyLabel = new JLabel(Translator.R("CPJDKMatchStrategy") + ":");
         final JLabel description = new JLabel("<html>" + Translator.R("CPJVMPluginArguments") + "<hr /></html>");
-        final JTextField testFieldArguments = new JTextField(25);
-        testFieldArguments.getDocument().addDocumentListener(
+        pluginJvmArgumentsField = new JTextField(25);
+        pluginJvmArgumentsField.getDocument().addDocumentListener(
                 new DocumentAdapter(config, DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS));
-        testFieldArguments.setText(config.getProperty(DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS));
+        pluginJvmArgumentsField.setText(config.getProperty(DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS));
 
         final JLabel descriptionExec = new JLabel("<html>" + Translator.R("CPJVMKnownListDescription") + "<hr /></html>");
         final JScrollPane knownJvmScroll = new JScrollPane(knownJvmTable);
-        knownJvmScroll.setPreferredSize(new Dimension(520, 180));
+        knownJvmScroll.setPreferredSize(new Dimension(884, 306));
+
+        final JButton autodetectJvm = new JButton(Translator.R("CPJVMAutodetect"));
+        autodetectJvm.setName("jvmAutodetectButton");
+        autodetectJvm.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                autodetectKnownJvms();
+            }
+        });
 
         final JButton addJvm = new JButton(Translator.R("CPJVMAdd"));
+        addJvm.setName("jvmAddButton");
         addJvm.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
-                JFileChooser jfch;
-                if (lastPath != null && lastPath.exists()) {
-                    jfch = new JFileChooser(lastPath);
-                } else {
-                    jfch = new JFileChooser();
-                }
-                jfch.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+                JFileChooser jfch = createJvmDirectoryChooser(lastPath, Translator.R("CPJVMAdd"));
                 int i = jfch.showOpenDialog(JVMPanel.this);
                 if (i == JFileChooser.APPROVE_OPTION && jfch.getSelectedFile() != null) {
                     lastPath = jfch.getSelectedFile().getParentFile();
@@ -233,6 +305,7 @@ public class JVMPanel extends NamedBorderPanel {
         });
 
         final JButton editJvm = new JButton(Translator.R("CPJVMEdit"));
+        editJvm.setName("jvmEditButton");
         editJvm.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -241,6 +314,7 @@ public class JVMPanel extends NamedBorderPanel {
         });
 
         final JButton removeJvm = new JButton(Translator.R("CPJVMRemove"));
+        removeJvm.setName("jvmRemoveButton");
         removeJvm.addActionListener(new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
@@ -256,9 +330,24 @@ public class JVMPanel extends NamedBorderPanel {
         c.gridy = 0;
         c.insets = new Insets(2, 2, 4, 4);
 
+        c.gridwidth = 1;
+        c.weightx = 0;
+        c.fill = GridBagConstraints.NONE;
+        this.add(matchStrategyLabel, c);
+        GridBagConstraints strategyCombo = (GridBagConstraints) c.clone();
+        strategyCombo.gridx = 1;
+        strategyCombo.weightx = 1;
+        strategyCombo.gridwidth = 3;
+        strategyCombo.fill = GridBagConstraints.HORIZONTAL;
+        this.add(matchStrategyCombo, strategyCombo);
+        c.gridy++;
+        c.gridwidth = 4;
+        c.gridx = 0;
+        c.weightx = 1;
+        c.fill = GridBagConstraints.BOTH;
         this.add(description, c);
         c.gridy++;
-        this.add(testFieldArguments, c);
+        this.add(pluginJvmArgumentsField, c);
         c.gridy++;
         this.add(descriptionExec, c);
         c.gridy++;
@@ -270,12 +359,15 @@ public class JVMPanel extends NamedBorderPanel {
         buttonRow.fill = GridBagConstraints.NONE;
         buttonRow.gridwidth = 1;
         buttonRow.weightx = 0;
-        this.add(addJvm, buttonRow);
+        this.add(autodetectJvm, buttonRow);
+        GridBagConstraints addButton = (GridBagConstraints) buttonRow.clone();
+        addButton.gridx = 1;
+        this.add(addJvm, addButton);
         GridBagConstraints editButton = (GridBagConstraints) buttonRow.clone();
-        editButton.gridx = 1;
+        editButton.gridx = 2;
         this.add(editJvm, editButton);
         GridBagConstraints removeButton = (GridBagConstraints) buttonRow.clone();
-        removeButton.gridx = 2;
+        removeButton.gridx = 3;
         this.add(removeJvm, removeButton);
 
         Component filler = Box.createRigidArea(new Dimension(1, 1));

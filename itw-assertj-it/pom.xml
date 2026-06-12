@@ -1,0 +1,262 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>net.sourceforge.icedtea-web</groupId>
+  <artifactId>itw-assertj-it</artifactId>
+  <version>1.0.0-SNAPSHOT</version>
+  <packaging>jar</packaging>
+
+  <name>IcedTea-Web AssertJ Swing integration tests</name>
+  <description>Standalone GUI integration tests for itweb-settings (not part of the main reactor)</description>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>11</maven.compiler.release>
+    <icedtea-web.version>2.0.1-SNAPSHOT</icedtea-web.version>
+    <assertj-swing.version>3.17.1</assertj-swing.version>
+    <junit.version>5.10.2</junit.version>
+    <itw.test.home>${project.build.directory}/itw-test-home</itw.test.home>
+    <vnc.display>:99</vnc.display>
+    <itw.jdk17.home>/usr/lib/jvm/java-17-openjdk-amd64</itw.jdk17.home>
+    <itw.jdk21.home>/usr/lib/jvm/java-21-openjdk-amd64</itw.jdk21.home>
+    <itw.jdk25.home>/usr/lib/jvm/java-25-openjdk-amd64</itw.jdk25.home>
+    <itw.uberjar.classifier>uber</itw.uberjar.classifier>
+    <itw.launch.timeout.seconds>180</itw.launch.timeout.seconds>
+  </properties>
+
+  <dependencies>
+    <dependency>
+      <groupId>net.sourceforge.icedtea-web</groupId>
+      <artifactId>icedtea-web</artifactId>
+      <version>${icedtea-web.version}</version>
+      <classifier>uber</classifier>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-swing-junit</artifactId>
+      <version>${assertj-swing.version}</version>
+      <scope>test</scope>
+      <exclusions>
+        <exclusion>
+          <groupId>junit</groupId>
+          <artifactId>junit</artifactId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
+      <groupId>org.assertj</groupId>
+      <artifactId>assertj-swing</artifactId>
+      <version>${assertj-swing.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <version>${junit.version}</version>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <version>3.11.0</version>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-surefire-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <skipTests>true</skipTests>
+        </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-antrun-plugin</artifactId>
+        <version>3.1.0</version>
+        <executions>
+          <execution>
+            <id>prepare-itw-test-home</id>
+            <phase>generate-test-resources</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <delete dir="${itw.test.home}" quiet="true"/>
+                <mkdir dir="${itw.test.home}/.config/icedtea-web"/>
+                <mkdir dir="${itw.test.home}/.cache/icedtea-web"/>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <id>compile-bytecode-test-apps</id>
+            <phase>generate-test-resources</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <chmod file="${project.basedir}/scripts/compile-test-apps.sh" perm="ugo+rx"/>
+                <exec executable="${project.basedir}/scripts/compile-test-apps.sh" failonerror="true">
+                  <env key="ITW_JDK17_HOME" value="${itw.jdk17.home}"/>
+                  <env key="ITW_JDK21_HOME" value="${itw.jdk21.home}"/>
+                  <env key="ITW_JDK25_HOME" value="${itw.jdk25.home}"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <id>install-test-trust-cert</id>
+            <phase>pre-integration-test</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <chmod file="${project.basedir}/scripts/install-test-trust-cert.sh" perm="ugo+rx"/>
+                <exec executable="${project.basedir}/scripts/install-test-trust-cert.sh" failonerror="true">
+                  <arg value="${itw.test.home}"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
+            <id>prepare-javaws-launcher</id>
+            <phase>pre-integration-test</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <mkdir dir="${project.build.directory}/bin"/>
+                <copy file="${project.basedir}/../icedtea-web/target/bin/byte-buddy-agent.jar"
+                      tofile="${project.build.directory}/bin/byte-buddy-agent.jar" failonerror="true"/>
+                <copy file="${project.basedir}/../scripts/javaws.sh"
+                      tofile="${project.build.directory}/bin/javaws"
+                      overwrite="true"
+                      filtering="true">
+                  <filterset>
+                    <filter token="ITW_UBER_JAR"
+                            value="${settings.localRepository}/net/sourceforge/icedtea-web/icedtea-web/${icedtea-web.version}/icedtea-web-${icedtea-web.version}-${itw.uberjar.classifier}.jar"/>
+                    <filter token="BYTEBUDDY_AGENT_JAR" value="${project.build.directory}/bin/byte-buddy-agent.jar"/>
+                    <filter token="MAIN_CLASS" value="net.sourceforge.jnlp.runtime.JavawsUberLauncher"/>
+                  </filterset>
+                </copy>
+                <chmod file="${project.build.directory}/bin/javaws" perm="ugo+rx"/>
+              </target>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <includes>
+            <include>**/*IT.java</include>
+          </includes>
+          <systemPropertyVariables>
+            <user.home>${itw.test.home}</user.home>
+            <java.awt.headless>false</java.awt.headless>
+            <swing.defaultlaf>javax.swing.plaf.metal.MetalLookAndFeel</swing.defaultlaf>
+            <itw.javaws.bin>${project.build.directory}/bin/javaws</itw.javaws.bin>
+            <itw.test.jnlp.root>${project.build.directory}/test-jnlp-samples</itw.test.jnlp.root>
+            <itw.jdk17.home>${itw.jdk17.home}</itw.jdk17.home>
+            <itw.jdk21.home>${itw.jdk21.home}</itw.jdk21.home>
+            <itw.jdk25.home>${itw.jdk25.home}</itw.jdk25.home>
+            <itw.launch.timeout.seconds>${itw.launch.timeout.seconds}</itw.launch.timeout.seconds>
+            <icedtea-web.bin.location>${project.build.directory}/bin/javaws</icedtea-web.bin.location>
+          </systemPropertyVariables>
+          <environmentVariables>
+            <XDG_CONFIG_HOME>${itw.test.home}/.config</XDG_CONFIG_HOME>
+            <XDG_CACHE_HOME>${itw.test.home}/.cache</XDG_CACHE_HOME>
+          </environmentVariables>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+
+  <profiles>
+    <profile>
+      <id>vnc</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>3.1.1</version>
+            <executions>
+              <execution>
+                <id>start-vnc</id>
+                <phase>pre-integration-test</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${project.basedir}/scripts/start-vnc.sh</executable>
+                  <arguments>
+                    <argument>${vnc.display}</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>stop-vnc</id>
+                <phase>post-integration-test</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>${project.basedir}/scripts/stop-vnc.sh</executable>
+                  <arguments>
+                    <argument>${vnc.display}</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <forkedProcessTimeoutInSeconds>300</forkedProcessTimeoutInSeconds>
+              <environmentVariables combine.children="append">
+                <DISPLAY>${vnc.display}</DISPLAY>
+              </environmentVariables>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+    <profile>
+      <id>tuning</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-failsafe-plugin</artifactId>
+            <configuration>
+              <environmentVariables combine.children="append">
+                <ITW_TUNING>true</ITW_TUNING>
+              </environmentVariables>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
+</project>

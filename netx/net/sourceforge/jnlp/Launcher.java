@@ -928,7 +928,8 @@ public class Launcher {
     }
 
     private String resolveRelaunchJavaHome(JNLPFile file) {
-        return JvmSelector.selectBestJvmHome(JNLPRuntime.getConfiguration(), extractRequestedJreVersion(file));
+        String jnlpUrl = file.getSourceLocation() == null ? null : file.getSourceLocation().toExternalForm();
+        return JvmSelector.selectBestJvmHome(JNLPRuntime.getConfiguration(), extractRequestedJreVersion(file), jnlpUrl);
     }
 
     private String extractRequestedJreVersion(JNLPFile file) {

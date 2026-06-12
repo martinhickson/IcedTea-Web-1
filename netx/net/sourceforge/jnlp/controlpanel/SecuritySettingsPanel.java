@@ -41,7 +41,7 @@ import net.sourceforge.jnlp.runtime.Translator;
  * 
  */
 @SuppressWarnings("serial")
-public class SecuritySettingsPanel extends NamedBorderPanel implements ActionListener {
+public class SecuritySettingsPanel extends NamedBorderPanel implements ActionListener, SettingsPanelReloader {
 
     private final DeploymentConfiguration config;
 
@@ -78,6 +78,14 @@ public class SecuritySettingsPanel extends NamedBorderPanel implements ActionLis
         this.config = config;
 
         addComponents();
+    }
+
+    @Override
+    public void reloadFromConfiguration() {
+        removeAll();
+        addComponents();
+        revalidate();
+        repaint();
     }
 
     /**

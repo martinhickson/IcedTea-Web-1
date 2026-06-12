@@ -228,23 +228,25 @@ internal static class Program
 
     private static IReadOnlyList<string> ReadKnownJvmHomes()
     {
+        const int maxJdkEntries = 64;
         var homes = new List<string>();
-        var listed = ReadDeploymentProperty("deployment.jre.dirs");
-        if (!string.IsNullOrWhiteSpace(listed))
+        for (var i = 1; i <= maxJdkEntries; i++)
         {
-            foreach (var entry in listed.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            var home = ReadDeploymentProperty("deployment.jdk." + i);
+            if (string.IsNullOrWhiteSpace(home))
             {
-                if (!string.IsNullOrWhiteSpace(entry))
-                {
-                    homes.Add(entry);
-                }
+                break;
             }
+            homes.Add(home.Trim());
         }
 
-        var legacy = ReadDeploymentProperty("deployment.jre.dir");
-        if (!string.IsNullOrWhiteSpace(legacy) && !homes.Contains(legacy, StringComparer.Ordinal))
+        if (homes.Count == 0)
         {
-            homes.Add(legacy);
+            var legacy = ReadDeploymentProperty("deployment.jre.dir");
+            if (!string.IsNullOrWhiteSpace(legacy))
+            {
+                homes.Add(legacy.Trim());
+            }
         }
 
         return homes;

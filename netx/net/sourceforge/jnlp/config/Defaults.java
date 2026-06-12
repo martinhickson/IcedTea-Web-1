@@ -445,11 +445,6 @@ public class Defaults {
                         null,
                         null
                 },
-                {
-                        KnownJvmStore.KEY_JRE_DIRS,
-                        null,
-                        null
-                },
                 //enable manifest-attributes checks
                 {
                         DeploymentConfiguration.KEY_ENABLE_MANIFEST_ATTRIBUTES_CHECK,

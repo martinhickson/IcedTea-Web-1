@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jnlp spec="1.0+" codebase="file:/sample/" href="app.jnlp">
+  <information>
+    <title>Java 11+ sample</title>
+    <vendor>IcedTea-Web IT</vendor>
+  </information>
+  <resources>
+    <j2se version="11+"/>
+  </resources>
+  <application-desc main-class="sample.Main"/>
+</jnlp>

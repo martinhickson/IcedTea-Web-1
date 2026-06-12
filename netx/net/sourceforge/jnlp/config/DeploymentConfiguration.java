@@ -34,6 +34,9 @@ import java.nio.channels.FileLock;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.HashMap;
+import java.util.Collections;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
@@ -304,6 +307,20 @@ public final class DeploymentConfiguration {
     /** the deployment properties that cannot be changed */
     private Map<String, Setting<String>> unchangeableConfiguration;
 
+    /** when true, setProperty updates are tracked and save() is deferred until Apply */
+    private boolean editorSession;
+    private boolean applyingPendingChanges;
+    private DeploymentConfigurationPendingChanges pendingChanges;
+    private int suppressPendingRecording;
+    private final List<PendingChangeListener> pendingChangeListeners = new ArrayList<>();
+
+    /**
+     * Notified when the set of unapplied control-panel edits changes.
+     */
+    public interface PendingChangeListener {
+        void onPendingChangesChanged();
+    }
+
     public DeploymentConfiguration() {
         this(PathsAndFiles.USER_DEPLOYMENT_FILE);
     }
@@ -468,6 +485,94 @@ public final class DeploymentConfiguration {
     }
 
     /**
+     * Begin a control-panel editing session. Property changes are kept in memory,
+     * logged as pending, and written to disk only when {@link #applyPendingChanges()}
+     * is called.
+     */
+    public void beginEditorSession() {
+        editorSession = true;
+        pendingChanges = new DeploymentConfigurationPendingChanges();
+        OutputController.getLogger().log(
+                "Deployment configuration editor session started; disk writes deferred until Apply");
+    }
+
+    public boolean isEditorSession() {
+        return editorSession;
+    }
+
+    public Map<String, String> getPendingPropertyChanges() {
+        if (pendingChanges == null) {
+            return Collections.emptyMap();
+        }
+        return pendingChanges.snapshot();
+    }
+
+    public boolean hasPendingChanges() {
+        return pendingChanges != null && !pendingChanges.isEmpty();
+    }
+
+    public void addPendingChangeListener(PendingChangeListener listener) {
+        if (listener != null && !pendingChangeListeners.contains(listener)) {
+            pendingChangeListeners.add(listener);
+        }
+    }
+
+    public void removePendingChangeListener(PendingChangeListener listener) {
+        pendingChangeListeners.remove(listener);
+    }
+
+    public void beginSuppressedPropertyUpdates() {
+        suppressPendingRecording++;
+    }
+
+    public void endSuppressedPropertyUpdates() {
+        if (suppressPendingRecording > 0) {
+            suppressPendingRecording--;
+        }
+    }
+
+    /**
+     * Discard unapplied edits and restore working values from the last applied state.
+     */
+    public void revertPendingChanges() {
+        if (!editorSession || pendingChanges == null || pendingChanges.isEmpty()) {
+            return;
+        }
+        Map<String, String> reverted = pendingChanges.snapshot();
+        for (String key : reverted.keySet()) {
+            revertProperty(key);
+        }
+        pendingChanges.clear();
+        OutputController.getLogger().log(
+                "Reverted " + reverted.size() + " pending deployment property change(s)");
+        notifyPendingChangeListeners();
+    }
+
+    /**
+     * Persist pending control-panel edits to the user's deployment.properties file.
+     */
+    public void applyPendingChanges() throws IOException {
+        if (!editorSession) {
+            save();
+            return;
+        }
+        applyingPendingChanges = true;
+        try {
+            if (pendingChanges != null) {
+                pendingChanges.logReplay();
+            }
+            save();
+            refreshPersistedBaseline();
+            if (pendingChanges != null) {
+                pendingChanges.clear();
+            }
+            notifyPendingChangeListeners();
+        } finally {
+            applyingPendingChanges = false;
+        }
+    }
+
+    /**
      * Sets the value of corresponding to the key. If the value has been marked
      * as locked, it is not changed
      *
@@ -486,10 +591,53 @@ public final class DeploymentConfiguration {
         if (currentValue != null) {
             if (!currentValue.isLocked()) {
                 currentValue.setValue(value);
+                recordPendingChange(key, value);
             }
         } else {
             currentValue = new Setting<>(key, R("Unknown"), false, null, null, value, R("Unknown"));
             currentConfiguration.put(key, currentValue);
+            recordPendingChange(key, value);
+        }
+    }
+
+    private void recordPendingChange(String key, String value) {
+        if (editorSession && pendingChanges != null && suppressPendingRecording == 0) {
+            boolean changed = pendingChanges.recordChangeReturningChanged(
+                    key, getPersistedPropertyValue(key), value);
+            if (changed) {
+                notifyPendingChangeListeners();
+            }
+        }
+    }
+
+    private void revertProperty(String key) {
+        Setting<String> current = currentConfiguration.get(key);
+        if (current == null || current.isLocked()) {
+            return;
+        }
+        current.setValue(getPersistedPropertyValue(key));
+    }
+
+    private void notifyPendingChangeListeners() {
+        for (PendingChangeListener listener : pendingChangeListeners) {
+            listener.onPendingChangesChanged();
+        }
+    }
+
+    private String getPersistedPropertyValue(String key) {
+        Setting<String> setting = unchangeableConfiguration.get(key);
+        return setting == null ? null : setting.getValue();
+    }
+
+    private void refreshPersistedBaseline() {
+        for (String key : currentConfiguration.keySet()) {
+            Setting<String> current = currentConfiguration.get(key);
+            Setting<String> persisted = unchangeableConfiguration.get(key);
+            if (persisted != null) {
+                persisted.setValue(current.getValue());
+            } else {
+                unchangeableConfiguration.put(key, new Setting<>(current));
+            }
         }
     }
 
@@ -509,6 +657,8 @@ public final class DeploymentConfiguration {
             Setting<String> s = initial.get(key);
             if (!(s.getName().equals(key))) {
                 OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("DCInternal", "key " + key + " does not match setting name " + s.getName()));
+            } else if (isKnownDynamicDeploymentKey(key)) {
+                // JDK lists, assignments, and tuning entries are user-managed.
             } else if (!defaults.containsKey(key)) {
                 OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("DCUnknownSettingWithName", key));
             } else {
@@ -526,6 +676,13 @@ public final class DeploymentConfiguration {
                 }
             }
         }
+    }
+
+    private static boolean isKnownDynamicDeploymentKey(String key) {
+        return key.matches("^deployment\\.jdk\\.\\d+$")
+                || key.matches("^deployment\\.jdk\\d+\\.assignment\\d+$")
+                || key.matches("^deployment\\.jdk\\d+\\.tuning\\d+\\..+$")
+                || net.sourceforge.jnlp.config.KnownJvmStore.KEY_MATCH_STRATEGY.equals(key);
     }
 
     /**
@@ -654,6 +811,13 @@ public final class DeploymentConfiguration {
     public void save() throws IOException {
         if (userPropertiesFile == null) {
             throw new IllegalStateException("must load() before save()");
+        }
+
+        if (editorSession && !applyingPendingChanges) {
+            int pendingCount = pendingChanges == null ? 0 : pendingChanges.size();
+            OutputController.getLogger().log(
+                    "Deferred deployment.properties save (" + pendingCount + " pending change(s); use Apply to persist)");
+            return;
         }
 
         SecurityManager sm = System.getSecurityManager();

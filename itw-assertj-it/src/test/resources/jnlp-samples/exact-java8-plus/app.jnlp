@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jnlp spec="1.0+" codebase="file:/sample/" href="app.jnlp">
+  <information>
+    <title>Exact Java 1.8 sample</title>
+    <vendor>IcedTea-Web IT</vendor>
+  </information>
+  <resources>
+    <j2se version="1.8+"/>
+  </resources>
+  <application-desc main-class="sample.Main"/>
+</jnlp>

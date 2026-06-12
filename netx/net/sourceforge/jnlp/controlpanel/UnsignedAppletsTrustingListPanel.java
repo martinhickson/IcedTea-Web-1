@@ -102,7 +102,7 @@ import net.sourceforge.jnlp.util.ScreenFinder;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.swing.SwingUtils;
 
-public class UnsignedAppletsTrustingListPanel extends JPanel {
+public class UnsignedAppletsTrustingListPanel extends JPanel implements SettingsPanelReloader {
 
     private JButton helpButton;
     private JButton deleteButton;
@@ -178,6 +178,16 @@ public class UnsignedAppletsTrustingListPanel extends JPanel {
         self=this;
         this.conf = conf;
         reloadGui();
+    }
+
+    @Override
+    public void reloadFromConfiguration() {
+        AppletSecurityLevel level = AppletSecurityLevel.getDefault();
+        String configured = conf.getProperty(DeploymentConfiguration.KEY_SECURITY_LEVEL);
+        if (configured != null) {
+            level = AppletSecurityLevel.fromString(configured);
+        }
+        ControlPanelUiUtils.setComboBoxSelectionWithoutNotify(mainPolicyComboBox, level);
     }
 
     public static String appletItemsToCaption(List<UnsignedAppletActionEntry> ii, String caption) {
@@ -530,13 +540,7 @@ public class UnsignedAppletsTrustingListPanel extends JPanel {
     }
 
     private void mainPolicyComboBoxActionPerformed(java.awt.event.ActionEvent evt) {
-        try {
-            conf.setProperty(DeploymentConfiguration.KEY_SECURITY_LEVEL, ((AppletSecurityLevel) mainPolicyComboBox.getSelectedItem()).toChars());
-            conf.save();
-        } catch (Exception ex) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);
-            JOptionPane.showMessageDialog(this, ex);
-        }
+        conf.setProperty(DeploymentConfiguration.KEY_SECURITY_LEVEL, ((AppletSecurityLevel) mainPolicyComboBox.getSelectedItem()).toChars());
     }
 
     private void deleteButtonActionPerformed(java.awt.event.ActionEvent evt) {
@@ -850,7 +854,7 @@ public class UnsignedAppletsTrustingListPanel extends JPanel {
         if (s != null) {
             gs = AppletSecurityLevel.fromString(s);
         }
-        mainPolicyComboBox.setSelectedItem(gs);
+        ControlPanelUiUtils.setComboBoxSelectionWithoutNotify(mainPolicyComboBox, gs);
         userTable.getSelectionModel().addListSelectionListener(new SingleSelectionListenerImpl(userTable));
         globalTable.getSelectionModel().addListSelectionListener(new SingleSelectionListenerImpl(globalTable));
 

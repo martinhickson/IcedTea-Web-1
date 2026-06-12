@@ -3,29 +3,34 @@ package net.sourceforge.jnlp.config;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public final class KnownJvmStore {
 
-    public static final String KEY_JRE_DIRS = "deployment.jre.dirs";
-    public static final String PATH_SEPARATOR = "|";
+    public static final String KEY_JDK_PREFIX = "deployment.jdk.";
+    public static final String KEY_MATCH_STRATEGY = "deployment.jdk.matchStrategy";
+
+    private static final int MAX_JDK_ENTRIES = 64;
+    private static final Pattern JDK_KEY = Pattern.compile("^deployment\\.jdk\\.(\\d+)$");
 
     private KnownJvmStore() {
     }
 
     public static List<String> getKnownJvmHomes(DeploymentConfiguration config) {
         LinkedHashSet<String> homes = new LinkedHashSet<>();
-        String listed = config.getProperty(KEY_JRE_DIRS);
-        if (listed != null) {
-            for (String entry : listed.split("\\|")) {
-                String trimmed = entry.trim();
-                if (!trimmed.isEmpty()) {
-                    homes.add(trimmed);
-                }
+        for (int i = 1; i <= MAX_JDK_ENTRIES; i++) {
+            String home = config.getProperty(jdkKey(i));
+            if (home == null || home.trim().isEmpty()) {
+                break;
             }
+            homes.add(home.trim());
         }
-        String legacy = config.getProperty(DeploymentConfiguration.KEY_JRE_DIR);
-        if (legacy != null && !legacy.trim().isEmpty()) {
-            homes.add(legacy.trim());
+        if (homes.isEmpty()) {
+            String legacy = config.getProperty(DeploymentConfiguration.KEY_JRE_DIR);
+            if (legacy != null && !legacy.trim().isEmpty()) {
+                homes.add(legacy.trim());
+            }
         }
         return new ArrayList<>(homes);
     }
@@ -42,8 +47,11 @@ public final class KnownJvmStore {
                 }
             }
         }
-        String serialized = join(unique);
-        config.setProperty(KEY_JRE_DIRS, serialized);
+        clearNumberedJdkKeys(config);
+        int index = 1;
+        for (String home : unique) {
+            config.setProperty(jdkKey(index++), home);
+        }
         if (unique.isEmpty()) {
             config.setProperty(DeploymentConfiguration.KEY_JRE_DIR, "");
         } else {
@@ -51,14 +59,28 @@ public final class KnownJvmStore {
         }
     }
 
-    private static String join(LinkedHashSet<String> homes) {
-        StringBuilder builder = new StringBuilder();
-        for (String home : homes) {
-            if (builder.length() > 0) {
-                builder.append(PATH_SEPARATOR);
+    private static void clearNumberedJdkKeys(DeploymentConfiguration config) {
+        for (String name : config.getAllPropertyNames()) {
+            Matcher matcher = JDK_KEY.matcher(name);
+            if (matcher.matches()) {
+                config.setProperty(name, "");
             }
-            builder.append(home);
         }
-        return builder.toString();
+    }
+
+    private static String jdkKey(int index) {
+        return KEY_JDK_PREFIX + index;
+    }
+
+    public static JdkMatchStrategy getMatchStrategy(DeploymentConfiguration config) {
+        return JdkMatchStrategy.fromConfig(config.getProperty(KEY_MATCH_STRATEGY));
+    }
+
+    public static void setMatchStrategy(DeploymentConfiguration config, JdkMatchStrategy strategy) {
+        if (strategy == null || strategy == JdkMatchStrategy.MAXIMUM) {
+            config.setProperty(KEY_MATCH_STRATEGY, JdkMatchStrategy.MAXIMUM.getConfigValue());
+        } else {
+            config.setProperty(KEY_MATCH_STRATEGY, strategy.getConfigValue());
+        }
     }
 }
