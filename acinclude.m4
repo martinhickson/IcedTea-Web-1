@@ -594,31 +594,31 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_BYTEBUDDY],
   
   dnl Search for ByteBuddy JAR
   if test -z "${BYTEBUDDY_JAR}"; then
-    for dir in /usr/share/java /usr/local/share/java ~/.m2/repository/net/bytebuddy/byte-buddy/1.14.10 ; do
+    for dir in /usr/share/java /usr/local/share/java ~/.m2/repository/net/bytebuddy/byte-buddy/1.18.8 ; do
       if test -f $dir/byte-buddy.jar; then
         BYTEBUDDY_JAR=$dir/byte-buddy.jar
         AC_MSG_NOTICE([Found byte-buddy.jar at $BYTEBUDDY_JAR])
         break
       fi
-      if test -f $dir/byte-buddy-1.14.10.jar; then
-        BYTEBUDDY_JAR=$dir/byte-buddy-1.14.10.jar
-        AC_MSG_NOTICE([Found byte-buddy-1.14.10.jar at $BYTEBUDDY_JAR])
+      if test -f $dir/byte-buddy-1.18.8.jar; then
+        BYTEBUDDY_JAR=$dir/byte-buddy-1.18.8.jar
+        AC_MSG_NOTICE([Found byte-buddy-1.18.8.jar at $BYTEBUDDY_JAR])
         break
       fi
     done
   fi
-  
+
   dnl Search for ByteBuddy Agent JAR
   if test -z "${BYTEBUDDY_AGENT_JAR}"; then
-    for dir in /usr/share/java /usr/local/share/java ~/.m2/repository/net/bytebuddy/byte-buddy-agent/1.14.10 ; do
+    for dir in /usr/share/java /usr/local/share/java ~/.m2/repository/net/bytebuddy/byte-buddy-agent/1.18.8 ; do
       if test -f $dir/byte-buddy-agent.jar; then
         BYTEBUDDY_AGENT_JAR=$dir/byte-buddy-agent.jar
         AC_MSG_NOTICE([Found byte-buddy-agent.jar at $BYTEBUDDY_AGENT_JAR])
         break
       fi
-      if test -f $dir/byte-buddy-agent-1.14.10.jar; then
-        BYTEBUDDY_AGENT_JAR=$dir/byte-buddy-agent-1.14.10.jar
-        AC_MSG_NOTICE([Found byte-buddy-agent-1.14.10.jar at $BYTEBUDDY_AGENT_JAR])
+      if test -f $dir/byte-buddy-agent-1.18.8.jar; then
+        BYTEBUDDY_AGENT_JAR=$dir/byte-buddy-agent-1.18.8.jar
+        AC_MSG_NOTICE([Found byte-buddy-agent-1.18.8.jar at $BYTEBUDDY_AGENT_JAR])
         break
       fi
     done
@@ -649,8 +649,8 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_BYTEBUDDY],
     AC_MSG_RESULT(*  ByteBuddy JARs not found - runtime JarFile protection will be limited)
     AC_MSG_RESULT(*  ITW will still work, but may experience 'zip file closed' errors)
     AC_MSG_RESULT(*  To enable full protection, provide:)
-    AC_MSG_RESULT(*    --with-bytebuddy=/path/to/byte-buddy-1.14.10.jar)
-    AC_MSG_RESULT(*    --with-bytebuddy-agent=/path/to/byte-buddy-agent-1.14.10.jar)
+    AC_MSG_RESULT(*    --with-bytebuddy=/path/to/byte-buddy-1.18.8.jar)
+    AC_MSG_RESULT(*    --with-bytebuddy-agent=/path/to/byte-buddy-agent-1.18.8.jar)
     AC_MSG_RESULT(*  Or install to: /usr/share/java/byte-buddy*.jar)
     AC_MSG_RESULT(**************************************************************************)
   fi

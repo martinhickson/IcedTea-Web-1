@@ -10,9 +10,9 @@ import net.sourceforge.jnlp.tools.JarCertVerifier;
 import net.sourceforge.jnlp.util.JavaVersionUtils;
 
 /**
- * On JDK 24+ the SecurityManager cannot be installed, so unsigned applications
- * cannot be sandboxed. When security is enabled (the default), only fully signed
- * applications may launch.
+ * On JDK 18+ the SecurityManager cannot be installed unless
+ * {@code -Djava.security.manager=allow} is set. On JDK 24+ it cannot be
+ * installed at all, so unsigned applications cannot be sandboxed.
  */
 public final class JdkSigningRequirementPolicy {
 

@@ -5,6 +5,7 @@ package net.sourceforge.jnlp.controlpanel;
 
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
@@ -16,10 +17,12 @@ import java.util.List;
 import javax.swing.AbstractCellEditor;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
+import javax.swing.JDialog;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
@@ -29,6 +32,7 @@ import net.sourceforge.jnlp.config.KnownJvmAssignmentStore;
 import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.runtime.Translator;
 import net.sourceforge.jnlp.util.JnlpAssignmentLauncher;
+import net.sourceforge.jnlp.util.JnlpAssignmentLauncher.LaunchResult;
 import net.sourceforge.jnlp.util.JvmDescriptor;
 
 @SuppressWarnings("serial")
@@ -187,20 +191,105 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
         }
         final String url = JnlpAssignmentLauncher.canonicalizeJnlpUrl(jnlpUrl);
         final String javaHome = KnownJvmAssignmentStore.findJvmHomeForJnlpUrl(config, url);
-        new Thread(new Runnable() {
+        if (JnlpAssignmentLauncher.resolveJavawsBin() == null) {
+            showLaunchError(Translator.R("CPJDKAssignmentsLaunchNoLauncher"));
+            return;
+        }
+        openLaunchOutputDialog(url, javaHome);
+    }
+
+    private void openLaunchOutputDialog(final String url, final String javaHome) {
+        SwingUtilities.invokeLater(new Runnable() {
             @Override
             public void run() {
-                try {
-                    if (JnlpAssignmentLauncher.resolveJavawsBin() == null) {
-                        showLaunchError(Translator.R("CPJDKAssignmentsLaunchNoLauncher"));
-                        return;
+                final JTextArea outputArea = new JTextArea(JnlpAssignmentLauncher.formatLaunchMetrics(url, javaHome));
+                outputArea.setName("jdkAssignmentLaunchOutputArea");
+                outputArea.setEditable(false);
+                outputArea.setLineWrap(false);
+                outputArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, outputArea.getFont().getSize()));
+                outputArea.setCaretPosition(outputArea.getDocument().getLength());
+                JScrollPane scrollPane = new JScrollPane(outputArea);
+                scrollPane.setPreferredSize(new Dimension(720, 360));
+
+                final JDialog dialog = new JDialog(
+                        SwingUtilities.getWindowAncestor(JdkAssignmentsPanel.this),
+                        Translator.R("CPJDKAssignmentsLaunchOutputTitle"),
+                        JDialog.ModalityType.APPLICATION_MODAL);
+                dialog.setName("jdkAssignmentLaunchOutputDialog");
+                dialog.setLayout(new GridBagLayout());
+                GridBagConstraints c = new GridBagConstraints();
+                c.gridx = 0;
+                c.gridy = 0;
+                c.weightx = 1;
+                c.weighty = 1;
+                c.fill = GridBagConstraints.BOTH;
+                c.insets = new Insets(8, 8, 4, 8);
+                dialog.add(scrollPane, c);
+
+                JButton okButton = new JButton(Translator.R("ButOk"));
+                okButton.setName("jdkAssignmentLaunchOutputOkButton");
+                okButton.addActionListener(new ActionListener() {
+                    @Override
+                    public void actionPerformed(ActionEvent e) {
+                        dialog.dispose();
                     }
-                    JnlpAssignmentLauncher.launch(url, javaHome);
-                } catch (IOException ex) {
-                    showLaunchError(Translator.R("CPJDKAssignmentsLaunchFailed") + "\n" + ex.getMessage());
-                }
+                });
+                c.gridy = 1;
+                c.weighty = 0;
+                c.fill = GridBagConstraints.NONE;
+                c.anchor = GridBagConstraints.EAST;
+                c.insets = new Insets(4, 8, 8, 8);
+                dialog.add(okButton, c);
+                dialog.pack();
+                dialog.setLocationRelativeTo(JdkAssignmentsPanel.this);
+
+                new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            LaunchResult result = JnlpAssignmentLauncher.launchWithStreamingOutput(
+                                    url, javaHome, 0L, new JnlpAssignmentLauncher.LaunchOutputConsumer() {
+                                        @Override
+                                        public void accept(final String chunk) {
+                                            appendLaunchOutput(outputArea, chunk);
+                                        }
+                                    });
+                            appendLaunchOutput(outputArea, formatLaunchCompletion(result));
+                        } catch (IOException ex) {
+                            appendLaunchOutput(outputArea,
+                                    Translator.R("CPJDKAssignmentsLaunchFailed") + "\n" + ex.getMessage() + "\n");
+                        }
+                    }
+                }, "jdk-assignment-launch").start();
+
+                dialog.setVisible(true);
             }
-        }).start();
+        });
+    }
+
+    private static void appendLaunchOutput(final JTextArea outputArea, final String text) {
+        if (text == null || text.isEmpty()) {
+            return;
+        }
+        SwingUtilities.invokeLater(new Runnable() {
+            @Override
+            public void run() {
+                outputArea.append(text);
+                outputArea.setCaretPosition(outputArea.getDocument().getLength());
+            }
+        });
+    }
+
+    private String formatLaunchCompletion(LaunchResult result) {
+        StringBuilder text = new StringBuilder();
+        text.append('\n').append(Translator.R("CPJDKAssignmentsLaunchOutputCommand")).append('\n');
+        text.append(result.getCommandLine()).append("\n\n");
+        if (result.getExitCode() != null) {
+            text.append(Translator.R("CPJDKAssignmentsLaunchOutputExit", result.getExitCode())).append('\n');
+        } else if (result.isStillRunning()) {
+            text.append(Translator.R("CPJDKAssignmentsLaunchOutputStillRunning")).append('\n');
+        }
+        return text.toString();
     }
 
     private void showLaunchError(final String message) {

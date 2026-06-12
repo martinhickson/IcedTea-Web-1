@@ -41,7 +41,6 @@
     <dependency>
       <groupId>net.bytebuddy</groupId>
       <artifactId>byte-buddy-agent</artifactId>
-      <version>1.14.10</version>
     </dependency>
   </dependencies>
 
@@ -72,7 +71,7 @@
                 <artifactItem>
                   <groupId>net.bytebuddy</groupId>
                   <artifactId>byte-buddy-agent</artifactId>
-                  <version>1.14.10</version>
+                  <version>${bytebuddy.version}</version>
                   <type>jar</type>
                   <destFileName>byte-buddy-agent.jar</destFileName>
                   <outputDirectory>${project.build.directory}/staging/bin</outputDirectory>

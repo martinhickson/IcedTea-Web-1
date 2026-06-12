@@ -75,26 +75,6 @@ final class ControlPanelTestSupport {
         window.list("controlPanelSettingsList").selectItem("JDK Assignments");
     }
 
-    static void openJvmTuning(FrameFixture window) {
-        window.list("controlPanelSettingsList").selectItem("JVM Tuning");
-    }
-
-    static boolean settingsListContainsTab(FrameFixture window, String tabLabel) {
-        for (int i = 0; i < window.list("controlPanelSettingsList").contents().length; i++) {
-            if (tabLabel.equals(window.list("controlPanelSettingsList").contents()[i])) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    static void addJvmTuningEntry(FrameFixture window, Robot robot, int rowIndex, String jnlpUrl) {
-        window.button("jvmTuningAddButton").click();
-        robot.waitForIdle();
-        window.table("jvmTuningTable").enterValue(row(rowIndex).column(0), jnlpUrl);
-        robot.waitForIdle();
-    }
-
     static void addJdkAssignment(FrameFixture window, Robot robot, int rowIndex, String jnlpUrl) {
         window.button("jdkAssignmentAddButton").click();
         robot.waitForIdle();
@@ -146,10 +126,54 @@ final class ControlPanelTestSupport {
             throw new IllegalStateException("No JDK " + jdkMajor + " available for sample " + sampleName);
         }
         Properties props = loadDeploymentProperties();
-        int jdkIndex = 1;
-        props.setProperty("deployment.jdk." + jdkIndex, jdkHome.getAbsolutePath());
-        props.setProperty("deployment.jdk1.assignment1", jnlp.toURI().toURL().toExternalForm());
+        int jdkIndex = findOrAddJdkIndex(props, jdkHome);
+        int assignmentSlot = nextAssignmentSlot(props, jdkIndex);
+        props.setProperty("deployment.jdk" + jdkIndex + ".assignment" + assignmentSlot,
+                jnlp.toURI().toURL().toExternalForm());
         writeDeploymentProperties(props);
+    }
+
+    /** Seeds all built bytecode and GUI sample apps (same set as seed-interactive-home.sh). */
+    static void seedAllBuiltSampleAssignments() throws Exception {
+        resetDeploymentConfig();
+        Properties props = new Properties();
+        int idx = 1;
+        for (File home : discoverValidJdkHomes()) {
+            props.setProperty("deployment.jdk." + idx++, home.getAbsolutePath());
+        }
+        props.setProperty("deployment.jdk.matchStrategy", "MAXIMUM");
+        writeDeploymentProperties(props);
+
+        seedBuiltSampleAssignment("java17-app", 17);
+        seedBuiltSampleAssignment("java21-app", 21);
+        seedBuiltSampleAssignment("java25-app", 25);
+        seedBuiltSampleAssignment("gui-app", 17);
+    }
+
+    private static int findOrAddJdkIndex(Properties props, File jdkHome) {
+        String path = jdkHome.getAbsolutePath();
+        for (int i = 1; i <= 64; i++) {
+            String existing = props.getProperty("deployment.jdk." + i);
+            if (path.equals(existing)) {
+                return i;
+            }
+            if (existing == null || existing.trim().isEmpty()) {
+                props.setProperty("deployment.jdk." + i, path);
+                return i;
+            }
+        }
+        throw new IllegalStateException("No free deployment.jdk.* slot for " + path);
+    }
+
+    private static int nextAssignmentSlot(Properties props, int jdkIndex) {
+        for (int slot = 1; slot <= 64; slot++) {
+            String key = "deployment.jdk" + jdkIndex + ".assignment" + slot;
+            String value = props.getProperty(key);
+            if (value == null || value.trim().isEmpty()) {
+                return slot;
+            }
+        }
+        throw new IllegalStateException("No free assignment slot for JDK index " + jdkIndex);
     }
 
     static File findJdkHomeWithMajor(int major) throws Exception {
@@ -157,7 +181,7 @@ final class ControlPanelTestSupport {
             return JnlpLaunchTestSupport.jdkHome(major);
         }
         for (File home : discoverValidJdkHomes()) {
-            if (net.sourceforge.jnlp.util.JvmTuningCapabilities.majorVersionOfJvmHome(
+            if (net.sourceforge.jnlp.util.JvmAutodetector.majorVersionOfJvmHome(
                     home.getAbsolutePath()) == major) {
                 return home;
             }
@@ -165,7 +189,7 @@ final class ControlPanelTestSupport {
         return null;
     }
 
-    private static void writeDeploymentProperties(Properties props) throws Exception {
+    static void writeDeploymentProperties(Properties props) throws Exception {
         File deploymentFile = deploymentPropertiesFile();
         File parent = deploymentFile.getParentFile();
         if (parent != null) {
@@ -223,6 +247,30 @@ final class ControlPanelTestSupport {
             throw new IllegalStateException("Control panel was not created");
         }
         return panel;
+    }
+
+    static int findAssignmentRowByJnlpFragment(FrameFixture window, String fragment) {
+        javax.swing.JTable table = window.table("jdkAssignmentsTable").target();
+        for (int row = 0; row < table.getRowCount(); row++) {
+            Object value = table.getValueAt(row, 0);
+            if (value != null && String.valueOf(value).contains(fragment)) {
+                return row;
+            }
+        }
+        return -1;
+    }
+
+    static String waitForLaunchOutput(FrameFixture window, String requiredFragment, long timeoutMs)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            String text = window.textBox("jdkAssignmentLaunchOutputArea").text();
+            if (text != null && text.contains(requiredFragment)) {
+                return text;
+            }
+            Thread.sleep(500);
+        }
+        return window.textBox("jdkAssignmentLaunchOutputArea").text();
     }
 
     static void disposeControlPanel(ControlPanel panel) throws Exception {

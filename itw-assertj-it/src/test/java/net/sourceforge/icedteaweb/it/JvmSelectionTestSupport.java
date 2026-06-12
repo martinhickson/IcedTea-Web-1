@@ -125,4 +125,11 @@ final class JvmSelectionTestSupport {
     static Properties loadDeploymentProperties() throws Exception {
         return ControlPanelTestSupport.loadDeploymentProperties();
     }
+
+    static String selectBestJvmHomeForJnlp(String requestedVersion, String jnlpUrl) throws Exception {
+        net.sourceforge.jnlp.config.DeploymentConfiguration config =
+                new net.sourceforge.jnlp.config.DeploymentConfiguration();
+        config.load();
+        return net.sourceforge.jnlp.util.JvmSelector.selectBestJvmHome(config, requestedVersion, jnlpUrl);
+    }
 }

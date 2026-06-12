@@ -5,6 +5,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import net.sourceforge.jnlp.util.JvmAutodetector;
 
 public final class KnownJvmStore {
 
@@ -82,5 +83,27 @@ public final class KnownJvmStore {
         } else {
             config.setProperty(KEY_MATCH_STRATEGY, strategy.getConfigValue());
         }
+    }
+
+    /**
+     * Merges autodetected JDK homes into the configuration, matching control panel autodetect behaviour.
+     *
+     * @return true if any new JDK home was added
+     */
+    public static boolean applyAutodetectedJvms(DeploymentConfiguration config) {
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        for (String home : getKnownJvmHomes(config)) {
+            merged.add(home);
+        }
+        boolean changed = false;
+        for (String home : JvmAutodetector.discoverValidJvmHomes()) {
+            if (merged.add(home)) {
+                changed = true;
+            }
+        }
+        if (changed) {
+            setKnownJvmHomes(config, new ArrayList<>(merged));
+        }
+        return changed;
     }
 }

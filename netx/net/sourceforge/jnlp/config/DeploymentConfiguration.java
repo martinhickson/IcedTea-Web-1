@@ -244,6 +244,7 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_PLUGIN_JVM_ARGUMENTS= "deployment.plugin.jvm.arguments";
     public static final String KEY_JRE_DIR= "deployment.jre.dir";
+    public static final String KEY_AUTODETECT_JDKS = "deployment.autodetectJDKs";
     public static final String KEY_KEEP_JAVAWS_PROCESS = "deployment.keepJavawsProcess";
     public static final String KEY_KEEP_JAVA_PRELAUNCH_PROCESS = "deployment.keepjavaPrelaunchProcess";
     /**
@@ -417,6 +418,21 @@ public final class DeploymentConfiguration {
         }
 
         currentConfiguration = initialProperties;
+        maybeAutodetectJdksOnLoad();
+    }
+
+    private void maybeAutodetectJdksOnLoad() {
+        String flag = getProperty(KEY_AUTODETECT_JDKS);
+        if (flag == null || !Boolean.parseBoolean(flag.trim())) {
+            return;
+        }
+        if (KnownJvmStore.applyAutodetectedJvms(this)) {
+            try {
+                save();
+            } catch (IOException ex) {
+                OutputController.getLogger().log(ex);
+            }
+        }
     }
 
     /**
@@ -658,7 +674,7 @@ public final class DeploymentConfiguration {
             if (!(s.getName().equals(key))) {
                 OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("DCInternal", "key " + key + " does not match setting name " + s.getName()));
             } else if (isKnownDynamicDeploymentKey(key)) {
-                // JDK lists, assignments, and tuning entries are user-managed.
+                // JDK lists and assignments are user-managed.
             } else if (!defaults.containsKey(key)) {
                 OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("DCUnknownSettingWithName", key));
             } else {
@@ -681,7 +697,6 @@ public final class DeploymentConfiguration {
     private static boolean isKnownDynamicDeploymentKey(String key) {
         return key.matches("^deployment\\.jdk\\.\\d+$")
                 || key.matches("^deployment\\.jdk\\d+\\.assignment\\d+$")
-                || key.matches("^deployment\\.jdk\\d+\\.tuning\\d+\\..+$")
                 || net.sourceforge.jnlp.config.KnownJvmStore.KEY_MATCH_STRATEGY.equals(key);
     }
 

@@ -34,3 +34,5 @@ target
 /test-msi-inspect/
 /deb-builder/*
 !/deb-builder/README.md
+/.launcher-test/
+/wildfly/

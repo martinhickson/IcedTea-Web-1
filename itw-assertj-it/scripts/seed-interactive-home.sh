@@ -130,6 +130,7 @@ find_jdk_index() {
   add_assignment java17-app 17
   add_assignment java21-app 21
   add_assignment java25-app 25
+  add_assignment gui-app 17
 
   echo "deployment.log=true"
   echo "deployment.log.file=true"

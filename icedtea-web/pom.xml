@@ -49,12 +49,10 @@
     <dependency>
       <groupId>net.bytebuddy</groupId>
       <artifactId>byte-buddy</artifactId>
-      <version>1.14.10</version>
     </dependency>
     <dependency>
       <groupId>net.bytebuddy</groupId>
       <artifactId>byte-buddy-agent</artifactId>
-      <version>1.14.10</version>
     </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -288,7 +286,7 @@
                 <artifactItem>
                   <groupId>net.bytebuddy</groupId>
                   <artifactId>byte-buddy-agent</artifactId>
-                  <version>1.14.10</version>
+                  <version>${bytebuddy.version}</version>
                   <destFileName>byte-buddy-agent.jar</destFileName>
                 </artifactItem>
               </artifactItems>

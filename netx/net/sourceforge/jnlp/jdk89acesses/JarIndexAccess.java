@@ -46,7 +46,9 @@ public class JarIndexAccess {
         } catch (Throwable t) {
             OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
                 "JarIndex support unavailable on this JRE: " + t.getMessage());
-            OutputController.getLogger().log(t);
+            if (!(t instanceof ClassNotFoundException)) {
+                OutputController.getLogger().log(t);
+            }
         }
         AVAILABLE = available;
         jarIndexClass = indexClass;

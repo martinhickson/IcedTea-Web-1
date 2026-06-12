@@ -25,6 +25,7 @@ import java.awt.SplashScreen;
 import java.io.File;
 import java.lang.reflect.Method;
 import java.net.URL;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
@@ -43,6 +44,8 @@ import net.sourceforge.jnlp.services.ServiceUtil;
 
 import javax.swing.text.html.parser.ParserDelegator;
 import net.sourceforge.jnlp.splashscreen.SplashUtils;
+import net.sourceforge.jnlp.util.JavaVersionUtils;
+import net.sourceforge.jnlp.util.ItwLauncherPaths;
 import net.sourceforge.jnlp.util.JvmSelector;
 import net.sourceforge.jnlp.util.StreamUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -429,11 +432,16 @@ public class Launcher {
 
             List<String> commands = new LinkedList<>();
 
-            // this property is set by the javaws launcher to point to the javaws binary
-            String pathToWebstartBinary = System.getProperty(KEY_JAVAWS_LOCATION);
+            String pathToWebstartBinary = ItwLauncherPaths.resolveJavawsBin();
+            if (pathToWebstartBinary == null) {
+                throw launchError(new LaunchException(null, null, R("LSFatal"), R("LCExternalLaunch"),
+                        R("LNetxJarMissing"), R("LNetxJarMissingInfo")));
+            }
             commands.add(pathToWebstartBinary);
+            List<String> vmArgsWithCompat = new ArrayList<>(vmArgs);
+            JavaVersionUtils.addSecurityManagerCompatibilityArgs(vmArgsWithCompat, javaHome);
             // use -Jargument format to pass arguments to the JVM through the launcher
-            for (String arg : vmArgs) {
+            for (String arg : vmArgsWithCompat) {
                 commands.add("-J" + arg);
             }
             commands.addAll(javawsArgs);

@@ -445,6 +445,11 @@ public class Defaults {
                         null,
                         null
                 },
+                {
+                        DeploymentConfiguration.KEY_AUTODETECT_JDKS,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(false)
+                },
                 //enable manifest-attributes checks
                 {
                         DeploymentConfiguration.KEY_ENABLE_MANIFEST_ATTRIBUTES_CHECK,

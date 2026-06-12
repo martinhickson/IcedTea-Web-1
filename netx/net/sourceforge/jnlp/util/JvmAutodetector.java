@@ -153,4 +153,11 @@ public final class JvmAutodetector {
         String os = System.getProperty("os.name");
         return os != null && os.toLowerCase(Locale.ROOT).startsWith("mac");
     }
+
+    public static int majorVersionOfJvmHome(String homePath) {
+        if (homePath == null || homePath.trim().isEmpty()) {
+            return 0;
+        }
+        return JvmSelector.parseMajor(JvmDescriptor.describe(homePath.trim()).getVersion());
+    }
 }

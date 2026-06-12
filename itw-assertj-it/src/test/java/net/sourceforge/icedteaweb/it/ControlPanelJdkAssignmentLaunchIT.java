@@ -52,6 +52,10 @@ class ControlPanelJdkAssignmentLaunchIT {
         window.table("jdkAssignmentsTable").cell(row(0).column(0)).click();
         robot.waitForIdle();
         window.button("jdkAssignmentLaunchButton").click();
+        window.dialog("jdkAssignmentLaunchOutputDialog").requireVisible();
+        assertThat(window.textBox("jdkAssignmentLaunchOutputArea").text())
+                .containsPattern("(?i)icedtea-web version:");
+        window.button("jdkAssignmentLaunchOutputOkButton").click();
         robot.waitForIdle();
 
         RunningProcess running = JnlpLaunchTestSupport.waitForRunningApp("Java 17 bytecode", 90_000);

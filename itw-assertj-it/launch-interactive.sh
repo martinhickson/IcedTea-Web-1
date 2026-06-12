@@ -19,7 +19,7 @@ Open itweb-settings interactively using an isolated config under:
   $ITW_TEST_HOME
 
 Seeds JDK assignments with file:// URLs for runnable itw-assertj-it sample apps
-(java17-app, java21-app, java25-app) unless --keep-home is used.
+(java17-app, java21-app, java25-app, gui-app) unless --keep-home is used.
 
 Options:
   --rebuild       Build and install icedtea-web before launching

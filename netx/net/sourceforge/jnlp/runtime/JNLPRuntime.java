@@ -278,7 +278,15 @@ public class JNLPRuntime {
 
         if (securityEnabled && JavaVersionUtils.isSecurityManagerSupported()) {
             Policy.setPolicy(policy); // do first b/c our SM blocks setPolicy
-            System.setSecurityManager(security);
+            try {
+                System.setSecurityManager(security);
+            } catch (UnsupportedOperationException ex) {
+                OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                        "SecurityManager could not be installed on JDK "
+                                + JavaVersionUtils.getRunningMajorVersion()
+                                + "; only signed applications may launch.");
+                OutputController.getLogger().log(OutputController.Level.WARNING_ALL, ex);
+            }
         } else if (securityEnabled) {
             OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
                     "SecurityManager is not supported on JDK "

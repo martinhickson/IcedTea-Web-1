@@ -213,17 +213,10 @@ public class XDesktopEntry implements GenericDesktopEntry {
     }
     
     public static String getJavaWsBin() {
-        //Shortcut executes the jnlp as it was with system preferred java. It should work fine offline
-        //absolute - works in case of self built
-        String exec = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
-        if (exec != null) {
-            return exec;
+        String resolved = ItwLauncherPaths.resolveJavawsBin();
+        if (resolved != null) {
+            return resolved;
         }
-        String pathResult = findOnPath(new String[]{"javaws", System.getProperty("icedtea-web.bin.name")});
-        if (pathResult != null) {
-            return pathResult;
-        }
-        
         return "javaws";
     }
     

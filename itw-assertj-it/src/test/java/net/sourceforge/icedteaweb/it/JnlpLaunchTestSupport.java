@@ -9,7 +9,12 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Comparator;
+import java.util.stream.Collectors;
 import java.util.Properties;
+import net.sourceforge.jnlp.util.JavaVersionUtils;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport.RunningProcess;
 import net.sourceforge.jnlp.util.JvmAutodetector;
@@ -65,6 +70,22 @@ final class JnlpLaunchTestSupport {
     }
 
     static Process launchHeldApp(String sampleName, int holdSeconds) throws Exception {
+        return launchHeldAppWithJavaHome(sampleName, holdSeconds, javaHomeForSample(sampleName));
+    }
+
+    /** Matches {@link net.sourceforge.jnlp.util.logging.FileLog#createFileLog()}. */
+    static final String JAVANTX_LOG_PREFIX = "itw-javantx-";
+
+    static Process launchJnlpViaJavaws(String sampleName, int holdSeconds, File starterJavaHome) throws Exception {
+        return startJavawsProcess(sampleName, holdSeconds, starterJavaHome, false);
+    }
+
+    static Process launchHeldAppWithJavaHome(String sampleName, int holdSeconds, File javaHome) throws Exception {
+        return startJavawsProcess(sampleName, holdSeconds, javaHome, true);
+    }
+
+    private static Process startJavawsProcess(String sampleName, int holdSeconds, File javaHome, boolean nofork)
+            throws Exception {
         if (!javawsAvailable()) {
             throw new IllegalStateException("javaws launcher missing: " + JAVAWS_BIN);
         }
@@ -77,17 +98,21 @@ final class JnlpLaunchTestSupport {
         command.add(JAVAWS_BIN);
         command.add("-headless");
         command.add("-verbose");
-        command.add("-Xnofork");
-        // Skip certificate trust dialogs in automated runs (SecurityDialogMessageHandler).
+        if (nofork) {
+            command.add("-Xnofork");
+        }
         command.add("-Xtrustall");
-        command.add("-J-Ditw.test.hold.seconds=" + holdSeconds);
-        command.add("-J-Djava.awt.headless=true");
-        command.add("-J-Ddeployment.log=true");
-        command.add("-J-Ddeployment.log.file=true");
+        List<String> vmArgs = new ArrayList<>();
+        vmArgs.add("-Ditw.test.hold.seconds=" + holdSeconds);
+        vmArgs.add("-Djava.awt.headless=true");
+        JavaVersionUtils.addSecurityManagerCompatibilityArgs(vmArgs,
+                javaHome != null ? javaHome.getAbsolutePath() : null);
+        for (String vmArg : vmArgs) {
+            command.add("-J" + vmArg);
+        }
         command.add(jnlp.toURI().toURL().toExternalForm());
 
         ProcessBuilder pb = new ProcessBuilder(command);
-        File javaHome = javaHomeForSample(sampleName);
         if (javaHome != null) {
             pb.environment().put("JAVA_HOME", javaHome.getAbsolutePath());
         }
@@ -98,6 +123,61 @@ final class JnlpLaunchTestSupport {
         Process process = pb.start();
         launched.add(process);
         return process;
+    }
+
+    /**
+     * {@code deployment.user.logdir} default: {@code $XDG_CONFIG_HOME/icedtea-web/log}
+     * ({@link net.sourceforge.jnlp.config.PathsAndFiles#LOG_DIR}).
+     * Files: {@code itw-javantx-*.log}, {@code itw-clienta-*.log} ({@link net.sourceforge.jnlp.util.logging.FileLog}).
+     */
+    static File icedteaWebLogDir() {
+        return new File(testConfigHome(), "icedtea-web/log");
+    }
+
+    /** Matches {@link net.sourceforge.jnlp.util.logging.FileLog#createAppFileLog()}. */
+    static final String CLIENTAPP_LOG_PREFIX = "itw-clienta-";
+
+    static String readJavantxLogSince(long sinceMs, long timeoutMs) throws Exception {
+        return readAllLogsSince(JAVANTX_LOG_PREFIX, sinceMs, timeoutMs);
+    }
+
+    static String readClientAppLogSince(long sinceMs, long timeoutMs) throws Exception {
+        return readAllLogsSince(CLIENTAPP_LOG_PREFIX, sinceMs, timeoutMs);
+    }
+
+    private static String readAllLogsSince(String prefix, long sinceMs, long timeoutMs) throws Exception {
+        List<File> logFiles = waitForLogFiles(prefix, sinceMs, timeoutMs);
+        StringBuilder combined = new StringBuilder();
+        for (File logFile : logFiles) {
+            combined.append(Files.readString(logFile.toPath(), StandardCharsets.UTF_8));
+            combined.append('\n');
+        }
+        return combined.toString();
+    }
+
+    private static List<File> waitForLogFiles(String prefix, long sinceMs, long timeoutMs)
+            throws InterruptedException {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            List<File> files = logFilesWithPrefixSince(prefix, sinceMs);
+            if (!files.isEmpty()) {
+                return files;
+            }
+            Thread.sleep(200);
+        }
+        return logFilesWithPrefixSince(prefix, sinceMs);
+    }
+
+    private static List<File> logFilesWithPrefixSince(String prefix, long sinceMs) {
+        File logDir = icedteaWebLogDir();
+        File[] files = logDir.listFiles((dir, name) -> name.startsWith(prefix));
+        if (files == null || files.length == 0) {
+            return List.of();
+        }
+        return Arrays.stream(files)
+                .filter(f -> f.lastModified() >= sinceMs - 2000L)
+                .sorted(Comparator.comparingLong(File::lastModified))
+                .collect(Collectors.toList());
     }
 
     static RunningProcess waitForRunningApp(String titleFragment, long timeoutMs) throws Exception {

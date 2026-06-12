@@ -222,16 +222,8 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
     }
 
     private void autodetectKnownJvms() {
-        int added = 0;
-        for (String home : JvmAutodetector.discoverValidJvmHomes()) {
-            int before = knownJvms.size();
-            addKnownJvm(home, false);
-            if (knownJvms.size() > before) {
-                added++;
-            }
-        }
-        if (added > 0) {
-            persistKnownJvms();
+        if (KnownJvmStore.applyAutodetectedJvms(config)) {
+            reloadKnownJvmsFromConfig();
         }
     }
 

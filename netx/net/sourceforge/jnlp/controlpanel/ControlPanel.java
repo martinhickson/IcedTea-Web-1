@@ -54,7 +54,6 @@ import javax.swing.event.ListSelectionListener;
 import net.sourceforge.jnlp.jdk89acesses.SunMiscLauncher;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.DeploymentConfiguration.PendingChangeListener;
-import net.sourceforge.jnlp.config.ItwFeatureFlags;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.controlpanel.JVMPanel.JvmValidationResult;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
@@ -76,7 +75,6 @@ public class ControlPanel extends JFrame {
     private static final String APPLY_MARK_PENDING = "\u25cf ";
 
     private JdkAssignmentsPanel jdkAssignmentsPanel;
-    private JvmTuningPanel jvmTuningPanel;
     private JVMPanel jvmPanel;
     private JButton applyButton;
     private JButton revertButton;
@@ -306,9 +304,6 @@ public class ControlPanel extends JFrame {
         panelList.add(new SettingsPanel(Translator.R("CPTabDebugging"), createDebugSettingsPanel()));
         panelList.add(new SettingsPanel(Translator.R("CPTabDesktopIntegration"), createDesktopSettingsPanel()));
         panelList.add(new SettingsPanel(Translator.R("CPTabJDKAssignments"), createJdkAssignmentsPanel()));
-        if (ItwFeatureFlags.isJvmTuningTabEnabled()) {
-            panelList.add(new SettingsPanel(Translator.R("CPTabJvmTuning"), createJvmTuningPanel()));
-        }
         panelList.add(new SettingsPanel(Translator.R("CPTabJDKSettings"), createJVMSettingsPanel()));
         panelList.add(new SettingsPanel(Translator.R("CPTabRunningApps"), new RunningAppsPanel(this.config)));
         panelList.add(new SettingsPanel(Translator.R("CPTabNetwork"), createNetworkSettingsPanel()));
@@ -358,9 +353,6 @@ public class ControlPanel extends JFrame {
                 }
                 if (panel.getPanel() == jdkAssignmentsPanel) {
                     jdkAssignmentsPanel.refreshJdkChoiceList();
-                }
-                if (jvmTuningPanel != null && panel.getPanel() == jvmTuningPanel) {
-                    jvmTuningPanel.refreshJdkChoiceList();
                 }
                 CardLayout cl = (CardLayout) settingsPanel.getLayout();
                 cl.show(settingsPanel, panel.toString());
@@ -440,12 +432,6 @@ public class ControlPanel extends JFrame {
         jdkAssignmentsPanel = new JdkAssignmentsPanel(this.config);
         registerSettingsReloader(jdkAssignmentsPanel);
         return jdkAssignmentsPanel;
-    }
-
-    private JPanel createJvmTuningPanel() {
-        jvmTuningPanel = new JvmTuningPanel(this.config);
-        registerSettingsReloader(jvmTuningPanel);
-        return jvmTuningPanel;
     }
 
     private JPanel createJVMSettingsPanel() {
