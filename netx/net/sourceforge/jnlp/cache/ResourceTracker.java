@@ -327,8 +327,7 @@ public class ResourceTracker {
 
     /**
      * Returns a file containing the downloaded resource.  If the
-     * resource is non-cacheable then null is returned unless the
-     * resource is a local file (the original file is returned).
+     * resource is non-cacheable then null is returned.
      * <p>
      * If the resource has not downloaded yet, the method will block
      * until it has been transferred to the cache.
@@ -351,7 +350,7 @@ public class ResourceTracker {
             if (resource.getLocalFile() != null)
                 return resource.getLocalFile();
 
-            if (location.getProtocol().equalsIgnoreCase("file")) {
+            if (CacheUtil.USE_LEGACY_FILE_URL_CACHE_BYPASS && location.getProtocol().equalsIgnoreCase("file")) {
                 File file = UrlUtils.decodeUrlAsFile(location);
                 if (file.exists()) {
                     return file;

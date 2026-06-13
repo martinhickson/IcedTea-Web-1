@@ -72,13 +72,14 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  */
 public class CacheUtil {
 
+    public static boolean USE_LEGACY_FILE_URL_CACHE_BYPASS = false;
+
 
 
     /**
      * Caches a resource and returns a URL for it in the cache;
      * blocks until resource is cached. If the resource location is
-     * not cacheable (points to a local file, etc) then the original
-     * URL is returned.
+     * not cacheable then the original URL is returned.
      *
      * @param location location of the resource
      * @param version the version, or {@code null}
@@ -499,7 +500,7 @@ public class CacheUtil {
         if (source == null)
             return false;
 
-        if (source.getProtocol().equals("file")){
+        if (USE_LEGACY_FILE_URL_CACHE_BYPASS && source.getProtocol().equals("file")){
             return false;
         }
         if (source.getProtocol().equals("jar")){

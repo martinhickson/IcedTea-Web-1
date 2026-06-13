@@ -74,8 +74,7 @@ final class ControlPanelTestSupport {
     /**
      * Seeds minimal cache entries ({@code jnlp-path} in {@code .info} files) so
      * {@link net.sourceforge.jnlp.cache.CachedJnlpUrlDiscovery} finds sample apps.
-     * File-protocol launches do not populate the cache; HTTP would, but seeding is
-     * enough to exercise JDK Assignments listing with Default.
+     * This keeps the assignment-listing tests focused on discovery data.
      */
     static void seedCachedJnlpDiscoveryEntries(String... sampleNames) throws Exception {
         resetCacheDir();

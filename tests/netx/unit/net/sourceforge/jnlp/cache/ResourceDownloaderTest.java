@@ -426,15 +426,13 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     @Test
-    public void testDownloadLocalResourceFails() throws IOException {
+    public void testDownloadLocalResourceUsesCache() throws IOException {
         String expected = "local-resource";
         File localFile = Files.createTempFile("download-local", ".temp").toFile();
-        localFile.createNewFile();
         Files.write(localFile.toPath(), expected.getBytes());
         localFile.deleteOnExit();
 
-        String stringURL = "file://" + localFile.getAbsolutePath();
-        URL url = new URL(stringURL);
+        URL url = localFile.toURI().toURL();
 
         Resource resource = Resource.getResource(url, null, UpdatePolicy.NEVER);
 
@@ -443,7 +441,12 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         resource.setStatusFlag(Resource.Status.PRECONNECT);
         resourceDownloader.run();
 
-        assertTrue(resource.hasFlags(EnumSet.of(Resource.Status.ERROR)));
+        File downloadedFile = resource.getLocalFile();
+        assertTrue(downloadedFile.exists() && downloadedFile.isFile());
+        Assert.assertNotEquals(localFile.getCanonicalFile(), downloadedFile.getCanonicalFile());
+
+        String output = new String(Files.readAllBytes(downloadedFile.toPath()));
+        assertEquals(expected, output);
     }
 
     @Test
