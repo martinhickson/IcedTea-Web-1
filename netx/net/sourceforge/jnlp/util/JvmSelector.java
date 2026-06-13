@@ -86,7 +86,7 @@ public final class JvmSelector {
         return matching.get(0);
     }
 
-    static boolean matchesStrategy(JvmDescriptor candidate, String requestedVersion, JdkMatchStrategy strategy) {
+    public static boolean matchesStrategy(JvmDescriptor candidate, String requestedVersion, JdkMatchStrategy strategy) {
         String jvmVersion = candidate.getVersion();
         if (jvmVersion == null || jvmVersion.isEmpty()) {
             return false;

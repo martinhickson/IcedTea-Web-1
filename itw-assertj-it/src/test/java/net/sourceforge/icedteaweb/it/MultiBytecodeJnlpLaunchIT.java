@@ -49,11 +49,11 @@ class MultiBytecodeJnlpLaunchIT {
             throws Exception {
         assertThat(JnlpLaunchTestSupport.sampleBuilt(sampleName)).isTrue();
         File jar = JnlpLaunchTestSupport.jarFile(sampleName);
-        assertThat(readClassMajorVersion(jar)).isEqualTo(classMajor);
+        assertThat(readClassMajorVersion(jar, sampleName)).isEqualTo(classMajor);
     }
 
-    private static int readClassMajorVersion(File jarFile) throws Exception {
-        String entryName = "net/sourceforge/icedteaweb/it/apps/HeadlessHoldJnlpMain.class";
+    private static int readClassMajorVersion(File jarFile, String sampleName) throws Exception {
+        String entryName = mainClassEntryName(sampleName);
         try (JarFile jar = new JarFile(jarFile)) {
             JarEntry entry = jar.getJarEntry(entryName);
             assertThat(entry).isNotNull();
@@ -62,6 +62,14 @@ class MultiBytecodeJnlpLaunchIT {
                 assertThat(header.length).isEqualTo(8);
                 return ((header[6] & 0xFF) << 8) | (header[7] & 0xFF);
             }
+        }
+    }
+
+    private static String mainClassEntryName(String sampleName) throws Exception {
+        try (JarFile jar = new JarFile(JnlpLaunchTestSupport.jarFile(sampleName))) {
+            String mainClass = jar.getManifest().getMainAttributes().getValue("Main-Class");
+            assertThat(mainClass).isNotBlank();
+            return mainClass.replace('.', '/') + ".class";
         }
     }
 

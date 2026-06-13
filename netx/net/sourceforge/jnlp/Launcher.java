@@ -23,6 +23,7 @@ import java.applet.AppletStub;
 import java.awt.Container;
 import java.awt.SplashScreen;
 import java.io.File;
+import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.URL;
 import java.util.ArrayList;
@@ -35,6 +36,8 @@ import net.sourceforge.jnlp.util.JarFile;
 import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.JdkMatchStrategy;
+import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.runtime.AppletInstance;
 import net.sourceforge.jnlp.runtime.ApplicationInstance;
 import net.sourceforge.jnlp.runtime.JNLPClassLoader;
@@ -43,9 +46,12 @@ import net.sourceforge.jnlp.services.InstanceExistsException;
 import net.sourceforge.jnlp.services.ServiceUtil;
 
 import javax.swing.text.html.parser.ParserDelegator;
+import javax.swing.JOptionPane;
 import net.sourceforge.jnlp.splashscreen.SplashUtils;
 import net.sourceforge.jnlp.util.JavaVersionUtils;
 import net.sourceforge.jnlp.util.ItwLauncherPaths;
+import net.sourceforge.jnlp.util.JvmAutodetector;
+import net.sourceforge.jnlp.util.JvmDescriptor;
 import net.sourceforge.jnlp.util.JvmSelector;
 import net.sourceforge.jnlp.util.StreamUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -90,6 +96,21 @@ public class Launcher {
     private Map<String, List<String>> extra = null;
 
     public static final String KEY_JAVAWS_LOCATION = "icedtea-web.bin.location";
+
+    public static boolean USE_LEGACY_NO_SUITABLE_JVM_FAILURE =
+            Boolean.getBoolean("icedtea-web.legacyNoSuitableJvmFailure");
+
+    /**
+     * When false (default), closing the missing-JRE autodetect dialog with the
+     * window close control exits quietly. When true, show the fatal launch error.
+     */
+    public static boolean USE_LEGACY_MISSING_JRE_DIALOG_DISMISS_FAILURE =
+            Boolean.getBoolean("icedtea-web.legacyMissingJreDialogDismissFailure");
+
+    /** User closed the missing-JRE dialog without choosing Apply or Autodetect. */
+    private static final class MissingJreDialogDismissed extends Exception {
+        private static final long serialVersionUID = 1L;
+    }
 
     /**
      * Create a launcher with the runtime's default update policy
@@ -530,7 +551,16 @@ public class Launcher {
                 return null;
             }
 
-            if (JNLPRuntime.getForksAllowed() && (file.needsNewVM() || needsConfiguredJreRelaunch(file))) {
+            String relaunchJavaHome = resolveRelaunchJavaHome(file);
+            if (relaunchJavaHome == null && currentRuntimeDoesNotSatisfyRequestedJre(file)) {
+                try {
+                    relaunchJavaHome = resolveMissingSuitableJre(file);
+                } catch (MissingJreDialogDismissed e) {
+                    return null;
+                }
+            }
+
+            if (JNLPRuntime.getForksAllowed() && (file.needsNewVM() || needsConfiguredJreRelaunch(relaunchJavaHome))) {
                 if (!JNLPRuntime.isHeadless()){
                     SplashScreen sp = SplashScreen.getSplashScreen();
                     if (sp!=null) {
@@ -540,7 +570,7 @@ public class Launcher {
                 List<String> netxArguments = new LinkedList<String>();
                 netxArguments.add("-Xnofork");
                 netxArguments.addAll(JNLPRuntime.getInitialArguments());
-                launchExternal(file.getNewVMArgs(), netxArguments, resolveRelaunchJavaHome(file));
+                launchExternal(file.getNewVMArgs(), netxArguments, relaunchJavaHome);
                 return null;
             }
 
@@ -918,8 +948,7 @@ public class Launcher {
         new ParserDelegator();
     }
 
-    private boolean needsConfiguredJreRelaunch(JNLPFile file) {
-        String configuredJreDir = resolveRelaunchJavaHome(file);
+    private boolean needsConfiguredJreRelaunch(String configuredJreDir) {
         if (configuredJreDir == null || configuredJreDir.trim().isEmpty()) {
             return false;
         }
@@ -935,9 +964,123 @@ public class Launcher {
         return needsRelaunch;
     }
 
+    private String resolveMissingSuitableJre(JNLPFile file) throws LaunchException, MissingJreDialogDismissed {
+        String requestedVersion = extractRequestedJreVersion(file);
+        if (USE_LEGACY_NO_SUITABLE_JVM_FAILURE) {
+            throw noSuitableJvm(file, requestedVersion);
+        }
+
+        JvmDescriptor detected = findDetectedJvmForRequest(requestedVersion);
+        if (detected != null && (JNLPRuntime.isHeadless() || isMinimumJreRequest(requestedVersion))) {
+            saveDetectedJvm(detected);
+            return detected.getHomePath();
+        }
+
+        if (JNLPRuntime.isHeadless()) {
+            throw noSuitableJvm(file, requestedVersion);
+        }
+
+        while (true) {
+            detected = findDetectedJvmForRequest(requestedVersion);
+            if (detected != null) {
+                int result = JOptionPane.showOptionDialog(
+                        null,
+                        "This application requires Java " + requestedVersion + ".\n\nDetected JDK:\n"
+                                + detected.getDisplayName() + "\n" + detected.getHomePath(),
+                        "Apply detected JDK",
+                        JOptionPane.DEFAULT_OPTION,
+                        JOptionPane.INFORMATION_MESSAGE,
+                        null,
+                        new Object[] {"Apply"},
+                        "Apply");
+                if (result == 0) {
+                    saveDetectedJvm(detected);
+                    return detected.getHomePath();
+                }
+                handleMissingJreDialogDismissed(file, requestedVersion);
+            }
+
+            int result = JOptionPane.showOptionDialog(
+                    null,
+                    "This application requires Java " + requestedVersion + ".\n\n"
+                            + "Install JDK " + requestedVersion + ", then press Autodetect.",
+                    "JDK required",
+                    JOptionPane.DEFAULT_OPTION,
+                    JOptionPane.WARNING_MESSAGE,
+                    null,
+                    new Object[] {"Autodetect"},
+                    "Autodetect");
+            if (result != 0) {
+                handleMissingJreDialogDismissed(file, requestedVersion);
+            }
+        }
+    }
+
+    private static boolean isMinimumJreRequest(String requestedVersion) {
+        return requestedVersion != null && requestedVersion.trim().endsWith("+");
+    }
+
+    private void handleMissingJreDialogDismissed(JNLPFile file, String requestedVersion)
+            throws LaunchException, MissingJreDialogDismissed {
+        if (USE_LEGACY_MISSING_JRE_DIALOG_DISMISS_FAILURE) {
+            throw noSuitableJvm(file, requestedVersion);
+        }
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                "Launch cancelled: user closed the JDK requirement dialog.");
+        throw new MissingJreDialogDismissed();
+    }
+
+    private JvmDescriptor findDetectedJvmForRequest(String requestedVersion) {
+        JdkMatchStrategy strategy = KnownJvmStore.getMatchStrategy(JNLPRuntime.getConfiguration());
+        List<JvmDescriptor> detected = new ArrayList<>();
+        for (String home : JvmAutodetector.discoverValidJvmHomes()) {
+            JvmDescriptor descriptor = JvmDescriptor.describe(home);
+            if (descriptor.isValid()
+                    && JvmSelector.matchesStrategy(descriptor, requestedVersion, strategy)) {
+                detected.add(descriptor);
+            }
+        }
+        if (detected.isEmpty()) {
+            return null;
+        }
+        return JvmSelector.selectBest(detected, requestedVersion, strategy);
+    }
+
+    private void saveDetectedJvm(JvmDescriptor detected) throws LaunchException {
+        DeploymentConfiguration config = JNLPRuntime.getConfiguration();
+        List<String> homes = new ArrayList<>(KnownJvmStore.getKnownJvmHomes(config));
+        if (!homes.contains(detected.getHomePath())) {
+            homes.add(detected.getHomePath());
+            KnownJvmStore.setKnownJvmHomes(config, homes);
+            try {
+                config.save();
+            } catch (IOException ex) {
+                throw new LaunchException(ex);
+            }
+        }
+    }
+
+    private LaunchException noSuitableJvm(JNLPFile file, String requestedVersion) {
+        String requested = requestedVersion == null || requestedVersion.trim().isEmpty()
+                ? "the requested version" : requestedVersion;
+        String message = "No suitable JVM is configured for JNLP request [" + requested + "].";
+        OutputController.getLogger().log(OutputController.Level.ERROR_ALL, message);
+        return new LaunchException(file, null, R("LSFatal"), R("LCLaunching"),
+                "No suitable JVM found.", message);
+    }
+
     private String resolveRelaunchJavaHome(JNLPFile file) {
         String jnlpUrl = file.getSourceLocation() == null ? null : file.getSourceLocation().toExternalForm();
         return JvmSelector.selectBestJvmHome(JNLPRuntime.getConfiguration(), extractRequestedJreVersion(file), jnlpUrl);
+    }
+
+    private boolean currentRuntimeDoesNotSatisfyRequestedJre(JNLPFile file) {
+        String requestedVersion = extractRequestedJreVersion(file);
+        if (requestedVersion == null || requestedVersion.trim().isEmpty()) {
+            return false;
+        }
+        int requestedMajor = JvmSelector.parseMajor(requestedVersion);
+        return requestedMajor > 0 && JavaVersionUtils.getRunningMajorVersion() < requestedMajor;
     }
 
     private String extractRequestedJreVersion(JNLPFile file) {

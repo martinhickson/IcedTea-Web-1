@@ -1,15 +1,15 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <jnlp spec="1.0+" codebase="." href="app.jnlp">
   <information>
-    <title>ITW Java 21 GUI Sample</title>
+    <title>ITW Java 18+ GUI Sample</title>
     <vendor>IcedTea-Web IT</vendor>
   </information>
   <security>
     <all-permissions/>
   </security>
   <resources>
-    <j2se version="21+"/>
+    <j2se version="18+"/>
     <jar href="app.jar" main="true"/>
   </resources>
-  <application-desc main-class="net.sourceforge.icedteaweb.it.apps.Java21GuiSampleJnlpMain"/>
+  <application-desc main-class="net.sourceforge.icedteaweb.it.apps.Java18GuiSampleJnlpMain"/>
 </jnlp>

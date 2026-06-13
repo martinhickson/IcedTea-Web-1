@@ -1,6 +1,7 @@
 package net.sourceforge.icedteaweb.it.apps;
 
 import java.awt.BorderLayout;
+import java.awt.GraphicsEnvironment;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowAdapter;
@@ -30,17 +31,25 @@ public final class GuiSampleJnlpMain {
     private GuiSampleJnlpMain() {
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
+        run(args, FRAME_TITLE);
+    }
+
+    static void run(String[] args, String frameTitle) throws Exception {
+        if (GraphicsEnvironment.isHeadless()) {
+            HeadlessHoldJnlpMain.main(args);
+            return;
+        }
         SwingUtilities.invokeLater(new Runnable() {
             @Override
             public void run() {
-                createAndShow();
+                createAndShow(frameTitle);
             }
         });
     }
 
-    private static void createAndShow() {
-        final JFrame frame = new JFrame(FRAME_TITLE);
+    private static void createAndShow(String frameTitle) {
+        final JFrame frame = new JFrame(frameTitle);
         frame.setName(FRAME_NAME);
         frame.setDefaultCloseOperation(JFrame.DO_NOTHING_ON_CLOSE);
         frame.addWindowListener(new WindowAdapter() {
