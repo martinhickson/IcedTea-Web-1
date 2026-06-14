@@ -31,6 +31,11 @@ on:
         options:
           - 'true'
           - 'false'
+      sign-windows-artifacts:
+        description: 'Sign Windows EXE/MSI release artifacts with Azure Key Vault'
+        required: true
+        default: false
+        type: boolean
   pull_request:
     branches:
       - 1.8
@@ -361,6 +366,58 @@ jobs:
         run: |
           $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
           & packaging/windows/build-msi.ps1
+        shell: pwsh
+
+      - name: Validate Windows signing secrets
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          KEYVAULT_URL: ${{ secrets.KEYVAULT_URL }}
+          JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
+          JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
+          JNLP_JCA_SIGN_CERTCHAIN: ${{ secrets.JNLP_JCA_SIGN_CERTCHAIN }}
+        run: |
+          $required = @(
+            'AZURE_CLIENT_ID',
+            'AZURE_TENANT_ID',
+            'AZURE_CLIENT_SECRET',
+            'KEYVAULT_URL',
+            'JNLP_JCA_SIGN_ALIAS',
+            'JNLP_JCA_TSA_URL',
+            'JNLP_JCA_SIGN_CERTCHAIN'
+          )
+          $missing = $required | Where-Object {
+            [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
+          }
+          if ($missing.Count -gt 0) {
+            Write-Warning "Windows artifact signing was requested, but these GitHub secrets are missing: $($missing -join ', ')"
+            throw "Cannot sign Windows artifacts because required signing secrets are missing."
+          }
+          if ($env:JNLP_JCA_SIGN_CERTCHAIN -notmatch '-----BEGIN CERTIFICATE-----') {
+            throw "JNLP_JCA_SIGN_CERTCHAIN must contain PEM certificate data."
+          }
+        shell: pwsh
+
+      - name: Install AzureSignTool
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
+        run: |
+          dotnet tool install --global AzureSignTool
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Sign Windows EXE and MSI release artifacts
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
+        env:
+          KEYVAULT_URL: ${{ secrets.KEYVAULT_URL }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
+          JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
+          JNLP_JCA_SIGN_CERTCHAIN: ${{ secrets.JNLP_JCA_SIGN_CERTCHAIN }}
+        run: '& scripts/sign-windows-azure-keyvault.ps1'
         shell: pwsh
 
       - name: Build macOS DMG
