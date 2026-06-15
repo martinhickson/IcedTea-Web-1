@@ -59,7 +59,7 @@ pipeline {
                     env.ITW_DOTNET_SELF_CONTAINED = params.ITW_DOTNET_SELF_CONTAINED
                     env.ITW_DOTNET_RUNTIME_IDENTIFIER = params.ITW_DOTNET_RUNTIME_IDENTIFIER
                 }
-                sh '''
+                sh '''#!/bin/bash
                     set -euo pipefail
 
                     if [[ -z "${WORKSPACE:-}" ]]; then
