@@ -72,6 +72,167 @@ function Invoke-CheckedCommand {
     }
 }
 
+function Write-DockerCommandLine {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DockerBin,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    $commandLine = ($Arguments | ForEach-Object {
+        if ($_ -match '\s') { '"' + $_ + '"' } else { $_ }
+    }) -join ' '
+    Write-Detail ("Running: {0} {1}" -f $DockerBin, $commandLine)
+}
+
+function Invoke-DockerCommand {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$StepName,
+        [Parameter(Mandatory = $true)]
+        [string]$DockerBin,
+        [Parameter(Mandatory = $true)]
+        [string[]]$Arguments
+    )
+
+    Write-Step $StepName
+    Write-DockerCommandLine -DockerBin $DockerBin -Arguments $Arguments
+    & $DockerBin @Arguments
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -ne 0) {
+        throw "$StepName failed with exit code $exitCode."
+    }
+}
+
+function Show-DockerHostContext {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DockerBin,
+        [Parameter(Mandatory = $true)]
+        [string]$ComposeFile,
+        [Parameter(Mandatory = $true)]
+        [string]$WorkflowDir,
+        [Parameter(Mandatory = $true)]
+        [string]$DockerfilePath
+    )
+
+    Write-Step "Docker host context (pre-flight)"
+    Invoke-DockerCommand -StepName "Docker version" -DockerBin $DockerBin -Arguments @("version")
+    Invoke-DockerCommand -StepName "Docker Compose version" -DockerBin $DockerBin -Arguments @("compose", "version")
+
+    Write-Step "Docker engine details"
+    Write-DockerCommandLine -DockerBin $DockerBin -Arguments @("info", "--format", "OSType={{.OSType}} OperatingSystem={{.OperatingSystem}} ServerVersion={{.ServerVersion}}")
+    & $DockerBin info --format "OSType={{.OSType}} OperatingSystem={{.OperatingSystem}} ServerVersion={{.ServerVersion}}"
+    if ($LASTEXITCODE -ne 0) {
+        throw "docker info failed with exit code $LASTEXITCODE."
+    }
+
+    if (Test-Path -LiteralPath $DockerfilePath) {
+        $fromLine = Get-Content -LiteralPath $DockerfilePath | Where-Object { $_ -match '^\s*FROM\s+' } | Select-Object -First 1
+        if ($fromLine) {
+            Write-Detail "Dockerfile base image: $($fromLine.Trim())"
+        }
+        Write-Detail "Dockerfile path:       $DockerfilePath"
+    } else {
+        Write-Detail "Dockerfile path:       $DockerfilePath (not found on host)"
+    }
+
+    Write-Detail "Compose file:          $ComposeFile"
+    Write-Detail "Compose project dir:   $WorkflowDir"
+    Write-Detail "Build context:         $WorkflowDir"
+    Write-Detail "Target platform:       windows/amd64"
+    Write-Detail "Expected host mode:    Windows containers (not Linux containers)"
+
+    $osType = (& $DockerBin info --format "{{.OSType}}" 2>$null | Out-String).Trim()
+    if ($osType) {
+        Write-Detail "Docker engine OSType:  $osType"
+        if ($osType -eq "linux") {
+            Stop-SignWorkflow `
+                -Message "Docker engine is running Linux containers, but this workflow requires Windows containers." `
+                -NextSteps @(
+                    "Run sign.ps1 on a Windows machine with Docker Desktop switched to Windows containers mode."
+                    "Linux Docker cannot build or run the mcr.microsoft.com/windows/servercore base image used by sign.dockerfile."
+                    "Verify with: docker info --format ""{{.OSType}}"" (must be windows)."
+                )
+        }
+    }
+}
+
+function Invoke-DockerComposeWorkflow {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$DockerBin,
+        [Parameter(Mandatory = $true)]
+        [string]$ComposeFile,
+        [Parameter(Mandatory = $true)]
+        [string]$WorkflowDir
+    )
+
+    $composeArgs = @(
+        "compose",
+        "--file", $ComposeFile,
+        "--project-directory", $WorkflowDir
+    )
+
+    $previousBuildKitProgress = $env:BUILDKIT_PROGRESS
+    $env:BUILDKIT_PROGRESS = "plain"
+
+    try {
+        Invoke-DockerCommand `
+            -StepName "Docker Compose config (resolved services/volumes/build)" `
+            -DockerBin $DockerBin `
+            -Arguments ($composeArgs + @("config"))
+
+        Invoke-DockerCommand `
+            -StepName "Docker Compose build (pull base image and build sign service)" `
+            -DockerBin $DockerBin `
+            -Arguments ($composeArgs + @("build", "--pull", "sign"))
+
+        Invoke-DockerCommand `
+            -StepName "Docker Compose up (run sign container to completion)" `
+            -DockerBin $DockerBin `
+            -Arguments ($composeArgs + @("up", "--no-build", "--abort-on-container-exit", "--remove-orphans", "sign"))
+    } finally {
+        if ($null -eq $previousBuildKitProgress) {
+            Remove-Item Env:BUILDKIT_PROGRESS -ErrorAction SilentlyContinue
+        } else {
+            $env:BUILDKIT_PROGRESS = $previousBuildKitProgress
+        }
+    }
+}
+
+function Write-DockerFailureHelp {
+    param(
+        [string]$Message = "",
+        [string]$FailedStep = "Docker Compose workflow"
+    )
+
+    Write-Host ""
+    Write-Host "=== Docker failure summary ===" -ForegroundColor Yellow
+    Write-Detail "Failed during: $FailedStep"
+    if (-not [string]::IsNullOrWhiteSpace($Message)) {
+        Write-Detail "Error:         $Message"
+    }
+    Write-Detail "Base image:    mcr.microsoft.com/windows/servercore:ltsc2025"
+    Write-Detail "Compose file:  sign.compose (service: sign, platform: windows/amd64)"
+    Write-Detail "Typical commands executed by this script:"
+    Write-Detail "  docker compose --file sign.compose --project-directory <workflows> config"
+    Write-Detail "  docker compose --file sign.compose --project-directory <workflows> build --pull sign"
+    Write-Detail "  docker compose --file sign.compose --project-directory <workflows> up --no-build --abort-on-container-exit --remove-orphans sign"
+
+    Write-Host ""
+    Write-Host "=== Docker troubleshooting ===" -ForegroundColor Yellow
+    Write-NextStep "Run on a Windows host with Docker Desktop in Windows containers mode."
+    Write-NextStep "Verify engine type: docker info --format ""{{.OSType}}"" (must be windows)."
+    Write-NextStep "Test base image pull: docker pull mcr.microsoft.com/windows/servercore:ltsc2025"
+    if ($Message -match 'basic auth|unauthorized|authentication required|401|denied') {
+        Write-NextStep "401/Unauthorized from MCR on Linux usually means Windows images are not available on this Docker engine."
+        Write-NextStep "If using a registry mirror/proxy, ensure it allows mcr.microsoft.com without Docker Hub credentials."
+        Write-NextStep "If a private registry is required, run: docker login mcr.microsoft.com"
+    }
+}
+
 function Get-GitCloneUrl {
     param(
         [hashtable]$Config
@@ -425,14 +586,24 @@ function Run-HostSignWorkflow {
     Write-Detail "JNLP_JCA_SIGN_CERTCHAIN_FILE:      $($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)"
 
     Write-Step "Step 5/5: Build Windows signing container and run release pipeline"
-    Write-Detail "Running: $DockerBin compose --file $ComposeFile --project-directory $WorkflowDir up --build --abort-on-container-exit --remove-orphans"
-    Write-Detail "Watch for container steps: Maven build -> WiX MSI -> Azure Key Vault signing"
+    Write-Detail "This step runs docker compose config, build, and up as separate commands."
+    Write-Detail "Container pipeline after image build: Maven build -> WiX MSI -> Azure Key Vault signing"
 
-    Invoke-CheckedCommand -StepName "Docker Compose sign workflow" -Command {
-        & $DockerBin compose `
-            --file $ComposeFile `
-            --project-directory $WorkflowDir `
-            up --build --abort-on-container-exit --remove-orphans
+    $DockerfilePath = Join-Path $WorkflowDir "sign.dockerfile"
+    try {
+        Show-DockerHostContext `
+            -DockerBin $DockerBin `
+            -ComposeFile $ComposeFile `
+            -WorkflowDir $WorkflowDir `
+            -DockerfilePath $DockerfilePath
+
+        Invoke-DockerComposeWorkflow `
+            -DockerBin $DockerBin `
+            -ComposeFile $ComposeFile `
+            -WorkflowDir $WorkflowDir
+    } catch {
+        Write-DockerFailureHelp -Message $_.Exception.Message -FailedStep "Step 5/5 Docker Compose workflow"
+        throw
     }
 
     Write-Step "Docker workflow completed successfully"
@@ -448,6 +619,7 @@ if ($Container) {
         Run-HostSignWorkflow -EnvFilePath $EnvFile
     } catch {
         Write-Failure $_.Exception.Message
+        Write-DockerFailureHelp -Message $_.Exception.Message
         if ($_.ScriptStackTrace) {
             Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
         }
