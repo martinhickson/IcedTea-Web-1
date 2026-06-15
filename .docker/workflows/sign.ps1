@@ -425,14 +425,14 @@ function Run-HostSignWorkflow {
     Write-Detail "JNLP_JCA_SIGN_CERTCHAIN_FILE:      $($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)"
 
     Write-Step "Step 5/5: Build Windows signing container and run release pipeline"
-    Write-Detail "Running: $DockerBin compose -f $ComposeFile --project-directory $WorkflowDir up --build --abort-on-container-exit --remove-orphans --progress plain"
+    Write-Detail "Running: $DockerBin compose --file $ComposeFile --project-directory $WorkflowDir up --build --abort-on-container-exit --remove-orphans"
     Write-Detail "Watch for container steps: Maven build -> WiX MSI -> Azure Key Vault signing"
 
     Invoke-CheckedCommand -StepName "Docker Compose sign workflow" -Command {
         & $DockerBin compose `
-            -f $ComposeFile `
+            --file $ComposeFile `
             --project-directory $WorkflowDir `
-            up --build --abort-on-container-exit --remove-orphans --progress plain
+            up --build --abort-on-container-exit --remove-orphans
     }
 
     Write-Step "Docker workflow completed successfully"

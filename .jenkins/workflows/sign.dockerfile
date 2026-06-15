@@ -36,7 +36,7 @@ ENV DOTNET_ROOT=C:\dotnet
 ENV JDK11_HOME=C:\build-tools\jdk11
 ENV JAVA_HOME=C:\build-tools\jdk11
 ENV MAVEN_HOME=C:\build-tools\apache-maven-3.9.9
-ENV PATH=C:\build-tools\jdk11\bin;C:\build-tools\apache-maven-3.9.9\bin;C:\Program Files\Git\bin;C:\Program Files\Git\usr\bin;C:\dotnet;C:\Users\ContainerAdministrator\.dotnet\tools;C:\Windows\System32;C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0
+ENV PATH="C:\build-tools\jdk11\bin;C:\build-tools\apache-maven-3.9.9\bin;C:\Program Files\Git\bin;C:\Program Files\Git\usr\bin;C:\dotnet;C:\Users\ContainerAdministrator\.dotnet\tools;C:\Windows\System32;C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0"
 
 RUN ["C:\\dotnet\\dotnet.exe", "tool", "install", "--global", "wix"]
 RUN ["C:\\dotnet\\dotnet.exe", "tool", "install", "--global", "AzureSignTool"]

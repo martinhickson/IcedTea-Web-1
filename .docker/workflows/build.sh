@@ -133,7 +133,7 @@ run_distribution_compose() {
   echo "Container identity: jenkins uid=${JENKINS_UID} gid=${JENKINS_GID}"
 
   "$DOCKER_BIN" compose \
-    -f "$compose_file" \
+    --file "$compose_file" \
     --project-directory "$workflow_dir" \
     up --build --abort-on-container-exit --remove-orphans
 }
