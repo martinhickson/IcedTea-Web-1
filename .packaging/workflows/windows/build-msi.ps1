@@ -1,6 +1,6 @@
 param(
     [string]$DockerBin = $(if ($env:DOCKER_BIN) { $env:DOCKER_BIN } else { "docker" }),
-    [string]$ImageName = $(if ($env:ITW_WINDOWS_PACKAGE_IMAGE) { $env:ITW_WINDOWS_PACKAGE_IMAGE } else { "icedtea-web-msi:ltsc2025" })
+    [string]$ImageName = $(if ($env:ITW_WINDOWS_PACKAGE_IMAGE) { $env:ITW_WINDOWS_PACKAGE_IMAGE } else { "icedtea-web-msi:ltsc2022" })
 )
 
 $ErrorActionPreference = "Stop"

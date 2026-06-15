@@ -64,6 +64,9 @@ export_optional_build_vars() {
   if [[ ${#ENV_MAP[@]} -eq 0 ]]; then
     return
   fi
+  if [[ -n "${ENV_MAP[ITW_DRY_RUN]:-}" ]]; then
+    export ITW_DRY_RUN="${ENV_MAP[ITW_DRY_RUN]}"
+  fi
   if [[ -n "${ENV_MAP[ITW_VERSION]:-}" ]]; then
     export ITW_VERSION="${ENV_MAP[ITW_VERSION]}"
   fi
@@ -98,6 +101,40 @@ require_command() {
   fi
 }
 
+is_dry_run() {
+  case "${ITW_DRY_RUN:-false}" in
+    1|true|TRUE|yes|YES|on|ON) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+run_dry_run_build_check() {
+  local root version
+
+  root="${ITW_WORKSPACE_ROOT:?ITW_WORKSPACE_ROOT is not set}"
+  if [[ ! -d "$root" ]]; then
+    echo "Workspace root not found: $root" >&2
+    exit 1
+  fi
+
+  cd "$root"
+
+  if [[ -z "${ITW_VERSION:-}" ]]; then
+    ITW_VERSION="$(sed -n 's:.*<version>\([^<]*\)</version>.*:\1:p' pom.xml | head -n 1)"
+  fi
+  version="$ITW_VERSION"
+  if [[ -z "$version" ]]; then
+    echo "Could not determine project version from pom.xml" >&2
+    exit 1
+  fi
+
+  echo "=== Dry run mode ==="
+  echo "Workspace:       $root"
+  echo "Project version: $version"
+  echo "Dry run: not building in dry run mode."
+  echo "=== Dry run completed successfully ==="
+}
+
 export_jenkins_container_identity() {
   export JENKINS_UID="${JENKINS_UID:-$(id -u)}"
   export JENKINS_GID="${JENKINS_GID:-$(id -g)}"
@@ -119,6 +156,12 @@ run_distribution_compose() {
     echo "Workspace missing pom.xml: $ITW_WORKSPACE_ROOT" >&2
     exit 1
   fi
+
+  if is_dry_run; then
+    run_dry_run_build_check
+    return 0
+  fi
+
   if [[ ! -f "$compose_file" ]]; then
     echo "Build compose file not found: $compose_file" >&2
     exit 1
@@ -148,6 +191,11 @@ run_container_distribution_build() {
   fi
 
   cd "$root"
+
+  if is_dry_run; then
+    run_dry_run_build_check
+    return 0
+  fi
 
   if [[ -z "${ITW_VERSION:-}" ]]; then
     ITW_VERSION="$(sed -n 's:.*<version>\([^<]*\)</version>.*:\1:p' pom.xml | head -n 1)"

@@ -180,9 +180,9 @@ function Invoke-DockerComposeWorkflow {
     $env:COMPOSE_BAKE = "false"
 
     Write-Detail "Compose build pulls the latest base image from MCR (--pull), not ACR."
-    Write-Detail "Base image: mcr.microsoft.com/windows/servercore:ltsc2025"
+    Write-Detail "Base image: mcr.microsoft.com/windows/servercore:ltsc2022"
     Write-Detail "Equivalent manual steps:"
-    Write-Detail "  docker pull mcr.microsoft.com/windows/servercore:ltsc2025"
+    Write-Detail "  docker pull mcr.microsoft.com/windows/servercore:ltsc2022"
     Write-Detail "  docker build --file sign.dockerfile ."
 
     try {
@@ -228,7 +228,7 @@ function Write-DockerFailureHelp {
     if (-not [string]::IsNullOrWhiteSpace($Message)) {
         Write-Detail "Error:         $Message"
     }
-    Write-Detail "Base image:    mcr.microsoft.com/windows/servercore:ltsc2025"
+    Write-Detail "Base image:    mcr.microsoft.com/windows/servercore:ltsc2022"
     Write-Detail "Compose file:  sign.compose (service: sign, platform: windows/amd64)"
     if ($WorkflowDir) {
         Write-Detail "Project dir:   $WorkflowDir"
@@ -240,7 +240,7 @@ function Write-DockerFailureHelp {
     Write-Detail "Manual equivalent:"
     if ($WorkflowDir -and $DockerfilePath) {
         Write-Detail "  cd $WorkflowDir"
-        Write-Detail "  docker pull mcr.microsoft.com/windows/servercore:ltsc2025"
+        Write-Detail "  docker pull mcr.microsoft.com/windows/servercore:ltsc2022"
         Write-Detail "  docker build --file sign.dockerfile ."
     }
 
@@ -252,7 +252,7 @@ function Write-DockerFailureHelp {
     Write-Host "=== Registry auth note ===" -ForegroundColor Yellow
     Write-Detail "Pulls come from MCR (mcr.microsoft.com), not Azure ACR."
     Write-Detail "Azure credentials in sign.env are for Key Vault signing, not Docker registry login."
-    Write-NextStep "Confirm pull works: docker pull mcr.microsoft.com/windows/servercore:ltsc2025"
+    Write-NextStep "Confirm pull works: docker pull mcr.microsoft.com/windows/servercore:ltsc2022"
     Write-NextStep "Then confirm build works: docker build --file sign.dockerfile ."
 }
 
@@ -287,6 +287,55 @@ function Get-ProjectVersion {
     }
 
     return $match.Matches.Groups[1].Value
+}
+
+function Test-IsDryRun {
+    param(
+        [string]$Value = $env:ITW_DRY_RUN
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    switch ($Value.Trim().ToLowerInvariant()) {
+        '1' { return $true }
+        'true' { return $true }
+        'yes' { return $true }
+        'on' { return $true }
+        default { return $false }
+    }
+}
+
+function Invoke-DryRunSignCheck {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Root
+    )
+
+    $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
+        Get-ProjectVersion -Root $Root
+    } else {
+        $env:ITW_VERSION.Trim()
+    }
+
+    Write-Step "Dry run mode"
+    Write-Detail "Workspace:       $Root"
+    Write-Detail "Project version: $version"
+
+    if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
+        throw "AzureSignTool is not available on PATH."
+    }
+
+    Write-Detail "Running: AzureSignTool --version"
+    & AzureSignTool --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "AzureSignTool --version failed with exit code $LASTEXITCODE."
+    }
+
+    Write-Host ""
+    Write-Host "Dry run: not signing in dry run mode."
+    Write-Step "Dry run completed successfully"
 }
 
 function Initialize-SourceCheckout {
@@ -334,6 +383,24 @@ function Initialize-SourceCheckout {
     return $resolved
 }
 
+function Resolve-ContainerJdk11Home {
+    if (-not [string]::IsNullOrWhiteSpace($env:JDK11_HOME)) {
+        return $env:JDK11_HOME.Trim()
+    }
+    if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
+        return $env:JAVA_HOME.Trim()
+    }
+
+    $corretto = Get-ChildItem 'C:\Program Files\Amazon Corretto' -Directory -ErrorAction SilentlyContinue |
+        Sort-Object Name -Descending |
+        Select-Object -First 1
+    if ($null -ne $corretto) {
+        return $corretto.FullName
+    }
+
+    throw "JDK 11 home not found. The sign image should install corretto11jdk via Chocolatey."
+}
+
 function Run-ContainerSignWorkflow {
     Write-Step "IcedTea-Web Windows release build (container)"
     Write-Detail "Pipeline: Maven distribution (win-x64) -> WiX MSI -> Azure Key Vault signing"
@@ -350,6 +417,11 @@ function Run-ContainerSignWorkflow {
     }
 
     Set-Location $root
+
+    if (Test-IsDryRun) {
+        Invoke-DryRunSignCheck -Root $root
+        return
+    }
 
     $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
         Get-ProjectVersion -Root $root
@@ -369,9 +441,9 @@ function Run-ContainerSignWorkflow {
 
     $env:ITW_VERSION = $version
     $env:ITW_WORKSPACE = $root
-    $env:JDK11_HOME = if ($env:JDK11_HOME) { $env:JDK11_HOME } else { "C:\build-tools\jdk11" }
+    $env:JDK11_HOME = Resolve-ContainerJdk11Home
     $env:JAVA_HOME = $env:JDK11_HOME
-    $env:DOTNET_ROOT = if ($env:DOTNET_ROOT) { $env:DOTNET_ROOT } else { "C:\dotnet" }
+    $env:DOTNET_ROOT = if ($env:DOTNET_ROOT) { $env:DOTNET_ROOT } else { "C:\Program Files\dotnet" }
 
     Write-Detail "Workspace:           $root"
     Write-Detail "Version:             $version"
@@ -425,7 +497,7 @@ function Run-ContainerSignWorkflow {
     }
     Write-Detail "Built MSI: $($msiFiles[0].FullName)"
 
-    $signScript = Join-Path $root "scripts\sign-windows-azure-keyvault.ps1"
+    $signScript = Join-Path $root ".jenkins\workflows\sign.ps1"
     if (-not (Test-Path -LiteralPath $signScript)) {
         throw "Signing script not found at $signScript"
     }
@@ -458,6 +530,9 @@ function Run-HostSignWorkflow {
     Write-Detail "  1. Maven distribution build for win-x64"
     Write-Detail "  2. WiX MSI packaging"
     Write-Detail "  3. Azure Key Vault code signing"
+    if (Test-IsDryRun -Value $env:ITW_DRY_RUN) {
+        Write-Detail "Dry run mode:      enabled (container will resolve version, run AzureSignTool --version, and skip signing)"
+    }
 
     Write-Step "Step 1/5: Validate host prerequisites"
     if (-not (Test-Path -LiteralPath $EnvFilePath)) {
@@ -511,6 +586,14 @@ function Run-HostSignWorkflow {
         'JNLP_JCA_SIGN_ALIAS',
         'JNLP_JCA_TSA_URL'
     )
+    $dryRun = Test-IsDryRun -Value $env:ITW_DRY_RUN
+    if (-not $dryRun) {
+        $dryRun = Test-IsDryRun -Value $envMap['ITW_DRY_RUN']
+    }
+    if ($dryRun) {
+        $env:ITW_DRY_RUN = 'true'
+    }
+
     $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace($envMap[$_]) })
 
     $inlineChain = $envMap['JNLP_JCA_SIGN_CERTCHAIN']
@@ -525,31 +608,44 @@ function Run-HostSignWorkflow {
     }
 
     if ($missing.Count -gt 0 -or $chainProblems.Count -gt 0) {
-        $nextSteps = @(
-            "Edit $EnvFilePath and set every required signing value."
-        )
-        foreach ($name in $missing) {
-            $nextSteps += "Set $name in sign.env."
-        }
-        if ($chainProblems.Count -gt 0) {
-            $nextSteps += "Update JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE to the real PEM chain path on this machine."
-            $nextSteps += "Alternatively set JNLP_JCA_SIGN_CERTCHAIN to the PEM contents inline."
-        }
-        $nextSteps += "Re-run: pwsh -File $PSCommandPath"
+        if (-not $dryRun) {
+            $nextSteps = @(
+                "Edit $EnvFilePath and set every required signing value."
+            )
+            foreach ($name in $missing) {
+                $nextSteps += "Set $name in sign.env."
+            }
+            if ($chainProblems.Count -gt 0) {
+                $nextSteps += "Update JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE to the real PEM chain path on this machine."
+                $nextSteps += "Alternatively set JNLP_JCA_SIGN_CERTCHAIN to the PEM contents inline."
+            }
+            $nextSteps += "Re-run: pwsh -File $PSCommandPath"
 
-        $messages = @()
-        if ($missing.Count -gt 0) {
-            $messages += "missing or empty values: $($missing -join ', ')"
+            $messages = @()
+            if ($missing.Count -gt 0) {
+                $messages += "missing or empty values: $($missing -join ', ')"
+            }
+            if ($chainProblems.Count -gt 0) {
+                $messages += ($chainProblems -join '; ')
+            }
+            Stop-SignWorkflow `
+                -Message "sign.env is not ready ($($messages -join '; '))" `
+                -NextSteps $nextSteps
         }
-        if ($chainProblems.Count -gt 0) {
-            $messages += ($chainProblems -join '; ')
-        }
-        Stop-SignWorkflow `
-            -Message "sign.env is not ready ($($messages -join '; '))" `
-            -NextSteps $nextSteps
+
+        Write-Detail "Dry run mode: skipping signing credential validation."
     }
 
-    if ([string]::IsNullOrWhiteSpace($inlineChain)) {
+    if ($dryRun) {
+        $tempChainDir = Join-Path $WorkflowDir ".signing-temp"
+        New-Item -ItemType Directory -Force -Path $tempChainDir | Out-Null
+        $tempChain = Join-Path $tempChainDir "dry-run-certchain.pem"
+        if (-not (Test-Path -LiteralPath $tempChain)) {
+            Set-Content -LiteralPath $tempChain -Value "# dry run placeholder" -Encoding ascii
+        }
+        $env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE = $tempChain
+        Write-Detail "Certificate chain source: dry-run placeholder $tempChain"
+    } elseif ([string]::IsNullOrWhiteSpace($inlineChain)) {
         $env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE = $chainHostFile
         Write-Detail "Certificate chain source: host file $chainHostFile"
     } else {
@@ -562,7 +658,11 @@ function Run-HostSignWorkflow {
     }
 
     foreach ($name in $required) {
-        Set-Item -Path "Env:$name" -Value $envMap[$name]
+        if ($dryRun -and [string]::IsNullOrWhiteSpace($envMap[$name])) {
+            Set-Item -Path "Env:$name" -Value 'dry-run'
+        } else {
+            Set-Item -Path "Env:$name" -Value $envMap[$name]
+        }
     }
 
     $gitRef = if ($envMap['GIT_REF']) { $envMap['GIT_REF'].Trim() } else { '1.8' }
@@ -581,8 +681,11 @@ function Run-HostSignWorkflow {
     Write-Detail "Azure tenant ID:       $($envMap['AZURE_TENANT_ID'])"
     Write-Detail "Azure client secret:   [set, redacted]"
     Write-Detail "Sign alias:            $($envMap['JNLP_JCA_SIGN_ALIAS'])"
-    Write-Detail "TSA URL:               $($envMap['JNLP_JCA_TSA_URL'])"
+    Write-Detail "TSA URL:               $(if ($dryRun -and [string]::IsNullOrWhiteSpace($envMap['JNLP_JCA_TSA_URL'])) { 'dry-run' } else { $envMap['JNLP_JCA_TSA_URL'] })"
     Write-Detail "Container cert path:   $(if ($envMap['JNLP_JCA_SIGN_CERTCHAIN_FILE']) { $envMap['JNLP_JCA_SIGN_CERTCHAIN_FILE'] } else { 'C:\signing\certchain.pem' })"
+    if ($dryRun) {
+        Write-Detail "Dry run mode:          enabled"
+    }
 
     Write-Step "Step 3/5: Clone fresh git source on host"
     $repoRoot = Initialize-SourceCheckout -WorkflowDirectory $WorkflowDir -Config $envMap

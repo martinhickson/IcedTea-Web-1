@@ -24,6 +24,11 @@ pipeline {
             choices: ['true', 'false'],
             description: 'Bundle the .NET runtime in the launcher distribution'
         )
+        booleanParam(
+            name: 'DRY_RUN',
+            defaultValue: true,
+            description: 'Resolve version, run AzureSignTool --version, and skip Maven/MSI/signing (no Jenkins signing credentials required)'
+        )
     }
 
     environment {
@@ -43,71 +48,179 @@ pipeline {
                     extensions: [[$class: 'CloneOption', depth: 1, shallow: true, honorRefspec: true]],
                     userRemoteConfigs: scm.userRemoteConfigs
                 ])
+                powershell '''
+                    $ErrorActionPreference = "Stop"
+                    $WorkflowDir = Join-Path $env:WORKSPACE ".jenkins/workflows"
+                    if (Test-Path -LiteralPath (Join-Path $WorkflowDir "sign.compose")) {
+                        Write-Host "Workflow assets present in checkout: $WorkflowDir"
+                        return
+                    }
+                    Write-Host "Release ref lacks .jenkins/workflows; overlay from origin/1.8"
+                    git fetch --depth=1 origin 1.8
+                    New-Item -ItemType Directory -Force -Path $WorkflowDir | Out-Null
+                    git checkout FETCH_HEAD -- .jenkins/workflows
+                    if (-not (Test-Path -LiteralPath (Join-Path $WorkflowDir "sign.compose"))) {
+                        throw "Failed to overlay .jenkins/workflows from origin/1.8"
+                    }
+                '''
+            }
+        }
+
+        stage('Build and sign Windows release (dry run)') {
+            when {
+                expression { return params.DRY_RUN }
+            }
+            steps {
+                script {
+                    if (params.ITW_VERSION != null && params.ITW_VERSION.trim() != '') {
+                        env.ITW_VERSION = params.ITW_VERSION.trim()
+                    }
+                    env.ITW_DOTNET_SELF_CONTAINED = params.ITW_DOTNET_SELF_CONTAINED
+                    env.ITW_DRY_RUN = 'true'
+                }
+                script {
+                    def runSignCompose = {
+                        powershell '''
+                            $ErrorActionPreference = "Stop"
+
+                            if ([string]::IsNullOrWhiteSpace($env:WORKSPACE)) {
+                                throw "WORKSPACE is not set."
+                            }
+                            if (-not (Test-Path -LiteralPath $env:WORKSPACE)) {
+                                throw "Jenkins WORKSPACE not found: $($env:WORKSPACE)"
+                            }
+                            if (-not (Test-Path -LiteralPath (Join-Path $env:WORKSPACE "pom.xml"))) {
+                                throw "Checkout did not populate WORKSPACE (pom.xml missing)."
+                            }
+
+                            $WorkflowDir = Join-Path $env:WORKSPACE ".jenkins/workflows"
+                            $ComposeFile = Join-Path $WorkflowDir "sign.compose"
+                            $DockerBin = if ($env:DOCKER_BIN) { $env:DOCKER_BIN } else { "docker" }
+
+                            if (-not (Get-Command $DockerBin -ErrorAction SilentlyContinue)) {
+                                throw "Docker-compatible CLI not found: $DockerBin"
+                            }
+
+                            if ($env:ITW_DRY_RUN -ne 'true') {
+                                if ([string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)) {
+                                    throw "JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE is not set."
+                                }
+                                if (-not (Test-Path -LiteralPath $env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)) {
+                                    throw "Certificate chain file not found: $($env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)"
+                                }
+                            } else {
+                                $dryRunChain = Join-Path $WorkflowDir "dry-run-certchain.pem"
+                                if (-not (Test-Path -LiteralPath $dryRunChain)) {
+                                    New-Item -ItemType Directory -Force -Path $WorkflowDir | Out-Null
+                                    Set-Content -LiteralPath $dryRunChain -Value "# dry run placeholder" -Encoding ascii
+                                }
+                                $env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE = $dryRunChain
+                                if ([string]::IsNullOrWhiteSpace($env:KEYVAULT_URL)) { $env:KEYVAULT_URL = 'dry-run' }
+                                if ([string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_ID)) { $env:AZURE_CLIENT_ID = 'dry-run' }
+                                if ([string]::IsNullOrWhiteSpace($env:AZURE_TENANT_ID)) { $env:AZURE_TENANT_ID = 'dry-run' }
+                                if ([string]::IsNullOrWhiteSpace($env:AZURE_CLIENT_SECRET)) { $env:AZURE_CLIENT_SECRET = 'dry-run' }
+                                if ([string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_ALIAS)) { $env:JNLP_JCA_SIGN_ALIAS = 'dry-run' }
+                                if ([string]::IsNullOrWhiteSpace($env:JNLP_JCA_TSA_URL)) { $env:JNLP_JCA_TSA_URL = 'dry-run' }
+                                Write-Host "Dry run mode: skipping Jenkins signing credential validation."
+                            }
+
+                            Write-Host "Full Windows build and signing via Docker compose: $ComposeFile"
+                            Write-Host "Jenkins WORKSPACE: $($env:WORKSPACE)"
+                            if ($env:ITW_DRY_RUN -eq 'true') {
+                                Write-Host "Dry run mode: enabled"
+                            }
+
+                            & $DockerBin compose `
+                                --file $ComposeFile `
+                                --project-directory $WorkflowDir `
+                                up --build --abort-on-container-exit --remove-orphans
+
+                            if ($LASTEXITCODE -ne 0) {
+                                throw "sign compose failed with exit code $LASTEXITCODE."
+                            }
+                        '''
+                    }
+
+                    runSignCompose()
+                }
             }
         }
 
         stage('Build and sign Windows release') {
+            when {
+                expression { return !params.DRY_RUN }
+            }
             steps {
-                withCredentials([
-                    string(credentialsId: 'itw-keyvault-url', variable: 'KEYVAULT_URL'),
-                    string(credentialsId: 'itw-azure-client-id', variable: 'AZURE_CLIENT_ID'),
-                    string(credentialsId: 'itw-azure-tenant-id', variable: 'AZURE_TENANT_ID'),
-                    string(credentialsId: 'itw-azure-client-secret', variable: 'AZURE_CLIENT_SECRET'),
-                    string(credentialsId: 'itw-jnlp-jca-sign-alias', variable: 'JNLP_JCA_SIGN_ALIAS'),
-                    string(credentialsId: 'itw-jnlp-jca-tsa-url', variable: 'JNLP_JCA_TSA_URL'),
-                    file(credentialsId: 'itw-jnlp-jca-sign-certchain', variable: 'JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE')
-                ]) {
-                    script {
-                        if (params.ITW_VERSION != null && params.ITW_VERSION.trim() != '') {
-                            env.ITW_VERSION = params.ITW_VERSION.trim()
-                        }
-                        env.ITW_DOTNET_SELF_CONTAINED = params.ITW_DOTNET_SELF_CONTAINED
+                script {
+                    if (params.ITW_VERSION != null && params.ITW_VERSION.trim() != '') {
+                        env.ITW_VERSION = params.ITW_VERSION.trim()
                     }
-                    powershell '''
-                        $ErrorActionPreference = "Stop"
+                    env.ITW_DOTNET_SELF_CONTAINED = params.ITW_DOTNET_SELF_CONTAINED
+                    env.ITW_DRY_RUN = 'false'
+                }
+                script {
+                    def runSignCompose = {
+                        powershell '''
+                            $ErrorActionPreference = "Stop"
 
-                        if ([string]::IsNullOrWhiteSpace($env:WORKSPACE)) {
-                            throw "WORKSPACE is not set."
-                        }
-                        if (-not (Test-Path -LiteralPath $env:WORKSPACE)) {
-                            throw "Jenkins WORKSPACE not found: $($env:WORKSPACE)"
-                        }
-                        if (-not (Test-Path -LiteralPath (Join-Path $env:WORKSPACE "pom.xml"))) {
-                            throw "Checkout did not populate WORKSPACE (pom.xml missing)."
-                        }
+                            if ([string]::IsNullOrWhiteSpace($env:WORKSPACE)) {
+                                throw "WORKSPACE is not set."
+                            }
+                            if (-not (Test-Path -LiteralPath $env:WORKSPACE)) {
+                                throw "Jenkins WORKSPACE not found: $($env:WORKSPACE)"
+                            }
+                            if (-not (Test-Path -LiteralPath (Join-Path $env:WORKSPACE "pom.xml"))) {
+                                throw "Checkout did not populate WORKSPACE (pom.xml missing)."
+                            }
 
-                        $WorkflowDir = Join-Path $env:WORKSPACE ".jenkins\workflows"
-                        $ComposeFile = Join-Path $WorkflowDir "sign.compose"
-                        $DockerBin = if ($env:DOCKER_BIN) { $env:DOCKER_BIN } else { "docker" }
+                            $WorkflowDir = Join-Path $env:WORKSPACE ".jenkins/workflows"
+                            $ComposeFile = Join-Path $WorkflowDir "sign.compose"
+                            $DockerBin = if ($env:DOCKER_BIN) { $env:DOCKER_BIN } else { "docker" }
 
-                        if (-not (Get-Command $DockerBin -ErrorAction SilentlyContinue)) {
-                            throw "Docker-compatible CLI not found: $DockerBin"
-                        }
+                            if (-not (Get-Command $DockerBin -ErrorAction SilentlyContinue)) {
+                                throw "Docker-compatible CLI not found: $DockerBin"
+                            }
 
-                        if ([string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)) {
-                            throw "JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE is not set."
-                        }
-                        if (-not (Test-Path -LiteralPath $env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)) {
-                            throw "Certificate chain file not found: $($env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)"
-                        }
+                            if ([string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)) {
+                                throw "JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE is not set."
+                            }
+                            if (-not (Test-Path -LiteralPath $env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)) {
+                                throw "Certificate chain file not found: $($env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)"
+                            }
 
-                        Write-Host "Full Windows build and signing via Docker compose: $ComposeFile"
-                        Write-Host "Jenkins WORKSPACE: $($env:WORKSPACE)"
+                            Write-Host "Full Windows build and signing via Docker compose: $ComposeFile"
+                            Write-Host "Jenkins WORKSPACE: $($env:WORKSPACE)"
 
-                        & $DockerBin compose `
-                            -f $ComposeFile `
-                            --project-directory $WorkflowDir `
-                            up --build --abort-on-container-exit --remove-orphans
+                            & $DockerBin compose `
+                                --file $ComposeFile `
+                                --project-directory $WorkflowDir `
+                                up --build --abort-on-container-exit --remove-orphans
 
-                        if ($LASTEXITCODE -ne 0) {
-                            throw "sign compose failed with exit code $LASTEXITCODE."
-                        }
-                    '''
+                            if ($LASTEXITCODE -ne 0) {
+                                throw "sign compose failed with exit code $LASTEXITCODE."
+                            }
+                        '''
+                    }
+
+                    withCredentials([
+                        string(credentialsId: 'itw-keyvault-url', variable: 'KEYVAULT_URL'),
+                        string(credentialsId: 'itw-azure-client-id', variable: 'AZURE_CLIENT_ID'),
+                        string(credentialsId: 'itw-azure-tenant-id', variable: 'AZURE_TENANT_ID'),
+                        string(credentialsId: 'itw-azure-client-secret', variable: 'AZURE_CLIENT_SECRET'),
+                        string(credentialsId: 'itw-jnlp-jca-sign-alias', variable: 'JNLP_JCA_SIGN_ALIAS'),
+                        string(credentialsId: 'itw-jnlp-jca-tsa-url', variable: 'JNLP_JCA_TSA_URL'),
+                        file(credentialsId: 'itw-jnlp-jca-sign-certchain', variable: 'JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE')
+                    ]) {
+                        runSignCompose()
+                    }
                 }
             }
         }
 
         stage('Archive release artifacts') {
+            when {
+                expression { return !params.DRY_RUN }
+            }
             steps {
                 archiveArtifacts artifacts: '''
                     icedtea-web-distribution/target/*-win-x64.zip,

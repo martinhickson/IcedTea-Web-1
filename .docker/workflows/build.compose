@@ -15,6 +15,7 @@ services:
       ITW_DOTNET_SELF_CONTAINED: ${ITW_DOTNET_SELF_CONTAINED:-true}
       ITW_DOTNET_RUNTIME_IDENTIFIER: ${ITW_DOTNET_RUNTIME_IDENTIFIER:-linux-x64}
       ITW_CORRETTO_URL: ${ITW_CORRETTO_URL:-}
+      ITW_DRY_RUN: ${ITW_DRY_RUN:-false}
       HOME: /home/jenkins
     volumes:
       - type: bind

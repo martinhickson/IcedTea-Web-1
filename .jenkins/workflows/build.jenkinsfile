@@ -29,6 +29,11 @@ pipeline {
             choices: ['linux-x64', 'win-x64', 'osx-x64', 'osx-arm64'],
             description: 'Target .NET runtime identifier for the distribution build'
         )
+        booleanParam(
+            name: 'DRY_RUN',
+            defaultValue: false,
+            description: 'Resolve version from pom.xml and skip the distribution build'
+        )
     }
 
     environment {
@@ -58,6 +63,7 @@ pipeline {
                     }
                     env.ITW_DOTNET_SELF_CONTAINED = params.ITW_DOTNET_SELF_CONTAINED
                     env.ITW_DOTNET_RUNTIME_IDENTIFIER = params.ITW_DOTNET_RUNTIME_IDENTIFIER
+                    env.ITW_DRY_RUN = params.DRY_RUN ? 'true' : 'false'
                 }
                 sh '''#!/bin/bash
                     set -euo pipefail
@@ -68,6 +74,9 @@ pipeline {
         }
 
         stage('Archive distribution artifacts') {
+            when {
+                expression { return !params.DRY_RUN }
+            }
             steps {
                 archiveArtifacts artifacts: '''
                     icedtea-web-distribution/target/*.zip

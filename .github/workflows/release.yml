@@ -417,7 +417,7 @@ jobs:
           JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
           JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
           JNLP_JCA_SIGN_CERTCHAIN: ${{ secrets.JNLP_JCA_SIGN_CERTCHAIN }}
-        run: '& scripts/sign-windows-azure-keyvault.ps1'
+        run: '& .github/workflows/sign.ps1'
         shell: pwsh
 
       - name: Build macOS DMG

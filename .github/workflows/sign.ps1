@@ -1,5 +1,62 @@
 $ErrorActionPreference = "Stop"
 
+function Test-IsDryRun {
+    param(
+        [string]$Value = $env:ITW_DRY_RUN
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    switch ($Value.Trim().ToLowerInvariant()) {
+        '1' { return $true }
+        'true' { return $true }
+        'yes' { return $true }
+        'on' { return $true }
+        default { return $false }
+    }
+}
+
+function Get-ProjectVersionFromPom {
+    $pomPath = Join-Path (Get-Location) "pom.xml"
+    if (-not (Test-Path -LiteralPath $pomPath)) {
+        throw "Root pom.xml not found at $pomPath"
+    }
+
+    $match = Select-String -LiteralPath $pomPath -Pattern '<version>([^<]+)</version>' | Select-Object -First 1
+    if ($null -eq $match) {
+        throw "Could not read project version from $pomPath"
+    }
+
+    return $match.Matches.Groups[1].Value
+}
+
+if (Test-IsDryRun) {
+    $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
+        Get-ProjectVersionFromPom
+    } else {
+        $env:ITW_VERSION.Trim()
+    }
+
+    Write-Host "=== Dry run mode ==="
+    Write-Host "Project version: $version"
+
+    if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
+        throw "AzureSignTool is not available on PATH."
+    }
+
+    Write-Host "Running: AzureSignTool --version"
+    & AzureSignTool --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "AzureSignTool --version failed with exit code $LASTEXITCODE."
+    }
+
+    Write-Host ""
+    Write-Host "Dry run: not signing in dry run mode."
+    exit 0
+}
+
 if (-not [string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)) {
     if (-not (Test-Path -LiteralPath $env:JNLP_JCA_SIGN_CERTCHAIN_FILE)) {
         throw "JNLP_JCA_SIGN_CERTCHAIN_FILE not found: $($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)"
