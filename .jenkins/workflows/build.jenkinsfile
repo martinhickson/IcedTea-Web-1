@@ -61,40 +61,8 @@ pipeline {
                 }
                 sh '''#!/bin/bash
                     set -euo pipefail
-
-                    if [[ -z "${WORKSPACE:-}" ]]; then
-                      echo "WORKSPACE is not set." >&2
-                      exit 1
-                    fi
-                    if [[ ! -d "$WORKSPACE" ]]; then
-                      echo "Jenkins WORKSPACE not found: $WORKSPACE" >&2
-                      exit 1
-                    fi
-                    if [[ ! -f "$WORKSPACE/pom.xml" ]]; then
-                      echo "Checkout did not populate WORKSPACE (pom.xml missing)." >&2
-                      exit 1
-                    fi
-
-                    SCRIPT_DIR="$WORKSPACE/.jenkins/workflows"
-                    DOCKER_BIN="${DOCKER_BIN:-docker}"
-                    M2_REPOSITORY="${ITW_M2_REPOSITORY:-/home/jenkins/.m2/repository}"
-
-                    if ! command -v "$DOCKER_BIN" >/dev/null 2>&1; then
-                      echo "Docker-compatible CLI not found: $DOCKER_BIN" >&2
-                      exit 1
-                    fi
-
-                    mkdir -p "$M2_REPOSITORY"
-                    export ITW_M2_REPOSITORY="$M2_REPOSITORY"
-
-                    echo "Distribution build via Docker compose: $SCRIPT_DIR/build.compose"
-                    echo "Jenkins WORKSPACE: $WORKSPACE"
-                    echo "Maven repository: $M2_REPOSITORY"
-
-                    "$DOCKER_BIN" compose \
-                      -f "$SCRIPT_DIR/build.compose" \
-                      --project-directory "$SCRIPT_DIR" \
-                      up --build --abort-on-container-exit --remove-orphans
+                    source "$WORKSPACE/.docker/workflows/build.sh"
+                    run_jenkins_controller "$WORKSPACE/.jenkins/workflows"
                 '''
             }
         }

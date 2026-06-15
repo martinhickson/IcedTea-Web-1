@@ -2,41 +2,24 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${1:-$SCRIPT_DIR/build.env}"
-COMPOSE_FILE="$SCRIPT_DIR/build.compose"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 
-if [[ ! -f "$ENV_FILE" ]]; then
-  echo "Missing $ENV_FILE. Create or fill in build.env with git source and build settings." >&2
-  exit 1
-fi
-
-if [[ ! -f "$COMPOSE_FILE" ]]; then
-  echo "Build compose file not found: $COMPOSE_FILE" >&2
-  exit 1
-fi
-
-if ! command -v "$DOCKER_BIN" >/dev/null 2>&1; then
-  echo "Docker-compatible CLI not found: $DOCKER_BIN" >&2
-  exit 1
-fi
-
-if ! command -v git >/dev/null 2>&1; then
-  echo "git is required on the host to clone source before running Docker compose." >&2
-  exit 1
-fi
-
 declare -A ENV_MAP=()
-while IFS= read -r line || [[ -n "$line" ]]; do
-  [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
-  [[ "$line" == *"="* ]] || continue
-  key="${line%%=*}"
-  key="${key// /}"
-  value="${line#*=}"
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-  ENV_MAP["$key"]="$value"
-done < "$ENV_FILE"
+
+load_env_map() {
+  local env_file="$1"
+  ENV_MAP=()
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*(#|$) ]] && continue
+    [[ "$line" == *"="* ]] || continue
+    local key="${line%%=*}"
+    key="${key// /}"
+    local value="${line#*=}"
+    value="${value#"${value%%[![:space:]]*}"}"
+    value="${value%"${value##*[![:space:]]}"}"
+    ENV_MAP["$key"]="$value"
+  done < "$env_file"
+}
 
 get_git_clone_url() {
   if [[ -n "${ENV_MAP[GIT_REMOTE_URL]:-}" ]]; then
@@ -48,7 +31,7 @@ get_git_clone_url() {
   printf 'https://github.com/%s.git' "$repository"
 }
 
-initialize_source_checkout() {
+clone_source_checkout() {
   local remote_url git_ref clone_dir clone_url token parent_dir
 
   remote_url="$(get_git_clone_url)"
@@ -74,36 +57,173 @@ initialize_source_checkout() {
 
   git clone --depth 1 --single-branch --branch "$git_ref" "$clone_url" "$clone_dir"
 
-  cd "$clone_dir" >/dev/null
-  printf '%s\n' "$(pwd)"
+  printf '%s\n' "$(cd "$clone_dir" && pwd)"
 }
 
-repo_root="$(initialize_source_checkout)"
-export ITW_REPO_ROOT="$repo_root"
+export_optional_build_vars() {
+  if [[ ${#ENV_MAP[@]} -eq 0 ]]; then
+    return
+  fi
+  if [[ -n "${ENV_MAP[ITW_VERSION]:-}" ]]; then
+    export ITW_VERSION="${ENV_MAP[ITW_VERSION]}"
+  fi
+  if [[ -n "${ENV_MAP[ITW_DOTNET_SELF_CONTAINED]:-}" ]]; then
+    export ITW_DOTNET_SELF_CONTAINED="${ENV_MAP[ITW_DOTNET_SELF_CONTAINED]}"
+  fi
+  if [[ -n "${ENV_MAP[ITW_DOTNET_RUNTIME_IDENTIFIER]:-}" ]]; then
+    export ITW_DOTNET_RUNTIME_IDENTIFIER="${ENV_MAP[ITW_DOTNET_RUNTIME_IDENTIFIER]}"
+  fi
+  if [[ -n "${ENV_MAP[ITW_CORRETTO_URL]:-}" ]]; then
+    export ITW_CORRETTO_URL="${ENV_MAP[ITW_CORRETTO_URL]}"
+  fi
+}
 
-m2_repository="${ENV_MAP[ITW_M2_REPOSITORY]:-${HOME}/.m2/repository}"
-mkdir -p "$m2_repository"
-export ITW_M2_REPOSITORY="$m2_repository"
+prepare_m2_repository() {
+  local m2_repository="${1:-${ITW_M2_REPOSITORY:-${HOME}/.m2/repository}}"
+  mkdir -p "$m2_repository"
+  export ITW_M2_REPOSITORY="$m2_repository"
+}
 
-if [[ -n "${ENV_MAP[ITW_VERSION]:-}" ]]; then
-  export ITW_VERSION="${ENV_MAP[ITW_VERSION]}"
-fi
-if [[ -n "${ENV_MAP[ITW_DOTNET_SELF_CONTAINED]:-}" ]]; then
-  export ITW_DOTNET_SELF_CONTAINED="${ENV_MAP[ITW_DOTNET_SELF_CONTAINED]}"
-fi
-if [[ -n "${ENV_MAP[ITW_DOTNET_RUNTIME_IDENTIFIER]:-}" ]]; then
-  export ITW_DOTNET_RUNTIME_IDENTIFIER="${ENV_MAP[ITW_DOTNET_RUNTIME_IDENTIFIER]}"
-fi
-if [[ -n "${ENV_MAP[ITW_CORRETTO_URL]:-}" ]]; then
-  export ITW_CORRETTO_URL="${ENV_MAP[ITW_CORRETTO_URL]}"
-fi
+set_workspace_root() {
+  local root="$1"
+  export ITW_WORKSPACE_ROOT="$root"
+  export ITW_REPO_ROOT="$root"
+}
 
-echo "Distribution build via Docker compose."
-echo "Cloned source root: $ITW_REPO_ROOT"
-echo "Compose file:       $COMPOSE_FILE"
-echo "Maven repository:   $ITW_M2_REPOSITORY"
+require_command() {
+  local name="$1"
+  if ! command -v "$name" >/dev/null 2>&1; then
+    echo "Required command not found: $name" >&2
+    exit 1
+  fi
+}
 
-"$DOCKER_BIN" compose \
-  -f "$COMPOSE_FILE" \
-  --project-directory "$SCRIPT_DIR" \
-  up --build --abort-on-container-exit --remove-orphans
+run_distribution_compose() {
+  local workflow_dir="$1"
+  local compose_file="$workflow_dir/build.compose"
+
+  if [[ -z "${ITW_WORKSPACE_ROOT:-}" ]]; then
+    echo "ITW_WORKSPACE_ROOT is not set." >&2
+    exit 1
+  fi
+  if [[ ! -d "$ITW_WORKSPACE_ROOT" ]]; then
+    echo "Workspace root not found: $ITW_WORKSPACE_ROOT" >&2
+    exit 1
+  fi
+  if [[ ! -f "$ITW_WORKSPACE_ROOT/pom.xml" ]]; then
+    echo "Workspace missing pom.xml: $ITW_WORKSPACE_ROOT" >&2
+    exit 1
+  fi
+  if [[ ! -f "$compose_file" ]]; then
+    echo "Build compose file not found: $compose_file" >&2
+    exit 1
+  fi
+
+  require_command "$DOCKER_BIN"
+
+  echo "Distribution build via Docker compose: $compose_file"
+  echo "Workspace root:     $ITW_WORKSPACE_ROOT"
+  echo "Maven repository:   ${ITW_M2_REPOSITORY:-/home/jenkins/.m2/repository}"
+
+  "$DOCKER_BIN" compose \
+    -f "$compose_file" \
+    --project-directory "$workflow_dir" \
+    up --build --abort-on-container-exit --remove-orphans
+}
+
+run_container_distribution_build() {
+  local root version self_contained rid corretto_url
+
+  root="${ITW_WORKSPACE_ROOT:?ITW_WORKSPACE_ROOT is not set}"
+  if [[ ! -d "$root" ]]; then
+    echo "Workspace root not found: $root" >&2
+    exit 1
+  fi
+
+  cd "$root"
+
+  if [[ -z "${ITW_VERSION:-}" ]]; then
+    ITW_VERSION="$(sed -n 's:.*<version>\([^<]*\)</version>.*:\1:p' pom.xml | head -n 1)"
+  fi
+  version="$ITW_VERSION"
+  if [[ -z "$version" ]]; then
+    echo "Could not determine project version from pom.xml" >&2
+    exit 1
+  fi
+
+  self_contained="${ITW_DOTNET_SELF_CONTAINED:-true}"
+  rid="${ITW_DOTNET_RUNTIME_IDENTIFIER:-linux-x64}"
+
+  case "$rid" in
+    linux-x64)
+      corretto_url="${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz}"
+      ;;
+    win-x64)
+      corretto_url="${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip}"
+      ;;
+    osx-x64)
+      corretto_url="${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz}"
+      ;;
+    osx-arm64)
+      corretto_url="${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-macos-jdk.tar.gz}"
+      ;;
+    *)
+      echo "Unsupported runtime identifier: $rid" >&2
+      exit 1
+      ;;
+  esac
+
+  echo "=== IcedTea-Web distribution build ==="
+  echo "Workspace:       $root"
+  echo "Version:         $version"
+  echo "JDK 11:          ${JAVA_HOME:?JAVA_HOME is not set}"
+  echo "Runtime ID:      $rid"
+  echo "Self-contained:  $self_contained"
+  echo "Maven repo:      /home/jenkins/.m2/repository"
+
+  mvn -P maven-distribution \
+    -pl icedtea-web-distribution \
+    -am \
+    install \
+    -Dmaven.test.skip=true \
+    -DskipTests \
+    -Djdk11.home="$JAVA_HOME" \
+    -Ditw.dotnet.selfContained="$self_contained" \
+    -Ditw.dotnet.runtime.identifier="$rid" \
+    -Ditw.corretto.url="$corretto_url"
+
+  echo "=== Distribution build completed successfully ==="
+}
+
+run_host_controller() {
+  local env_file="${1:-$SCRIPT_DIR/build.env}"
+
+  if [[ ! -f "$env_file" ]]; then
+    echo "Missing $env_file. Create or fill in build.env with git source and build settings." >&2
+    exit 1
+  fi
+
+  require_command git
+  load_env_map "$env_file"
+  set_workspace_root "$(clone_source_checkout)"
+  prepare_m2_repository "${ENV_MAP[ITW_M2_REPOSITORY]:-${HOME}/.m2/repository}"
+  export_optional_build_vars
+  run_distribution_compose "$SCRIPT_DIR"
+}
+
+run_jenkins_controller() {
+  local workflow_dir="$1"
+
+  if [[ -z "${WORKSPACE:-}" ]]; then
+    echo "WORKSPACE is not set." >&2
+    exit 1
+  fi
+
+  set_workspace_root "$WORKSPACE"
+  prepare_m2_repository "${ITW_M2_REPOSITORY:-/home/jenkins/.m2/repository}"
+  run_distribution_compose "$workflow_dir"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+  run_host_controller "$@"
+fi
