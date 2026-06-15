@@ -142,18 +142,15 @@ function Show-DockerHostContext {
     Write-Detail "Compose project dir:   $WorkflowDir"
     Write-Detail "Build context:         $WorkflowDir"
     Write-Detail "Target platform:       windows/amd64"
-    Write-Detail "Expected host mode:    Windows containers (not Linux containers)"
 
     $osType = (& $DockerBin info --format "{{.OSType}}" 2>$null | Out-String).Trim()
     if ($osType) {
         Write-Detail "Docker engine OSType:  $osType"
         if ($osType -eq "linux") {
             Stop-SignWorkflow `
-                -Message "Docker engine is running Linux containers, but this workflow requires Windows containers." `
+                -Message "Docker engine OSType is linux; this workflow builds windows/amd64 images and must run on a Windows containers engine." `
                 -NextSteps @(
-                    "Run sign.ps1 on a Windows machine with Docker Desktop switched to Windows containers mode."
-                    "Linux Docker cannot build or run the mcr.microsoft.com/windows/servercore base image used by sign.dockerfile."
-                    "Verify with: docker info --format ""{{.OSType}}"" (must be windows)."
+                    "Switch Docker Desktop to Windows containers, then verify: docker info --format ""{{.OSType}}"""
                 )
         }
     }
@@ -166,7 +163,9 @@ function Invoke-DockerComposeWorkflow {
         [Parameter(Mandatory = $true)]
         [string]$ComposeFile,
         [Parameter(Mandatory = $true)]
-        [string]$WorkflowDir
+        [string]$WorkflowDir,
+        [Parameter(Mandatory = $true)]
+        [string]$DockerfilePath
     )
 
     $composeArgs = @(
@@ -176,7 +175,15 @@ function Invoke-DockerComposeWorkflow {
     )
 
     $previousBuildKitProgress = $env:BUILDKIT_PROGRESS
+    $previousComposeBake = $env:COMPOSE_BAKE
     $env:BUILDKIT_PROGRESS = "plain"
+    $env:COMPOSE_BAKE = "false"
+
+    Write-Detail "Compose build pulls the latest base image from MCR (--pull), not ACR."
+    Write-Detail "Base image: mcr.microsoft.com/windows/servercore:ltsc2025"
+    Write-Detail "Equivalent manual steps:"
+    Write-Detail "  docker pull mcr.microsoft.com/windows/servercore:ltsc2025"
+    Write-Detail "  docker build --file sign.dockerfile ."
 
     try {
         Invoke-DockerCommand `
@@ -185,7 +192,7 @@ function Invoke-DockerComposeWorkflow {
             -Arguments ($composeArgs + @("config"))
 
         Invoke-DockerCommand `
-            -StepName "Docker Compose build (pull base image and build sign service)" `
+            -StepName "Docker build via compose (--pull sign; COMPOSE_BAKE=false)" `
             -DockerBin $DockerBin `
             -Arguments ($composeArgs + @("build", "--pull", "sign"))
 
@@ -199,13 +206,20 @@ function Invoke-DockerComposeWorkflow {
         } else {
             $env:BUILDKIT_PROGRESS = $previousBuildKitProgress
         }
+        if ($null -eq $previousComposeBake) {
+            Remove-Item Env:COMPOSE_BAKE -ErrorAction SilentlyContinue
+        } else {
+            $env:COMPOSE_BAKE = $previousComposeBake
+        }
     }
 }
 
 function Write-DockerFailureHelp {
     param(
         [string]$Message = "",
-        [string]$FailedStep = "Docker Compose workflow"
+        [string]$FailedStep = "Docker Compose workflow",
+        [string]$WorkflowDir = "",
+        [string]$DockerfilePath = ""
     )
 
     Write-Host ""
@@ -216,21 +230,30 @@ function Write-DockerFailureHelp {
     }
     Write-Detail "Base image:    mcr.microsoft.com/windows/servercore:ltsc2025"
     Write-Detail "Compose file:  sign.compose (service: sign, platform: windows/amd64)"
-    Write-Detail "Typical commands executed by this script:"
+    if ($WorkflowDir) {
+        Write-Detail "Project dir:   $WorkflowDir"
+    }
+    Write-Detail "Commands run by this script:"
     Write-Detail "  docker compose --file sign.compose --project-directory <workflows> config"
     Write-Detail "  docker compose --file sign.compose --project-directory <workflows> build --pull sign"
     Write-Detail "  docker compose --file sign.compose --project-directory <workflows> up --no-build --abort-on-container-exit --remove-orphans sign"
+    Write-Detail "Manual equivalent:"
+    if ($WorkflowDir -and $DockerfilePath) {
+        Write-Detail "  cd $WorkflowDir"
+        Write-Detail "  docker pull mcr.microsoft.com/windows/servercore:ltsc2025"
+        Write-Detail "  docker build --file sign.dockerfile ."
+    }
+
+    if ($Message -notmatch 'unauthorized|authentication|401|basic auth|denied') {
+        return
+    }
 
     Write-Host ""
-    Write-Host "=== Docker troubleshooting ===" -ForegroundColor Yellow
-    Write-NextStep "Run on a Windows host with Docker Desktop in Windows containers mode."
-    Write-NextStep "Verify engine type: docker info --format ""{{.OSType}}"" (must be windows)."
-    Write-NextStep "Test base image pull: docker pull mcr.microsoft.com/windows/servercore:ltsc2025"
-    if ($Message -match 'basic auth|unauthorized|authentication required|401|denied') {
-        Write-NextStep "401/Unauthorized from MCR on Linux usually means Windows images are not available on this Docker engine."
-        Write-NextStep "If using a registry mirror/proxy, ensure it allows mcr.microsoft.com without Docker Hub credentials."
-        Write-NextStep "If a private registry is required, run: docker login mcr.microsoft.com"
-    }
+    Write-Host "=== Registry auth note ===" -ForegroundColor Yellow
+    Write-Detail "Pulls come from MCR (mcr.microsoft.com), not Azure ACR."
+    Write-Detail "Azure credentials in sign.env are for Key Vault signing, not Docker registry login."
+    Write-NextStep "Confirm pull works: docker pull mcr.microsoft.com/windows/servercore:ltsc2025"
+    Write-NextStep "Then confirm build works: docker build --file sign.dockerfile ."
 }
 
 function Get-GitCloneUrl {
@@ -431,7 +454,6 @@ function Run-HostSignWorkflow {
     Write-Detail "Env file:      $EnvFilePath"
     Write-Detail "Compose file:  $ComposeFile"
     Write-Detail "Docker CLI:    $DockerBin"
-    Write-Detail "Requires:      Windows Docker host (Windows containers mode)"
     Write-Detail "Container pipeline:"
     Write-Detail "  1. Maven distribution build for win-x64"
     Write-Detail "  2. WiX MSI packaging"
@@ -460,7 +482,6 @@ function Run-HostSignWorkflow {
             -Message "Docker-compatible CLI not found: $DockerBin" `
             -NextSteps @(
                 "Install Docker and ensure the docker command is on PATH."
-                "This workflow requires a Windows machine running Docker in Windows containers mode."
             )
     }
     Write-Detail "Docker CLI available: $DockerBin"
@@ -600,9 +621,14 @@ function Run-HostSignWorkflow {
         Invoke-DockerComposeWorkflow `
             -DockerBin $DockerBin `
             -ComposeFile $ComposeFile `
-            -WorkflowDir $WorkflowDir
+            -WorkflowDir $WorkflowDir `
+            -DockerfilePath $DockerfilePath
     } catch {
-        Write-DockerFailureHelp -Message $_.Exception.Message -FailedStep "Step 5/5 Docker Compose workflow"
+        Write-DockerFailureHelp `
+            -Message $_.Exception.Message `
+            -FailedStep "Step 5/5 Docker Compose workflow" `
+            -WorkflowDir $WorkflowDir `
+            -DockerfilePath $DockerfilePath
         throw
     }
 
@@ -619,7 +645,6 @@ if ($Container) {
         Run-HostSignWorkflow -EnvFilePath $EnvFile
     } catch {
         Write-Failure $_.Exception.Message
-        Write-DockerFailureHelp -Message $_.Exception.Message
         if ($_.ScriptStackTrace) {
             Write-Host $_.ScriptStackTrace -ForegroundColor DarkRed
         }
