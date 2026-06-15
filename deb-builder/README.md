@@ -21,8 +21,8 @@ mvn -P maven-distribution -pl icedtea-web-distribution -am install \
   -Ditw.dotnet.runtime.identifier=linux-x64 \
   -Drelease.version=2.4.3
 
-chmod +x packaging/linux/build-native-packages.sh packaging/linux/container-build-package.sh
-packaging/linux/build-native-packages.sh
+chmod +x .packaging/workflows/linux/build-native-packages.sh .packaging/workflows/linux/container-build-package.sh
+.packaging/workflows/linux/build-native-packages.sh
 ```
 
 The `.deb` is written to:

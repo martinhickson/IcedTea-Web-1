@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 VERSION="${ITW_VERSION:-2.0.1-SNAPSHOT}"
 DIST_DIR="${ITW_DIST_DIR:-$ROOT_DIR/icedtea-web-distribution/target/dist/icedtea-web-$VERSION}"
 OUTPUT_DIR="${ITW_NATIVE_OUTPUT_DIR:-$ROOT_DIR/icedtea-web-distribution/target/native-packages}"
@@ -36,8 +36,8 @@ mkdir -p "$APP_ROOT/MacOS" "$APP_ROOT/Resources/opt/icedtea-web" "$DMG_LAYOUT"
 cp -a "$DIST_DIR/." "$APP_ROOT/Resources/opt/icedtea-web/"
 chmod +x "$APP_ROOT/Resources/opt/icedtea-web/bin/"* 2>/dev/null || true
 
-ICON_SCRIPT="$ROOT_DIR/packaging/macos/prepare-macos-icon.sh"
-ICON_ICNS="$ROOT_DIR/packaging/icons/icedtea-web.icns"
+ICON_SCRIPT="$ROOT_DIR/.packaging/workflows/macos/prepare-macos-icon.sh"
+ICON_ICNS="$ROOT_DIR/.packaging/workflows/icons/icedtea-web.icns"
 if [[ -x "$ICON_SCRIPT" ]]; then
   "$ICON_SCRIPT"
 fi

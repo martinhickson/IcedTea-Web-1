@@ -1,0 +1,90 @@
+# Local Linux distribution build in Docker (Corretto 11, Maven, .NET).
+#
+# build.sh git-clones fresh source on the host, then runs this compose file.
+# Fill in build.env and run: ./.docker/workflows/build.sh
+
+services:
+  build:
+    platform: linux/amd64
+    build:
+      context: .
+      dockerfile: build.dockerfile
+    environment:
+      ITW_WORKSPACE_ROOT: ${ITW_REPO_ROOT}
+      ITW_VERSION: ${ITW_VERSION:-}
+      ITW_DOTNET_SELF_CONTAINED: ${ITW_DOTNET_SELF_CONTAINED:-true}
+      ITW_DOTNET_RUNTIME_IDENTIFIER: ${ITW_DOTNET_RUNTIME_IDENTIFIER:-linux-x64}
+      ITW_CORRETTO_URL: ${ITW_CORRETTO_URL:-}
+      HOME: /home/jenkins
+      JAVA_HOME: /usr/lib/jvm/java-11-amazon-corretto
+    volumes:
+      - type: bind
+        source: ${ITW_REPO_ROOT}
+        target: ${ITW_REPO_ROOT}
+      - type: bind
+        source: ${ITW_M2_REPOSITORY:-${HOME}/.m2/repository}
+        target: /home/jenkins/.m2/repository
+    entrypoint:
+      - /bin/bash
+      - -lc
+      - |
+        set -euo pipefail
+
+        root="${ITW_WORKSPACE_ROOT:?ITW_REPO_ROOT is not set}"
+        if [[ ! -d "$root" ]]; then
+          echo "Cloned source root not found: $root" >&2
+          exit 1
+        fi
+
+        cd "$root"
+
+        if [[ -z "${ITW_VERSION:-}" ]]; then
+          ITW_VERSION="$(sed -n 's:.*<version>\([^<]*\)</version>.*:\1:p' pom.xml | head -n 1)"
+        fi
+        if [[ -z "$ITW_VERSION" ]]; then
+          echo "Could not determine project version from pom.xml" >&2
+          exit 1
+        fi
+
+        self_contained="${ITW_DOTNET_SELF_CONTAINED:-true}"
+        rid="${ITW_DOTNET_RUNTIME_IDENTIFIER:-linux-x64}"
+
+        case "$rid" in
+          linux-x64)
+            corretto_url="${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz}"
+            ;;
+          win-x64)
+            corretto_url="${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip}"
+            ;;
+          osx-x64)
+            corretto_url="${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-x64-macos-jdk.tar.gz}"
+            ;;
+          osx-arm64)
+            corretto_url="${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-aarch64-macos-jdk.tar.gz}"
+            ;;
+          *)
+            echo "Unsupported runtime identifier: $rid" >&2
+            exit 1
+            ;;
+        esac
+
+        echo "=== IcedTea-Web distribution build ==="
+        echo "Workspace:       $root"
+        echo "Version:         $ITW_VERSION"
+        echo "JDK 11:          $JAVA_HOME"
+        echo "Runtime ID:      $rid"
+        echo "Self-contained:  $self_contained"
+        echo "Maven repo:      /home/jenkins/.m2/repository"
+
+        mvn -P maven-distribution \
+          -pl icedtea-web-distribution \
+          -am \
+          install \
+          -Dmaven.test.skip=true \
+          -DskipTests \
+          -Djdk11.home="$JAVA_HOME" \
+          -Ditw.dotnet.selfContained="$self_contained" \
+          -Ditw.dotnet.runtime.identifier="$rid" \
+          -Ditw.corretto.url="$corretto_url"
+
+        echo "=== Distribution build completed successfully ==="

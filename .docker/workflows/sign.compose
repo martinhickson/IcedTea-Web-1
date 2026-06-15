@@ -1,0 +1,34 @@
+# Local Windows release build in Docker (Maven, MSI, Key Vault signing).
+# Requires a Windows Docker host (Windows containers mode).
+#
+# sign.ps1 git-clones fresh source on the host, then runs this compose file.
+# Fill in sign.env and run: .\.docker\workflows\sign.ps1
+
+services:
+  sign:
+    platform: windows/amd64
+    build:
+      context: .
+      dockerfile: sign.dockerfile
+    environment:
+      ITW_WORKSPACE_ROOT: ${ITW_REPO_ROOT}
+      ITW_VERSION: ${ITW_VERSION:-}
+      ITW_DOTNET_SELF_CONTAINED: ${ITW_DOTNET_SELF_CONTAINED:-true}
+      ITW_CORRETTO_URL: ${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip}
+      KEYVAULT_URL: ${KEYVAULT_URL}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET}
+      JNLP_JCA_SIGN_ALIAS: ${JNLP_JCA_SIGN_ALIAS}
+      JNLP_JCA_TSA_URL: ${JNLP_JCA_TSA_URL}
+      JNLP_JCA_SIGN_CERTCHAIN: ${JNLP_JCA_SIGN_CERTCHAIN:-}
+      JNLP_JCA_SIGN_CERTCHAIN_FILE: ${JNLP_JCA_SIGN_CERTCHAIN_FILE:-C:\signing\certchain.pem}
+      GITHUB_REPOSITORY: ${GITHUB_REPOSITORY:-martinhickson/IcedTea-Web-1}
+    volumes:
+      - type: bind
+        source: ${ITW_REPO_ROOT}
+        target: ${ITW_REPO_ROOT}
+      - type: bind
+        source: ${JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE}
+        target: C:\signing\certchain.pem
+        read_only: true

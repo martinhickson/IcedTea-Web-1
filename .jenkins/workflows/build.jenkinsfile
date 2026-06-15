@@ -1,0 +1,110 @@
+pipeline {
+    agent {
+        label 'linux'
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        string(
+            name: 'GIT_REF',
+            defaultValue: '1.8',
+            description: 'Git branch or tag to checkout into WORKSPACE'
+        )
+        string(
+            name: 'ITW_VERSION',
+            defaultValue: '',
+            description: 'Release version (optional; defaults to pom.xml project version when empty)'
+        )
+        choice(
+            name: 'ITW_DOTNET_SELF_CONTAINED',
+            choices: ['true', 'false'],
+            description: 'Bundle the .NET runtime in the launcher distribution'
+        )
+        choice(
+            name: 'ITW_DOTNET_RUNTIME_IDENTIFIER',
+            choices: ['linux-x64', 'win-x64', 'osx-x64', 'osx-arm64'],
+            description: 'Target .NET runtime identifier for the distribution build'
+        )
+    }
+
+    environment {
+        DOCKER_BIN = 'docker'
+        ITW_M2_REPOSITORY = '/home/jenkins/.m2/repository'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                deleteDir()
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "${params.GIT_REF}"]],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [[$class: 'CloneOption', depth: 1, shallow: true, honorRefspec: true]],
+                    userRemoteConfigs: scm.userRemoteConfigs
+                ])
+            }
+        }
+
+        stage('Build distribution') {
+            steps {
+                script {
+                    if (params.ITW_VERSION != null && params.ITW_VERSION.trim() != '') {
+                        env.ITW_VERSION = params.ITW_VERSION.trim()
+                    }
+                    env.ITW_DOTNET_SELF_CONTAINED = params.ITW_DOTNET_SELF_CONTAINED
+                    env.ITW_DOTNET_RUNTIME_IDENTIFIER = params.ITW_DOTNET_RUNTIME_IDENTIFIER
+                }
+                sh '''
+                    set -euo pipefail
+
+                    if [[ -z "${WORKSPACE:-}" ]]; then
+                      echo "WORKSPACE is not set." >&2
+                      exit 1
+                    fi
+                    if [[ ! -d "$WORKSPACE" ]]; then
+                      echo "Jenkins WORKSPACE not found: $WORKSPACE" >&2
+                      exit 1
+                    fi
+                    if [[ ! -f "$WORKSPACE/pom.xml" ]]; then
+                      echo "Checkout did not populate WORKSPACE (pom.xml missing)." >&2
+                      exit 1
+                    fi
+
+                    SCRIPT_DIR="$WORKSPACE/.jenkins/workflows"
+                    DOCKER_BIN="${DOCKER_BIN:-docker}"
+                    M2_REPOSITORY="${ITW_M2_REPOSITORY:-/home/jenkins/.m2/repository}"
+
+                    if ! command -v "$DOCKER_BIN" >/dev/null 2>&1; then
+                      echo "Docker-compatible CLI not found: $DOCKER_BIN" >&2
+                      exit 1
+                    fi
+
+                    mkdir -p "$M2_REPOSITORY"
+                    export ITW_M2_REPOSITORY="$M2_REPOSITORY"
+
+                    echo "Distribution build via Docker compose: $SCRIPT_DIR/build.compose"
+                    echo "Jenkins WORKSPACE: $WORKSPACE"
+                    echo "Maven repository: $M2_REPOSITORY"
+
+                    "$DOCKER_BIN" compose \
+                      -f "$SCRIPT_DIR/build.compose" \
+                      --project-directory "$SCRIPT_DIR" \
+                      up --build --abort-on-container-exit --remove-orphans
+                '''
+            }
+        }
+
+        stage('Archive distribution artifacts') {
+            steps {
+                archiveArtifacts artifacts: '''
+                    icedtea-web-distribution/target/*.zip
+                ''', fingerprint: true, onlyIfSuccessful: true
+            }
+        }
+    }
+}

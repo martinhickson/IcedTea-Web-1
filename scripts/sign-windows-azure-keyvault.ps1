@@ -1,17 +1,35 @@
 $ErrorActionPreference = "Stop"
 
+if (-not [string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)) {
+    if (-not (Test-Path -LiteralPath $env:JNLP_JCA_SIGN_CERTCHAIN_FILE)) {
+        throw "JNLP_JCA_SIGN_CERTCHAIN_FILE not found: $($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)"
+    }
+    $env:JNLP_JCA_SIGN_CERTCHAIN = Get-Content -Raw -LiteralPath $env:JNLP_JCA_SIGN_CERTCHAIN_FILE
+}
+
 $required = @(
     "KEYVAULT_URL",
     "AZURE_CLIENT_ID",
     "AZURE_TENANT_ID",
     "AZURE_CLIENT_SECRET",
     "JNLP_JCA_SIGN_ALIAS",
-    "JNLP_JCA_TSA_URL",
-    "JNLP_JCA_SIGN_CERTCHAIN"
+    "JNLP_JCA_TSA_URL"
 )
 $missing = $required | Where-Object { [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_)) }
 if ($missing.Count -gt 0) {
     throw "Windows artifact signing is enabled, but required signing environment variables are missing: $($missing -join ', ')"
+}
+
+if ([string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN)) {
+    throw "Windows artifact signing requires JNLP_JCA_SIGN_CERTCHAIN or JNLP_JCA_SIGN_CERTCHAIN_FILE."
+}
+
+if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+    $env:RUNNER_TEMP = if ([string]::IsNullOrWhiteSpace($env:TEMP)) { [System.IO.Path]::GetTempPath() } else { $env:TEMP }
+}
+
+if ([string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY)) {
+    $env:GITHUB_REPOSITORY = "martinhickson/IcedTea-Web-1"
 }
 
 function Get-AdditionalCertificateArgs {

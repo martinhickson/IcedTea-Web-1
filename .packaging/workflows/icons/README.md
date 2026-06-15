@@ -6,7 +6,7 @@ Official product icon (tea leaves), sourced from `win-installer/icon.ico`.
 |------|-----|
 | `icedtea-web.png` | Linux pixmaps / desktop entries (256 px); copied as `javaws.png`, `itweb-settings.png`, `policyeditor.png` |
 | `icedtea-web-{16,32,48,64,128,256}.png` | macOS `.icns` generation |
-| `icedtea-web.icns` | macOS `.app` bundle (built on macOS via `packaging/macos/prepare-macos-icon.sh`) |
+| `icedtea-web.icns` | macOS `.app` bundle (built on macOS via `.packaging/workflows/macos/prepare-macos-icon.sh`) |
 
 Windows embeds `win-installer/icon.ico` via MSBuild `ApplicationIcon` (see `dotnet-launcher/Directory.Build.props`).
 
@@ -14,7 +14,7 @@ Regenerate PNGs from the ICO (Windows):
 
 ```powershell
 # From repo root; requires System.Drawing (Windows PowerShell / .NET Framework)
-$iconsDir = "packaging/icons"
+$iconsDir = ".packaging/workflows/icons"
 $icoPath = "win-installer/icon.ico"
 Add-Type -AssemblyName System.Drawing
 foreach ($s in 16,32,48,64,128,256) {

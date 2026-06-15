@@ -36,3 +36,6 @@ target
 !/deb-builder/README.md
 /.launcher-test/
 /wildfly/
+.docker/workflows/**/.signing-temp/
+.docker/workflows/.source/
+.jenkins/workflows/**/.signing-temp/

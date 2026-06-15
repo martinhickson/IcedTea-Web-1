@@ -1,11 +1,11 @@
 param(
     [string]$DockerBin = $(if ($env:DOCKER_BIN) { $env:DOCKER_BIN } else { "docker" }),
-    [string]$ImageName = $(if ($env:ITW_WINDOWS_PACKAGE_IMAGE) { $env:ITW_WINDOWS_PACKAGE_IMAGE } else { "icedtea-web-msi:ltsc2022" })
+    [string]$ImageName = $(if ($env:ITW_WINDOWS_PACKAGE_IMAGE) { $env:ITW_WINDOWS_PACKAGE_IMAGE } else { "icedtea-web-msi:ltsc2025" })
 )
 
 $ErrorActionPreference = "Stop"
 
-$RootDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
+$RootDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..\..")).Path
 $OutputDir = if ($env:ITW_NATIVE_OUTPUT_DIR) {
     $env:ITW_NATIVE_OUTPUT_DIR
 } else {
@@ -19,9 +19,9 @@ if (-not (Get-Command $DockerBin -ErrorAction SilentlyContinue)) {
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 
 & $DockerBin build `
-    --file (Join-Path $RootDir "packaging\windows\docker\msi.Dockerfile") `
+    --file (Join-Path $RootDir ".packaging\workflows\windows\docker\msi.Dockerfile") `
     --tag $ImageName `
-    (Join-Path $RootDir "packaging\windows\docker")
+    (Join-Path $RootDir ".packaging\workflows\windows\docker")
 if ($LASTEXITCODE -ne 0) {
     throw "Windows MSI Docker image build failed."
 }
@@ -38,7 +38,7 @@ if ($LASTEXITCODE -ne 0) {
     --env "ITW_INSTALL_DIR_NAME=$env:ITW_INSTALL_DIR_NAME" `
     --env "DOTNET_ROOT=C:\dotnet" `
     $ImageName `
-    "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "C:\workspace\packaging\windows\container-build-msi.ps1"
+    "C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -ExecutionPolicy Bypass -File "C:\workspace\.packaging\workflows\windows\container-build-msi.ps1"
 if ($LASTEXITCODE -ne 0) {
     throw "Windows MSI Docker build failed."
 }

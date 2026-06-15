@@ -27,7 +27,7 @@
     <itw.native.packages.skip>true</itw.native.packages.skip>
     <itw.native.package.formats>deb rpm</itw.native.package.formats>
     <itw.launcher.icon>${project.basedir}/../win-installer/icon.ico</itw.launcher.icon>
-    <itw.launcher.icon.png>${project.basedir}/../packaging/icons/icedtea-web.png</itw.launcher.icon.png>
+    <itw.launcher.icon.png>${project.basedir}/../.packaging/workflows/icons/icedtea-web.png</itw.launcher.icon.png>
   </properties>
 
   <dependencies>
@@ -195,7 +195,7 @@
                 <ITW_PACKAGE_FORMATS>${itw.native.package.formats}</ITW_PACKAGE_FORMATS>
               </environmentVariables>
               <arguments>
-                <argument>packaging/linux/build-native-packages.sh</argument>
+                <argument>.packaging/workflows/linux/build-native-packages.sh</argument>
               </arguments>
             </configuration>
           </execution>

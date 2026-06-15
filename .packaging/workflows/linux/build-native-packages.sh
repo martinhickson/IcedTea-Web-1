@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 OUTPUT_DIR="${ITW_NATIVE_OUTPUT_DIR:-$ROOT_DIR/icedtea-web-distribution/target/native-packages}"
 DOCKER_BIN="${DOCKER_BIN:-docker}"
 PACKAGE_FORMATS="${ITW_PACKAGE_FORMATS:-deb rpm}"
@@ -19,7 +19,7 @@ mkdir -p "$OUTPUT_DIR"
 run_builder() {
   local format="$1"
   local image="${IMAGE_PREFIX}-${format}:local"
-  local dockerfile="$ROOT_DIR/packaging/linux/docker/${format}.Dockerfile"
+  local dockerfile="$ROOT_DIR/.packaging/workflows/linux/docker/${format}.Dockerfile"
 
   if [[ ! -f "$dockerfile" ]]; then
     echo "Unsupported native package format: $format" >&2
@@ -32,7 +32,7 @@ run_builder() {
     if "${DOCKER_CMD[@]}" build \
       --file "$dockerfile" \
       --tag "$image" \
-      "$ROOT_DIR/packaging/linux/docker"; then
+      "$ROOT_DIR/.packaging/workflows/linux/docker"; then
       break
     fi
     if (( attempt == max_attempts )); then
@@ -57,7 +57,7 @@ run_builder() {
     --env ITW_DEB_ARCH="${ITW_DEB_ARCH:-}" \
     --env ITW_RPM_ARCH="${ITW_RPM_ARCH:-}" \
     "$image" \
-    "/workspace/packaging/linux/container-build-package.sh" "$format"
+    "/workspace/.packaging/workflows/linux/container-build-package.sh" "$format"
 }
 
 for format in $PACKAGE_FORMATS; do

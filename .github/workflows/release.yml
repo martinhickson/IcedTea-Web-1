@@ -176,7 +176,7 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: windows-2022
+          - os: windows-2025
             rid: win-x64
             launcher: bin/javaws.exe
             smoke-script: scripts/run-windows-dotnet-jnlp-smoke.ps1
@@ -336,10 +336,10 @@ jobs:
       - name: Build Linux native packages in Docker
         if: runner.os == 'Linux'
         run: |
-          chmod +x packaging/linux/build-native-packages.sh packaging/linux/container-build-package.sh
+          chmod +x .packaging/workflows/linux/build-native-packages.sh .packaging/workflows/linux/container-build-package.sh
           ITW_VERSION="${{ env.RELEASE_VERSION }}" \
           ITW_PACKAGE_FORMATS="deb rpm" \
-          packaging/linux/build-native-packages.sh
+          .packaging/workflows/linux/build-native-packages.sh
         shell: bash
 
       - name: Run Windows JNLP smoke test from normal distribution ZIP
@@ -365,7 +365,7 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
-          & packaging/windows/build-msi.ps1
+          & .packaging/workflows/windows/build-msi.ps1
         shell: pwsh
 
       - name: Validate Windows signing secrets
@@ -423,10 +423,10 @@ jobs:
       - name: Build macOS DMG
         if: runner.os == 'macOS'
         run: |
-          chmod +x packaging/macos/build-dmg.sh packaging/macos/prepare-macos-icon.sh
+          chmod +x .packaging/workflows/macos/build-dmg.sh .packaging/workflows/macos/prepare-macos-icon.sh
           ITW_VERSION="${{ env.RELEASE_VERSION }}" \
           ITW_MACOS_RID="${{ matrix.rid }}" \
-          packaging/macos/build-dmg.sh
+          .packaging/workflows/macos/build-dmg.sh
         shell: bash
 
       - name: Generate checksums

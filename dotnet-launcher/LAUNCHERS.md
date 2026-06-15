@@ -51,8 +51,8 @@ Local dev shortcut (Windows): `scripts/publish-dotnet-launchers.ps1`
 | Platform | Asset | Where it lands |
 |----------|-------|----------------|
 | Windows | `win-installer/icon.ico` embedded in PE | `ApplicationIcon` in `Directory.Build.props` (win RID only) + local publish script |
-| Linux | `packaging/icons/icedtea-web.png` | `share/pixmaps/` in dist (`javaws`, `itweb-settings`, `policyeditor`); DEB/RPM install `/usr/share/pixmaps/` + `Icon=` in `.desktop` files |
-| macOS | `packaging/icons/*.png` → `icedtea-web.icns` via `prepare-macos-icon.sh` | `.app` `Resources/icedtea-web.icns` + `CFBundleIconFile` in DMG build |
+| Linux | `.packaging/workflows/icons/icedtea-web.png` | `share/pixmaps/` in dist (`javaws`, `itweb-settings`, `policyeditor`); DEB/RPM install `/usr/share/pixmaps/` + `Icon=` in `.desktop` files |
+| macOS | `.packaging/workflows/icons/*.png` → `icedtea-web.icns` via `prepare-macos-icon.sh` | `.app` `Resources/icedtea-web.icns` + `CFBundleIconFile` in DMG build |
 
 `javawsc` is published on all platforms (merged into `dotnet-publish` before assembly). Linux packages symlink `/usr/bin/javawsc`; macOS DMG includes `bin/javawsc` and a `MacOS/javawsc` wrapper script. Legacy repo-root `javaws.ico` / `javaws.png` (Duke mascot) is not used.
 

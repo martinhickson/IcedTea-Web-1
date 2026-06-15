@@ -1,0 +1,119 @@
+pipeline {
+    agent {
+        label 'windows'
+    }
+
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+    }
+
+    parameters {
+        string(
+            name: 'GIT_REF',
+            defaultValue: 'icedtea-web-2.6.2',
+            description: 'Git branch or tag to checkout into WORKSPACE'
+        )
+        string(
+            name: 'ITW_VERSION',
+            defaultValue: '',
+            description: 'Release version (optional; defaults to pom.xml project version when empty)'
+        )
+        choice(
+            name: 'ITW_DOTNET_SELF_CONTAINED',
+            choices: ['true', 'false'],
+            description: 'Bundle the .NET runtime in the launcher distribution'
+        )
+    }
+
+    environment {
+        DOCKER_BIN = 'docker'
+        JNLP_JCA_SIGN_CERTCHAIN_FILE = 'C:\\signing\\certchain.pem'
+        GITHUB_REPOSITORY = 'martinhickson/IcedTea-Web-1'
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
+                deleteDir()
+                checkout([
+                    $class: 'GitSCM',
+                    branches: [[name: "${params.GIT_REF}"]],
+                    doGenerateSubmoduleConfigurations: false,
+                    extensions: [[$class: 'CloneOption', depth: 1, shallow: true, honorRefspec: true]],
+                    userRemoteConfigs: scm.userRemoteConfigs
+                ])
+            }
+        }
+
+        stage('Build and sign Windows release') {
+            steps {
+                withCredentials([
+                    string(credentialsId: 'itw-keyvault-url', variable: 'KEYVAULT_URL'),
+                    string(credentialsId: 'itw-azure-client-id', variable: 'AZURE_CLIENT_ID'),
+                    string(credentialsId: 'itw-azure-tenant-id', variable: 'AZURE_TENANT_ID'),
+                    string(credentialsId: 'itw-azure-client-secret', variable: 'AZURE_CLIENT_SECRET'),
+                    string(credentialsId: 'itw-jnlp-jca-sign-alias', variable: 'JNLP_JCA_SIGN_ALIAS'),
+                    string(credentialsId: 'itw-jnlp-jca-tsa-url', variable: 'JNLP_JCA_TSA_URL'),
+                    file(credentialsId: 'itw-jnlp-jca-sign-certchain', variable: 'JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE')
+                ]) {
+                    script {
+                        if (params.ITW_VERSION != null && params.ITW_VERSION.trim() != '') {
+                            env.ITW_VERSION = params.ITW_VERSION.trim()
+                        }
+                        env.ITW_DOTNET_SELF_CONTAINED = params.ITW_DOTNET_SELF_CONTAINED
+                    }
+                    powershell '''
+                        $ErrorActionPreference = "Stop"
+
+                        if ([string]::IsNullOrWhiteSpace($env:WORKSPACE)) {
+                            throw "WORKSPACE is not set."
+                        }
+                        if (-not (Test-Path -LiteralPath $env:WORKSPACE)) {
+                            throw "Jenkins WORKSPACE not found: $($env:WORKSPACE)"
+                        }
+                        if (-not (Test-Path -LiteralPath (Join-Path $env:WORKSPACE "pom.xml"))) {
+                            throw "Checkout did not populate WORKSPACE (pom.xml missing)."
+                        }
+
+                        $WorkflowDir = Join-Path $env:WORKSPACE ".jenkins\workflows"
+                        $ComposeFile = Join-Path $WorkflowDir "sign.compose"
+                        $DockerBin = if ($env:DOCKER_BIN) { $env:DOCKER_BIN } else { "docker" }
+
+                        if (-not (Get-Command $DockerBin -ErrorAction SilentlyContinue)) {
+                            throw "Docker-compatible CLI not found: $DockerBin"
+                        }
+
+                        if ([string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)) {
+                            throw "JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE is not set."
+                        }
+                        if (-not (Test-Path -LiteralPath $env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)) {
+                            throw "Certificate chain file not found: $($env:JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE)"
+                        }
+
+                        Write-Host "Full Windows build and signing via Docker compose: $ComposeFile"
+                        Write-Host "Jenkins WORKSPACE: $($env:WORKSPACE)"
+
+                        & $DockerBin compose `
+                            -f $ComposeFile `
+                            --project-directory $WorkflowDir `
+                            up --build --abort-on-container-exit --remove-orphans
+
+                        if ($LASTEXITCODE -ne 0) {
+                            throw "sign compose failed with exit code $LASTEXITCODE."
+                        }
+                    '''
+                }
+            }
+        }
+
+        stage('Archive release artifacts') {
+            steps {
+                archiveArtifacts artifacts: '''
+                    icedtea-web-distribution/target/*-win-x64.zip,
+                    icedtea-web-distribution/target/native-packages/*-win-x64.msi
+                ''', fingerprint: true, onlyIfSuccessful: true
+            }
+        }
+    }
+}

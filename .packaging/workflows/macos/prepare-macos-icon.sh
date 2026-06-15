@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Build icedtea-web.icns from packaging/icons PNGs (requires macOS iconutil).
+# Build icedtea-web.icns from .packaging/workflows/icons PNGs (requires macOS iconutil).
 set -euo pipefail
 
-ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ICON_SRC_DIR="${ITW_ICON_SRC_DIR:-$ROOT_DIR/packaging/icons}"
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+ICON_SRC_DIR="${ITW_ICON_SRC_DIR:-$ROOT_DIR/.packaging/workflows/icons}"
 OUTPUT_ICNS="${ITW_ICON_ICNS_OUTPUT:-$ICON_SRC_DIR/icedtea-web.icns}"
 ICONSET_DIR="${ITW_ICON_ICONSET_DIR:-$ICON_SRC_DIR/icedtea-web.iconset}"
 

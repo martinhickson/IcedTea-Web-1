@@ -28,7 +28,7 @@ if [[ ! -x "$DIST_DIR/bin/javawsc" ]]; then
   exit 1
 fi
 
-ICON_PNG="$ROOT_DIR/packaging/icons/icedtea-web.png"
+ICON_PNG="$ROOT_DIR/.packaging/workflows/icons/icedtea-web.png"
 if [[ ! -f "$ICON_PNG" ]]; then
   echo "Launcher icon not found: $ICON_PNG" >&2
   exit 1
@@ -45,7 +45,7 @@ install_hicolor_icons() {
   local icon_name="$2"
   local size
   for size in 16 32 48 64 128 256; do
-    local src="$ROOT_DIR/packaging/icons/icedtea-web-${size}.png"
+    local src="$ROOT_DIR/.packaging/workflows/icons/icedtea-web-${size}.png"
     local dest_dir="$payload_root/usr/share/icons/hicolor/${size}x${size}/apps"
     if [[ -f "$src" ]]; then
       mkdir -p "$dest_dir"
