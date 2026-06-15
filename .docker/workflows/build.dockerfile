@@ -10,7 +10,7 @@ ENV HOME=/home/jenkins
 # Match GitHub Actions ubuntu-latest: Corretto 11, Maven, and .NET 8 SDK.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
-        ca-certificates curl tar gzip git maven \
+        ca-certificates curl tar gzip git maven libicu74 \
     && curl -fsSL https://corretto.aws/downloads/latest/amazon-corretto-11-x64-linux-jdk.tar.gz \
         | tar -xzC /opt \
     && mv /opt/amazon-corretto-11.* /opt/jdk11 \

@@ -7,14 +7,17 @@ services:
     build:
       context: ${ITW_WORKSPACE_ROOT:-${WORKSPACE}}
       dockerfile: .jenkins/workflows/build.dockerfile
+      args:
+        JENKINS_UID: ${JENKINS_UID:-1000}
+        JENKINS_GID: ${JENKINS_GID:-1000}
     environment:
       ITW_WORKSPACE_ROOT: ${ITW_WORKSPACE_ROOT:-${WORKSPACE}}
       ITW_VERSION: ${ITW_VERSION:-}
       ITW_DOTNET_SELF_CONTAINED: ${ITW_DOTNET_SELF_CONTAINED:-true}
       ITW_DOTNET_RUNTIME_IDENTIFIER: ${ITW_DOTNET_RUNTIME_IDENTIFIER:-linux-x64}
       ITW_CORRETTO_URL: ${ITW_CORRETTO_URL:-}
+      ITW_MAVEN_SETTINGS: ${ITW_WORKSPACE_ROOT:-${WORKSPACE}}/.jenkins/workflows/maven-settings.xml
       HOME: /home/jenkins
-      JAVA_HOME: /usr/lib/jvm/java-11-amazon-corretto
     volumes:
       - type: bind
         source: ${ITW_WORKSPACE_ROOT:-${WORKSPACE}}

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
+  <!-- Jenkins: resolve pack200 from securemvn instead of GitHub Packages (no token in CI). -->
+  <mirrors>
+    <mirror>
+      <id>securemvn-pack200</id>
+      <mirrorOf>github</mirrorOf>
+      <url>https://securemvn.com/releases</url>
+    </mirror>
+  </mirrors>
+</settings>

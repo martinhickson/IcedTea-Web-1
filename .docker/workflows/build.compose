@@ -16,7 +16,6 @@ services:
       ITW_DOTNET_RUNTIME_IDENTIFIER: ${ITW_DOTNET_RUNTIME_IDENTIFIER:-linux-x64}
       ITW_CORRETTO_URL: ${ITW_CORRETTO_URL:-}
       HOME: /home/jenkins
-      JAVA_HOME: /usr/lib/jvm/java-11-amazon-corretto
     volumes:
       - type: bind
         source: ${ITW_WORKSPACE_ROOT:-${ITW_REPO_ROOT}}

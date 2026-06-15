@@ -98,6 +98,11 @@ require_command() {
   fi
 }
 
+export_jenkins_container_identity() {
+  export JENKINS_UID="${JENKINS_UID:-$(id -u)}"
+  export JENKINS_GID="${JENKINS_GID:-$(id -g)}"
+}
+
 run_distribution_compose() {
   local workflow_dir="$1"
   local compose_file="$workflow_dir/build.compose"
@@ -120,10 +125,12 @@ run_distribution_compose() {
   fi
 
   require_command "$DOCKER_BIN"
+  export_jenkins_container_identity
 
   echo "Distribution build via Docker compose: $compose_file"
   echo "Workspace root:     $ITW_WORKSPACE_ROOT"
   echo "Maven repository:   ${ITW_M2_REPOSITORY:-/home/jenkins/.m2/repository}"
+  echo "Container identity: jenkins uid=${JENKINS_UID} gid=${JENKINS_GID}"
 
   "$DOCKER_BIN" compose \
     -f "$compose_file" \
@@ -181,7 +188,12 @@ run_container_distribution_build() {
   echo "Self-contained:  $self_contained"
   echo "Maven repo:      /home/jenkins/.m2/repository"
 
-  mvn -P maven-distribution \
+  local mvn_settings=()
+  if [[ -n "${ITW_MAVEN_SETTINGS:-}" ]]; then
+    mvn_settings=(-s "$ITW_MAVEN_SETTINGS")
+  fi
+
+  mvn "${mvn_settings[@]}" -P maven-distribution \
     -pl icedtea-web-distribution \
     -am \
     install \
