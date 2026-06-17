@@ -24,6 +24,96 @@ function Write-Detail {
     Write-Host "  $Message"
 }
 
+function Get-WindowsInternetProxyUrl {
+    if (-not ($IsWindows -or $env:OS -eq 'Windows_NT')) {
+        return $null
+    }
+
+    try {
+        $settings = Get-ItemProperty -Path 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Internet Settings' -ErrorAction Stop
+        if ($settings.ProxyEnable -ne 1) {
+            return $null
+        }
+
+        $raw = [string]$settings.ProxyServer
+        if ([string]::IsNullOrWhiteSpace($raw)) {
+            return $null
+        }
+
+        $proxyHost = $null
+        if ($raw -match '(?i)https=([^;]+)') {
+            $proxyHost = $Matches[1]
+        } elseif ($raw -match '(?i)http=([^;]+)') {
+            $proxyHost = $Matches[1]
+        } else {
+            $proxyHost = $raw
+        }
+
+        if ($proxyHost -notmatch '^https?://') {
+            $proxyHost = "http://$proxyHost"
+        }
+        return $proxyHost
+    } catch {
+        return $null
+    }
+}
+
+function Get-ProxyDisplayString {
+    param([string]$ProxyUrl)
+
+    if ([string]::IsNullOrWhiteSpace($ProxyUrl)) {
+        return '(none)'
+    }
+
+    try {
+        $uri = [Uri]$ProxyUrl
+        if ($uri.UserInfo) {
+            return "$($uri.Scheme)://***@$($uri.Host):$($uri.Port)"
+        }
+        return $ProxyUrl
+    } catch {
+        return $ProxyUrl
+    }
+}
+
+function Initialize-DockerBuildProxy {
+    param([hashtable]$Config = @{})
+
+    $proxyUrl = $null
+    foreach ($name in @('HTTPS_PROXY', 'HTTP_PROXY', 'https_proxy', 'http_proxy')) {
+        $value = if ($Config.ContainsKey($name)) { $Config[$name] } else { [Environment]::GetEnvironmentVariable($name) }
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $proxyUrl = $value.Trim()
+            break
+        }
+    }
+    if (-not $proxyUrl) {
+        $proxyUrl = Get-WindowsInternetProxyUrl
+    }
+    if (-not $proxyUrl) {
+        return $false
+    }
+
+    $noProxy = $null
+    foreach ($name in @('NO_PROXY', 'no_proxy')) {
+        $value = if ($Config.ContainsKey($name)) { $Config[$name] } else { [Environment]::GetEnvironmentVariable($name) }
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            $noProxy = $value.Trim()
+            break
+        }
+    }
+
+    $env:HTTP_PROXY = $proxyUrl
+    $env:HTTPS_PROXY = $proxyUrl
+    $env:http_proxy = $proxyUrl
+    $env:https_proxy = $proxyUrl
+    if ($noProxy) {
+        $env:NO_PROXY = $noProxy
+        $env:no_proxy = $noProxy
+    }
+    return $true
+}
+
 function Write-Failure {
     param(
         [Parameter(Mandatory = $true)]
@@ -142,6 +232,10 @@ function Show-DockerHostContext {
     Write-Detail "Compose project dir:   $WorkflowDir"
     Write-Detail "Build context:         $WorkflowDir"
     Write-Detail "Target platform:       windows/amd64"
+    Write-Detail "Build HTTP proxy:      $(Get-ProxyDisplayString -ProxyUrl $env:HTTP_PROXY)"
+    if ($env:NO_PROXY) {
+        Write-Detail "Build NO_PROXY:        $($env:NO_PROXY)"
+    }
 
     $osType = (& $DockerBin info --format "{{.OSType}}" 2>$null | Out-String).Trim()
     if ($osType) {
@@ -307,21 +401,16 @@ function Test-IsDryRun {
     }
 }
 
-function Invoke-DryRunSignCheck {
+function Invoke-DryRunSigningStep {
     param(
-        [Parameter(Mandatory = $true)]
-        [string]$Root
+        [Parameter(Mandatory = $true)][string]$DistZip,
+        [Parameter(Mandatory = $true)][string]$MsiPath
     )
 
-    $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
-        Get-ProjectVersion -Root $Root
-    } else {
-        $env:ITW_VERSION.Trim()
-    }
-
-    Write-Step "Dry run mode"
-    Write-Detail "Workspace:       $Root"
-    Write-Detail "Project version: $version"
+    Write-Step "Step 3/3: Dry run signing check (AzureSignTool --version only)"
+    Write-Detail "Distribution ZIP: $DistZip"
+    Write-Detail "MSI:              $MsiPath"
+    Write-Detail "Dry run: full Windows build completed; skipping EXE/MSI Key Vault signing."
 
     if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
         throw "AzureSignTool is not available on PATH."
@@ -332,10 +421,6 @@ function Invoke-DryRunSignCheck {
     if ($LASTEXITCODE -ne 0) {
         throw "AzureSignTool --version failed with exit code $LASTEXITCODE."
     }
-
-    Write-Host ""
-    Write-Host "Dry run: not signing in dry run mode."
-    Write-Step "Dry run completed successfully"
 }
 
 function Initialize-SourceCheckout {
@@ -418,9 +503,9 @@ function Run-ContainerSignWorkflow {
 
     Set-Location $root
 
-    if (Test-IsDryRun) {
-        Invoke-DryRunSignCheck -Root $root
-        return
+    $dryRun = Test-IsDryRun
+    if ($dryRun) {
+        Write-Detail "Dry run mode: enabled (full build; signing step runs AzureSignTool --version only)"
     }
 
     $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
@@ -502,14 +587,22 @@ function Run-ContainerSignWorkflow {
         throw "Signing script not found at $signScript"
     }
 
-    Invoke-CheckedCommand -StepName "Step 3/3: Sign EXE and MSI with Azure Key Vault" -Command {
-        Write-Detail "Running: $signScript"
-        & $signScript
+    if ($dryRun) {
+        Invoke-DryRunSigningStep -DistZip $distZip.FullName -MsiPath $msiFiles[0].FullName
+    } else {
+        Invoke-CheckedCommand -StepName "Step 3/3: Sign EXE and MSI with Azure Key Vault" -Command {
+            Write-Detail "Running: $signScript"
+            & $signScript
+        }
     }
 
-    Write-Step "Windows release build and signing completed successfully"
+    if ($dryRun) {
+        Write-Step "Windows release build completed successfully (dry run; artifacts not signed)"
+    } else {
+        Write-Step "Windows release build and signing completed successfully"
+    }
     Write-Detail "Distribution ZIP: $($distZip.FullName)"
-    Write-Detail "Signed MSI:       $($msiFiles[0].FullName)"
+    Write-Detail "MSI:              $($msiFiles[0].FullName)"
 }
 
 function Run-HostSignWorkflow {
@@ -531,7 +624,7 @@ function Run-HostSignWorkflow {
     Write-Detail "  2. WiX MSI packaging"
     Write-Detail "  3. Azure Key Vault code signing"
     if (Test-IsDryRun -Value $env:ITW_DRY_RUN) {
-        Write-Detail "Dry run mode:      enabled (container will resolve version, run AzureSignTool --version, and skip signing)"
+        Write-Detail "Dry run mode:      enabled (full build; signing step runs AzureSignTool --version only)"
     }
 
     Write-Step "Step 1/5: Validate host prerequisites"
@@ -691,6 +784,16 @@ function Run-HostSignWorkflow {
     $repoRoot = Initialize-SourceCheckout -WorkflowDirectory $WorkflowDir -Config $envMap
 
     Write-Step "Step 4/5: Export build environment for Docker Compose"
+    $proxyConfigured = Initialize-DockerBuildProxy -Config $envMap
+    if ($proxyConfigured) {
+        Write-Detail "Docker build proxy:    $(Get-ProxyDisplayString -ProxyUrl $env:HTTP_PROXY)"
+        if ($env:NO_PROXY) {
+            Write-Detail "Docker build NO_PROXY: $($env:NO_PROXY)"
+        }
+    } else {
+        Write-Detail "Docker build proxy:    (none; set HTTP_PROXY/HTTPS_PROXY in sign.env or Windows Internet Settings)"
+    }
+
     $env:ITW_REPO_ROOT = $repoRoot
     $env:ITW_WORKSPACE_ROOT = $repoRoot
     if ([string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)) {

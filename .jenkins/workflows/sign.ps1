@@ -32,31 +32,6 @@ function Get-ProjectVersionFromPom {
     return $match.Matches.Groups[1].Value
 }
 
-if (Test-IsDryRun) {
-    $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
-        Get-ProjectVersionFromPom
-    } else {
-        $env:ITW_VERSION.Trim()
-    }
-
-    Write-Host "=== Dry run mode ==="
-    Write-Host "Project version: $version"
-
-    if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
-        throw "AzureSignTool is not available on PATH."
-    }
-
-    Write-Host "Running: AzureSignTool --version"
-    & AzureSignTool --version
-    if ($LASTEXITCODE -ne 0) {
-        throw "AzureSignTool --version failed with exit code $LASTEXITCODE."
-    }
-
-    Write-Host ""
-    Write-Host "Dry run: not signing in dry run mode."
-    exit 0
-}
-
 if (-not [string]::IsNullOrWhiteSpace($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)) {
     if (-not (Test-Path -LiteralPath $env:JNLP_JCA_SIGN_CERTCHAIN_FILE)) {
         throw "JNLP_JCA_SIGN_CERTCHAIN_FILE not found: $($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)"
@@ -127,6 +102,25 @@ if ($null -eq $zip) {
 $msiFiles = @(Get-ChildItem "icedtea-web-distribution/target/native-packages/*.msi" -ErrorAction SilentlyContinue)
 if ($msiFiles.Count -eq 0) {
     throw "Windows MSI not found under icedtea-web-distribution/target/native-packages."
+}
+
+if (Test-IsDryRun) {
+    if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
+        throw "AzureSignTool is not available on PATH."
+    }
+
+    Write-Host "=== Dry run mode (signing step) ==="
+    Write-Host "Built distribution ZIP: $($zip.FullName)"
+    Write-Host "Built MSI: $($msiFiles[0].FullName)"
+    Write-Host "Running: AzureSignTool --version"
+    & AzureSignTool --version
+    if ($LASTEXITCODE -ne 0) {
+        throw "AzureSignTool --version failed with exit code $LASTEXITCODE."
+    }
+
+    Write-Host ""
+    Write-Host "Dry run: skipping EXE/MSI Key Vault signing."
+    exit 0
 }
 
 $work = Join-Path $env:RUNNER_TEMP "itw-signed-win-dist"
