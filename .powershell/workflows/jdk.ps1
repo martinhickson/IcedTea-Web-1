@@ -13,6 +13,19 @@ function Get-ConfiguredJdkMajor {
     return 11
 }
 
+function Invoke-JavaVersionOutput {
+    param([Parameter(Mandatory = $true)][string]$JavaExe)
+
+    # java -version writes to stderr; do not treat that as a terminating error under Stop.
+    $savedPreference = $ErrorActionPreference
+    try {
+        $ErrorActionPreference = 'Continue'
+        return @(& $JavaExe -version 2>&1)
+    } finally {
+        $ErrorActionPreference = $savedPreference
+    }
+}
+
 function Get-JdkMajorFromJavaExe {
     param([Parameter(Mandatory = $true)][string]$JavaExe)
 
@@ -20,7 +33,7 @@ function Get-JdkMajorFromJavaExe {
         return $null
     }
 
-    $output = (& $JavaExe -version 2>&1 | Select-Object -First 1 | Out-String).Trim()
+    $output = (Invoke-JavaVersionOutput -JavaExe $JavaExe | Select-Object -First 1 | Out-String).Trim()
     if ($output -match 'version "1\.(\d+)') {
         return [int]$Matches[1]
     }

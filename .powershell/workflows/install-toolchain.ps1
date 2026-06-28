@@ -247,8 +247,18 @@ function Install-ChocoPackageIfMissing {
 }
 
 function Set-MavenEnvironment {
-    $mavenHome = Get-ChildItem 'C:\ProgramData\chocolatey\lib\maven\tools' -Directory -ErrorAction SilentlyContinue |
-        Select-Object -First 1
+    $mavenHome = $null
+    $mavenLib = 'C:\ProgramData\chocolatey\lib\maven'
+    $legacyToolsDir = Join-Path $mavenLib 'tools'
+    if (Test-Path -LiteralPath $legacyToolsDir) {
+        $mavenHome = Get-ChildItem -LiteralPath $legacyToolsDir -Directory -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+    }
+    if (-not $mavenHome -and (Test-Path -LiteralPath $mavenLib)) {
+        $mavenHome = Get-ChildItem -LiteralPath $mavenLib -Directory -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -like 'apache-maven-*' } |
+            Select-Object -First 1
+    }
     if ($mavenHome) {
         [Environment]::SetEnvironmentVariable('MAVEN_HOME', $mavenHome.FullName, 'Machine')
         $env:MAVEN_HOME = $mavenHome.FullName
@@ -270,6 +280,32 @@ function Set-DotNetEnvironment {
     Update-SessionPath
 }
 
+function Ensure-DotNetNuGetSources {
+    $nugetOrgUrl = 'https://api.nuget.org/v3/index.json'
+    $nugetOrgName = 'nuget.org'
+
+    Update-SessionPath
+    if (-not (Test-CommandAvailable dotnet)) {
+        return
+    }
+
+    Write-Detail 'Ensuring NuGet.org feed is available for dotnet tool install...'
+    $sourceList = (& dotnet nuget list source 2>&1 | Out-String)
+
+    if ($sourceList -notmatch [regex]::Escape($nugetOrgUrl)) {
+        Write-Detail "Adding NuGet source: $nugetOrgUrl"
+        & dotnet nuget add source $nugetOrgUrl -n $nugetOrgName
+        if ($LASTEXITCODE -ne 0) {
+            throw "dotnet nuget add source failed. WiX/AzureSignTool require $nugetOrgUrl."
+        }
+    }
+
+    if ($sourceList -match 'nuget\.org\s+\[Disabled\]' -or $sourceList -notmatch 'nuget\.org\s+\[Enabled\]') {
+        Write-Detail 'Enabling NuGet.org feed...'
+        & dotnet nuget enable source $nugetOrgName 2>&1 | Out-Null
+    }
+}
+
 function Install-DotNetGlobalToolIfMissing {
     param(
         [Parameter(Mandatory = $true)][string]$PackageId,
@@ -286,10 +322,16 @@ function Install-DotNetGlobalToolIfMissing {
         throw "Cannot install dotnet tool '$PackageId' because .NET 8 SDK is not available."
     }
 
+    Ensure-DotNetNuGetSources
+
     Write-Detail "Installing dotnet global tool '$PackageId'..."
-    & dotnet tool install --global $PackageId
+    & dotnet tool install --global --ignore-failed-sources $PackageId
     if ($LASTEXITCODE -ne 0) {
-        throw $FailureMessage
+        throw @(
+            $FailureMessage
+            'Check NuGet feeds with: dotnet nuget list source'
+            "Ensure this feed is present and enabled: https://api.nuget.org/v3/index.json"
+        ) -join ' '
     }
     Update-SessionPath
 }
@@ -356,7 +398,7 @@ function Install-HostSignToolchain {
 
     $resolvedJdk = Set-ConfiguredJdkEnvironment
     Write-Detail ("Compile JDK home: {0}" -f $resolvedJdk.JdkHome)
-    Write-Detail (& (Join-Path $resolvedJdk.JdkHome 'bin\java.exe') -version 2>&1 | Select-Object -First 1)
+    Write-Detail (Invoke-JavaVersionOutput -JavaExe (Join-Path $resolvedJdk.JdkHome 'bin\java.exe') | Select-Object -First 1)
 
     Install-ChocoPackageIfMissing -Package 'maven' -TestInstalled { Test-CommandAvailable mvn } -FailureMessage 'choco install maven failed'
     Set-MavenEnvironment
@@ -386,6 +428,7 @@ if (-not ($VerifyOnly -or $InstallTools)) {
 }
 
 if ($VerifyOnly) {
+    Update-SessionPath
     Write-ToolchainStatus -Heading 'VerifyOnly: toolchain status'
     exit 0
 }
