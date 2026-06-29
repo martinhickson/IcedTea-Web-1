@@ -42,3 +42,4 @@ target
 .powershell/workflows/**/.signing-temp/
 .powershell/workflows/.bash-shim/
 .powershell/workflows/.source/
+.powershell/workflows/sign.env

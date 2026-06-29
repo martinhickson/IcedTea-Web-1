@@ -1,9 +1,9 @@
 # Windows release build and sign on the host (no Docker).
-# Fill in sign.env and run:
+# Copy sign.env.template to sign.env, customize, then run:
 #   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .powershell\workflows\sign.ps1
 
 param(
-    [string]$EnvFile = (Join-Path $PSScriptRoot 'sign.env')
+    [string]$EnvFile = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -322,6 +322,34 @@ function Get-ProjectVersion {
     return $match.Matches.Groups[1].Value
 }
 
+function Resolve-SignEnvFile {
+    param(
+        [Parameter(Mandatory = $true)][string]$WorkflowDir,
+        [string]$ExplicitPath = ''
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitPath)) {
+        if (-not (Test-Path -LiteralPath $ExplicitPath)) {
+            throw "Env file not found: $ExplicitPath"
+        }
+        return (Resolve-Path -LiteralPath $ExplicitPath).Path
+    }
+
+    $envFile = Join-Path $WorkflowDir 'sign.env'
+    $templateFile = Join-Path $WorkflowDir 'sign.env.template'
+
+    if (Test-Path -LiteralPath $envFile) {
+        return (Resolve-Path -LiteralPath $envFile).Path
+    }
+
+    if (-not (Test-Path -LiteralPath $templateFile)) {
+        throw "Missing sign.env. Copy sign.env.template to sign.env and customize it."
+    }
+
+    Copy-Item -LiteralPath $templateFile -Destination $envFile
+    throw "Created sign.env from sign.env.template. Customize credentials and paths, then re-run."
+}
+
 function Read-EnvFile {
     param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -374,7 +402,7 @@ function Initialize-SigningEnvironment {
     }
 
     if ($missing.Count -gt 0 -and -not $DryRun) {
-        throw "sign.env is missing: $($missing -join ', ')"
+        throw "sign.env is missing required values: $($missing -join ', ')"
     }
 
     if ($DryRun) {
@@ -639,6 +667,7 @@ function Run-HostSignWorkflow {
     }
 
     $WorkflowDir = $PSScriptRoot
+    $EnvFile = Resolve-SignEnvFile -WorkflowDir $WorkflowDir -ExplicitPath $EnvFile
     $toolchainScript = Join-Path $WorkflowDir 'install-toolchain.ps1'
 
     Write-Step 'IcedTea-Web Windows release build and sign (host PowerShell workflow)'
@@ -646,7 +675,7 @@ function Run-HostSignWorkflow {
     Write-Detail "Env file:         $EnvFile"
     Write-Detail "Toolchain script: $toolchainScript"
 
-    Write-Step 'Step 1/4: Load sign.env'
+    Write-Step 'Step 1/4: Load signing environment'
     $envMap = Read-EnvFile -Path $EnvFile
     $dryRun = Test-IsDryRun -Value $env:ITW_DRY_RUN
     if (-not $dryRun) {
