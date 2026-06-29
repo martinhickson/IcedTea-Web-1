@@ -8,16 +8,27 @@ $env:PATH = ($pathEntries -join ";")
 
 $RootDir = if ($env:ITW_WORKSPACE) { $env:ITW_WORKSPACE } else { "C:\workspace" }
 $Version = if ($env:ITW_VERSION) { $env:ITW_VERSION } else { "2.0.1-SNAPSHOT" }
-$DistDir = if ($env:ITW_DIST_DIR) {
-    $env:ITW_DIST_DIR
-} else {
-    Join-Path $RootDir "icedtea-web-distribution\target\dist\icedtea-web-$Version"
+
+function Resolve-WorkspacePath {
+    param(
+        [string]$ConfiguredPath,
+        [string]$DefaultPath
+    )
+
+    if ([string]::IsNullOrWhiteSpace($ConfiguredPath)) {
+        return $DefaultPath
+    }
+
+    if (Test-Path -LiteralPath $ConfiguredPath) {
+        return $ConfiguredPath
+    }
+
+    Write-Warning "Configured path does not exist inside container: $ConfiguredPath. Using $DefaultPath"
+    return $DefaultPath
 }
-$OutputDir = if ($env:ITW_NATIVE_OUTPUT_DIR) {
-    $env:ITW_NATIVE_OUTPUT_DIR
-} else {
-    Join-Path $RootDir "icedtea-web-distribution\target\native-packages"
-}
+
+$DistDir = Resolve-WorkspacePath -ConfiguredPath $env:ITW_DIST_DIR -DefaultPath (Join-Path $RootDir "icedtea-web-distribution\target\dist\icedtea-web-$Version")
+$OutputDir = Resolve-WorkspacePath -ConfiguredPath $env:ITW_NATIVE_OUTPUT_DIR -DefaultPath (Join-Path $RootDir "icedtea-web-distribution\target\native-packages")
 $PackageName = if ($env:ITW_PACKAGE_NAME) { $env:ITW_PACKAGE_NAME } else { "IcedTea-Web" }
 $Manufacturer = if ($env:ITW_PACKAGE_MANUFACTURER) { $env:ITW_PACKAGE_MANUFACTURER } else { "IcedTea-Web Maintainers" }
 $PackageId = "IcedTeaWeb"

@@ -142,7 +142,7 @@ public class ItwebSettingsTextsProvider extends TextsProvider {
             String fileAcronom = null;
             for (InfrastructureFileDescriptor f : files) {
                 if (matchSttingsValueWithInfrastrucutreFile(entry.getValue(), f)) {
-                    fileAcronom = f.toString();
+                    fileAcronom = f.getDocumentedPath();
                     break;
                 }
             }
