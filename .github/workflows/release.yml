@@ -406,13 +406,17 @@ jobs:
           JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
         run: |
           $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
+          $env:ITW_DIST_DIR = Join-Path (Get-Location) "icedtea-web-distribution/target/dist/icedtea-web-$($env:ITW_VERSION)"
           & .github/workflows/sign.ps1 -Phase Distribution
         shell: pwsh
 
       - name: Build Windows MSI in Windows Server Core Docker
         if: runner.os == 'Windows'
+        env:
+          ITW_REQUIRE_SIGNED_DIST: ${{ github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true && 'true' || '' }}
         run: |
           $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
+          $env:ITW_DIST_DIR = Join-Path (Get-Location) "icedtea-web-distribution/target/dist/icedtea-web-$($env:ITW_VERSION)"
           & .packaging/workflows/windows/build-msi.ps1
         shell: pwsh
 

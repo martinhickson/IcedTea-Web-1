@@ -515,9 +515,40 @@ function Get-MavenSettingsArgs {
     ) -join ' '
 }
 
+function Resolve-WorkflowScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$RelativePath
+    )
+
+    $driverRoot = if (-not [string]::IsNullOrWhiteSpace($env:ITW_WORKFLOW_SCRIPTS_ROOT)) {
+        $env:ITW_WORKFLOW_SCRIPTS_ROOT.Trim()
+    } elseif (-not [string]::IsNullOrWhiteSpace($env:ITW_WORKSPACE_ROOT)) {
+        $env:ITW_WORKSPACE_ROOT.Trim()
+    } else {
+        throw 'ITW_WORKFLOW_SCRIPTS_ROOT or ITW_WORKSPACE_ROOT must be set.'
+    }
+
+    $candidates = @(
+        (Join-Path $driverRoot $RelativePath),
+        (Join-Path $Root $RelativePath)
+    )
+
+    foreach ($path in $candidates) {
+        if (Test-Path -LiteralPath $path) {
+            return (Resolve-Path -LiteralPath $path).Path
+        }
+    }
+
+    throw "Workflow script not found: $RelativePath (checked driver checkout at $driverRoot and cloned source at $Root)."
+}
+
 function Run-ContainerSignWorkflow {
     Write-Step "IcedTea-Web Windows release build (container)"
     Write-Detail "Pipeline: Maven distribution (win-x64) -> sign EXEs in dist -> WiX MSI -> sign MSI"
+    if (-not [string]::IsNullOrWhiteSpace($env:ITW_WORKFLOW_SCRIPTS_ROOT)) {
+        Write-Detail "Workflow scripts:    $($env:ITW_WORKFLOW_SCRIPTS_ROOT)"
+    }
 
     $root = $env:ITW_WORKSPACE_ROOT
     if ([string]::IsNullOrWhiteSpace($root)) {
@@ -612,22 +643,19 @@ function Run-ContainerSignWorkflow {
     }
     Write-Detail "Built distribution ZIP: $($distZip.FullName)"
 
-    $signScript = Join-Path $root ".jenkins\workflows\sign.ps1"
-    if (-not (Test-Path -LiteralPath $signScript)) {
-        throw "Signing script not found at $signScript"
-    }
+    $signScript = Resolve-WorkflowScript -Root $root -RelativePath '.jenkins\workflows\sign.ps1'
+    Write-Detail "Signing script:      $signScript"
 
     if (-not $dryRun) {
         Invoke-CheckedCommand -StepName "Step 2/4: Sign launcher EXEs in dist and rebuild ZIP" -Command {
             Write-Detail "Running: $signScript -Phase Distribution"
             & $signScript -Phase Distribution
         }
+        $env:ITW_REQUIRE_SIGNED_DIST = 'true'
     }
 
-    $msiScript = Join-Path $root ".packaging\workflows\windows\container-build-msi.ps1"
-    if (-not (Test-Path -LiteralPath $msiScript)) {
-        throw "MSI build script not found at $msiScript"
-    }
+    $msiScript = Resolve-WorkflowScript -Root $root -RelativePath '.packaging\workflows\windows\container-build-msi.ps1'
+    Write-Detail "MSI build script:   $msiScript"
 
     Invoke-CheckedCommand -StepName $(if ($dryRun) { "Step 2/4: WiX MSI build" } else { "Step 3/4: WiX MSI build" }) -Command {
         Write-Detail "Running: $msiScript"
@@ -675,8 +703,9 @@ function Run-HostSignWorkflow {
     Write-Detail "Docker CLI:    $DockerBin"
     Write-Detail "Container pipeline:"
     Write-Detail "  1. Maven distribution build for win-x64"
-    Write-Detail "  2. WiX MSI packaging"
-    Write-Detail "  3. Azure Key Vault code signing"
+    Write-Detail "  2. Sign launcher EXEs in dist and rebuild ZIP"
+    Write-Detail "  3. WiX MSI packaging from signed dist"
+    Write-Detail "  4. Sign MSI"
     if (Test-IsDryRun -Value $env:ITW_DRY_RUN) {
         Write-Detail "Dry run mode:      enabled (full build; signing step runs sign --version only)"
     }
@@ -835,6 +864,9 @@ function Run-HostSignWorkflow {
     }
 
     Write-Step "Step 3/5: Clone fresh git source on host"
+    $driverRoot = (Resolve-Path -LiteralPath (Join-Path $WorkflowDir '..\..')).Path
+    $env:ITW_WORKFLOW_SCRIPTS_ROOT = $driverRoot
+    Write-Detail "Workflow scripts root: $driverRoot"
     $repoRoot = Initialize-SourceCheckout -WorkflowDirectory $WorkflowDir -Config $envMap
 
     Write-Step "Step 4/5: Export build environment for Docker Compose"

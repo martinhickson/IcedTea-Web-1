@@ -19,6 +19,7 @@ services:
         ITW_NETWORK_DIAGNOSTICS: ${ITW_NETWORK_DIAGNOSTICS:-}
     environment:
       ITW_WORKSPACE_ROOT: ${WORKSPACE}
+      ITW_WORKFLOW_SCRIPTS_ROOT: ${ITW_WORKFLOW_SCRIPTS_ROOT:-}
       ITW_VERSION: ${ITW_VERSION:-}
       ITW_DOTNET_SELF_CONTAINED: ${ITW_DOTNET_SELF_CONTAINED:-true}
       ITW_CORRETTO_URL: ${ITW_CORRETTO_URL:-https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip}

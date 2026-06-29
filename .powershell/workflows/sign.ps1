@@ -252,9 +252,17 @@ function Resolve-WorkflowScript {
         [Parameter(Mandatory = $true)][string]$RelativePath
     )
 
+    $driverRoot = if (-not [string]::IsNullOrWhiteSpace($env:ITW_WORKFLOW_SCRIPTS_ROOT)) {
+        $env:ITW_WORKFLOW_SCRIPTS_ROOT.Trim()
+    } else {
+        (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path
+    }
+
+    # Prefer the driver checkout (where sign.ps1 lives) over the cloned GIT_REF source.
+    # GIT_REF may lag behind workflow fixes under .jenkins/, .packaging/workflows/, etc.
     $candidates = @(
-        (Join-Path $Root $RelativePath),
-        (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path $RelativePath)
+        (Join-Path $driverRoot $RelativePath),
+        (Join-Path $Root $RelativePath)
     )
 
     foreach ($path in $candidates) {
@@ -263,7 +271,7 @@ function Resolve-WorkflowScript {
         }
     }
 
-    throw "Workflow script not found: $RelativePath (checked cloned source and host checkout)."
+    throw "Workflow script not found: $RelativePath (checked driver checkout at $driverRoot and cloned source at $Root)."
 }
 
 function Invoke-CheckedCommand {
@@ -597,6 +605,9 @@ function Invoke-HostSignPipeline {
     $env:ITW_VERSION = $version
     $env:ITW_WORKSPACE = $Root
     $env:ITW_WORKSPACE_ROOT = $Root
+    if (-not [string]::IsNullOrWhiteSpace($env:ITW_WORKFLOW_SCRIPTS_ROOT)) {
+        Write-Detail "Workflow scripts:    $($env:ITW_WORKFLOW_SCRIPTS_ROOT)"
+    }
     $resolvedJdk = Resolve-CompileJdkForBuild
     $env:DOTNET_ROOT = if ($env:DOTNET_ROOT) { $env:DOTNET_ROOT } else { 'C:\Program Files\dotnet' }
 
@@ -651,6 +662,7 @@ function Invoke-HostSignPipeline {
             Write-Detail "Running: $signScript -Phase Distribution"
             & $signScript -Phase Distribution
         }
+        $env:ITW_REQUIRE_SIGNED_DIST = 'true'
     }
 
     $msiScript = Resolve-WorkflowScript -Root $Root -RelativePath '.packaging\workflows\windows\container-build-msi.ps1'
@@ -761,6 +773,9 @@ function Run-HostSignWorkflow {
     }
 
     Write-Step 'Step 3/4: Clone fresh git source on host'
+    $driverRoot = (Resolve-Path -LiteralPath (Join-Path $WorkflowDir '..\..')).Path
+    $env:ITW_WORKFLOW_SCRIPTS_ROOT = $driverRoot
+    Write-Detail "Workflow scripts root: $driverRoot"
     $repoRoot = Initialize-SourceCheckout -WorkflowDirectory $WorkflowDir -Config $envMap
 
     Write-Step 'Step 4/4: Build, package, and sign on host'

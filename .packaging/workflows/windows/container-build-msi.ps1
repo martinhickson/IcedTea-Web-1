@@ -36,6 +36,44 @@ foreach ($required in @("javaws.exe", "javawsc.exe", "itweb-settings.exe", "poli
     }
 }
 
+function Test-RequireSignedDistributionLaunchers {
+    param([string]$Value = $env:ITW_REQUIRE_SIGNED_DIST)
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $false
+    }
+
+    switch ($Value.Trim().ToLowerInvariant()) {
+        '1' { return $true }
+        'true' { return $true }
+        'yes' { return $true }
+        'on' { return $true }
+        default { return $false }
+    }
+}
+
+if (Test-RequireSignedDistributionLaunchers) {
+    $unsigned = @()
+    foreach ($required in @("javaws.exe", "javawsc.exe", "itweb-settings.exe", "policyeditor.exe")) {
+        $launcherPath = Join-Path $DistDir "bin\$required"
+        $signature = Get-AuthenticodeSignature -LiteralPath $launcherPath
+        if ($signature.Status -ne 'Valid') {
+            $unsigned += "$required ($($signature.Status))"
+        } else {
+            Write-Host "Verified Authenticode signature before MSI build: $launcherPath"
+        }
+    }
+
+    if ($unsigned.Count -gt 0) {
+        throw @(
+            "Distribution launchers must be Authenticode-signed before building the MSI."
+            "Unsigned: $($unsigned -join ', ')"
+            "Dist dir: $DistDir"
+            "Run the signing workflow Step 2 (-Phase Distribution) against this dist tree first."
+        ) -join ' '
+    }
+}
+
 New-Item -ItemType Directory -Path $OutputDir -Force | Out-Null
 $WxsPath = Join-Path $OutputDir "icedtea-web.wxs"
 $MsiPath = Join-Path $OutputDir "icedtea-web-$Version-win-x64.msi"

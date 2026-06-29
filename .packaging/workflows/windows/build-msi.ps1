@@ -31,6 +31,7 @@ if ($LASTEXITCODE -ne 0) {
     --workdir "C:\workspace" `
     --env "ITW_VERSION=$env:ITW_VERSION" `
     --env "ITW_DIST_DIR=$env:ITW_DIST_DIR" `
+    --env "ITW_REQUIRE_SIGNED_DIST=$env:ITW_REQUIRE_SIGNED_DIST" `
     --env "ITW_NATIVE_OUTPUT_DIR=$env:ITW_NATIVE_OUTPUT_DIR" `
     --env "ITW_PACKAGE_NAME=$env:ITW_PACKAGE_NAME" `
     --env "ITW_PACKAGE_MANUFACTURER=$env:ITW_PACKAGE_MANUFACTURER" `

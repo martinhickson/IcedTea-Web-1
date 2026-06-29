@@ -150,6 +150,59 @@ function Get-IcedTeaWebSignableExes {
     return $exes
 }
 
+function Get-IcedTeaWebLauncherNames {
+    return @(
+        'javaws.exe',
+        'javawsc.exe',
+        'itweb-settings.exe',
+        'policyeditor.exe'
+    )
+}
+
+function Test-LauncherAuthenticodeSignature {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path
+    )
+
+    $signature = Get-AuthenticodeSignature -LiteralPath $Path
+    return @{
+        Path = $Path
+        Status = $signature.Status
+        Signer = if ($signature.SignerCertificate) { $signature.SignerCertificate.Subject } else { '' }
+    }
+}
+
+function Assert-DistributionLaunchersSigned {
+    param(
+        [Parameter(Mandatory = $true)][string]$DistRoot
+    )
+
+    $binDir = Join-Path $DistRoot 'bin'
+    $problems = @()
+    foreach ($name in Get-IcedTeaWebLauncherNames) {
+        $path = Join-Path $binDir $name
+        if (-not (Test-Path -LiteralPath $path)) {
+            $problems += "$name (missing)"
+            continue
+        }
+
+        $result = Test-LauncherAuthenticodeSignature -Path $path
+        if ($result.Status -ne 'Valid') {
+            $problems += "$name ($($result.Status))"
+            continue
+        }
+
+        Write-Host "Verified Authenticode signature: $path"
+        if (-not [string]::IsNullOrWhiteSpace($result.Signer)) {
+            Write-Host "  Signer: $($result.Signer)"
+        }
+    }
+
+    if ($problems.Count -gt 0) {
+        throw "Distribution launchers are not Authenticode-signed under $binDir`: $($problems -join ', ')"
+    }
+}
+
 function Invoke-SignCliKeyVault {
     param(
         [Parameter(Mandatory = $true)][string[]]$TargetFiles,
@@ -209,6 +262,8 @@ function Invoke-SignDistributionExesAndZip {
         -TargetFiles @($exeFiles | ForEach-Object { $_.FullName }) `
         -Description 'IcedTea-Web' `
         -DescriptionUrl "https://github.com/$env:GITHUB_REPOSITORY"
+
+    Assert-DistributionLaunchersSigned -DistRoot $distDir
 
     Remove-Item -LiteralPath $zipPath -Force
     Compress-Archive -LiteralPath $distDir -DestinationPath $zipPath
