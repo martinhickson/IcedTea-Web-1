@@ -377,7 +377,6 @@ jobs:
           KEYVAULT_URL: ${{ secrets.KEYVAULT_URL }}
           JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
           JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
-          JNLP_JCA_SIGN_CERTCHAIN: ${{ secrets.JNLP_JCA_SIGN_CERTCHAIN }}
         run: |
           $required = @(
             'AZURE_CLIENT_ID',
@@ -385,8 +384,7 @@ jobs:
             'AZURE_CLIENT_SECRET',
             'KEYVAULT_URL',
             'JNLP_JCA_SIGN_ALIAS',
-            'JNLP_JCA_TSA_URL',
-            'JNLP_JCA_SIGN_CERTCHAIN'
+            'JNLP_JCA_TSA_URL'
           )
           $missing = $required | Where-Object {
             [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))
@@ -395,15 +393,12 @@ jobs:
             Write-Warning "Windows artifact signing was requested, but these GitHub secrets are missing: $($missing -join ', ')"
             throw "Cannot sign Windows artifacts because required signing secrets are missing."
           }
-          if ($env:JNLP_JCA_SIGN_CERTCHAIN -notmatch '-----BEGIN CERTIFICATE-----') {
-            throw "JNLP_JCA_SIGN_CERTCHAIN must contain PEM certificate data."
-          }
         shell: pwsh
 
-      - name: Install AzureSignTool
+      - name: Install Microsoft Sign CLI
         if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
         run: |
-          dotnet tool install --global AzureSignTool
+          dotnet tool install --global --prerelease sign
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         shell: pwsh
 
@@ -416,7 +411,6 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
           JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
-          JNLP_JCA_SIGN_CERTCHAIN: ${{ secrets.JNLP_JCA_SIGN_CERTCHAIN }}
         run: '& .github/workflows/sign.ps1'
         shell: pwsh
 

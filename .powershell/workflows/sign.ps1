@@ -391,13 +391,9 @@ function Initialize-SigningEnvironment {
     $chainHostFile = $Config['JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE']
     $missing = @($required | Where-Object { [string]::IsNullOrWhiteSpace($Config[$_]) })
 
-    if ([string]::IsNullOrWhiteSpace($inlineChain)) {
-        if ([string]::IsNullOrWhiteSpace($chainHostFile)) {
-            $missing += 'JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE'
-        } elseif (-not (Test-Path -LiteralPath $chainHostFile)) {
-            if (-not $DryRun) {
-                throw "JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE points to a missing file: $chainHostFile"
-            }
+    if (-not [string]::IsNullOrWhiteSpace($chainHostFile) -and -not (Test-Path -LiteralPath $chainHostFile)) {
+        if (-not $DryRun) {
+            Write-Detail "Warning: JNLP_JCA_SIGN_CERTCHAIN_HOST_FILE not found: $chainHostFile (optional; merge intermediates into Key Vault cert instead)"
         }
     }
 
@@ -412,15 +408,11 @@ function Initialize-SigningEnvironment {
         if (-not (Test-Path -LiteralPath $tempChain)) {
             Set-Content -LiteralPath $tempChain -Value '# dry run placeholder' -Encoding ascii
         }
-        $env:JNLP_JCA_SIGN_CERTCHAIN_FILE = $tempChain
     } elseif (-not [string]::IsNullOrWhiteSpace($inlineChain)) {
         $tempChainDir = Join-Path $WorkflowDir '.signing-temp'
         New-Item -ItemType Directory -Force -Path $tempChainDir | Out-Null
         $tempChain = Join-Path $tempChainDir 'certchain.pem'
         Set-Content -LiteralPath $tempChain -Value $inlineChain -Encoding utf8
-        $env:JNLP_JCA_SIGN_CERTCHAIN_FILE = $tempChain
-    } else {
-        $env:JNLP_JCA_SIGN_CERTCHAIN_FILE = $chainHostFile
     }
 
     foreach ($name in $required) {
@@ -554,7 +546,7 @@ function Invoke-HostSignPipeline {
 
     $dryRun = Test-IsDryRun
     if ($dryRun) {
-        Write-Detail 'Dry run mode: enabled (full build; signing step runs AzureSignTool --version only)'
+        Write-Detail 'Dry run mode: enabled (full build; signing step runs sign --version only)'
     }
 
     $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
@@ -584,7 +576,7 @@ function Invoke-HostSignPipeline {
     Write-Detail "ITW_JDK_VERSION:     $($resolvedJdk.Major)"
     Write-Detail "Compile JDK home:    $($resolvedJdk.JdkHome)"
     Write-Detail "Self-contained .NET: $selfContained"
-    Write-Detail "Cert chain file:     $($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)"
+    Write-Detail "Sign cert alias:     $($env:JNLP_JCA_SIGN_ALIAS)"
 
     $mavenSettings = Get-MavenSettingsArgs -Root $Root
     Write-Detail "Maven settings:      $($mavenSettings.Path)"
@@ -645,6 +637,21 @@ function Invoke-HostSignPipeline {
     }
 }
 
+function Update-DotNetToolsPath {
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if ($userPath) {
+        $env:Path = "$machinePath;$userPath"
+    } else {
+        $env:Path = $machinePath
+    }
+
+    $dotnetTools = Join-Path $env:USERPROFILE '.dotnet\tools'
+    if ((Test-Path -LiteralPath $dotnetTools) -and ($env:Path -notlike "*$dotnetTools*")) {
+        $env:Path = "$dotnetTools;$env:Path"
+    }
+}
+
 function Invoke-WindowsPowerShellFile {
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
@@ -695,6 +702,12 @@ function Run-HostSignWorkflow {
     Invoke-WindowsPowerShellFile -FilePath $toolchainScript -ArgumentList @('-InstallTools')
     if ($LASTEXITCODE -ne 0) {
         throw "install-toolchain.ps1 failed with exit code $LASTEXITCODE."
+    }
+
+    Update-DotNetToolsPath
+
+    if (-not (Get-Command sign -ErrorAction SilentlyContinue)) {
+        throw "Microsoft Sign CLI ('sign') is not available after toolchain install. Re-run: install-toolchain.ps1 -InstallTools"
     }
 
     if (-not (Get-Command git -ErrorAction SilentlyContinue)) {

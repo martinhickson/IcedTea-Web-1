@@ -27,7 +27,7 @@ pipeline {
         booleanParam(
             name: 'DRY_RUN',
             defaultValue: true,
-            description: 'Run full Windows build; at signing step run AzureSignTool --version only (no Jenkins signing credentials required)'
+            description: 'Run full Windows build; at signing step run sign --version only (no Jenkins signing credentials required)'
         )
     }
 

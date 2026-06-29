@@ -85,8 +85,72 @@ function Test-DotNetGlobalToolInstalled {
         return $false
     }
 
-    $list = & dotnet tool list --global 2>$null | Out-String
-    return $list -match [regex]::Escape($PackageId)
+    foreach ($line in (& dotnet tool list --global 2>$null)) {
+        $trimmed = $line.Trim()
+        if ($trimmed.Length -eq 0) {
+            continue
+        }
+        if ($trimmed -like 'Package Id*' -or $trimmed -like '-----*') {
+            continue
+        }
+
+        $package = ($trimmed -split '\s+')[0]
+        if ($package -eq $PackageId) {
+            return $true
+        }
+    }
+
+    return $false
+}
+
+function Get-DotNetGlobalToolCommandName {
+    param([Parameter(Mandatory = $true)][string]$PackageId)
+
+    foreach ($line in (& dotnet tool list --global 2>$null)) {
+        $trimmed = $line.Trim()
+        if ($trimmed.Length -eq 0) {
+            continue
+        }
+        if ($trimmed -like 'Package Id*' -or $trimmed -like '-----*') {
+            continue
+        }
+
+        $parts = $trimmed -split '\s+'
+        if ($parts.Count -lt 3) {
+            continue
+        }
+        if ($parts[0] -ne $PackageId) {
+            continue
+        }
+
+        return $parts[$parts.Count - 1]
+    }
+
+    return $PackageId
+}
+
+function Resolve-DotNetGlobalToolExe {
+    param([Parameter(Mandatory = $true)][string]$PackageId)
+
+    Update-SessionPath
+    $commandName = Get-DotNetGlobalToolCommandName -PackageId $PackageId
+    if (Test-CommandAvailable $commandName) {
+        return (Get-Command $commandName -ErrorAction Stop).Source
+    }
+
+    $dotnetTools = Join-Path $env:USERPROFILE '.dotnet\tools'
+    $exePath = Join-Path $dotnetTools "$commandName.exe"
+    if (Test-Path -LiteralPath $exePath) {
+        return (Resolve-Path -LiteralPath $exePath).Path
+    }
+
+    return $null
+}
+
+function Test-DotNetGlobalToolCommandAvailable {
+    param([Parameter(Mandatory = $true)][string]$PackageId)
+
+    return $null -ne (Resolve-DotNetGlobalToolExe -PackageId $PackageId)
 }
 
 function Get-ProxyUrl {
@@ -271,12 +335,23 @@ function Set-DotNetEnvironment {
     [Environment]::SetEnvironmentVariable('DOTNET_ROOT', $dotnetRoot, 'Machine')
     $env:DOTNET_ROOT = $dotnetRoot
 
-    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $dotnetTools = Join-Path $env:USERPROFILE '.dotnet\tools'
-    $suffix = "$dotnetRoot;$dotnetTools"
+
+    $machinePath = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     if ($machinePath -notlike "*$dotnetRoot*") {
-        [Environment]::SetEnvironmentVariable('Path', "$machinePath;$suffix", 'Machine')
+        [Environment]::SetEnvironmentVariable('Path', "$machinePath;$dotnetRoot", 'Machine')
     }
+
+    $userPath = [Environment]::GetEnvironmentVariable('Path', 'User')
+    if ($userPath -notlike "*$dotnetTools*") {
+        $nextUserPath = if ([string]::IsNullOrWhiteSpace($userPath)) {
+            $dotnetTools
+        } else {
+            "$userPath;$dotnetTools"
+        }
+        [Environment]::SetEnvironmentVariable('Path', $nextUserPath, 'User')
+    }
+
     Update-SessionPath
 }
 
@@ -296,7 +371,7 @@ function Ensure-DotNetNuGetSources {
         Write-Detail "Adding NuGet source: $nugetOrgUrl"
         & dotnet nuget add source $nugetOrgUrl -n $nugetOrgName
         if ($LASTEXITCODE -ne 0) {
-            throw "dotnet nuget add source failed. WiX/AzureSignTool require $nugetOrgUrl."
+            throw "dotnet nuget add source failed. WiX/Sign CLI require $nugetOrgUrl."
         }
     }
 
@@ -309,13 +384,19 @@ function Ensure-DotNetNuGetSources {
 function Install-DotNetGlobalToolIfMissing {
     param(
         [Parameter(Mandatory = $true)][string]$PackageId,
-        [Parameter(Mandatory = $true)][string]$FailureMessage
+        [Parameter(Mandatory = $true)][string]$FailureMessage,
+        [switch]$Prerelease
     )
 
     Update-SessionPath
-    if (Test-DotNetGlobalToolInstalled -PackageId $PackageId) {
+    if ((Test-DotNetGlobalToolInstalled -PackageId $PackageId) -and (Test-DotNetGlobalToolCommandAvailable -PackageId $PackageId)) {
         Write-Detail "dotnet global tool '$PackageId' already installed; skipping."
         return
+    }
+
+    if (Test-DotNetGlobalToolInstalled -PackageId $PackageId) {
+        Write-Detail "dotnet global tool '$PackageId' is registered but its command is missing; reinstalling..."
+        & dotnet tool uninstall --global $PackageId 2>$null | Out-Null
     }
 
     if (-not (Test-DotNet8SdkInstalled)) {
@@ -325,7 +406,12 @@ function Install-DotNetGlobalToolIfMissing {
     Ensure-DotNetNuGetSources
 
     Write-Detail "Installing dotnet global tool '$PackageId'..."
-    & dotnet tool install --global --ignore-failed-sources $PackageId
+    $installArgs = @('tool', 'install', '--global', '--ignore-failed-sources')
+    if ($Prerelease) {
+        $installArgs += '--prerelease'
+    }
+    $installArgs += $PackageId
+    & dotnet @installArgs
     if ($LASTEXITCODE -ne 0) {
         throw @(
             $FailureMessage
@@ -334,6 +420,11 @@ function Install-DotNetGlobalToolIfMissing {
         ) -join ' '
     }
     Update-SessionPath
+    Set-DotNetEnvironment
+
+    if (-not (Test-DotNetGlobalToolCommandAvailable -PackageId $PackageId)) {
+        throw "dotnet tool '$PackageId' was installed but its command is still unavailable. Check %USERPROFILE%\.dotnet\tools is on PATH."
+    }
 }
 
 function Get-ToolchainStatus {
@@ -345,8 +436,8 @@ function Get-ToolchainStatus {
         git           = Test-CommandAvailable git
         maven         = Test-CommandAvailable mvn
         dotnet8sdk    = Test-DotNet8SdkInstalled
-        wix           = (Test-DotNetGlobalToolInstalled -PackageId 'wix') -or (Test-CommandAvailable wix)
-        AzureSignTool = Test-CommandAvailable AzureSignTool
+        wix           = Test-DotNetGlobalToolCommandAvailable -PackageId 'wix'
+        sign          = Test-DotNetGlobalToolCommandAvailable -PackageId 'sign'
         choco         = Test-CommandAvailable choco
     }
     $status[$jdkLabel] = ($null -ne $jdkHome)
@@ -354,6 +445,19 @@ function Get-ToolchainStatus {
         $status["${jdkLabel}_home"] = $jdkHome
     }
     return $status
+}
+
+function Get-MissingToolchainComponents {
+    $missing = @()
+    foreach ($entry in (Get-ToolchainStatus).GetEnumerator()) {
+        if ($entry.Key -like '*_home') {
+            continue
+        }
+        if (-not $entry.Value) {
+            $missing += $entry.Key
+        }
+    }
+    return $missing
 }
 
 function Write-ToolchainStatus {
@@ -411,14 +515,15 @@ function Install-HostSignToolchain {
     Write-Detail ("dotnet {0}" -f (& dotnet --version))
 
     Install-DotNetGlobalToolIfMissing -PackageId 'wix' -FailureMessage 'dotnet tool install wix failed'
-    Install-DotNetGlobalToolIfMissing -PackageId 'AzureSignTool' -FailureMessage 'dotnet tool install AzureSignTool failed'
-
-    if (Test-CommandAvailable wix) {
+    Install-DotNetGlobalToolIfMissing -PackageId 'sign' -Prerelease -FailureMessage 'dotnet tool install sign failed'
+    if (Test-DotNetGlobalToolCommandAvailable -PackageId 'wix') {
         Write-Detail ("wix {0}" -f (& wix --version))
     }
-    if (Test-CommandAvailable AzureSignTool) {
-        Write-Detail ("AzureSignTool {0}" -f (& AzureSignTool --version))
+    $signExe = Resolve-DotNetGlobalToolExe -PackageId 'sign'
+    if (-not $signExe) {
+        throw "Microsoft Sign CLI ('sign') is not available after install. Run: dotnet tool install --global --prerelease sign"
     }
+    Write-Detail ("sign {0}" -f (& $signExe --version))
 
     Write-ToolchainStatus -Heading 'Toolchain ready'
 }
@@ -427,10 +532,15 @@ if (-not ($VerifyOnly -or $InstallTools)) {
     throw 'Specify -VerifyOnly or -InstallTools.'
 }
 
-if ($VerifyOnly) {
-    Update-SessionPath
-    Write-ToolchainStatus -Heading 'VerifyOnly: toolchain status'
+if ($InstallTools) {
+    Install-HostSignToolchain
     exit 0
 }
 
-Install-HostSignToolchain
+Update-SessionPath
+Write-ToolchainStatus -Heading 'VerifyOnly: toolchain status'
+$missing = @(Get-MissingToolchainComponents)
+if ($missing.Count -gt 0) {
+    throw "Toolchain missing: $($missing -join ', '). Run with -InstallTools to install."
+}
+exit 0

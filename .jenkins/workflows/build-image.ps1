@@ -472,11 +472,11 @@ function Install-SignImageToolchain {
     Update-SessionPath
     & 'C:\Program Files\dotnet\dotnet.exe' --version
 
-    Write-BootstrapStep 'Install WiX and AzureSignTool dotnet tools'
+    Write-BootstrapStep 'Install WiX and Microsoft Sign CLI dotnet tools'
     & 'C:\Program Files\dotnet\dotnet.exe' tool install --global wix
     if ($LASTEXITCODE -ne 0) { throw 'dotnet tool install wix failed' }
-    & 'C:\Program Files\dotnet\dotnet.exe' tool install --global AzureSignTool
-    if ($LASTEXITCODE -ne 0) { throw 'dotnet tool install AzureSignTool failed' }
+    & 'C:\Program Files\dotnet\dotnet.exe' tool install --global --prerelease sign
+    if ($LASTEXITCODE -ne 0) { throw 'dotnet tool install sign failed' }
     & 'C:\Users\ContainerAdministrator\.dotnet\tools\wix.exe' --version
     & 'C:\Program Files\dotnet\dotnet.exe' tool list --global
 }

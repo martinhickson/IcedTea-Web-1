@@ -407,19 +407,19 @@ function Invoke-DryRunSigningStep {
         [Parameter(Mandatory = $true)][string]$MsiPath
     )
 
-    Write-Step "Step 3/3: Dry run signing check (AzureSignTool --version only)"
+    Write-Step "Step 3/3: Dry run signing check (sign --version only)"
     Write-Detail "Distribution ZIP: $DistZip"
     Write-Detail "MSI:              $MsiPath"
     Write-Detail "Dry run: full Windows build completed; skipping EXE/MSI Key Vault signing."
 
-    if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
-        throw "AzureSignTool is not available on PATH."
+    if (-not (Get-Command sign -ErrorAction SilentlyContinue)) {
+        throw "Microsoft Sign CLI ('sign') is not available on PATH."
     }
 
-    Write-Detail "Running: AzureSignTool --version"
-    & AzureSignTool --version
+    Write-Detail "Running: sign --version"
+    & sign --version
     if ($LASTEXITCODE -ne 0) {
-        throw "AzureSignTool --version failed with exit code $LASTEXITCODE."
+        throw "sign --version failed with exit code $LASTEXITCODE."
     }
 }
 
@@ -534,7 +534,7 @@ function Run-ContainerSignWorkflow {
 
     $dryRun = Test-IsDryRun
     if ($dryRun) {
-        Write-Detail "Dry run mode: enabled (full build; signing step runs AzureSignTool --version only)"
+        Write-Detail "Dry run mode: enabled (full build; signing step runs sign --version only)"
     }
 
     $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
@@ -667,7 +667,7 @@ function Run-HostSignWorkflow {
     Write-Detail "  2. WiX MSI packaging"
     Write-Detail "  3. Azure Key Vault code signing"
     if (Test-IsDryRun -Value $env:ITW_DRY_RUN) {
-        Write-Detail "Dry run mode:      enabled (full build; signing step runs AzureSignTool --version only)"
+        Write-Detail "Dry run mode:      enabled (full build; signing step runs sign --version only)"
     }
 
     Write-Step "Step 1/5: Validate host prerequisites"
