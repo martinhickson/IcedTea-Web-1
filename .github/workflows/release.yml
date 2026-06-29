@@ -361,13 +361,6 @@ jobs:
           docker version
         shell: pwsh
 
-      - name: Build Windows MSI in Windows Server Core Docker
-        if: runner.os == 'Windows'
-        run: |
-          $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
-          & .packaging/workflows/windows/build-msi.ps1
-        shell: pwsh
-
       - name: Validate Windows signing secrets
         if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
         env:
@@ -402,7 +395,7 @@ jobs:
           "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
         shell: pwsh
 
-      - name: Sign Windows EXE and MSI release artifacts
+      - name: Sign Windows launcher EXEs in dist and rebuild ZIP
         if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
         env:
           KEYVAULT_URL: ${{ secrets.KEYVAULT_URL }}
@@ -411,7 +404,30 @@ jobs:
           AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
           JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
           JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
-        run: '& .github/workflows/sign.ps1'
+        run: |
+          $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
+          & .github/workflows/sign.ps1 -Phase Distribution
+        shell: pwsh
+
+      - name: Build Windows MSI in Windows Server Core Docker
+        if: runner.os == 'Windows'
+        run: |
+          $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
+          & .packaging/workflows/windows/build-msi.ps1
+        shell: pwsh
+
+      - name: Sign Windows MSI release artifact
+        if: runner.os == 'Windows' && github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true
+        env:
+          KEYVAULT_URL: ${{ secrets.KEYVAULT_URL }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
+          JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
+        run: |
+          $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
+          & .github/workflows/sign.ps1 -Phase Msi
         shell: pwsh
 
       - name: Build macOS DMG

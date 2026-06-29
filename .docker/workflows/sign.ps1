@@ -517,7 +517,7 @@ function Get-MavenSettingsArgs {
 
 function Run-ContainerSignWorkflow {
     Write-Step "IcedTea-Web Windows release build (container)"
-    Write-Detail "Pipeline: Maven distribution (win-x64) -> WiX MSI -> Azure Key Vault signing"
+    Write-Detail "Pipeline: Maven distribution (win-x64) -> sign EXEs in dist -> WiX MSI -> sign MSI"
 
     $root = $env:ITW_WORKSPACE_ROOT
     if ([string]::IsNullOrWhiteSpace($root)) {
@@ -596,10 +596,13 @@ function Run-ContainerSignWorkflow {
         "-Ditw.corretto.url=$correttoUrl"
     )
 
-    Invoke-CheckedCommand -StepName "Step 1/3: Maven distribution build (win-x64)" -Command {
+    Invoke-CheckedCommand -StepName "Step 1/4: Maven distribution build (win-x64)" -Command {
         Write-Detail "Running: mvn $($mvnArgs -join ' ')"
         & mvn @mvnArgs
     }
+
+    $env:ITW_DIST_DIR = Join-Path $root "icedtea-web-distribution\target\dist\icedtea-web-$version"
+    Write-Detail "Distribution tree:   $($env:ITW_DIST_DIR)"
 
     $distZip = Get-ChildItem (Join-Path $root "icedtea-web-distribution\target\*.zip") |
         Where-Object { $_.Name -like "*-win-x64.zip" } |
@@ -609,12 +612,24 @@ function Run-ContainerSignWorkflow {
     }
     Write-Detail "Built distribution ZIP: $($distZip.FullName)"
 
+    $signScript = Join-Path $root ".jenkins\workflows\sign.ps1"
+    if (-not (Test-Path -LiteralPath $signScript)) {
+        throw "Signing script not found at $signScript"
+    }
+
+    if (-not $dryRun) {
+        Invoke-CheckedCommand -StepName "Step 2/4: Sign launcher EXEs in dist and rebuild ZIP" -Command {
+            Write-Detail "Running: $signScript -Phase Distribution"
+            & $signScript -Phase Distribution
+        }
+    }
+
     $msiScript = Join-Path $root ".packaging\workflows\windows\container-build-msi.ps1"
     if (-not (Test-Path -LiteralPath $msiScript)) {
         throw "MSI build script not found at $msiScript"
     }
 
-    Invoke-CheckedCommand -StepName "Step 2/3: WiX MSI build" -Command {
+    Invoke-CheckedCommand -StepName $(if ($dryRun) { "Step 2/4: WiX MSI build" } else { "Step 3/4: WiX MSI build" }) -Command {
         Write-Detail "Running: $msiScript"
         & $msiScript
     }
@@ -625,17 +640,12 @@ function Run-ContainerSignWorkflow {
     }
     Write-Detail "Built MSI: $($msiFiles[0].FullName)"
 
-    $signScript = Join-Path $root ".jenkins\workflows\sign.ps1"
-    if (-not (Test-Path -LiteralPath $signScript)) {
-        throw "Signing script not found at $signScript"
-    }
-
     if ($dryRun) {
         Invoke-DryRunSigningStep -DistZip $distZip.FullName -MsiPath $msiFiles[0].FullName
     } else {
-        Invoke-CheckedCommand -StepName "Step 3/3: Sign EXE and MSI with Azure Key Vault" -Command {
-            Write-Detail "Running: $signScript"
-            & $signScript
+        Invoke-CheckedCommand -StepName "Step 4/4: Sign MSI with Azure Key Vault" -Command {
+            Write-Detail "Running: $signScript -Phase Msi"
+            & $signScript -Phase Msi
         }
     }
 

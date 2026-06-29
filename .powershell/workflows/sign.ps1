@@ -626,10 +626,14 @@ function Invoke-HostSignPipeline {
         "-Ditw.corretto.url=$correttoUrl"
     )
 
-    Invoke-CheckedCommand -StepName 'Step 1/3: Maven distribution build (win-x64)' -Command {
+    Invoke-CheckedCommand -StepName 'Step 1/4: Maven distribution build (win-x64)' -Command {
         Write-Detail "Running: mvn $($mvnArgs -join ' ')"
         & mvn @mvnArgs
     }
+
+    $distDir = Join-Path $Root "icedtea-web-distribution\target\dist\icedtea-web-$version"
+    $env:ITW_DIST_DIR = $distDir
+    Write-Detail "Distribution tree:   $distDir"
 
     $distZip = Get-ChildItem (Join-Path $Root 'icedtea-web-distribution\target\*.zip') |
         Where-Object { $_.Name -like '*-win-x64.zip' } |
@@ -639,10 +643,20 @@ function Invoke-HostSignPipeline {
     }
     Write-Detail "Built distribution ZIP: $($distZip.FullName)"
 
+    $signScript = Resolve-WorkflowScript -Root $Root -RelativePath '.jenkins\workflows\sign.ps1'
+    Write-Detail "Signing script:      $signScript"
+
+    if (-not $dryRun) {
+        Invoke-CheckedCommand -StepName 'Step 2/4: Sign launcher EXEs in dist and rebuild ZIP' -Command {
+            Write-Detail "Running: $signScript -Phase Distribution"
+            & $signScript -Phase Distribution
+        }
+    }
+
     $msiScript = Resolve-WorkflowScript -Root $Root -RelativePath '.packaging\workflows\windows\container-build-msi.ps1'
     Write-Detail "MSI build script:   $msiScript"
 
-    Invoke-CheckedCommand -StepName 'Step 2/3: WiX MSI build' -Command {
+    Invoke-CheckedCommand -StepName $(if ($dryRun) { 'Step 2/4: WiX MSI build' } else { 'Step 3/4: WiX MSI build' }) -Command {
         Write-Detail "Running: $msiScript"
         & $msiScript
     }
@@ -653,12 +667,14 @@ function Invoke-HostSignPipeline {
     }
     Write-Detail "Built MSI: $($msiFiles[0].FullName)"
 
-    $signScript = Resolve-WorkflowScript -Root $Root -RelativePath '.jenkins\workflows\sign.ps1'
-    Write-Detail "Signing script:      $signScript"
-
-    Invoke-CheckedCommand -StepName 'Step 3/3: Sign EXE and MSI with Azure Key Vault' -Command {
-        Write-Detail "Running: $signScript"
-        & $signScript
+    Invoke-CheckedCommand -StepName $(if ($dryRun) { 'Step 3/4: Sign EXE and MSI with Azure Key Vault (dry run)' } else { 'Step 4/4: Sign MSI with Azure Key Vault' }) -Command {
+        if ($dryRun) {
+            Write-Detail "Running: $signScript -Phase All"
+            & $signScript -Phase All
+        } else {
+            Write-Detail "Running: $signScript -Phase Msi"
+            & $signScript -Phase Msi
+        }
     }
 
     if ($dryRun) {
