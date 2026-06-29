@@ -40,4 +40,5 @@ target
 .docker/workflows/.source/
 .jenkins/workflows/**/.signing-temp/
 .powershell/workflows/**/.signing-temp/
+.powershell/workflows/.bash-shim/
 .powershell/workflows/.source/

@@ -64,6 +64,22 @@ if ([string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY)) {
     $env:GITHUB_REPOSITORY = "martinhickson/IcedTea-Web-1"
 }
 
+function Format-HResultMessage {
+    param([int]$ExitCode)
+
+    if ($ExitCode -eq 0) {
+        return 'Success (0).'
+    }
+
+    $unsigned = $ExitCode -band 0xFFFFFFFF
+    switch ($unsigned) {
+        0x80070002 { return '0x80070002 (ERROR_FILE_NOT_FOUND). AzureSignTool often reports this when a file path is wrong, or when Key Vault auth/permissions fail (misleading "file not found" for the certificate name). Verify AZURE_CLIENT_SECRET, vault RBAC (certificate read + key sign), and that each target file exists.' }
+        0x80070005 { return '0x80070005 (ERROR_ACCESS_DENIED). Check Key Vault permissions for the service principal.' }
+        0x80004005 { return '0x80004005 (E_FAIL). Signing failed; run with --verbose for SignTool details.' }
+        default { return ('0x{0:X8} ({1}).' -f $unsigned, $ExitCode) }
+    }
+}
+
 function Get-AdditionalCertificateArgs {
     param(
         [string]$PemContent,
@@ -76,16 +92,54 @@ function Get-AdditionalCertificateArgs {
         throw "JNLP_JCA_SIGN_CERTCHAIN does not contain any PEM certificates."
     }
 
-    $args = @()
+    $certificateArgList = @()
     $index = 0
     foreach ($match in $matches) {
         $certPath = Join-Path $WorkDir "signing-chain-$index.pem"
         [System.IO.File]::WriteAllText($certPath, $match.Value.TrimEnd())
-        $args += "--additional-certificates"
-        $args += $certPath
+        if (-not (Test-Path -LiteralPath $certPath)) {
+            throw "Failed to write intermediate certificate file: $certPath"
+        }
+        $certificateArgList += '--additional-certificates'
+        $certificateArgList += $certPath
         $index++
     }
-    return ,$args
+    return ,$certificateArgList
+}
+
+function Invoke-AzureSignToolSign {
+    param(
+        [Parameter(Mandatory = $true)][string[]]$VaultAuthArgs,
+        [Parameter(Mandatory = $true)][string[]]$AdditionalCertArgs,
+        [Parameter(Mandatory = $true)][string]$TargetFile,
+        [Parameter(Mandatory = $true)][string]$Description,
+        [Parameter(Mandatory = $true)][string]$DescriptionUrl
+    )
+
+    if (-not (Test-Path -LiteralPath $TargetFile)) {
+        throw "Signing target does not exist: $TargetFile"
+    }
+
+    $signArgs = @(
+        'sign'
+    ) + $VaultAuthArgs + $AdditionalCertArgs + @(
+        '--file-digest', 'sha256',
+        '--timestamp-rfc3161', $env:JNLP_JCA_TSA_URL,
+        '--timestamp-digest', 'sha256',
+        '--description', $Description,
+        '--description-url', $DescriptionUrl,
+        '--verbose',
+        $TargetFile
+    )
+
+    $azureSignTool = (Get-Command AzureSignTool -ErrorAction Stop).Source
+    Write-Host "AzureSignTool: $azureSignTool"
+    Write-Host "Signing:       $TargetFile"
+
+    & $azureSignTool @signArgs
+    if ($LASTEXITCODE -ne 0) {
+        throw ("AzureSignTool failed for {0}. Exit code {1}. {2}" -f $TargetFile, $LASTEXITCODE, (Format-HResultMessage -ExitCode $LASTEXITCODE))
+    }
 }
 
 if (-not (Get-Command AzureSignTool -ErrorAction SilentlyContinue)) {
@@ -131,31 +185,38 @@ New-Item -ItemType Directory -Path $work, $chainWork | Out-Null
 $additionalCertArgs = Get-AdditionalCertificateArgs -PemContent $env:JNLP_JCA_SIGN_CERTCHAIN -WorkDir $chainWork
 Write-Host "Using $($additionalCertArgs.Count / 2) certificate chain file(s) from JNLP_JCA_SIGN_CERTCHAIN."
 
+if ($env:KEYVAULT_URL -notmatch '^https?://') {
+    throw "KEYVAULT_URL must include the scheme, e.g. https://your-vault.vault.azure.net/"
+}
+
 $vaultAuthArgs = @(
-    "--azure-key-vault-url", $env:KEYVAULT_URL
-    "--azure-key-vault-client-id", $env:AZURE_CLIENT_ID
-    "--azure-key-vault-tenant-id", $env:AZURE_TENANT_ID
-    "--azure-key-vault-client-secret", $env:AZURE_CLIENT_SECRET
-    "--azure-key-vault-certificate", $env:JNLP_JCA_SIGN_ALIAS
+    '--azure-key-vault-url', $env:KEYVAULT_URL.TrimEnd('/')
+    '--azure-key-vault-client-id', $env:AZURE_CLIENT_ID
+    '--azure-key-vault-tenant-id', $env:AZURE_TENANT_ID
+    '--azure-key-vault-client-secret', $env:AZURE_CLIENT_SECRET
+    '--azure-key-vault-certificate', $env:JNLP_JCA_SIGN_ALIAS
 )
 
+Write-Host "Key Vault URL:       $($env:KEYVAULT_URL.TrimEnd('/'))"
+Write-Host "Key Vault cert name: $($env:JNLP_JCA_SIGN_ALIAS)"
+Write-Host "Timestamp URL:       $($env:JNLP_JCA_TSA_URL)"
+Write-Host "Distribution ZIP:    $($zip.FullName)"
+Write-Host "MSI:                 $($msiFiles[0].FullName)"
+
 Expand-Archive -LiteralPath $zip.FullName -DestinationPath $work
-$exeFiles = @(Get-ChildItem $work -Recurse -Filter "*.exe")
+$exeFiles = @(Get-ChildItem $work -Recurse -Filter '*.exe')
 if ($exeFiles.Count -eq 0) {
     throw "No EXE files found inside $($zip.FullName)."
 }
 
+Write-Host "Found $($exeFiles.Count) EXE file(s) to sign under $work"
 foreach ($exe in $exeFiles) {
-    Write-Host "Signing EXE: $($exe.FullName)"
-    AzureSignTool sign `
-        @vaultAuthArgs `
-        @additionalCertArgs `
-        --file-digest sha256 `
-        --timestamp-rfc3161 $env:JNLP_JCA_TSA_URL `
-        --timestamp-digest sha256 `
-        --description "IcedTea-Web" `
-        --description-url "https://github.com/$env:GITHUB_REPOSITORY" `
-        $exe.FullName
+    Invoke-AzureSignToolSign `
+        -VaultAuthArgs $vaultAuthArgs `
+        -AdditionalCertArgs $additionalCertArgs `
+        -TargetFile $exe.FullName `
+        -Description 'IcedTea-Web' `
+        -DescriptionUrl "https://github.com/$env:GITHUB_REPOSITORY"
 }
 
 Remove-Item $zip.FullName -Force
@@ -163,14 +224,10 @@ Compress-Archive -Path (Join-Path $work "*") -DestinationPath $zip.FullName
 Write-Host "Repacked signed Windows distribution ZIP: $($zip.FullName)"
 
 foreach ($msi in $msiFiles) {
-    Write-Host "Signing MSI: $($msi.FullName)"
-    AzureSignTool sign `
-        @vaultAuthArgs `
-        @additionalCertArgs `
-        --file-digest sha256 `
-        --timestamp-rfc3161 $env:JNLP_JCA_TSA_URL `
-        --timestamp-digest sha256 `
-        --description "IcedTea-Web Installer" `
-        --description-url "https://github.com/$env:GITHUB_REPOSITORY" `
-        $msi.FullName
+    Invoke-AzureSignToolSign `
+        -VaultAuthArgs $vaultAuthArgs `
+        -AdditionalCertArgs $additionalCertArgs `
+        -TargetFile $msi.FullName `
+        -Description 'IcedTea-Web Installer' `
+        -DescriptionUrl "https://github.com/$env:GITHUB_REPOSITORY"
 }

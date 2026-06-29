@@ -486,6 +486,35 @@ function Resolve-ContainerJdk11Home {
     throw "JDK 11 home not found. The sign image should install corretto11jdk via Chocolatey."
 }
 
+function Get-MavenSettingsArgs {
+    param([string]$Root = '')
+
+    $candidates = @(
+        (Join-Path $PSScriptRoot 'maven-settings.xml')
+    )
+    if ($Root) {
+        $candidates += @(
+            (Join-Path $Root '.powershell\workflows\maven-settings.xml'),
+            (Join-Path $Root '.jenkins\workflows\maven-settings.xml')
+        )
+    }
+
+    foreach ($path in $candidates) {
+        if (Test-Path -LiteralPath $path) {
+            return @{
+                Path = (Resolve-Path -LiteralPath $path).Path
+                Args = @('-s', $path)
+            }
+        }
+    }
+
+    throw @(
+        'maven-settings.xml not found.'
+        'It mirrors the github repository to https://securemvn.com/releases for io.pack200:pack200.'
+        'Expected under .powershell\workflows\ or .jenkins\workflows\ in the checkout.'
+    ) -join ' '
+}
+
 function Run-ContainerSignWorkflow {
     Write-Step "IcedTea-Web Windows release build (container)"
     Write-Detail "Pipeline: Maven distribution (win-x64) -> WiX MSI -> Azure Key Vault signing"
@@ -540,7 +569,21 @@ function Run-ContainerSignWorkflow {
     Write-Detail "TSA URL:             $($env:JNLP_JCA_TSA_URL)"
     Write-Detail "Cert chain file:     $($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)"
 
-    $mvnArgs = @(
+    $mavenSettings = Get-MavenSettingsArgs -Root $root
+    Write-Detail "Maven settings:      $($mavenSettings.Path)"
+
+    $ensurePack200 = Join-Path $root '.powershell\workflows\ensure-pack200.ps1'
+    if (-not (Test-Path -LiteralPath $ensurePack200)) {
+        $ensurePack200 = Join-Path $PSScriptRoot '..\..\.powershell\workflows\ensure-pack200.ps1'
+    }
+    if (Test-Path -LiteralPath $ensurePack200) {
+        . $ensurePack200
+        Ensure-Pack200MavenDependency
+    } else {
+        Write-Detail 'ensure-pack200.ps1 not found; relying on Maven repository resolution.'
+    }
+
+    $mvnArgs = $mavenSettings.Args + @(
         "-P", "maven-distribution",
         "-pl", "icedtea-web-distribution",
         "-am",

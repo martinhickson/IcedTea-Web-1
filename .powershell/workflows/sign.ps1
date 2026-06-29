@@ -9,6 +9,7 @@ param(
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'jdk.ps1')
+. (Join-Path $PSScriptRoot 'ensure-pack200.ps1')
 
 function Write-Step {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -43,6 +44,226 @@ function Stop-SignWorkflow {
         Write-NextStep $step
     }
     exit 1
+}
+
+function Add-UniquePathPrefix {
+    param([string]$Dir)
+
+    if ([string]::IsNullOrWhiteSpace($Dir)) {
+        return
+    }
+
+    $normalized = $Dir.Trim().TrimEnd('\')
+    if ((Test-Path -LiteralPath $normalized) -and ($env:Path -notlike "*$normalized*")) {
+        $env:Path = "$normalized;$env:Path"
+    }
+}
+
+function Get-GitInstallRootFromGitExe {
+    param([Parameter(Mandatory = $true)][string]$GitExe)
+
+    $binDir = (Split-Path -Parent $GitExe).TrimEnd('\')
+    $leaf = Split-Path -Leaf $binDir
+    switch ($leaf.ToLowerInvariant()) {
+        'cmd' { return (Split-Path -Parent $binDir) }
+        'bin' {
+            $parent = Split-Path -Parent $binDir
+            if ((Split-Path -Leaf $parent).ToLowerInvariant() -eq 'mingw64') {
+                return (Split-Path -Parent $parent)
+            }
+            return $parent
+        }
+    }
+
+    return $null
+}
+
+function Get-BashCandidatesFromGitRoot {
+    param([Parameter(Mandatory = $true)][string]$GitRoot)
+
+    $root = $GitRoot.Trim().TrimEnd('\')
+    return @(
+        (Join-Path $root 'bin\bash.exe'),
+        (Join-Path $root 'usr\bin\bash.exe')
+    )
+}
+
+function Get-GitPathDirsFromRoot {
+    param([Parameter(Mandatory = $true)][string]$GitRoot)
+
+    $root = $GitRoot.Trim().TrimEnd('\')
+    return @(
+        (Join-Path $root 'cmd'),
+        (Join-Path $root 'bin'),
+        (Join-Path $root 'mingw64\bin'),
+        (Join-Path $root 'usr\bin')
+    )
+}
+
+function Test-IsWslOrAppsBashStub {
+    param([string]$Path)
+
+    if ([string]::IsNullOrWhiteSpace($Path)) {
+        return $true
+    }
+
+    $normalized = $Path.ToLowerInvariant()
+    return (
+        $normalized -like '*\windowsapps\*' -or
+        $normalized -like '*\system32\bash.exe'
+    )
+}
+
+function Resolve-GitBashExe {
+    $candidateList = New-Object 'System.Collections.Generic.List[string]'
+    $seen = @{}
+
+    function Add-LocalGitBashCandidate {
+        param([AllowEmptyString()][AllowNull()][string]$Path)
+
+        if ([string]::IsNullOrWhiteSpace($Path)) {
+            return
+        }
+
+        $normalized = $Path.Trim().Trim('"')
+        if (-not $normalized.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) {
+            $normalized = Join-Path $normalized 'bin\bash.exe'
+        }
+
+        $key = $normalized.ToLowerInvariant()
+        if ($seen.ContainsKey($key)) {
+            return
+        }
+
+        $seen[$key] = $true
+        [void]$candidateList.Add($normalized)
+    }
+
+    foreach ($name in @('GIT_BASH', 'GIT_HOME', 'GIT_INSTALL_ROOT')) {
+        $value = [Environment]::GetEnvironmentVariable($name)
+        if ($name -eq 'GIT_BASH') {
+            Add-LocalGitBashCandidate -Path $value
+            continue
+        }
+        if (-not [string]::IsNullOrWhiteSpace($value)) {
+            foreach ($bash in (Get-BashCandidatesFromGitRoot -GitRoot $value)) {
+                Add-LocalGitBashCandidate -Path $bash
+            }
+        }
+    }
+
+    $gitExePaths = New-Object 'System.Collections.Generic.List[string]'
+    foreach ($gitCmd in @(Get-Command git -All -ErrorAction SilentlyContinue)) {
+        if ($gitCmd.Source) {
+            [void]$gitExePaths.Add($gitCmd.Source)
+        }
+    }
+
+    $whereGit = & where.exe git 2>$null
+    if ($LASTEXITCODE -eq 0 -and $whereGit) {
+        foreach ($line in @($whereGit)) {
+            if (-not [string]::IsNullOrWhiteSpace($line)) {
+                [void]$gitExePaths.Add($line.Trim())
+            }
+        }
+    }
+
+    foreach ($gitExe in ($gitExePaths | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $gitExe)) {
+            continue
+        }
+
+        $gitRoot = Get-GitInstallRootFromGitExe -GitExe $gitExe
+        if ($gitRoot) {
+            foreach ($bash in (Get-BashCandidatesFromGitRoot -GitRoot $gitRoot)) {
+                Add-LocalGitBashCandidate -Path $bash
+            }
+        }
+    }
+
+    foreach ($registryPath in @(
+        'HKLM:\SOFTWARE\GitForWindows',
+        'HKLM:\SOFTWARE\WOW6432Node\GitForWindows'
+    )) {
+        if (-not (Test-Path -LiteralPath $registryPath)) {
+            continue
+        }
+        $installPath = (Get-ItemProperty -LiteralPath $registryPath -ErrorAction SilentlyContinue).InstallPath
+        if ([string]::IsNullOrWhiteSpace($installPath)) {
+            continue
+        }
+        foreach ($bash in (Get-BashCandidatesFromGitRoot -GitRoot $installPath)) {
+            Add-LocalGitBashCandidate -Path $bash
+        }
+    }
+
+    foreach ($root in @('D:\Git', 'C:\Git', 'C:\Program Files\Git', 'C:\Program Files (x86)\Git')) {
+        foreach ($bash in (Get-BashCandidatesFromGitRoot -GitRoot $root)) {
+            Add-LocalGitBashCandidate -Path $bash
+        }
+    }
+
+    foreach ($candidate in $candidateList) {
+        if (Test-IsWslOrAppsBashStub -Path $candidate) {
+            continue
+        }
+        if (Test-Path -LiteralPath $candidate) {
+            return (Resolve-Path -LiteralPath $candidate).Path
+        }
+    }
+
+    return $null
+}
+
+function Ensure-GitBashOnPath {
+    $gitBash = Resolve-GitBashExe
+    if (-not $gitBash) {
+        throw @(
+            'Git Bash is required for Maven build steps but bash.exe was not found.'
+            'Install Git for Windows (choco install git) or disable the Windows "bash.exe" app execution alias under Settings -> Apps -> App execution aliases.'
+        ) -join ' '
+    }
+
+    $gitRoot = Split-Path -Parent (Split-Path -Parent $gitBash)
+    if ((Split-Path -Leaf (Split-Path -Parent $gitBash)).ToLowerInvariant() -eq 'usr') {
+        $gitRoot = Split-Path -Parent $gitRoot
+    }
+
+    foreach ($dir in (Get-GitPathDirsFromRoot -GitRoot $gitRoot)) {
+        Add-UniquePathPrefix -Dir $dir
+    }
+
+    # Maven exec plugin resolves "bash" via PATH. Windows App Execution Aliases can
+    # intercept that name with the WSL installer stub unless Git Bash wins first.
+    $shimDir = Join-Path $PSScriptRoot '.bash-shim'
+    New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
+    $shimPath = Join-Path $shimDir 'bash.cmd'
+    Set-Content -LiteralPath $shimPath -Encoding ascii -Value "@echo off`r`n`"$gitBash`" %*"
+    $env:Path = "$shimDir;$env:Path"
+
+    Write-Detail "Git install root:    $gitRoot"
+    Write-Detail "Git Bash executable: $gitBash"
+    Write-Detail "bash PATH shim:      $shimPath"
+}
+
+function Resolve-WorkflowScript {
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [Parameter(Mandatory = $true)][string]$RelativePath
+    )
+
+    $candidates = @(
+        (Join-Path $Root $RelativePath),
+        (Join-Path (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\..')).Path $RelativePath)
+    )
+
+    foreach ($path in $candidates) {
+        if (Test-Path -LiteralPath $path) {
+            return (Resolve-Path -LiteralPath $path).Path
+        }
+    }
+
+    throw "Workflow script not found: $RelativePath (checked cloned source and host checkout)."
 }
 
 function Invoke-CheckedCommand {
@@ -111,7 +332,13 @@ function Read-EnvFile {
     $envMap = @{}
     foreach ($line in (Get-Content -LiteralPath $Path | Where-Object { $_ -notmatch '^\s*(#|$)' -and $_ -match '=' })) {
         $parts = $line -split '=', 2
-        $envMap[$parts[0].Trim()] = $parts[1].Trim()
+        $value = $parts[1].Trim()
+        if ($value.Length -ge 2 -and $value.StartsWith('"') -and $value.EndsWith('"')) {
+            $value = $value.Substring(1, $value.Length - 2)
+        } elseif ($value.Length -ge 2 -and $value.StartsWith("'") -and $value.EndsWith("'")) {
+            $value = $value.Substring(1, $value.Length - 2)
+        }
+        $envMap[$parts[0].Trim()] = $value
     }
     return $envMap
 }
@@ -263,6 +490,35 @@ function Resolve-CompileJdkForBuild {
     return $resolved
 }
 
+function Get-MavenSettingsArgs {
+    param([string]$Root = '')
+
+    $candidates = @(
+        (Join-Path $PSScriptRoot 'maven-settings.xml')
+    )
+    if ($Root) {
+        $candidates += @(
+            (Join-Path $Root '.powershell\workflows\maven-settings.xml'),
+            (Join-Path $Root '.jenkins\workflows\maven-settings.xml')
+        )
+    }
+
+    foreach ($path in $candidates) {
+        if (Test-Path -LiteralPath $path) {
+            return @{
+                Path = (Resolve-Path -LiteralPath $path).Path
+                Args = @('-s', $path)
+            }
+        }
+    }
+
+    throw @(
+        'maven-settings.xml not found.'
+        'It mirrors the github repository to https://securemvn.com/releases for io.pack200:pack200.'
+        'Expected under .powershell\workflows\ or .jenkins\workflows\ in the checkout.'
+    ) -join ' '
+}
+
 function Invoke-HostSignPipeline {
     param([Parameter(Mandatory = $true)][string]$Root)
 
@@ -302,7 +558,13 @@ function Invoke-HostSignPipeline {
     Write-Detail "Self-contained .NET: $selfContained"
     Write-Detail "Cert chain file:     $($env:JNLP_JCA_SIGN_CERTCHAIN_FILE)"
 
-    $mvnArgs = @(
+    $mavenSettings = Get-MavenSettingsArgs -Root $Root
+    Write-Detail "Maven settings:      $($mavenSettings.Path)"
+
+    Ensure-Pack200MavenDependency
+    Ensure-GitBashOnPath
+
+    $mvnArgs = $mavenSettings.Args + @(
         '-P', 'maven-distribution',
         '-pl', 'icedtea-web-distribution',
         '-am',
@@ -328,10 +590,8 @@ function Invoke-HostSignPipeline {
     }
     Write-Detail "Built distribution ZIP: $($distZip.FullName)"
 
-    $msiScript = Join-Path $Root '.packaging\workflows\windows\container-build-msi.ps1'
-    if (-not (Test-Path -LiteralPath $msiScript)) {
-        throw "MSI build script not found at $msiScript"
-    }
+    $msiScript = Resolve-WorkflowScript -Root $Root -RelativePath '.packaging\workflows\windows\container-build-msi.ps1'
+    Write-Detail "MSI build script:   $msiScript"
 
     Invoke-CheckedCommand -StepName 'Step 2/3: WiX MSI build' -Command {
         Write-Detail "Running: $msiScript"
@@ -344,10 +604,8 @@ function Invoke-HostSignPipeline {
     }
     Write-Detail "Built MSI: $($msiFiles[0].FullName)"
 
-    $signScript = Join-Path $Root '.jenkins\workflows\sign.ps1'
-    if (-not (Test-Path -LiteralPath $signScript)) {
-        throw "Signing script not found at $signScript"
-    }
+    $signScript = Resolve-WorkflowScript -Root $Root -RelativePath '.jenkins\workflows\sign.ps1'
+    Write-Detail "Signing script:      $signScript"
 
     Invoke-CheckedCommand -StepName 'Step 3/3: Sign EXE and MSI with Azure Key Vault' -Command {
         Write-Detail "Running: $signScript"
