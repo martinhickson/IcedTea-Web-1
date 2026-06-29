@@ -371,6 +371,31 @@ function Read-EnvFile {
     return $envMap
 }
 
+function Resolve-TimestampUrl {
+    param(
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+
+    $url = $Value.Trim()
+    if ([string]::IsNullOrWhiteSpace($url)) {
+        throw 'JNLP_JCA_TSA_URL is required. Example: http://timestamp.digicert.com'
+    }
+
+    if ($url -notmatch '^https?://') {
+        $url = "http://$url"
+    }
+
+    $uri = $null
+    if (-not [Uri]::TryCreate($url, [UriKind]::Absolute, [ref]$uri)) {
+        throw "JNLP_JCA_TSA_URL must be an absolute http or https URL (got: $Value)"
+    }
+    if ($uri.Scheme -notin @('http', 'https')) {
+        throw "JNLP_JCA_TSA_URL must use http or https (got: $Value)"
+    }
+
+    return $uri.AbsoluteUri
+}
+
 function Initialize-SigningEnvironment {
     param(
         [hashtable]$Config,
@@ -421,6 +446,10 @@ function Initialize-SigningEnvironment {
         } else {
             Set-Item -Path "Env:$name" -Value $Config[$name]
         }
+    }
+
+    if (-not $DryRun) {
+        $env:JNLP_JCA_TSA_URL = Resolve-TimestampUrl -Value $env:JNLP_JCA_TSA_URL
     }
 
     if (-not [string]::IsNullOrWhiteSpace($Config['ITW_VERSION'])) {

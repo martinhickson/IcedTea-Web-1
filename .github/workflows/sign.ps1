@@ -154,6 +154,33 @@ if ([string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY)) {
     $env:GITHUB_REPOSITORY = "martinhickson/IcedTea-Web-1"
 }
 
+function Resolve-TimestampUrl {
+    param(
+        [Parameter(Mandatory = $true)][string]$Value
+    )
+
+    $url = $Value.Trim()
+    if ([string]::IsNullOrWhiteSpace($url)) {
+        throw 'JNLP_JCA_TSA_URL is required. Example: http://timestamp.digicert.com'
+    }
+
+    if ($url -notmatch '^https?://') {
+        $url = "http://$url"
+    }
+
+    $uri = $null
+    if (-not [Uri]::TryCreate($url, [UriKind]::Absolute, [ref]$uri)) {
+        throw "JNLP_JCA_TSA_URL must be an absolute http or https URL (got: $Value)"
+    }
+    if ($uri.Scheme -notin @('http', 'https')) {
+        throw "JNLP_JCA_TSA_URL must use http or https (got: $Value)"
+    }
+
+    return $uri.AbsoluteUri
+}
+
+$env:JNLP_JCA_TSA_URL = Resolve-TimestampUrl -Value $env:JNLP_JCA_TSA_URL
+
 if (-not (Get-Command sign -ErrorAction SilentlyContinue)) {
     throw "Microsoft Sign CLI ('sign') is not available on PATH. Install with: dotnet tool install --global --prerelease sign"
 }
