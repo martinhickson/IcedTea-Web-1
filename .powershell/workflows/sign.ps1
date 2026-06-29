@@ -680,6 +680,7 @@ function Invoke-HostSignPipeline {
     if ($dryRun) {
         Write-Step 'Host PowerShell workflow completed successfully (dry run; artifacts not signed)'
     }
+    Write-Detail "MSI checksum:      $($msiFiles[0].FullName).sha256.txt"
 }
 
 function Update-DotNetToolsPath {

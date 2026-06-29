@@ -656,6 +656,7 @@ function Run-ContainerSignWorkflow {
     }
     Write-Detail "Distribution ZIP: $($distZip.FullName)"
     Write-Detail "MSI:              $($msiFiles[0].FullName)"
+    Write-Detail "MSI checksum:     $($msiFiles[0].FullName).sha256.txt"
 }
 
 function Run-HostSignWorkflow {

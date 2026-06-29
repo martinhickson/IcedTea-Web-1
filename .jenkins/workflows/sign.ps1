@@ -215,6 +215,30 @@ function Invoke-SignDistributionExesAndZip {
     Write-Host "Rebuilt distribution ZIP from signed tree: $zipPath"
 }
 
+function Write-ReleaseArtifactChecksum {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path
+    )
+
+    $file = Get-Item -LiteralPath $Path
+    $hash = Get-FileHash -Algorithm SHA256 $file.FullName
+    $checksumPath = "$($file.FullName).sha256.txt"
+    "$($hash.Hash.ToLowerInvariant())  $($file.Name)" | Out-File -FilePath $checksumPath -Encoding ASCII
+    Write-Host "Wrote checksum: $checksumPath"
+}
+
+function Invoke-WriteMsiChecksums {
+    $msiFiles = @(Get-ChildItem "icedtea-web-distribution/target/native-packages/*.msi" -ErrorAction SilentlyContinue)
+    if ($msiFiles.Count -eq 0) {
+        throw "Windows MSI not found under icedtea-web-distribution/target/native-packages."
+    }
+
+    foreach ($msi in $msiFiles) {
+        Write-ReleaseArtifactChecksum -Path $msi.FullName
+    }
+}
+
 function Invoke-SignMsiArtifacts {
     $msiFiles = @(Get-ChildItem "icedtea-web-distribution/target/native-packages/*.msi" -ErrorAction SilentlyContinue)
     if ($msiFiles.Count -eq 0) {
@@ -226,6 +250,8 @@ function Invoke-SignMsiArtifacts {
         -TargetFiles @($msiFiles | ForEach-Object { $_.FullName }) `
         -Description 'IcedTea-Web Installer' `
         -DescriptionUrl "https://github.com/$env:GITHUB_REPOSITORY"
+
+    Invoke-WriteMsiChecksums
 }
 
 function Assert-SigningEnvironment {
@@ -277,6 +303,12 @@ if (Test-IsDryRun) {
     }
     Write-Host ""
     Write-Host "Dry run: skipping EXE/MSI Key Vault signing."
+    if ($Phase -in @('Msi', 'All')) {
+        $msiFiles = @(Get-ChildItem "icedtea-web-distribution/target/native-packages/*.msi" -ErrorAction SilentlyContinue)
+        if ($msiFiles.Count -gt 0) {
+            Invoke-WriteMsiChecksums
+        }
+    }
     exit 0
 }
 
