@@ -1012,19 +1012,21 @@ internal static class Program
         bool preserveStdio,
         IReadOnlyCollection<string> javawsArgs)
     {
+        // Prefer ITW uber-jar --java-version (javaw-safe, no console). Fall back to
+        // java -version only for console-only CLI launches (javawsc --version, etc.).
         try
         {
-            return ProbeJavaMajorVersionFromJavaExecutable(javaExecutable);
+            return ProbeJavaMajorVersionFromUberJar(javaExecutable, uberJar, preserveStdio: false, javawsArgs);
         }
         catch (InvalidOperationException)
         {
-            if (preserveStdio && IsConsoleOnlyLaunch(javawsArgs))
+            if (IsConsoleOnlyLaunch(javawsArgs))
             {
-                throw;
+                return ProbeJavaMajorVersionFromJavaExecutable(javaExecutable);
             }
-        }
 
-        return ProbeJavaMajorVersionFromUberJar(javaExecutable, uberJar, preserveStdio, javawsArgs);
+            throw;
+        }
     }
 
     private static bool IsConsoleOnlyLaunch(IReadOnlyCollection<string> javawsArgs) =>
@@ -1032,7 +1034,10 @@ internal static class Program
 
     private static int ProbeJavaMajorVersionFromJavaExecutable(string javaExecutable)
     {
-        var stderr = SpawnProcessCaptureStderrManaged(javaExecutable, new List<string> { "-version" });
+        var probeExecutable = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? ResolveJavawExecutable(javaExecutable)
+            : javaExecutable;
+        var stderr = SpawnProcessCaptureStderrManaged(probeExecutable, new List<string> { "-version" });
         return ParseJavaMajorVersionFromVersionOutput(stderr);
     }
 

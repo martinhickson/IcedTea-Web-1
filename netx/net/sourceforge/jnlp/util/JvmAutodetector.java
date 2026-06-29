@@ -158,6 +158,10 @@ public final class JvmAutodetector {
         if (homePath == null || homePath.trim().isEmpty()) {
             return 0;
         }
+        int major = JvmProbeSupport.probeMajorVersion(homePath.trim());
+        if (major > 0) {
+            return major;
+        }
         return JvmSelector.parseMajor(JvmDescriptor.describe(homePath.trim()).getVersion());
     }
 }

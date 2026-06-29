@@ -67,7 +67,17 @@ public class PathsAndFiles {
     private static final String HOME_PROP = "user.home";
     private static final String JAVA_PROP = "java.home";
     private static final String USER_PROP = "user.name";
-    private static final String VARIABLE = JNLPRuntime.isWindows() ? "%" : "$";
+    /** Symbolic path roots for documentation; not expanded in help FILES lists. */
+    private static final String DOC_USER_HOME = "USER_HOME";
+    private static final String DOC_JAVA_HOME = "JAVA_HOME";
+    private static final String DOC_XDG_CONFIG_HOME = "XDG_CONFIG_HOME";
+    private static final String DOC_XDG_CACHE_HOME = "XDG_CACHE_HOME";
+    private static final String DOC_XDG_DATA_HOME = "XDG_DATA_HOME";
+    private static final String DOC_XDG_RUNTIME_DIR = "XDG_RUNTIME_DIR";
+    private static final String DOC_JAVA_TMPDIR = "JAVA_IO_TMPDIR";
+    private static final String DOC_USER_NAME = "USER_NAME";
+    private static final String DOC_ETC_JAVA_HOME = "ETC_HOME";
+    private static final String DOC_WINDOWS_JAVA_CONFIG = "WINDIR/Sun/Java";
     private static final String securityWord = "security";
     public static final String ICEDTEA_SO = "IcedTeaPlugin.so";
     public static final String CACHE_INDEX_FILE_NAME = "recently_used";
@@ -355,7 +365,7 @@ public class PathsAndFiles {
         }
               @Override
         public String getSystemPathStubAcronym() {
-            return VARIABLE + "HOME";
+            return DOC_USER_HOME;
         }
 
 
@@ -376,8 +386,7 @@ public class PathsAndFiles {
 
         @Override
         public String getSystemPathStubAcronym() {
-            //note the hardcoded % instead of VARIABLE (actuall leading to idea, that docs, when generated on windows may not make sense)
-            return "{" + "%" + WINDIR + windowsPathSuffix + " or " + unixPathSuffix + "}";
+            return "(" + DOC_WINDOWS_JAVA_CONFIG + " | " + DOC_ETC_JAVA_HOME + ")";
         }
 
         private SystemCofigFileDescriptor(String fileName, String pathSub, String description, Target... target) {
@@ -402,7 +411,7 @@ public class PathsAndFiles {
 
         @Override
         public String getSystemPathStubAcronym() {
-            return VARIABLE + "JAVA_HOME";
+            return DOC_JAVA_HOME;
         }
 
     }
@@ -435,7 +444,7 @@ public class PathsAndFiles {
 
         @Override
         public String getSystemPathStubAcronym() {
-            return VARIABLE + "" + XDG_DATA_HOME;
+            return DOC_XDG_DATA_HOME;
         }
 
     }
@@ -459,7 +468,7 @@ public class PathsAndFiles {
 
         @Override
         public String getSystemPathStubAcronym() {
-            return VARIABLE + "" + XDG_RUNTIME_DIR_VAR;
+            return DOC_XDG_RUNTIME_DIR;
         }
 
     }
@@ -472,7 +481,7 @@ public class PathsAndFiles {
 
         @Override
         public String getSystemPathStubAcronym() {
-            return VARIABLE + "" + XDG_CONFIG_HOME_VAR;
+            return DOC_XDG_CONFIG_HOME;
         }
 
     }
@@ -485,7 +494,7 @@ public class PathsAndFiles {
 
         @Override
         public String getSystemPathStubAcronym() {
-            return VARIABLE + "" + XDG_CACHE_HOME_VAR;
+            return DOC_XDG_CACHE_HOME;
         }
 
     }
@@ -537,7 +546,7 @@ public class PathsAndFiles {
 
         @Override
         public String getSystemPathStubAcronym() {
-            return VARIABLE + "TMP" + File.separator + VARIABLE + "USER";
+            return DOC_JAVA_TMPDIR + "/" + DOC_USER_NAME;
         }
 
     };

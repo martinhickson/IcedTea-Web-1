@@ -157,7 +157,26 @@ public class InfrastructureFileDescriptor {
 
     @Override
     public String toString() {
-        return clean(getSystemPathStubAcronym() + File.separator + getStub());
+        return getDocumentedPath();
+    }
+
+    /**
+     * Path template for documentation (help FILES section): symbolic roots such as
+     * {@code USER_HOME} instead of resolved filesystem locations.
+     */
+    public String getDocumentedPath() {
+        String acronym = getSystemPathStubAcronym();
+        String stub = getStub().replace(File.separatorChar, '/');
+        while (stub.startsWith("/")) {
+            stub = stub.substring(1);
+        }
+        if (acronym == null || acronym.isEmpty()) {
+            return clean(getStub().replace(File.separatorChar, '/'));
+        }
+        if (stub.isEmpty()) {
+            return acronym;
+        }
+        return acronym + "/" + stub;
     }
 
     /**

@@ -177,11 +177,11 @@ public abstract class TextsProvider {
 
             @Override
             public int compare(InfrastructureFileDescriptor o1, InfrastructureFileDescriptor o2) {
-                return o1.toString().compareTo(o2.toString());
+                return o1.getDocumentedPath().compareTo(o2.getDocumentedPath());
             }
         });
         for (InfrastructureFileDescriptor f : files) {
-            String path = expandVariables ? f.getFullPath() : f.toString();
+            String path = expandVariables ? f.getFullPath() : f.getDocumentedPath();
             String modified = "";
             String fGetFullPath=removeFileProtocol(f.getFullPath());
             String fGetDefaultFullPath=removeFileProtocol(f.getDefaultFullPath());
@@ -474,7 +474,7 @@ public abstract class TextsProvider {
     private static final String logo_url = "/net/sourceforge/jnlp/resources/" + logo_name;
 
     public static void generateRuntimeHtmlTexts(File f) throws IOException {
-        generateHtmlTexts(f, false, true);
+        generateHtmlTexts(f, false, false);
     }
 
     public static void generateOnlineHtmlHelp(File f, boolean expand) throws IOException {
