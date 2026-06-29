@@ -1012,19 +1012,16 @@ internal static class Program
         bool preserveStdio,
         IReadOnlyCollection<string> javawsArgs)
     {
+        // Prefer ITW uber-jar --java-version (headless, no parent console). Fall back to
+        // java -version when the uber-jar probe fails (e.g. javaw stdout quirks on Windows).
         try
         {
-            return ProbeJavaMajorVersionFromJavaExecutable(javaExecutable);
+            return ProbeJavaMajorVersionFromUberJar(javaExecutable, uberJar);
         }
         catch (InvalidOperationException)
         {
-            if (preserveStdio && IsConsoleOnlyLaunch(javawsArgs))
-            {
-                throw;
-            }
+            return ProbeJavaMajorVersionFromJavaExecutable(javaExecutable);
         }
-
-        return ProbeJavaMajorVersionFromUberJar(javaExecutable, uberJar, preserveStdio, javawsArgs);
     }
 
     private static bool IsConsoleOnlyLaunch(IReadOnlyCollection<string> javawsArgs) =>
@@ -1032,7 +1029,10 @@ internal static class Program
 
     private static int ProbeJavaMajorVersionFromJavaExecutable(string javaExecutable)
     {
-        var stderr = SpawnProcessCaptureStderrManaged(javaExecutable, new List<string> { "-version" });
+        var probeExecutable = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? ResolveJavawExecutable(javaExecutable)
+            : javaExecutable;
+        var stderr = SpawnProcessCaptureStderrManaged(probeExecutable, new List<string> { "-version" });
         return ParseJavaMajorVersionFromVersionOutput(stderr);
     }
 
@@ -1083,35 +1083,16 @@ internal static class Program
 
     private static int ProbeJavaMajorVersionFromUberJar(
         string javaExecutable,
-        string uberJar,
-        bool preserveStdio,
-        IReadOnlyCollection<string> javawsArgs)
+        string uberJar)
     {
-        // Uber jar --java-version prints java.version major (system property) to stdout and exits.
-        // Always via JavawsUberLauncher/Boot — not the launcher-specific main (e.g. CommandLine).
-        // GUI only: javaw.exe — Windows GUI JVM, no console subsystem.
-        var probeExecutable = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && !preserveStdio
-            ? ResolveJavawExecutable(javaExecutable)
-            : javaExecutable;
+        // --java-version exits before ITW needs module opens. Use java.exe with piped stdout
+        // (CREATE_NO_WINDOW on Windows). javaw does not reliably write to redirected stdout,
+        // and the detached file-log prelaunch path is for long-running launches, not this probe.
+        var probeCommand = new List<string> { "-Xms8m", "-cp", uberJar, JavawsMainClass, JavaVersionProbeArg };
 
-        var probeCommand = new List<string> { "-Xms8m" };
-        probeCommand.AddRange(ModularJdkArguments());
-        probeCommand.Add("-cp");
-        probeCommand.Add(uberJar);
-        probeCommand.Add(JavawsMainClass);
-        probeCommand.Add(JavaVersionProbeArg);
-
-        string stdout;
-        if (ShouldKeepJavaPrelaunchProcess() || IsConsoleOnlyLaunch(javawsArgs))
-        {
-            stdout = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-                ? NativeMethods.SpawnProcessCaptureStdout(probeExecutable, probeCommand)
-                : SpawnProcessCaptureStdoutManaged(probeExecutable, probeCommand);
-        }
-        else
-        {
-            stdout = ProbeUberJarWithDetachedPrelaunch(probeExecutable, probeCommand);
-        }
+        var stdout = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? NativeMethods.SpawnProcessCaptureStdout(javaExecutable, probeCommand)
+            : SpawnProcessCaptureStdoutManaged(javaExecutable, probeCommand);
 
         var firstLine = stdout.Trim().Split('\n', '\r')[0].Trim();
         if (int.TryParse(firstLine, out var major) && major > 0)
@@ -1158,6 +1139,7 @@ internal static class Program
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
+            CreateNoWindow = RuntimeInformation.IsOSPlatform(OSPlatform.Windows),
         };
         foreach (var arg in command)
         {

@@ -16,7 +16,6 @@ import java.awt.event.ItemListener;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
-import javax.swing.Box;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
@@ -34,7 +33,7 @@ import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.runtime.Translator;
 import net.sourceforge.jnlp.util.JvmAutodetector;
 import net.sourceforge.jnlp.util.JvmDescriptor;
-import net.sourceforge.jnlp.util.StreamUtils;
+import net.sourceforge.jnlp.util.JvmProbeSupport;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 @SuppressWarnings("serial")
@@ -271,7 +270,8 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
 
         final JLabel descriptionExec = new JLabel("<html>" + Translator.R("CPJVMKnownListDescription") + "<hr /></html>");
         final JScrollPane knownJvmScroll = new JScrollPane(knownJvmTable);
-        knownJvmScroll.setPreferredSize(new Dimension(884, 306));
+        knownJvmScroll.setName("jvmKnownScrollPane");
+        knownJvmTable.setPreferredScrollableViewportSize(new Dimension(400, 132));
 
         final JButton autodetectJvm = new JButton(Translator.R("CPJVMAutodetect"));
         autodetectJvm.setName("jvmAutodetectButton");
@@ -343,7 +343,7 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
         c.gridy++;
         this.add(descriptionExec, c);
         c.gridy++;
-        c.weighty = 0.35;
+        c.weighty = 1;
         this.add(knownJvmScroll, c);
         c.gridy++;
         c.weighty = 0;
@@ -361,13 +361,6 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
         GridBagConstraints removeButton = (GridBagConstraints) buttonRow.clone();
         removeButton.gridx = 3;
         this.add(removeJvm, removeButton);
-
-        Component filler = Box.createRigidArea(new Dimension(1, 1));
-        c.gridy++;
-        c.gridx = 0;
-        c.gridwidth = 4;
-        c.weighty = 1;
-        this.add(filler, c);
     }
 
     public static JvmValidationResult validateJvm(String cmd) {
@@ -395,23 +388,15 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
                 latestOne = JvmValidationResult.STATE.NOT_VALID_JDK;
             }
         }
-        ProcessBuilder sb = new ProcessBuilder(javaFile.getAbsolutePath(), "-version");
-        Process p = null;
+        int probedMajor = JvmProbeSupport.probeMajorVersion(cmd);
         String processErrorStream = "";
         String processStdOutStream = "";
         Integer r = null;
-        try {
-            p = sb.start();
-            StreamUtils.waitForSafely(p);
-            processErrorStream = StreamUtils.readStreamAsString(p.getErrorStream());
-            processStdOutStream = StreamUtils.readStreamAsString(p.getInputStream());
-            r = p.exitValue();
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, processErrorStream);
-            OutputController.getLogger().log(processStdOutStream);
-            processErrorStream = processErrorStream.toLowerCase();
-            processStdOutStream = processStdOutStream.toLowerCase();
-        } catch (Exception ex) {;
-            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);
+        if (probedMajor > 0) {
+            r = 0;
+            String versionLine = JvmProbeSupport.syntheticVersionOutput(probedMajor);
+            processErrorStream = versionLine.toLowerCase();
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, versionLine);
         }
         if (r == null) {
             validationResult += "<span color=\"red\">" + Translator.R("CPJVMnotLaunched") + "</span>";
