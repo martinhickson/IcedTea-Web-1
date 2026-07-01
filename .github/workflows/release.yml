@@ -36,6 +36,16 @@ on:
         required: true
         default: false
         type: boolean
+      include-linux-zip:
+        description: 'Include the Linux x64 distribution ZIP on the GitHub release'
+        required: true
+        default: true
+        type: boolean
+      include-windows-zip:
+        description: 'Include the Windows x64 distribution ZIP on the GitHub release'
+        required: true
+        default: false
+        type: boolean
   pull_request:
     branches:
       - 1.8
@@ -501,29 +511,29 @@ jobs:
             icedtea-web-distribution/target/native-packages/*.dmg.sha256.txt
           if-no-files-found: error
 
-      - name: Upload release assets
-        if: github.event_name == 'workflow_dispatch'
+  upload-release-assets:
+    name: Upload release assets
+    needs: dotnet-distribution
+    if: github.event_name == 'workflow_dispatch' && needs.dotnet-distribution.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_branch }}
+
+      - name: Download all distribution artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: icedtea-web-*
+          merge-multiple: true
+          path: release-assets
+
+      - name: Upload release assets in platform order
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ITW_INCLUDE_LINUX_ZIP: ${{ inputs.include-linux-zip }}
+          ITW_INCLUDE_WINDOWS_ZIP: ${{ inputs.include-windows-zip }}
         run: |
-          $patterns = @(
-            "icedtea-web-distribution/target/*.zip",
-            "icedtea-web-distribution/target/*.zip.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.deb",
-            "icedtea-web-distribution/target/native-packages/*.rpm",
-            "icedtea-web-distribution/target/native-packages/*.msi",
-            "icedtea-web-distribution/target/native-packages/*.dmg",
-            "icedtea-web-distribution/target/native-packages/*.deb.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.rpm.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.msi.sha256.txt",
-            "icedtea-web-distribution/target/native-packages/*.dmg.sha256.txt"
-          )
-          $files = @()
-          foreach ($pattern in $patterns) {
-            $files += Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName }
-          }
-          if ($files.Count -eq 0) {
-            throw "No release assets found to upload."
-          }
-          & gh release upload "${{ inputs.release_tag }}" @files --clobber
-        shell: pwsh
+          chmod +x .github/workflows/upload-release-assets.sh
+          .github/workflows/upload-release-assets.sh "${{ inputs.release_tag }}" release-assets
