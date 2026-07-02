@@ -79,7 +79,7 @@ public class MultiJdkJnlpLaunchIT {
     @MethodSource("jdkCases")
     void launchJnlpWithJdk(JdkCase jdk) throws Exception {
         assumeTrue(jdk.home != null && !jdk.home.isEmpty(), "JDK " + jdk.label + " home not configured");
-        File javaBin = new File(jdk.home, "bin/java");
+        File javaBin = javaExecutableForHome(jdk.home);
         assumeTrue(javaBin.isFile(), "java not found for JDK " + jdk.label + ": " + javaBin);
 
         Path marker = Files.createTempDirectory("itw-success-jdk" + jdk.label).resolve("success.marker");
@@ -185,6 +185,12 @@ public class MultiJdkJnlpLaunchIT {
             return "";
         }
         return new String(Files.readAllBytes(path), StandardCharsets.UTF_8);
+    }
+
+    private static File javaExecutableForHome(String javaHome) {
+        String name = System.getProperty("os.name", "").toLowerCase().contains("windows")
+                ? "java.exe" : "java";
+        return new File(javaHome, "bin/" + name);
     }
 
     private static void deleteRecursive(Path root) throws IOException {

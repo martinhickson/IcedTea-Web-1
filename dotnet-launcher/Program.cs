@@ -279,7 +279,7 @@ internal static class Program
         var matching = candidates.Where(c => requestedMajor == 0 || c.Major == requestedMajor || VersionMatches(requestedVersion, c.Major)).ToList();
         if (matching.Count == 0)
         {
-            return candidates[0].Home;
+            return null;
         }
 
         return matching.OrderByDescending(c => c.Major).First().Home;
@@ -408,6 +408,7 @@ internal static class Program
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             {
+                yield return Path.Combine(userProfile, ".config", "icedtea-web", "deployment.properties");
                 yield return Path.Combine(userProfile, "AppData", "LocalLow", "Sun", "Java", "Deployment", "deployment.properties");
             }
             else

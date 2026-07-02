@@ -211,7 +211,13 @@ final class JnlpLaunchTestSupport {
         if (property == null || property.isBlank()) {
             return false;
         }
-        return new File(property, "bin/java").canExecute();
+        return javaExecutable(new File(property)).canExecute();
+    }
+
+    private static File javaExecutable(File javaHome) {
+        String name = System.getProperty("os.name", "").toLowerCase().contains("windows")
+                ? "java.exe" : "java";
+        return new File(javaHome, "bin/" + name);
     }
 
     static File jdkHome(int major) {
@@ -243,7 +249,12 @@ final class JnlpLaunchTestSupport {
     }
 
     private static String testCacheHome() {
-        return testConfigHome().replace("/.config", "/.cache");
+        String configHome = testConfigHome();
+        if (configHome.contains(File.separator + ".config")) {
+            return configHome.replace(File.separator + ".config",
+                    File.separator + ".cache");
+        }
+        return configHome.replace("/.config", "/.cache");
     }
 
     static String readProcessOutput(Process process, long timeoutMs) throws Exception {

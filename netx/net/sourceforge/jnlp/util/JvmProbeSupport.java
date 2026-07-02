@@ -3,6 +3,8 @@ package net.sourceforge.jnlp.util;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import net.sourceforge.jnlp.runtime.Boot;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.runtime.JavawsUberLauncher;
@@ -12,6 +14,9 @@ import net.sourceforge.jnlp.runtime.JavawsUberLauncher;
  * entry point (works with {@code javaw} on Windows without a console).
  */
 public final class JvmProbeSupport {
+
+    private static final Pattern QUOTED_JAVA_VERSION = Pattern.compile(
+            "version \"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
 
     private JvmProbeSupport() {
     }
@@ -51,6 +56,14 @@ public final class JvmProbeSupport {
         if (!javaBinary.isFile()) {
             return 0;
         }
+        int probed = probeMajorVersionWithUberJar(javaBinary);
+        if (probed > 0) {
+            return probed;
+        }
+        return probeMajorVersionWithJavaVersion(javaBinary);
+    }
+
+    private static int probeMajorVersionWithUberJar(File javaBinary) {
         File uberJar = resolveLocalUberJar();
         if (uberJar == null) {
             return 0;
@@ -86,6 +99,60 @@ public final class JvmProbeSupport {
             if (process != null) {
                 process.destroy();
             }
+        }
+    }
+
+    static int probeMajorVersionWithJavaVersion(File javaBinary) {
+        if (javaBinary == null || !javaBinary.isFile()) {
+            return 0;
+        }
+        File probeBinary = resolveHeadlessProbeBinary(javaBinary);
+        ProcessBuilder pb = new ProcessBuilder(probeBinary.getAbsolutePath(), "-version");
+        pb.redirectErrorStream(true);
+        pb.redirectOutput(ProcessBuilder.Redirect.PIPE);
+        Process process = null;
+        try {
+            process = pb.start();
+            String output = StreamUtils.readStreamAsString(process.getInputStream());
+            StreamUtils.waitForSafely(process);
+            return parseMajorVersionFromJavaVersionOutput(output);
+        } catch (Exception ex) {
+            return 0;
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+    }
+
+    static int parseMajorVersionFromJavaVersionOutput(String output) {
+        if (output == null || output.isEmpty()) {
+            return 0;
+        }
+        Matcher matcher = QUOTED_JAVA_VERSION.matcher(output);
+        if (!matcher.find()) {
+            return 0;
+        }
+        String versionToken = matcher.group(1).trim();
+        if (versionToken.startsWith("1.")) {
+            String[] parts = versionToken.split("[._-]");
+            if (parts.length > 1) {
+                try {
+                    return Integer.parseInt(parts[1]);
+                } catch (NumberFormatException ignored) {
+                    return 0;
+                }
+            }
+            return 0;
+        }
+        String[] parts = versionToken.split("[._-]");
+        if (parts.length == 0 || parts[0].isEmpty()) {
+            return 0;
+        }
+        try {
+            return Integer.parseInt(parts[0]);
+        } catch (NumberFormatException ex) {
+            return 0;
         }
     }
 

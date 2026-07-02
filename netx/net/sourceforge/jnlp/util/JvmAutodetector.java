@@ -79,19 +79,83 @@ public final class JvmAutodetector {
     }
 
     private static void addWindowsCandidates(LinkedHashSet<String> candidates) {
+        for (String home : WindowsJvmRegistry.discoverJavaHomes()) {
+            addCandidate(candidates, home);
+        }
+        addPathJavaHomes(candidates);
         String programFiles = System.getenv("ProgramFiles");
         String programFilesX86 = System.getenv("ProgramFiles(x86)");
+        String localAppData = System.getenv("LOCALAPPDATA");
         if (programFiles != null) {
-            addChildren(candidates, programFiles + "\\Java");
-            addChildren(candidates, programFiles + "\\Eclipse Adoptium");
-            addChildren(candidates, programFiles + "\\Amazon Corretto");
-            addChildren(candidates, programFiles + "\\Microsoft");
-            addChildren(candidates, programFiles + "\\BellSoft");
-            addChildren(candidates, programFiles + "\\Zulu");
-            addChildren(candidates, programFiles + "\\OpenJDK");
+            addWindowsVendorRoots(candidates, programFiles);
         }
         if (programFilesX86 != null) {
             addChildren(candidates, programFilesX86 + "\\Java");
+        }
+        if (localAppData != null && !localAppData.trim().isEmpty()) {
+            addWindowsVendorRoots(candidates, localAppData + "\\Programs");
+        }
+    }
+
+    private static void addWindowsVendorRoots(LinkedHashSet<String> candidates, String root) {
+        addChildrenNestedOneLevel(candidates, root + "\\Java");
+        addChildrenNestedOneLevel(candidates, root + "\\Eclipse Adoptium");
+        addChildrenNestedOneLevel(candidates, root + "\\Amazon Corretto");
+        addChildrenNestedOneLevel(candidates, root + "\\Microsoft");
+        addChildrenNestedOneLevel(candidates, root + "\\BellSoft");
+        addChildrenNestedOneLevel(candidates, root + "\\Zulu");
+        addChildrenNestedOneLevel(candidates, root + "\\OpenJDK");
+        addChildrenNestedOneLevel(candidates, root + "\\Semeru");
+        addChildrenNestedOneLevel(candidates, root + "\\Eclipse Foundation");
+    }
+
+    private static void addPathJavaHomes(LinkedHashSet<String> candidates) {
+        String path = System.getenv("PATH");
+        if (path == null || path.trim().isEmpty()) {
+            return;
+        }
+        for (String entry : path.split(File.pathSeparator)) {
+            if (entry == null || entry.trim().isEmpty()) {
+                continue;
+            }
+            File javaBinary = new File(entry.trim(), "java.exe");
+            if (!javaBinary.isFile()) {
+                continue;
+            }
+            File binDir = javaBinary.getParentFile();
+            if (binDir == null) {
+                continue;
+            }
+            File home = binDir.getParentFile();
+            if (home != null) {
+                addCandidate(candidates, home.getAbsolutePath());
+            }
+        }
+    }
+
+    private static void addChildrenNestedOneLevel(LinkedHashSet<String> candidates, String rootPath) {
+        if (rootPath == null || rootPath.trim().isEmpty()) {
+            return;
+        }
+        File root = new File(rootPath);
+        File[] children = root.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            if (!child.isDirectory()) {
+                continue;
+            }
+            addCandidate(candidates, child.getAbsolutePath());
+            File[] nested = child.listFiles();
+            if (nested == null) {
+                continue;
+            }
+            for (File nestedChild : nested) {
+                if (nestedChild.isDirectory()) {
+                    addCandidate(candidates, nestedChild.getAbsolutePath());
+                }
+            }
         }
     }
 
