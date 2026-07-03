@@ -80,7 +80,7 @@ public final class JvmSelector {
             }
         }
         if (matching.isEmpty()) {
-            return strategy == JdkMatchStrategy.EXACT ? null : valid.get(0);
+            return null;
         }
         Collections.sort(matching, comparatorFor(strategy));
         return matching.get(0);
@@ -89,7 +89,11 @@ public final class JvmSelector {
     public static boolean matchesStrategy(JvmDescriptor candidate, String requestedVersion, JdkMatchStrategy strategy) {
         String jvmVersion = candidate.getVersion();
         if (jvmVersion == null || jvmVersion.isEmpty()) {
-            return false;
+            int probedMajor = JvmAutodetector.majorVersionOfJvmHome(candidate.getHomePath());
+            if (probedMajor <= 0) {
+                return false;
+            }
+            jvmVersion = Integer.toString(probedMajor);
         }
         if (strategy == JdkMatchStrategy.EXACT) {
             return parseMajor(jvmVersion) == parseMajor(stripPlusModifier(requestedVersion));

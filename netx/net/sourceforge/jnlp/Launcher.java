@@ -552,6 +552,9 @@ public class Launcher {
             }
 
             String relaunchJavaHome = resolveRelaunchJavaHome(file);
+            if (relaunchJavaHome != null && !jvmHomeSatisfiesRequestedJre(relaunchJavaHome, file)) {
+                relaunchJavaHome = null;
+            }
             if (relaunchJavaHome == null && currentRuntimeDoesNotSatisfyRequestedJre(file)) {
                 try {
                     relaunchJavaHome = resolveMissingSuitableJre(file);
@@ -1072,6 +1075,22 @@ public class Launcher {
     private String resolveRelaunchJavaHome(JNLPFile file) {
         String jnlpUrl = file.getSourceLocation() == null ? null : file.getSourceLocation().toExternalForm();
         return JvmSelector.selectBestJvmHome(JNLPRuntime.getConfiguration(), extractRequestedJreVersion(file), jnlpUrl);
+    }
+
+    private boolean jvmHomeSatisfiesRequestedJre(String javaHome, JNLPFile file) {
+        if (javaHome == null || javaHome.trim().isEmpty()) {
+            return false;
+        }
+        String requestedVersion = extractRequestedJreVersion(file);
+        if (requestedVersion == null || requestedVersion.trim().isEmpty()) {
+            return true;
+        }
+        JvmDescriptor descriptor = JvmDescriptor.describe(javaHome.trim());
+        if (!descriptor.isValid()) {
+            return false;
+        }
+        return JvmSelector.matchesStrategy(descriptor, requestedVersion,
+                KnownJvmStore.getMatchStrategy(JNLPRuntime.getConfiguration()));
     }
 
     private boolean currentRuntimeDoesNotSatisfyRequestedJre(JNLPFile file) {
