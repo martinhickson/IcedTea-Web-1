@@ -1,5 +1,6 @@
 # Bootstrap io.pack200:pack200 into ~/.m2 when Maven cannot download from securemvn/GitHub Packages
 # (e.g. TLS handshake failures from Java on some Windows hosts).
+# TODO(later): diagnose securemvn.com HTTPS/TLS handshake failures (Java curl and PowerShell both fail on some Windows hosts).
 
 function Get-Pack200MavenArtifactPaths {
     param([Parameter(Mandatory = $true)][string]$Version)
@@ -12,11 +13,36 @@ function Get-Pack200MavenArtifactPaths {
     }
 }
 
+function Test-Pack200IntrinsicInJar {
+    param([Parameter(Mandatory = $true)][string]$JarPath)
+
+    if (-not (Test-Path -LiteralPath $JarPath)) {
+        return $false
+    }
+
+    $resourcePath = 'io/pack200/pack/intrinsic.properties'
+    $jarExe = 'jar'
+    if (-not [string]::IsNullOrWhiteSpace($env:JAVA_HOME)) {
+        $candidate = Join-Path $env:JAVA_HOME 'bin\jar.exe'
+        if (Test-Path -LiteralPath $candidate) {
+            $jarExe = $candidate
+        }
+    }
+
+    $entries = @(& $jarExe tf $JarPath | ForEach-Object { $_.TrimEnd("`r") })
+    if ($LASTEXITCODE -ne 0) {
+        return $false
+    }
+
+    return ($entries -contains $resourcePath)
+}
+
 function Test-Pack200MavenArtifactInstalled {
     param([Parameter(Mandatory = $true)][string]$Version)
 
     $paths = Get-Pack200MavenArtifactPaths -Version $Version
-    return ((Test-Path -LiteralPath $paths.Jar) -and (Test-Path -LiteralPath $paths.Pom))
+    return ((Test-Path -LiteralPath $paths.Jar) -and (Test-Path -LiteralPath $paths.Pom) -and
+        (Test-Pack200IntrinsicInJar -JarPath $paths.Jar))
 }
 
 function Get-ProxyUrlForDownload {
@@ -69,11 +95,16 @@ function Ensure-Pack200MavenDependency {
     param([string]$Version = '11.0.2')
 
     if (Test-Pack200MavenArtifactInstalled -Version $Version) {
-        Write-Detail "pack200 $Version already in local Maven repository; skipping bootstrap."
+        Write-Detail "pack200 $Version already in local Maven repository with intrinsic.properties; skipping bootstrap."
         return
     }
 
     $paths = Get-Pack200MavenArtifactPaths -Version $Version
+    if (Test-Path -LiteralPath $paths.Jar) {
+        Write-Detail "pack200 $Version jar present but missing intrinsic.properties; re-bootstrapping from GitHub release."
+        Remove-Item -LiteralPath $paths.Jar -Force
+    }
+
     New-Item -ItemType Directory -Force -Path $paths.Directory | Out-Null
 
     $tempDir = Join-Path $env:TEMP 'itw-pack200-bootstrap'
@@ -81,9 +112,8 @@ function Ensure-Pack200MavenDependency {
     $tempJar = Join-Path $tempDir "pack200-$Version.jar"
 
     $jarUrls = @(
-        "https://securemvn.com/releases/io/pack200/pack200/$Version/pack200-$Version.jar",
         "https://github.com/martinhickson/pack200/releases/download/pack200-$Version/pack200-$Version.jar",
-        "https://github.com/martinhickson/pack200/releases/download/pack200-$Version/pack.jar"
+        "https://securemvn.com/releases/io/pack200/pack200/$Version/pack200-$Version.jar"
     )
 
     $downloaded = $false
@@ -91,6 +121,9 @@ function Ensure-Pack200MavenDependency {
         try {
             Write-Detail "Downloading pack200 $Version from $url"
             Invoke-Pack200Download -Url $url -OutFile $tempJar -MinBytes 100000
+            if (-not (Test-Pack200IntrinsicInJar -JarPath $tempJar)) {
+                throw "Downloaded jar missing io/pack200/pack/intrinsic.properties: $url"
+            }
             $downloaded = $true
             break
         } catch {
@@ -118,7 +151,7 @@ function Ensure-Pack200MavenDependency {
     }
 
     if (-not (Test-Pack200MavenArtifactInstalled -Version $Version)) {
-        throw "pack200 $Version was not installed into the local Maven repository."
+        throw "pack200 $Version was not installed into the local Maven repository with intrinsic.properties."
     }
 
     Write-Detail "pack200 $Version bootstrapped into $($paths.Directory)"

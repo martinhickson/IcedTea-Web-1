@@ -102,8 +102,20 @@ jobs:
         uses: actions/cache@v5
         with:
           path: ~/.m2
-          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
-          restore-keys: ${{ runner.os }}-m2
+          key: ${{ runner.os }}-m2-pack200-intrinsic-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2-
+
+      - name: Ensure pack200 Maven artifact (GitHub release)
+        run: |
+          if ($env:OS -eq 'Windows_NT') {
+            function Write-Detail { param([string]$Message) Write-Host $Message }
+            . ./.powershell/workflows/ensure-pack200.ps1
+            Ensure-Pack200MavenDependency
+          } else {
+            chmod +x scripts/ensure-pack200-maven.sh
+            ./scripts/ensure-pack200-maven.sh
+          }
+        shell: pwsh
 
       - name: Set up Git Bash
         if: runner.os == 'Windows'

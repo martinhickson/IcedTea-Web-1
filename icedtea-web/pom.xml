@@ -22,6 +22,9 @@
     <uberjar.classifier>uber</uberjar.classifier>
     <itw.generated.resources.dir>${project.build.directory}/generated-resources/net/sourceforge/jnlp/resources</itw.generated.resources.dir>
     <itw.html.gen.changesets>140</itw.html.gen.changesets>
+    <pack200.version>11.0.2</pack200.version>
+    <pack200.verify.dir>${project.build.directory}/pack200-verify</pack200.verify.dir>
+    <uberjar.file>${project.build.directory}/${project.build.finalName}-${uberjar.classifier}.jar</uberjar.file>
   </properties>
 
   <dependencies>
@@ -43,7 +46,7 @@
     <dependency>
       <groupId>io.pack200</groupId>
       <artifactId>pack200</artifactId>
-      <version>11.0.2</version>
+      <version>${pack200.version}</version>
     </dependency>
     <!-- ByteBuddy for runtime JarFile.close() protection (see JarFileCloseProtection.java) -->
     <dependency>
@@ -265,6 +268,25 @@
         <version>3.6.0</version>
         <executions>
           <execution>
+            <id>copy-pack200-for-intrinsic-assert</id>
+            <phase>prepare-package</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>io.pack200</groupId>
+                  <artifactId>pack200</artifactId>
+                  <version>${pack200.version}</version>
+                  <outputDirectory>${pack200.verify.dir}</outputDirectory>
+                </artifactItem>
+              </artifactItems>
+              <overWriteReleases>true</overWriteReleases>
+              <overWriteSnapshots>true</overWriteSnapshots>
+            </configuration>
+          </execution>
+          <execution>
             <id>copy-runtime-deps-for-docgen</id>
             <phase>process-classes</phase>
             <goals>
@@ -378,6 +400,168 @@
   </build>
 
   <profiles>
+    <profile>
+      <id>pack200-intrinsic-assert-windows</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>${exec.maven.plugin.version}</version>
+            <executions>
+              <execution>
+                <id>assert-pack200-dependency-intrinsic</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-pack200-intrinsic-in-jar.ps1</argument>
+                    <argument>${pack200.verify.dir}/pack200-${pack200.version}.jar</argument>
+                    <argument>pack200 dependency (pre-shade)</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-intrinsic</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-pack200-intrinsic-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>shaded uber jar (post-shade)</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>pack200-intrinsic-assert-unix</id>
+      <activation>
+        <os>
+          <family>unix</family>
+        </os>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>${exec.maven.plugin.version}</version>
+            <executions>
+              <execution>
+                <id>assert-pack200-dependency-intrinsic</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-pack200-intrinsic-in-jar.sh</argument>
+                    <argument>${pack200.verify.dir}/pack200-${pack200.version}.jar</argument>
+                    <argument>pack200 dependency (pre-shade)</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-intrinsic</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-pack200-intrinsic-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>shaded uber jar (post-shade)</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>pack200-intrinsic-assert-macos</id>
+      <activation>
+        <os>
+          <family>mac</family>
+        </os>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.codehaus.mojo</groupId>
+            <artifactId>exec-maven-plugin</artifactId>
+            <version>${exec.maven.plugin.version}</version>
+            <executions>
+              <execution>
+                <id>assert-pack200-dependency-intrinsic</id>
+                <phase>prepare-package</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-pack200-intrinsic-in-jar.sh</argument>
+                    <argument>${pack200.verify.dir}/pack200-${pack200.version}.jar</argument>
+                    <argument>pack200 dependency (pre-shade)</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-intrinsic</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-pack200-intrinsic-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>shaded uber jar (post-shade)</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
     <profile>
       <id>modular-jdk-test</id>
       <activation>
