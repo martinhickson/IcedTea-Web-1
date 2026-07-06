@@ -78,8 +78,8 @@ public final class KnownJvmStore {
     }
 
     public static void setMatchStrategy(DeploymentConfiguration config, JdkMatchStrategy strategy) {
-        if (strategy == null || strategy == JdkMatchStrategy.MAXIMUM) {
-            config.setProperty(KEY_MATCH_STRATEGY, JdkMatchStrategy.MAXIMUM.getConfigValue());
+        if (strategy == null || strategy == JdkMatchStrategy.EXACT) {
+            config.setProperty(KEY_MATCH_STRATEGY, JdkMatchStrategy.EXACT.getConfigValue());
         } else {
             config.setProperty(KEY_MATCH_STRATEGY, strategy.getConfigValue());
         }

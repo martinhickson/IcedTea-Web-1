@@ -50,7 +50,7 @@ public final class JvmSelector {
     }
 
     public static JvmDescriptor selectBest(List<JvmDescriptor> candidates, String requestedVersion) {
-        return selectBest(candidates, requestedVersion, JdkMatchStrategy.MAXIMUM);
+        return selectBest(candidates, requestedVersion, JdkMatchStrategy.EXACT);
     }
 
     public static JvmDescriptor selectBest(List<JvmDescriptor> candidates, String requestedVersion,
@@ -59,7 +59,7 @@ public final class JvmSelector {
             return null;
         }
         if (strategy == null) {
-            strategy = JdkMatchStrategy.MAXIMUM;
+            strategy = JdkMatchStrategy.EXACT;
         }
         List<JvmDescriptor> valid = new ArrayList<>();
         for (JvmDescriptor candidate : candidates) {

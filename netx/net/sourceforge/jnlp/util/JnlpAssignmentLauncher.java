@@ -76,6 +76,7 @@ public final class JnlpAssignmentLauncher {
         List<String> command = new ArrayList<>();
         command.add(javawsBin);
         List<String> vmArgs = new ArrayList<>();
+        JavaVersionUtils.removeLegacyJavaXmlBindAddModules(vmArgs, javaHome);
         JavaVersionUtils.addSecurityManagerCompatibilityArgs(vmArgs, javaHome);
         for (String vmArg : vmArgs) {
             command.add("-J" + vmArg);

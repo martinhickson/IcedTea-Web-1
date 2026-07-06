@@ -460,6 +460,7 @@ public class Launcher {
             }
             commands.add(pathToWebstartBinary);
             List<String> vmArgsWithCompat = new ArrayList<>(vmArgs);
+            JavaVersionUtils.removeLegacyJavaXmlBindAddModules(vmArgsWithCompat, javaHome);
             JavaVersionUtils.addSecurityManagerCompatibilityArgs(vmArgsWithCompat, javaHome);
             // use -Jargument format to pass arguments to the JVM through the launcher
             for (String arg : vmArgsWithCompat) {
