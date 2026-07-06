@@ -17,7 +17,8 @@ class JvmSelectorTest {
     void selectBestDoesNotFallBackToLowerJdkWhenNoMatchingMajorExists() {
         JvmDescriptor jdk11 = descriptor("C:\\jdk11", "11", true);
 
-        assertNull(JvmSelector.selectBest(Collections.singletonList(jdk11), "17+", JdkMatchStrategy.MAXIMUM));
+        assertNull(JvmSelector.selectBest(Collections.singletonList(jdk11), "17+", JdkMatchStrategy.EXACT));
+        assertNull(JvmSelector.selectBest(Collections.singletonList(jdk11), "17+", null));
     }
 
     @Test
