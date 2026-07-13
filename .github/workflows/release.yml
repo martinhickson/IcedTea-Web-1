@@ -147,7 +147,10 @@ jobs:
             Cache maintenance workflows identify running JNLP applications that may retain cached artifacts and provide stop and force-stop controls, enabling administrators to clear application-specific or global cache entries in a deliberate, coordinated manner.
 
           * **Detached .NET launcher with launch audit logs**
-            By default the .NET javaws launcher exits after confirming the JDK child process has started, writing a launch record with .NET and JDK versions, child PID, and full paths to redirected standard output and standard error logs. Set deployment.keepJavawsProcess=true or deployment.keepjavaPrelaunchProcess=true to retain the previous blocking launcher behavior.
+            By default the .NET javaws launcher hands off to the JDK child at each step (prelaunch version probe and main launch) without staying resident, writing a handoff record with parent and child PIDs and full paths to redirected standard output and standard error log files (file redirect avoids pipe buffer stalls). Set deployment.keepJavawsProcess=true or deployment.keepjavaPrelaunchProcess=true to retain the previous blocking launcher behavior.
+
+          * **Deployment-driven admin UI controls**
+            Console diagnostic actions and Running Apps per-session controls can be enabled or disabled through deployment.properties, allowing administrators to tailor the control panel and Java Console for production environments without rebuilding.
 
           * **Verifiable build outputs**
             Release artifacts include checksums to support integrity verification and secure distribution workflows.

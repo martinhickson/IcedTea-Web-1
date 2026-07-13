@@ -43,7 +43,6 @@ public class DotnetLauncherDetachIT {
     private int httpPort;
     private Path webRoot;
     private Path configRoot;
-    private Path logsRoot;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -52,7 +51,6 @@ public class DotnetLauncherDetachIT {
         assumeTrue(javaws.isFile() && javaws.canExecute(), "dotnet javaws missing: " + DOTNET_JAVAWS_BIN);
 
         configRoot = Files.createTempDirectory("itw-dotnet-config");
-        logsRoot = Files.createTempDirectory("itw-dotnet-logs");
         writeDeploymentProperties(configRoot, false, false);
 
         webRoot = Files.createTempDirectory("itw-dotnet-web");
@@ -73,7 +71,6 @@ public class DotnetLauncherDetachIT {
         }
         deleteRecursive(webRoot);
         deleteRecursive(configRoot);
-        deleteRecursive(logsRoot);
     }
 
     @Test
@@ -96,7 +93,6 @@ public class DotnetLauncherDetachIT {
             pb.environment().put("JAVA_HOME", JDK_HOME);
             pb.environment().put("ICEDTEA_WEB_SPLASH", "none");
             pb.environment().put("XDG_CONFIG_HOME", configRoot.toString());
-            pb.environment().put("XDG_DATA_HOME", logsRoot.toString());
             pb.redirectErrorStream(true);
             Path launcherOutput = Files.createTempFile("itw-dotnet-launcher", ".log");
             pb.redirectOutput(launcherOutput.toFile());
@@ -106,13 +102,20 @@ public class DotnetLauncherDetachIT {
             assertTrue(launcherFinished, "dotnet javaws should exit quickly when detached");
             assertEquals(0, launcher.exitValue(), readFile(launcherOutput));
 
-            Path launchLog = findLatestLaunchLog(logsRoot);
+            Path launchLog = findLatestLaunchLog(configRoot);
             String launchRecord = Files.readString(launchLog, StandardCharsets.UTF_8);
-            assertTrue(launchRecord.contains(".NET version:"), launchRecord);
-            assertTrue(launchRecord.contains("Launched JDK process ID:"), launchRecord);
+            assertTrue(launchRecord.contains("Handoff status: SUCCESS"), launchRecord);
+            assertTrue(launchRecord.contains("Parent process ID (handing off):"), launchRecord);
+            assertTrue(launchRecord.contains("Child process ID (handed to):"), launchRecord);
             assertTrue(launchRecord.contains("Standard Output stream written to:"), launchRecord);
             assertTrue(launchRecord.contains("Standard Error stream written to:"), launchRecord);
-            assertTrue(launchRecord.contains("Exiting launcher without waiting"), launchRecord);
+            assertTrue(launchRecord.contains("no pipe buffer stall risk"), launchRecord);
+            assertTrue(launchRecord.contains("Handoff complete: parent launcher exiting"), launchRecord);
+
+            Path prelaunchLog = findPrelaunchHandoffLog(configRoot);
+            String prelaunchRecord = Files.readString(prelaunchLog, StandardCharsets.UTF_8);
+            assertTrue(prelaunchRecord.contains("Handoff step: prelaunch"), prelaunchRecord);
+            assertTrue(prelaunchRecord.contains("Handoff status: SUCCESS"), prelaunchRecord);
 
             boolean launched = waitForMarker(marker, TIMEOUT_SECONDS);
             assertTrue(launched, "Java child should complete JNLP launch after launcher detach");
@@ -202,15 +205,37 @@ public class DotnetLauncherDetachIT {
         return Files.isRegularFile(marker);
     }
 
-    private static Path findLatestLaunchLog(Path dataRoot) throws IOException {
-        Path logsDir = dataRoot.resolve("IcedTea-Web").resolve("logs");
+    private static Path findLatestLaunchLog(Path configRoot) throws IOException {
+        Path logsDir = configRoot.resolve("icedtea-web").resolve("log");
         assumeTrue(Files.isDirectory(logsDir), "launcher logs directory missing: " + logsDir);
         try (Stream<Path> stream = Files.list(logsDir)) {
             return stream
-                    .filter(path -> path.getFileName().toString().endsWith(".launch.log"))
-                    .filter(path -> !path.getFileName().toString().contains("-prelaunch"))
+                    .filter(path -> {
+                        String name = path.getFileName().toString();
+                        return name.startsWith("itw-javantx-")
+                                && name.endsWith(".log")
+                                && !name.endsWith(".err.log")
+                                && !name.contains("-prelaunch");
+                    })
                     .max(Path::compareTo)
-                    .orElseThrow(() -> new IOException("No launcher .launch.log files in " + logsDir));
+                    .orElseThrow(() -> new IOException("No main ITW javantx handoff logs in " + logsDir));
+        }
+    }
+
+    private static Path findPrelaunchHandoffLog(Path configRoot) throws IOException {
+        Path logsDir = configRoot.resolve("icedtea-web").resolve("log");
+        assumeTrue(Files.isDirectory(logsDir), "launcher logs directory missing: " + logsDir);
+        try (Stream<Path> stream = Files.list(logsDir)) {
+            return stream
+                    .filter(path -> {
+                        String name = path.getFileName().toString();
+                        return name.startsWith("itw-javantx-")
+                                && name.endsWith(".log")
+                                && !name.endsWith(".err.log")
+                                && name.contains("-prelaunch");
+                    })
+                    .max(Path::compareTo)
+                    .orElseThrow(() -> new IOException("No prelaunch ITW javantx handoff logs in " + logsDir));
         }
     }
 

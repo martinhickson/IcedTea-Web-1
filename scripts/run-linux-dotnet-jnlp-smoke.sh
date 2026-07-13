@@ -148,18 +148,13 @@ collect_launch_log_files() {
   fi
 
   local launch_log
-  launch_log="$(find "$logs_dir" -maxdepth 1 -name '*.launch.log' ! -name '*-prelaunch.launch.log' -type f 2>/dev/null | sort | tail -n 1)"
+  launch_log="$(find "$logs_dir" -maxdepth 1 -name 'itw-javantx-*.log' ! -name '*-prelaunch.log' ! -name '*.err.log' -type f 2>/dev/null | sort | tail -n 1)"
   if [ -n "$launch_log" ] && [ -f "$launch_log" ]; then
-    local stdout_path stderr_path
-    stdout_path="$(sed -n 's/^Standard Output stream written to: //p' "$launch_log" | tail -n 1)"
-    stderr_path="$(sed -n 's/^Standard Error stream written to: //p' "$launch_log" | tail -n 1)"
-    if [ -n "$stdout_path" ] && [ -f "$stdout_path" ]; then
-      files+=("$stdout_path")
-    fi
-    if [ -n "$stderr_path" ] && [ -f "$stderr_path" ]; then
+    local stderr_path="${launch_log%.log}.err.log"
+    files+=("$launch_log")
+    if [ -f "$stderr_path" ]; then
       files+=("$stderr_path")
     fi
-    files+=("$launch_log")
   fi
 
   printf '%s\n' "${files[@]}"
@@ -236,21 +231,21 @@ EOF
   SERVER_PID=$!
   wait_for_server "$jnlp_url"
 
-  local xdg_data="$WORK_DIR/xdg-data"
-  mkdir -p "$xdg_data"
+  local xdg_config="$WORK_DIR/xdg-config"
+  mkdir -p "$xdg_config/icedtea-web/log"
 
   echo "Launching with .NET javaws: $JAVAWS_BIN"
   echo "JNLP URL: $jnlp_url"
   echo "Marker: $marker"
   echo "javaws log: $javaws_log"
-  echo "XDG_DATA_HOME: $xdg_data"
-  XDG_DATA_HOME="$xdg_data" "$JAVAWS_BIN" -headless -verbose -Xtrustall --auto-accept-https-certificate=true -Xnofork "$jnlp_url" > "$javaws_log" 2>&1 &
+  echo "XDG_CONFIG_HOME: $xdg_config"
+  XDG_CONFIG_HOME="$xdg_config" "$JAVAWS_BIN" -headless -verbose -Xtrustall --auto-accept-https-certificate=true -Xnofork "$jnlp_url" > "$javaws_log" 2>&1 &
   JAVAWS_PID=$!
 
   tail -f "$javaws_log" &
   TAIL_PID=$!
 
-  local launcher_logs_dir="$xdg_data/IcedTea-Web/logs"
+  local launcher_logs_dir="$xdg_config/icedtea-web/log"
 
   if wait_for_launch "$marker" "$launcher_logs_dir" "$javaws_log"; then
     echo

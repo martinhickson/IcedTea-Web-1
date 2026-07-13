@@ -39,6 +39,7 @@ public class RunningAppsPanel extends NamedBorderPanel {
     private static final int MEMORY_BAR_HEIGHT = 18;
     private static final int REFRESH_INTERVAL_MS = 10_000;
 
+    private final DeploymentConfiguration config;
     private final JPanel listPanel = new JPanel(new GridBagLayout());
     private final JLabel statusLabel = new JLabel();
     private final Timer refreshTimer;
@@ -46,6 +47,7 @@ public class RunningAppsPanel extends NamedBorderPanel {
 
     RunningAppsPanel(DeploymentConfiguration config) {
         super(Translator.R("CPHeadRunningApps"), new GridBagLayout());
+        this.config = config;
         listPanel.setName("runningAppsListPanel");
         statusLabel.setName("runningAppsStatusLabel");
         GridBagConstraints c = new GridBagConstraints();
@@ -189,18 +191,24 @@ public class RunningAppsPanel extends NamedBorderPanel {
         row.add(details, BorderLayout.CENTER);
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
-        JButton trimHeap = new JButton(Translator.R("CPRunningAppsTrimHeap"));
-        trimHeap.setName("runningAppTrimHeap-" + process.getPid());
-        trimHeap.addActionListener(e -> trimHeap(process, widgets));
-        JButton stop = new JButton(Translator.R("CPRunningAppsStop"));
-        stop.setName("runningAppStop-" + process.getPid());
-        stop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), false));
-        JButton forceStop = new JButton(Translator.R("CPRunningAppsForceStop"));
-        forceStop.setName("runningAppForceStop-" + process.getPid());
-        forceStop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), true));
-        actions.add(trimHeap);
-        actions.add(stop);
-        actions.add(forceStop);
+        if (config.isRunningAppsTrimHeapEnabled()) {
+            JButton trimHeap = new JButton(Translator.R("CPRunningAppsTrimHeap"));
+            trimHeap.setName("runningAppTrimHeap-" + process.getPid());
+            trimHeap.addActionListener(e -> trimHeap(process, widgets));
+            actions.add(trimHeap);
+        }
+        if (config.isRunningAppsStopEnabled()) {
+            JButton stop = new JButton(Translator.R("CPRunningAppsStop"));
+            stop.setName("runningAppStop-" + process.getPid());
+            stop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), false));
+            actions.add(stop);
+        }
+        if (config.isRunningAppsForceStopEnabled()) {
+            JButton forceStop = new JButton(Translator.R("CPRunningAppsForceStop"));
+            forceStop.setName("runningAppForceStop-" + process.getPid());
+            forceStop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), true));
+            actions.add(forceStop);
+        }
         row.add(actions, BorderLayout.EAST);
 
         widgets.panel = row;

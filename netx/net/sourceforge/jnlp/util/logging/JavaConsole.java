@@ -283,79 +283,92 @@ public class JavaConsole implements ObservableMessagesProvider {
         buttonPanel.setLayout(new GridLayout(2, 0, 0, 0));
         contentPanel.add(buttonPanel, c);
 
-        JButton gcButton = new JButton(R("CONSOLErungc"));
-        buttonPanel.add(gcButton);
-        gcButton.addActionListener(new ActionListener() {
+        DeploymentConfiguration config = JNLPRuntime.getConfiguration();
+        if (config.isConsoleRunGcEnabled()) {
+            JButton gcButton = new JButton(R("CONSOLErungc"));
+            buttonPanel.add(gcButton);
+            gcButton.addActionListener(new ActionListener() {
 
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                printMemoryInfo();
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Performing Garbage Collection....");
-                System.gc();
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("ButDone"));
-                printMemoryInfo();
-                updateModel();
-            }
-        });
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    printMemoryInfo();
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Performing Garbage Collection....");
+                    System.gc();
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("ButDone"));
+                    printMemoryInfo();
+                    updateModel();
+                }
+            });
+        }
 
-        JButton finalizersButton = new JButton(R("CONSOLErunFinalizers"));
-        buttonPanel.add(finalizersButton);
-        finalizersButton.addActionListener(new ActionListener() {
+        if (config.isConsoleRunFinalizersEnabled()) {
+            JButton finalizersButton = new JButton(R("CONSOLErunFinalizers"));
+            buttonPanel.add(finalizersButton);
+            finalizersButton.addActionListener(new ActionListener() {
 
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                printMemoryInfo();
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("CONSOLErunningFinalizers"));
-                Runtime.getRuntime().runFinalization();
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("ButDone"));
-                printMemoryInfo();
-                updateModel();
-            }
-        });
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    printMemoryInfo();
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("CONSOLErunningFinalizers"));
+                    Runtime.getRuntime().runFinalization();
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("ButDone"));
+                    printMemoryInfo();
+                    updateModel();
+                }
+            });
+        }
 
-        JButton memoryButton = new JButton(R("CONSOLEmemoryInfo"));
-        buttonPanel.add(memoryButton);
-        memoryButton.addActionListener(new ActionListener() {
+        if (config.isConsoleMemoryInfoEnabled()) {
+            JButton memoryButton = new JButton(R("CONSOLEmemoryInfo"));
+            buttonPanel.add(memoryButton);
+            memoryButton.addActionListener(new ActionListener() {
 
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                printMemoryInfo();
-                updateModel();
-            }
-        });
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    printMemoryInfo();
+                    updateModel();
+                }
+            });
+        }
 
-        JButton systemPropertiesButton = new JButton(R("CONSOLEsystemProperties"));
-        buttonPanel.add(systemPropertiesButton);
-        systemPropertiesButton.addActionListener(new ActionListener() {
+        if (config.isConsoleSystemPropertiesEnabled()) {
+            JButton systemPropertiesButton = new JButton(R("CONSOLEsystemProperties"));
+            buttonPanel.add(systemPropertiesButton);
+            systemPropertiesButton.addActionListener(new ActionListener() {
 
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                printSystemProperties();
-                updateModel();
-            }
-        });
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    printSystemProperties();
+                    updateModel();
+                }
+            });
+        }
 
-        JButton classloadersButton = new JButton(R("CONSOLEclassLoaders"));
-        buttonPanel.add(classloadersButton);
-        classloadersButton.addActionListener(new ActionListener() {
+        if (config.isConsoleClassLoadersEnabled()) {
+            JButton classloadersButton = new JButton(R("CONSOLEclassLoaders"));
+            buttonPanel.add(classloadersButton);
+            classloadersButton.addActionListener(new ActionListener() {
 
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                printClassLoaders();
-                updateModel();
-            }
-        });
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    printClassLoaders();
+                    updateModel();
+                }
+            });
+        }
 
-        JButton threadListButton = new JButton(R("CONSOLEthreadList"));
-        buttonPanel.add(threadListButton);
-        threadListButton.addActionListener(new ActionListener() {
+        if (config.isConsoleThreadListEnabled()) {
+            JButton threadListButton = new JButton(R("CONSOLEthreadList"));
+            buttonPanel.add(threadListButton);
+            threadListButton.addActionListener(new ActionListener() {
 
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                printThreadInfo();
-                updateModel();
-            }
-        });
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    printThreadInfo();
+                    updateModel();
+                }
+            });
+        }
 
         JLabel numberOfOutputsL = new JLabel("  Number of outputs: ");
         buttonPanel.add(numberOfOutputsL);
@@ -389,18 +402,20 @@ public class JavaConsole implements ObservableMessagesProvider {
             }
         });
 
-        JButton cleanButton = new JButton(R("CONSOLEClean"));
-        buttonPanel.add(cleanButton);
-        cleanButton.addActionListener(new ActionListener() {
+        if (config.isConsoleClearEnabled()) {
+            JButton cleanButton = new JButton(R("CONSOLEClean"));
+            buttonPanel.add(cleanButton);
+            cleanButton.addActionListener(new ActionListener() {
 
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                synchronized (rawData) {
-                    rawData.clear();
-                    updateModel(true);
+                @Override
+                public void actionPerformed(ActionEvent e) {
+                    synchronized (rawData) {
+                        rawData.clear();
+                        updateModel(true);
+                    }
                 }
-            }
-        });
+            });
+        }
 
         initialized = true;
     }

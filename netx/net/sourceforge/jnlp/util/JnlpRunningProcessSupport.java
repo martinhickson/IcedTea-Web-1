@@ -241,22 +241,20 @@ public final class JnlpRunningProcessSupport {
 
     private static void collectFromLockFiles(Map<Integer, RunningProcess> byPid, int selfPid) {
         File locksDir = PathsAndFiles.LOCKS_DIR.getFile();
-        if (!locksDir.isDirectory()) {
-            return;
-        }
-        File[] files = locksDir.listFiles();
-        if (files == null) {
-            return;
-        }
-        File mainLock = PathsAndFiles.MAIN_LOCK.getFile();
-        File runningDetails = NetxRunningDetailsRegistry.getDetailsFile();
-        for (File lockFile : files) {
-            if (!lockFile.isFile() || lockFile.equals(mainLock) || lockFile.equals(runningDetails)) {
-                continue;
-            }
-            RunningProcess running = processFromLockFile(lockFile, selfPid);
-            if (running != null && !isInfrastructureProcess(running)) {
-                byPid.put(running.getPid(), running);
+        if (locksDir.isDirectory()) {
+            File[] files = locksDir.listFiles();
+            if (files != null) {
+                File mainLock = PathsAndFiles.MAIN_LOCK.getFile();
+                File runningDetails = NetxRunningDetailsRegistry.getDetailsFile();
+                for (File lockFile : files) {
+                    if (!lockFile.isFile() || lockFile.equals(mainLock) || lockFile.equals(runningDetails)) {
+                        continue;
+                    }
+                    RunningProcess running = processFromLockFile(lockFile, selfPid);
+                    if (running != null && !isInfrastructureProcess(running)) {
+                        byPid.put(running.getPid(), running);
+                    }
+                }
             }
         }
 
@@ -274,10 +272,22 @@ public final class JnlpRunningProcessSupport {
                 continue;
             }
             String commandLine = resolveCommandLine(pid);
-            RunningProcess running = toRunningProcess(pid, commandLine, entry);
-            if (!isInfrastructureProcess(running)) {
-                byPid.put(pid, running);
+            if (!isLikelyJnlpProcess(commandLine)) {
+                if (commandLine != null && !commandLine.trim().isEmpty()) {
+                    NetxRunningDetailsRegistry.unregisterProcess(pid);
+                    continue;
+                }
+                if (entry.getJnlpPath() == null || entry.getJnlpPath().trim().isEmpty()) {
+                    NetxRunningDetailsRegistry.unregisterProcess(pid);
+                    continue;
+                }
             }
+            RunningProcess running = toRunningProcess(pid, commandLine, entry);
+            if (isInfrastructureProcess(running)) {
+                NetxRunningDetailsRegistry.unregisterProcess(pid);
+                continue;
+            }
+            byPid.put(pid, running);
         }
     }
 

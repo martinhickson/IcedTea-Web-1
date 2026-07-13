@@ -12,7 +12,7 @@ internal static class Program
     private const string JavaVersionProbeArg = "--java-version";
 
     // GUI / non-console launches: Rust used Stdio::null() (discard). Set true to capture Java
-    // stdout/stderr into per-launch log files under LocalApplicationData/IcedTea-Web/logs instead.
+    // stdout/stderr into ITW log files (deployment.user.logdir / XDG_CONFIG_HOME/icedtea-web/log).
     private const bool CaptureGuiStdioToLogFiles = false;
 
     // Console-preserving launches: Rust blocked on child.wait() with inherited stdio after AttachConsole.
@@ -22,6 +22,7 @@ internal static class Program
 
     private const string KeepJavawsProcessProperty = "deployment.keepJavawsProcess";
     private const string KeepJavaPrelaunchProcessProperty = "deployment.keepjavaPrelaunchProcess";
+    private const string UserLogDirProperty = "deployment.user.logdir";
     private const int PrelaunchProbeTimeoutMs = 15_000;
 
     private static int Main(string[] args)
@@ -627,9 +628,9 @@ internal static class Program
 
     private static int RunJavaWithRedirectedOutput(string javaExecutable, IReadOnlyList<string> command)
     {
-        var logBasePath = CreateLauncherLogBasePath();
-        var stdoutPath = logBasePath + ".out.log";
-        var stderrPath = logBasePath + ".err.log";
+        var logPaths = CreateLauncherLogPaths("redirect");
+        var stdoutPath = logPaths.StdoutPath;
+        var stderrPath = logPaths.StderrPath;
         var startInfo = new ProcessStartInfo
         {
             FileName = javaExecutable,
@@ -689,17 +690,58 @@ internal static class Program
         target.Flush();
     }
 
-    private static string CreateLauncherLogBasePath()
+    private sealed class LauncherLogPaths
     {
-        var root = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(root))
-        {
-            root = Path.GetTempPath();
-        }
-        var logDirectory = Path.Combine(root, "IcedTea-Web", "logs");
+        public required string StdoutPath { get; init; }
+        public required string StderrPath { get; init; }
+    }
+
+    private const string ChildPidPlaceholder = "__CHILD_PID__";
+
+    private static LauncherLogPaths CreateLauncherLogPaths(string launchKind)
+    {
+        var logDirectory = ResolveLauncherLogDirectory();
         Directory.CreateDirectory(logDirectory);
-        var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff");
-        return Path.Combine(logDirectory, "javaws-" + stamp + "-" + Environment.ProcessId);
+        var stamp = CreateItwLogStamp();
+        var pid = Environment.ProcessId;
+        var prelaunchSuffix = launchKind == "prelaunch" ? "-prelaunch" : "";
+        var streamBase = "itw-javantx-" + stamp + "-" + pid + prelaunchSuffix;
+        return new LauncherLogPaths
+        {
+            StdoutPath = Path.Combine(logDirectory, streamBase + ".log"),
+            StderrPath = Path.Combine(logDirectory, streamBase + ".err.log"),
+        };
+    }
+
+    private static string CreateItwLogStamp()
+    {
+        var now = DateTime.Now;
+        return RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+            ? now.ToString("yyyy-MM-dd_HH_mm_ss.fff")
+            : now.ToString("yyyy-MM-dd_HH:mm:ss.fff");
+    }
+
+    private static string ResolveLauncherLogDirectory()
+    {
+        var configured = ReadDeploymentProperty(UserLogDirProperty);
+        if (!string.IsNullOrWhiteSpace(configured))
+        {
+            return configured.Trim();
+        }
+
+        var xdgConfigHome = Environment.GetEnvironmentVariable("XDG_CONFIG_HOME");
+        if (!string.IsNullOrWhiteSpace(xdgConfigHome))
+        {
+            return Path.Combine(xdgConfigHome, "icedtea-web", "log");
+        }
+
+        var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!string.IsNullOrWhiteSpace(userProfile))
+        {
+            return Path.Combine(userProfile, ".config", "icedtea-web", "log");
+        }
+
+        return Path.Combine(Path.GetTempPath(), "icedtea-web", "log");
     }
 
     private static bool ShouldKeepJavawsProcess() =>
@@ -726,10 +768,21 @@ internal static class Program
         IReadOnlyList<string> command,
         string launchKind)
     {
-        var logBase = CreateLauncherLogBasePath() + (launchKind == "prelaunch" ? "-prelaunch" : "");
-        var stdoutPath = logBase + ".out.log";
-        var stderrPath = logBase + ".err.log";
-        var launchLogPath = logBase + ".launch.log";
+        var logPaths = CreateLauncherLogPaths(launchKind);
+        var stdoutPath = logPaths.StdoutPath;
+        var stderrPath = logPaths.StderrPath;
+
+        var jvm = DescribeJvm(javaExecutable);
+        WriteLaunchRecord(
+            stdoutPath,
+            launchKind,
+            ChildPidPlaceholder,
+            javaExecutable,
+            command,
+            stdoutPath,
+            stderrPath,
+            jvm.Vendor,
+            jvm.Version);
 
         var childPid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? NativeMethods.SpawnProcessWithFileStdio(javaExecutable, command, stdoutPath, stderrPath)
@@ -741,17 +794,7 @@ internal static class Program
                 "Unable to start detached Java process for " + launchKind + ": " + javaExecutable);
         }
 
-        var jvm = DescribeJvm(javaExecutable);
-        WriteLaunchRecord(
-            launchLogPath,
-            launchKind,
-            childPid,
-            javaExecutable,
-            command,
-            stdoutPath,
-            stderrPath,
-            jvm.Vendor,
-            jvm.Version);
+        PatchLaunchRecordChildPid(stdoutPath, childPid);
         return 0;
     }
 
@@ -759,10 +802,21 @@ internal static class Program
         string probeExecutable,
         IReadOnlyList<string> command)
     {
-        var logBase = CreateLauncherLogBasePath() + "-prelaunch";
-        var stdoutPath = logBase + ".out.log";
-        var stderrPath = logBase + ".err.log";
-        var launchLogPath = logBase + ".launch.log";
+        var logPaths = CreateLauncherLogPaths("prelaunch");
+        var stdoutPath = logPaths.StdoutPath;
+        var stderrPath = logPaths.StderrPath;
+
+        var jvm = DescribeJvm(probeExecutable);
+        WriteLaunchRecord(
+            stdoutPath,
+            "prelaunch",
+            ChildPidPlaceholder,
+            probeExecutable,
+            command,
+            stdoutPath,
+            stderrPath,
+            jvm.Vendor,
+            jvm.Version);
 
         var childPid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
             ? NativeMethods.SpawnProcessWithFileStdio(probeExecutable, command, stdoutPath, stderrPath)
@@ -774,17 +828,7 @@ internal static class Program
                 "Unable to start detached Java prelaunch probe: " + probeExecutable);
         }
 
-        var jvm = DescribeJvm(probeExecutable);
-        WriteLaunchRecord(
-            launchLogPath,
-            "prelaunch",
-            childPid,
-            probeExecutable,
-            command,
-            stdoutPath,
-            stderrPath,
-            jvm.Vendor,
-            jvm.Version);
+        PatchLaunchRecordChildPid(stdoutPath, childPid);
 
         return ReadFirstStdoutLineFromLog(stdoutPath, childPid, PrelaunchProbeTimeoutMs);
     }
@@ -792,6 +836,7 @@ internal static class Program
     private static string ReadFirstStdoutLineFromLog(string stdoutPath, int childPid, int timeoutMs)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
+        var pastHandoff = false;
         while (Environment.TickCount64 < deadline)
         {
             if (File.Exists(stdoutPath))
@@ -800,10 +845,19 @@ internal static class Program
                 foreach (var line in text.Split('\n', '\r'))
                 {
                     var trimmed = line.Trim();
-                    if (!string.IsNullOrEmpty(trimmed))
+                    if (trimmed.Length == 0)
                     {
-                        return trimmed;
+                        continue;
                     }
+                    if (!pastHandoff)
+                    {
+                        if (trimmed.StartsWith("Handoff complete:", StringComparison.Ordinal))
+                        {
+                            pastHandoff = true;
+                        }
+                        continue;
+                    }
+                    return trimmed;
                 }
             }
 
@@ -823,11 +877,6 @@ internal static class Program
             Thread.Sleep(50);
         }
 
-        if (File.Exists(stdoutPath))
-        {
-            return File.ReadAllText(stdoutPath);
-        }
-
         return string.Empty;
     }
 
@@ -842,14 +891,16 @@ internal static class Program
 
         var stdoutTarget = new FileStream(
             stdoutPath,
-            FileMode.Create,
+            FileMode.OpenOrCreate,
             FileAccess.Write,
             FileShare.ReadWrite);
+        stdoutTarget.Seek(0, SeekOrigin.End);
         var stderrTarget = new FileStream(
             stderrPath,
-            FileMode.Create,
+            FileMode.OpenOrCreate,
             FileAccess.Write,
             FileShare.ReadWrite);
+        stderrTarget.Seek(0, SeekOrigin.End);
 
         var startInfo = new ProcessStartInfo
         {
@@ -960,45 +1011,67 @@ internal static class Program
     }
 
     private static void WriteLaunchRecord(
-        string launchLogPath,
+        string stdoutPath,
         string launchKind,
-        int childPid,
+        object childPid,
         string javaExecutable,
         IReadOnlyList<string> command,
-        string stdoutPath,
-        string stderrPath,
+        string stdoutRedirectPath,
+        string stderrRedirectPath,
         string jvmVendor,
         string jvmVersion)
     {
         var launcherProcess = Process.GetCurrentProcess();
         var builder = new StringBuilder();
-        builder.AppendLine("IcedTea-Web .NET launcher " + launchKind + " launch record");
+        builder.AppendLine("IcedTea-Web .NET launcher handoff record");
+        builder.AppendLine("Handoff step: " + launchKind);
+        builder.AppendLine("Handoff status: SUCCESS");
+        builder.AppendLine("Parent process ID (handing off): " + launcherProcess.Id);
+        builder.AppendLine("Parent process name: " + launcherProcess.ProcessName);
+        builder.AppendLine("Parent executable: " + (Environment.ProcessPath ?? "unknown"));
+        builder.AppendLine("Child process ID (handed to): " + childPid);
+        builder.AppendLine("Child executable: " + javaExecutable);
+        builder.AppendLine("Child JVM vendor: " + jvmVendor);
+        builder.AppendLine("Child JVM version: " + jvmVersion);
         builder.AppendLine(".NET runtime: " + RuntimeInformation.FrameworkDescription);
         builder.AppendLine(".NET version: " + Environment.Version);
-        builder.AppendLine("Launcher process ID: " + launcherProcess.Id);
-        builder.AppendLine("Launcher process name: " + launcherProcess.ProcessName);
-        builder.AppendLine("Launcher executable: " + (Environment.ProcessPath ?? "unknown"));
-        builder.AppendLine("Launched JDK process ID: " + childPid);
-        builder.AppendLine("JDK executable: " + javaExecutable);
-        builder.AppendLine("JDK vendor: " + jvmVendor);
-        builder.AppendLine("JDK version: " + jvmVersion);
-        builder.AppendLine("Standard Output stream written to: " + Path.GetFullPath(stdoutPath));
-        builder.AppendLine("Standard Error stream written to: " + Path.GetFullPath(stderrPath));
-        builder.AppendLine("Launch log written to: " + Path.GetFullPath(launchLogPath));
+        builder.AppendLine("Standard Input stream: NUL device (no pipe from parent; child cannot block parent on stdin)");
+        builder.AppendLine("Standard Output stream written to: " + Path.GetFullPath(stdoutRedirectPath)
+            + " (file redirect; parent exited; child writes directly; no pipe buffer stall risk)");
+        builder.AppendLine("Standard Error stream written to: " + Path.GetFullPath(stderrRedirectPath)
+            + " (file redirect; parent exited; child writes directly; no pipe buffer stall risk)");
         builder.AppendLine("Working directory: " + Environment.CurrentDirectory);
         builder.AppendLine("OS: " + RuntimeInformation.OSDescription);
         builder.AppendLine("Architecture: " + RuntimeInformation.OSArchitecture);
         builder.AppendLine("Command:");
         builder.AppendLine(javaExecutable + " " + string.Join(' ', command));
-        builder.AppendLine("Exiting launcher without waiting for the launched JDK process.");
-        File.WriteAllText(launchLogPath, builder.ToString());
+        builder.AppendLine("Handoff complete: parent launcher exiting without waiting for child process.");
+        builder.AppendLine();
+        File.WriteAllText(stdoutPath, builder.ToString());
+    }
+
+    private static void PatchLaunchRecordChildPid(string stdoutPath, int childPid)
+    {
+        var text = File.ReadAllText(stdoutPath);
+        var patched = text.Replace(
+            "Child process ID (handed to): " + ChildPidPlaceholder,
+            "Child process ID (handed to): " + childPid,
+            StringComparison.Ordinal);
+        if (!string.Equals(text, patched, StringComparison.Ordinal))
+        {
+            File.WriteAllText(stdoutPath, patched);
+        }
     }
 
     private static void WriteLauncherFailure(Exception ex)
     {
         try
         {
-            var logPath = CreateLauncherLogBasePath() + ".launcher-error.log";
+            var logDirectory = ResolveLauncherLogDirectory();
+            Directory.CreateDirectory(logDirectory);
+            var logPath = Path.Combine(
+                logDirectory,
+                "itw-launcher-error-" + CreateItwLogStamp() + "-" + Environment.ProcessId + ".log");
             File.WriteAllText(logPath, "IcedTea-Web .NET launcher failed: " + ex + Environment.NewLine);
         }
         catch
@@ -1086,14 +1159,22 @@ internal static class Program
         string javaExecutable,
         string uberJar)
     {
-        // --java-version exits before ITW needs module opens. Use java.exe with piped stdout
-        // (CREATE_NO_WINDOW on Windows). javaw does not reliably write to redirected stdout,
-        // and the detached file-log prelaunch path is for long-running launches, not this probe.
+        // --java-version exits before ITW needs module opens. Default: detached prelaunch handoff
+        // (launcher exits; stdout/stderr go to per-launch log files). Opt-in blocking via
+        // deployment.keepjavaPrelaunchProcess=true uses piped capture instead.
         var probeCommand = new List<string> { "-Xms8m", "-cp", uberJar, JavawsMainClass, JavaVersionProbeArg };
 
-        var stdout = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? NativeMethods.SpawnProcessCaptureStdout(javaExecutable, probeCommand)
-            : SpawnProcessCaptureStdoutManaged(javaExecutable, probeCommand);
+        string stdout;
+        if (ShouldKeepJavaPrelaunchProcess())
+        {
+            stdout = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                ? NativeMethods.SpawnProcessCaptureStdout(javaExecutable, probeCommand)
+                : SpawnProcessCaptureStdoutManaged(javaExecutable, probeCommand);
+        }
+        else
+        {
+            stdout = ProbeUberJarWithDetachedPrelaunch(javaExecutable, probeCommand);
+        }
 
         var firstLine = stdout.Trim().Split('\n', '\r')[0].Trim();
         if (int.TryParse(firstLine, out var major) && major > 0)
@@ -1241,6 +1322,8 @@ internal static class Program
         private const uint FileShareWrite = 0x00000002;
         private const uint OpenExisting = 3;
         private const uint CreateAlways = 2;
+        private const uint OpenAlways = 4;
+        private const uint FileEnd = 2;
         private const uint FileAttributeNormal = 0x00000080;
         private const uint Infinite = 0xFFFFFFFF;
         private const uint HandleFlagInherit = 0x00000001;
@@ -1621,6 +1704,9 @@ internal static class Program
             }
         }
 
+        [DllImport("kernel32.dll", SetLastError = true)]
+        private static extern uint SetFilePointer(IntPtr hFile, int lDistanceToMove, IntPtr lpDistanceToMoveHigh, uint dwMoveMethod);
+
         public static int SpawnProcessWithFileStdio(
             string executable,
             IReadOnlyList<string> command,
@@ -1635,7 +1721,7 @@ internal static class Program
                 GenericWrite,
                 FileShareRead | FileShareWrite,
                 IntPtr.Zero,
-                CreateAlways,
+                OpenAlways,
                 FileAttributeNormal,
                 IntPtr.Zero);
             var stderrHandle = CreateFileW(
@@ -1643,7 +1729,7 @@ internal static class Program
                 GenericWrite,
                 FileShareRead | FileShareWrite,
                 IntPtr.Zero,
-                CreateAlways,
+                OpenAlways,
                 FileAttributeNormal,
                 IntPtr.Zero);
             if (stdoutHandle == InvalidHandleValue || stdoutHandle == IntPtr.Zero
@@ -1662,6 +1748,9 @@ internal static class Program
                 throw new InvalidOperationException(
                     "Unable to open log files for detached launch: " + Marshal.GetLastWin32Error());
             }
+
+            _ = SetFilePointer(stdoutHandle, 0, IntPtr.Zero, FileEnd);
+            _ = SetFilePointer(stderrHandle, 0, IntPtr.Zero, FileEnd);
 
             var nullHandle = CreateFileW(
                 "NUL",

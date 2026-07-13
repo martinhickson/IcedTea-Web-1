@@ -214,7 +214,56 @@ public final class DeploymentConfiguration {
      * CONSOLE_SHOW_JAVAWS = "SHOW_JAVAWS_ONLY";
      */
     public static final String KEY_CONSOLE_STARTUP_MODE = "deployment.console.startup.mode";
-    
+    /**
+     * When {@code true}, the Java console shows a manual Run GC button.
+     * Omitted from default deployment.properties; when absent the control stays hidden.
+     */
+    public static final String KEY_CONSOLE_RUN_GC = "deployment.console.run.gc";
+    /**
+     * When {@code true}, the Java console shows Run Finalizers.
+     * Omitted from default deployment.properties; when absent the control stays hidden.
+     */
+    public static final String KEY_CONSOLE_RUN_FINALIZERS = "deployment.console.run.finalizers";
+    /**
+     * When {@code true}, the Java console shows Memory Info.
+     * Omitted from default deployment.properties; when absent the control stays hidden.
+     */
+    public static final String KEY_CONSOLE_MEMORY_INFO = "deployment.console.memory.info";
+    /**
+     * When {@code true}, the Java console shows System Properties.
+     * Omitted from default deployment.properties; when absent the control stays hidden.
+     */
+    public static final String KEY_CONSOLE_SYSTEM_PROPERTIES = "deployment.console.system.properties";
+    /**
+     * When {@code true}, the Java console shows Class Loaders.
+     * Omitted from default deployment.properties; when absent the control stays hidden.
+     */
+    public static final String KEY_CONSOLE_CLASS_LOADERS = "deployment.console.class.loaders";
+    /**
+     * When {@code true}, the Java console shows Thread List.
+     * Omitted from default deployment.properties; when absent the control stays hidden.
+     */
+    public static final String KEY_CONSOLE_THREAD_LIST = "deployment.console.thread.list";
+    /**
+     * When {@code true}, the Java console shows Clear.
+     * Omitted from default deployment.properties; when absent the control stays hidden.
+     */
+    public static final String KEY_CONSOLE_CLEAR = "deployment.console.clear";
+    /**
+     * When {@code true}, Running Apps shows Trim Heap per application.
+     * Omitted from default deployment.properties; when absent the control stays hidden.
+     */
+    public static final String KEY_RUNNING_APPS_TRIM_HEAP = "deployment.runningapps.trim.heap";
+    /**
+     * When {@code true}, Running Apps shows Stop per application.
+     * Omitted from default deployment.properties; when absent Stop stays available.
+     */
+    public static final String KEY_RUNNING_APPS_STOP = "deployment.runningapps.stop";
+    /**
+     * When {@code true}, Running Apps shows Force Stop per application.
+     * Omitted from default deployment.properties; when absent Force Stop stays available.
+     */
+    public static final String KEY_RUNNING_APPS_FORCE_STOP = "deployment.runningapps.force.stop";
 
 
     /*
@@ -470,6 +519,61 @@ public final class DeploymentConfiguration {
             value = currentConfiguration.get(key).getValue();
         }
         return value;
+    }
+
+    /**
+     * @return whether the Java console should expose the manual Run GC control
+     */
+    public boolean isConsoleRunGcEnabled() {
+        return isDeploymentBooleanEnabled(KEY_CONSOLE_RUN_GC);
+    }
+
+    public boolean isConsoleRunFinalizersEnabled() {
+        return isDeploymentBooleanEnabled(KEY_CONSOLE_RUN_FINALIZERS);
+    }
+
+    public boolean isConsoleMemoryInfoEnabled() {
+        return isDeploymentBooleanEnabled(KEY_CONSOLE_MEMORY_INFO);
+    }
+
+    public boolean isConsoleSystemPropertiesEnabled() {
+        return isDeploymentBooleanEnabled(KEY_CONSOLE_SYSTEM_PROPERTIES);
+    }
+
+    public boolean isConsoleClassLoadersEnabled() {
+        return isDeploymentBooleanEnabled(KEY_CONSOLE_CLASS_LOADERS);
+    }
+
+    public boolean isConsoleThreadListEnabled() {
+        return isDeploymentBooleanEnabled(KEY_CONSOLE_THREAD_LIST);
+    }
+
+    public boolean isConsoleClearEnabled() {
+        return isDeploymentBooleanEnabled(KEY_CONSOLE_CLEAR);
+    }
+
+    public boolean isRunningAppsTrimHeapEnabled() {
+        return isDeploymentBooleanEnabled(KEY_RUNNING_APPS_TRIM_HEAP);
+    }
+
+    public boolean isRunningAppsStopEnabled() {
+        return isDeploymentBooleanEnabled(KEY_RUNNING_APPS_STOP, true);
+    }
+
+    public boolean isRunningAppsForceStopEnabled() {
+        return isDeploymentBooleanEnabled(KEY_RUNNING_APPS_FORCE_STOP, true);
+    }
+
+    private boolean isDeploymentBooleanEnabled(String key) {
+        return isDeploymentBooleanEnabled(key, false);
+    }
+
+    private boolean isDeploymentBooleanEnabled(String key, boolean defaultWhenAbsent) {
+        String flag = getProperty(key);
+        if (flag == null) {
+            return defaultWhenAbsent;
+        }
+        return Boolean.parseBoolean(flag.trim());
     }
 
     /**

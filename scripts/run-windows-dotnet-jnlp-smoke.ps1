@@ -30,7 +30,7 @@ $WebRoot = $null
 $ServerProcess = $null
 $JavawsProcess = $null
 
-Write-Host "Windows .NET JNLP smoke script revision: redirected-process-logs-v2"
+Write-Host "Windows .NET JNLP smoke script revision: handoff-verify-v3"
 
 function Stop-SmokeProcess {
     param($Process)
@@ -154,9 +154,11 @@ function Start-Javaws {
         [string]$Launcher,
         [string]$JnlpUrl,
         [string]$OutLogFile,
-        [string]$ErrLogFile
+        [string]$ErrLogFile,
+        [string]$ConfigHomeDir
     )
 
+    $env:XDG_CONFIG_HOME = $ConfigHomeDir
     Start-Process `
         -FilePath $Launcher `
         -ArgumentList @("-headless", "-verbose", "-Xtrustall", "--auto-accept-https-certificate=true", "-Xnofork", $JnlpUrl) `
@@ -188,37 +190,129 @@ function Get-LaunchLogFiles {
         return $files
     }
 
-    $launchLog = Get-ChildItem -Path $LogsDir -Filter "*.launch.log" -File |
-        Where-Object { $_.Name -notlike "*-prelaunch.launch.log" } |
-        Sort-Object LastWriteTimeUtc |
-        Select-Object -Last 1
-    if ($null -eq $launchLog) {
-        return $files
-    }
-
-    $stdoutPath = Select-String -Path $launchLog.FullName -Pattern "^Standard Output stream written to: (.+)$" |
-        ForEach-Object { $_.Matches[0].Groups[1].Value } |
-        Select-Object -Last 1
-    $stderrPath = Select-String -Path $launchLog.FullName -Pattern "^Standard Error stream written to: (.+)$" |
-        ForEach-Object { $_.Matches[0].Groups[1].Value } |
-        Select-Object -Last 1
-    foreach ($path in @($stdoutPath, $stderrPath, $launchLog.FullName)) {
-        if ($path -and (Test-Path $path -PathType Leaf)) {
-            $files += $path
+    $launchLogs = Get-ChildItem -Path $LogsDir -Filter "itw-javantx-*.log" -File |
+        Where-Object { $_.Name -notlike "*.err.log" } |
+        Sort-Object LastWriteTimeUtc
+    foreach ($launchLog in $launchLogs) {
+        if ($launchLog.FullName -notin $files) {
+            $files += $launchLog.FullName
+        }
+        $stderrPath = $launchLog.FullName -replace '\.log$', '.err.log'
+        if ((Test-Path $stderrPath -PathType Leaf) -and ($stderrPath -notin $files)) {
+            $files += $stderrPath
         }
     }
     return $files
+}
+
+function Test-HandoffLogs {
+    param(
+        [string]$LogsDir,
+        [int]$LauncherPid
+    )
+
+    if (-not (Test-Path $LogsDir -PathType Container)) {
+        throw "Launcher logs directory missing: $LogsDir"
+    }
+
+    $launchLogs = @(Get-ChildItem -Path $LogsDir -Filter "itw-javantx-*.log" -File |
+        Where-Object { $_.Name -notlike "*.err.log" } |
+        Where-Object { Select-String -Path $_.FullName -Pattern "Handoff status: SUCCESS" -Quiet } |
+        Sort-Object LastWriteTimeUtc)
+    if ($launchLogs.Count -eq 0) {
+        throw "No ITW javantx logs with handoff records found in $LogsDir"
+    }
+
+    Write-Host ""
+    Write-Host "=== Handoff audit ($($launchLogs.Count) record(s)) ==="
+    foreach ($launchLog in $launchLogs) {
+        $record = Get-Content -Path $launchLog.FullName
+        Write-Host "Handoff log: $($launchLog.FullName)"
+        $record | ForEach-Object { Write-Host "  $_" }
+
+        $required = @(
+            "Handoff status: SUCCESS",
+            "Parent process ID (handing off):",
+            "Child process ID (handed to):",
+            "Standard Output stream written to:",
+            "Standard Error stream written to:",
+            "no pipe buffer stall risk",
+            "Handoff complete: parent launcher exiting"
+        )
+        foreach ($pattern in $required) {
+            if (-not (Select-String -InputObject ($record -join "`n") -Pattern ([regex]::Escape($pattern)) -Quiet)) {
+                throw "Handoff log missing required field '$pattern' in $($launchLog.FullName)"
+            }
+        }
+
+        $parentPid = [int](Select-String -Path $launchLog.FullName -Pattern "^Parent process ID \(handing off\): (\d+)$" |
+            ForEach-Object { $_.Matches[0].Groups[1].Value } |
+            Select-Object -Last 1)
+        $childPid = [int](Select-String -Path $launchLog.FullName -Pattern "^Child process ID \(handed to\): (\d+)$" |
+            ForEach-Object { $_.Matches[0].Groups[1].Value } |
+            Select-Object -Last 1)
+        if ($parentPid -ne $LauncherPid) {
+            throw "Handoff parent PID $parentPid does not match launcher PID $LauncherPid in $($launchLog.FullName)"
+        }
+        if ($childPid -le 0) {
+            throw "Handoff child PID invalid in $($launchLog.FullName)"
+        }
+        if (-not (Get-Process -Id $childPid -ErrorAction SilentlyContinue)) {
+            Write-Host "  Note: child PID $childPid already exited (expected after JNLP completion)."
+        }
+    }
+
+    $mainHandoff = $launchLogs | Where-Object { $_.Name -notlike "*-prelaunch.log" } | Select-Object -Last 1
+    if ($null -eq $mainHandoff) {
+        throw "No main (non-prelaunch) handoff record found"
+    }
+    Write-Host "Main handoff verified: $($mainHandoff.FullName)"
+}
+
+function Get-ItwJavaProcessCount {
+    param([string]$JnlpUrl)
+
+    $javaProcs = Get-CimInstance Win32_Process -Filter "Name='java.exe' OR Name='javaw.exe'" -ErrorAction SilentlyContinue
+    if ($null -eq $javaProcs) {
+        return 0
+    }
+    if ($javaProcs -isnot [array]) {
+        $javaProcs = @($javaProcs)
+    }
+
+    $needle = $JnlpUrl.ToLowerInvariant()
+    $matching = @()
+    foreach ($proc in $javaProcs) {
+        $cmd = $proc.CommandLine
+        if ($null -ne $cmd) {
+            $lower = $cmd.ToLowerInvariant()
+            if ($lower.Contains($needle) -or $lower.Contains("icedtea-web-uber")) {
+                $matching += $proc
+            }
+        }
+    }
+    return $matching.Count
 }
 
 function Wait-ForLaunch {
     param(
         [string]$Marker,
         [string]$LogsDir,
-        [string[]]$LogFiles
+        [string[]]$LogFiles,
+        [string]$JnlpUrl,
+        [ref]$PeakJavaCount
     )
 
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     while ((Get-Date) -lt $deadline) {
+        $runningJava = Get-ItwJavaProcessCount -JnlpUrl $JnlpUrl
+        if ($runningJava -gt $PeakJavaCount.Value) {
+            $PeakJavaCount.Value = $runningJava
+        }
+        if ($runningJava -gt 1) {
+            throw "Expected at most one Java process per JNLP app, found $runningJava while waiting"
+        }
+
         if ((Test-Path $Marker -PathType Leaf) -and ((Get-Item $Marker).Length -gt 0)) {
             return $true
         }
@@ -269,28 +363,51 @@ try {
   </resources>
   <application-desc main-class="net.sourceforge.jnlp.integration.HeadlessJnlpMain"/>
 </jnlp>
-"@ | Set-Content -Path (Join-Path $WebRoot "headless-test.jnlp") -Encoding UTF8
+"@ | ForEach-Object {
+    $jnlpPath = Join-Path $WebRoot "headless-test.jnlp"
+    [System.IO.File]::WriteAllText($jnlpPath, $_, [System.Text.UTF8Encoding]::new($false))
+}
 
     Write-Host "Serving JNLP from $WebRoot"
     $ServerProcess = Start-Process -FilePath "python" -ArgumentList @("-m", "http.server", "$SelectedPort", "--bind", "127.0.0.1") -WorkingDirectory $WebRoot -RedirectStandardOutput $ServerOutLog -RedirectStandardError $ServerErrLog -PassThru -WindowStyle Hidden
     Wait-ForServer $JnlpUrl
 
-    $LocalAppDataDir = Join-Path $WorkDir "LocalAppData"
-    New-Item -ItemType Directory -Path $LocalAppDataDir -Force | Out-Null
-    $env:LOCALAPPDATA = $LocalAppDataDir
-
+    $ConfigHomeDir = Join-Path $WorkDir "xdg-config"
+    New-Item -ItemType Directory -Path (Join-Path $ConfigHomeDir "icedtea-web\log") -Force | Out-Null
     Write-Host "Launching with .NET javaws: $JavawsBin"
     Write-Host "JNLP URL: $JnlpUrl"
     Write-Host "Marker: $Marker"
     Write-Host "javaws stdout log: $JavawsOutLog"
     Write-Host "javaws stderr log: $JavawsErrLog"
-    Write-Host "LOCALAPPDATA: $LocalAppDataDir"
-    $JavawsProcess = Start-Javaws -Launcher $JavawsBin -JnlpUrl $JnlpUrl -OutLogFile $JavawsOutLog -ErrLogFile $JavawsErrLog
+    Write-Host "XDG_CONFIG_HOME: $ConfigHomeDir"
+    $JavawsProcess = Start-Javaws -Launcher $JavawsBin -JnlpUrl $JnlpUrl -OutLogFile $JavawsOutLog -ErrLogFile $JavawsErrLog -ConfigHomeDir $ConfigHomeDir
+    $launcherPid = $JavawsProcess.Id
 
-    $launcherLogsDir = Join-Path $LocalAppDataDir "IcedTea-Web\logs"
-    $succeeded = Wait-ForLaunch -Marker $Marker -LogsDir $launcherLogsDir -LogFiles @($JavawsOutLog, $JavawsErrLog)
-    if ($succeeded -and -not $JavawsProcess.HasExited) {
+    $launcherLogsDir = Join-Path $ConfigHomeDir "icedtea-web\log"
+    $peakJavaCount = 0
+    $succeeded = Wait-ForLaunch -Marker $Marker -LogsDir $launcherLogsDir -LogFiles @($JavawsOutLog, $JavawsErrLog) -JnlpUrl $JnlpUrl -PeakJavaCount ([ref]$peakJavaCount)
+    if (-not $JavawsProcess.HasExited) {
         [void]$JavawsProcess.WaitForExit(10000)
+    }
+
+    if ($JavawsProcess.HasExited) {
+        Write-Host "Launcher process $launcherPid exited with code $($JavawsProcess.ExitCode) (handoff default)."
+    } else {
+        throw "Launcher process $launcherPid still resident after handoff; expected detach exit."
+    }
+
+    if (-not $succeeded) {
+        if (Test-Path $JavawsOutLog -PathType Leaf) { Get-Content -Path $JavawsOutLog }
+        if (Test-Path $JavawsErrLog -PathType Leaf) { Get-Content -Path $JavawsErrLog }
+        Write-Error "JNLP launch did not report success within ${TimeoutSeconds}s. javaws logs: $JavawsOutLog, $JavawsErrLog; server logs: $ServerOutLog, $ServerErrLog"
+        exit 1
+    }
+
+    Test-HandoffLogs -LogsDir $launcherLogsDir -LauncherPid $launcherPid
+
+    Write-Host "Peak concurrent ITW Java processes during launch: $peakJavaCount"
+    if ($peakJavaCount -gt 1) {
+        throw "Expected at most one Java process per JNLP app, peak was $peakJavaCount"
     }
 
     if (Test-Path $JavawsOutLog -PathType Leaf) {
@@ -298,11 +415,6 @@ try {
     }
     if (Test-Path $JavawsErrLog -PathType Leaf) {
         Get-Content -Path $JavawsErrLog
-    }
-
-    if (-not $succeeded) {
-        Write-Error "JNLP launch did not report success within ${TimeoutSeconds}s. javaws logs: $JavawsOutLog, $JavawsErrLog; server logs: $ServerOutLog, $ServerErrLog"
-        exit 1
     }
 
     Write-Host ""
