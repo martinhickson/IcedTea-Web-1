@@ -46,3 +46,7 @@ target
 .powershell/workflows/sign.env
 **/*.bak
 **/it-run*.txt
+/sample-apps/jnlp-dist
+/sample-apps/public/**/*
+/sample-apps/package-lock.json
+

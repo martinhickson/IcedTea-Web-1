@@ -1,0 +1,29 @@
+<main class="layout catalog">
+  <section class="card wide">
+    <p class="lede">
+      One Angular dev server hosts every JNLP sample under
+      <code>/jnlp/&lt;sample-id&gt;/</code>. Pick a sample below, build with
+      <code>npm run build:jnlp</code>, and launch with IcedTea-Web.
+    </p>
+    <pre class="snippet">cd sample-apps
+npm install
+npm start</pre>
+  </section>
+
+  @for (sample of samples; track sample.id) {
+    <article class="card sample-card">
+      <div class="sample-head">
+        <div>
+          <p class="eyebrow">{{ sample.eyebrow }}</p>
+          <h2>{{ sample.title }}</h2>
+        </div>
+        <span class="pill">{{ sample.pill }}</span>
+      </div>
+      <p class="muted">{{ sample.summary }}</p>
+      <code class="url-value">{{ urlFor(sample.id) }}</code>
+      <div class="actions">
+        <a class="btn primary" [routerLink]="sample.route">Open sample page</a>
+      </div>
+    </article>
+  }
+</main>

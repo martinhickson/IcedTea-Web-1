@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jnlp spec="1.0+" codebase="@CODEBASE@" href="app.jnlp">
+  <information>
+    <title>IcedTea-Web Swing GUI Sample</title>
+    <vendor>IcedTea-Web Maintainers</vendor>
+    <description>JDK 17 Swing sample for manual IcedTea-Web verification</description>
+    <offline-allowed/>
+  </information>
+
+  <security>
+    <all-permissions/>
+  </security>
+
+  <resources>
+    <j2se version="17+"/>
+    <jar href="app.jar" main="true"/>
+  </resources>
+
+  <application-desc main-class="net.sourceforge.icedteaweb.sample1.SampleApp1Main"/>
+</jnlp>

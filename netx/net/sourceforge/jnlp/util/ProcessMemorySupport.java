@@ -20,8 +20,12 @@ public final class ProcessMemorySupport {
 
     private static final Pattern HEAP_REGION = Pattern.compile("total\\s+(\\d+)K,\\s+used\\s+(\\d+)K",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern HEAP_REGION_USED_FIRST = Pattern.compile("used\\s+(\\d+)K,\\s+total\\s+(\\d+)K",
+            Pattern.CASE_INSENSITIVE);
     private static final Pattern MAX_HEAP_FLAG = Pattern.compile("MaxHeapSize\\s*=\\s*(\\d+)",
             Pattern.CASE_INSENSITIVE);
+    private static final Pattern JAVA_HOME_PROPERTY = Pattern.compile("^java\\.home=(.+)$",
+            Pattern.MULTILINE);
     private static final Pattern JAVA_EXECUTABLE = Pattern.compile(
             "([A-Za-z]:[^\\s\"']+|/[^\\s\"']+)[/\\\\]bin[/\\\\]java(?:\\.exe)?",
             Pattern.CASE_INSENSITIVE);
@@ -109,22 +113,28 @@ public final class ProcessMemorySupport {
         String javaHome = process.getJvmHome();
         String vendor = process.getJvmVendor();
         String version = process.getJvmVersion();
+        ProcessJvmContext context;
         if (javaHome != null && !javaHome.trim().isEmpty()) {
-            return contextFromLockfile(javaHome.trim(), vendor, version);
+            context = contextFromLockfile(javaHome.trim(), vendor, version);
+        } else {
+            context = resolveJvmContext(process.getPid(), process.getCommandLine());
         }
-        return resolveJvmContext(process.getPid(), process.getCommandLine());
+        return enrichJvmContext(process.getPid(), context);
     }
 
     public static ProcessJvmContext resolveJvmContext(int pid, String commandLine) {
         String javaHome = resolveJavaHome(pid, commandLine);
+        ProcessJvmContext context;
         if (javaHome == null || javaHome.trim().isEmpty()) {
-            return ProcessJvmContext.unknown();
+            context = ProcessJvmContext.unknown();
+        } else {
+            context = JVM_CONTEXT_CACHE.computeIfAbsent(javaHome, ProcessMemorySupport::describeJvmContext);
         }
-        return JVM_CONTEXT_CACHE.computeIfAbsent(javaHome, ProcessMemorySupport::describeJvmContext);
+        return enrichJvmContext(pid, context);
     }
 
     private static ProcessJvmContext contextFromLockfile(String javaHome, String vendor, String version) {
-        String normalizedHome = javaHome.trim();
+        String normalizedHome = JvmDescriptor.resolveToolsHome(javaHome.trim());
         String jcmdPath = resolveJcmdPath(normalizedHome);
         String resolvedVendor = vendor == null ? "" : vendor.trim();
         String resolvedVersion = version == null ? "" : version.trim();
@@ -136,12 +146,13 @@ public final class ProcessMemorySupport {
     }
 
     public static boolean trimHeap(int pid, ProcessJvmContext jvmContext) {
-        if (pid <= 0 || jvmContext == null || !jvmContext.hasJcmd()) {
+        String jcmd = resolveEffectiveJcmd(pid, jvmContext);
+        if (pid <= 0 || jcmd == null) {
             return false;
         }
         boolean ok = true;
         for (int i = 0; i < 4; i++) {
-            if (!runJcmd(jvmContext.getJcmdPath(), pid, "GC.run")) {
+            if (!runJcmd(jcmd, pid, "GC.run")) {
                 ok = false;
             }
         }
@@ -153,8 +164,8 @@ public final class ProcessMemorySupport {
         long systemTotal = readSystemMemoryBytes();
         long heapUsed = 0;
         long heapMax = 0;
-        if (pid > 0 && jvmContext != null && jvmContext.hasJcmd()) {
-            String jcmd = jvmContext.getJcmdPath();
+        String jcmd = resolveEffectiveJcmd(pid, jvmContext);
+        if (pid > 0 && jcmd != null) {
             String heapInfo = runJcmdCapture(jcmd, pid, "GC.heap_info");
             if (heapInfo != null && !heapInfo.isEmpty()) {
                 long[] heap = parseHeapFromHeapInfo(heapInfo);
@@ -261,16 +272,112 @@ public final class ProcessMemorySupport {
         return null;
     }
 
-    private static String resolveJcmdPath(String javaHome) {
-        if (javaHome == null || javaHome.trim().isEmpty()) {
-            return null;
+    private static ProcessJvmContext enrichJvmContext(int pid, ProcessJvmContext context) {
+        ProcessJvmContext resolved = context == null ? ProcessJvmContext.unknown() : context;
+        String jcmd = resolveEffectiveJcmd(pid, resolved);
+        if (jcmd == null) {
+            return resolved;
         }
-        File jcmd = new File(javaHome.trim() + File.separator + "bin" + File.separator
-                + "jcmd" + (JNLPRuntime.isWindows() ? ".exe" : ""));
-        if (jcmd.isFile()) {
-            return jcmd.getAbsolutePath();
+        String javaHome = resolved.getJavaHome();
+        if (javaHome == null || javaHome.trim().isEmpty() || resolveJcmdPath(javaHome) == null) {
+            String fromProcess = queryJavaHomeFromProcess(pid, jcmd);
+            if (fromProcess != null && !fromProcess.trim().isEmpty()) {
+                javaHome = fromProcess.trim();
+            }
+        }
+        return new ProcessJvmContext(javaHome, jcmd, resolved.getVendor(), resolved.getJvmVersion());
+    }
+
+    private static String resolveEffectiveJcmd(int pid, ProcessJvmContext jvmContext) {
+        if (jvmContext != null && jvmContext.hasJcmd()) {
+            return jvmContext.getJcmdPath();
+        }
+        if (jvmContext != null && jvmContext.getJavaHome() != null && !jvmContext.getJavaHome().trim().isEmpty()) {
+            String fromHome = resolveJcmdPath(jvmContext.getJavaHome());
+            if (fromHome != null) {
+                return fromHome;
+            }
+        }
+        return discoverFallbackJcmd();
+    }
+
+    private static String discoverFallbackJcmd() {
+        String fromRuntime = resolveJcmdPath(System.getProperty("java.home"));
+        if (fromRuntime != null) {
+            return fromRuntime;
+        }
+        for (String home : JvmAutodetector.discoverCandidateHomes()) {
+            String jcmd = resolveJcmdPath(home);
+            if (jcmd != null) {
+                return jcmd;
+            }
+        }
+        if (JNLPRuntime.isWindows()) {
+            return discoverJcmdFromPath();
         }
         return null;
+    }
+
+    private static String discoverJcmdFromPath() {
+        Process process = null;
+        try {
+            process = new ProcessBuilder("where.exe", "jcmd").redirectErrorStream(true).start();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.isEmpty()) {
+                        continue;
+                    }
+                    File candidate = new File(line);
+                    if (candidate.isFile()) {
+                        process.waitFor();
+                        return candidate.getAbsolutePath();
+                    }
+                }
+            }
+            process.waitFor();
+        } catch (Exception ex) {
+            // Ignore.
+        } finally {
+            if (process != null) {
+                process.destroy();
+            }
+        }
+        return null;
+    }
+
+    private static String queryJavaHomeFromProcess(int pid, String jcmd) {
+        if (pid <= 0 || jcmd == null || jcmd.isEmpty()) {
+            return null;
+        }
+        String output = runJcmdCapture(jcmd, pid, "VM.system_properties");
+        if (output == null || output.isEmpty()) {
+            return null;
+        }
+        Matcher matcher = JAVA_HOME_PROPERTY.matcher(output);
+        if (matcher.find()) {
+            return unescapeJcmdProperty(matcher.group(1).trim());
+        }
+        return null;
+    }
+
+    private static String unescapeJcmdProperty(String value) {
+        if (value == null || value.isEmpty()) {
+            return value;
+        }
+        return value.replace("\\:", ":").replace("\\\\", "\\");
+    }
+
+    private static String resolveJcmdPath(String javaHome) {
+        String toolsHome = JvmDescriptor.resolveToolsHome(javaHome);
+        if (toolsHome == null || toolsHome.isEmpty()) {
+            return null;
+        }
+        File jcmd = new File(toolsHome, "bin" + File.separator + "jcmd"
+                + (JNLPRuntime.isWindows() ? ".exe" : ""));
+        return jcmd.isFile() ? jcmd.getAbsolutePath() : null;
     }
 
     private static boolean runJcmd(String jcmd, int pid, String command) {
@@ -318,7 +425,7 @@ public final class ProcessMemorySupport {
         }
     }
 
-    private static long[] parseHeapFromHeapInfo(String heapInfo) {
+    static long[] parseHeapFromHeapInfo(String heapInfo) {
         long bestTotal = 0;
         long bestUsed = 0;
         Matcher matcher = HEAP_REGION.matcher(heapInfo);
@@ -330,10 +437,21 @@ public final class ProcessMemorySupport {
                 bestUsed = used;
             }
         }
+        if (bestTotal <= 0) {
+            matcher = HEAP_REGION_USED_FIRST.matcher(heapInfo);
+            while (matcher.find()) {
+                long used = Long.parseLong(matcher.group(1)) * 1024L;
+                long total = Long.parseLong(matcher.group(2)) * 1024L;
+                if (total >= bestTotal) {
+                    bestTotal = total;
+                    bestUsed = used;
+                }
+            }
+        }
         return new long[] { bestUsed, bestTotal };
     }
 
-    private static long parseMaxHeapFromFlags(String flags) {
+    static long parseMaxHeapFromFlags(String flags) {
         if (flags == null || flags.isEmpty()) {
             return 0;
         }

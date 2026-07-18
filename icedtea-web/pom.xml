@@ -331,7 +331,7 @@
             </goals>
             <configuration>
               <workingDirectory>${project.basedir}</workingDirectory>
-              <executable>bash</executable>
+              <executable>${bash.executable}</executable>
               <arguments>
                 <argument>../scripts/maven-generate-about-html.sh</argument>
                 <argument>${itw.html.gen.changesets}</argument>
@@ -346,7 +346,7 @@
             </goals>
             <configuration>
               <workingDirectory>${project.basedir}</workingDirectory>
-              <executable>bash</executable>
+              <executable>${bash.executable}</executable>
               <arguments>
                 <argument>../scripts/maven-generate-about-intro-pages.sh</argument>
                 <argument>${project.version}</argument>
@@ -361,7 +361,7 @@
             </goals>
             <configuration>
               <workingDirectory>${project.basedir}</workingDirectory>
-              <executable>bash</executable>
+              <executable>${bash.executable}</executable>
               <arguments>
                 <argument>../scripts/maven-generate-javaws-launcher.sh</argument>
                 <argument>${project.build.finalName}</argument>

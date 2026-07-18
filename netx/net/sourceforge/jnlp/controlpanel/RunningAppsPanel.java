@@ -312,10 +312,18 @@ public class RunningAppsPanel extends NamedBorderPanel {
                 applyBar(rssBar, 0, Translator.R("CPRunningAppsMemoryUnavailable"));
                 return;
             }
-            applyBar(heapBar, percent(info.getHeapUsedBytes(), info.getHeapMaxBytes()),
-                    formatBarCaption(info.getHeapUsedBytes(), info.getHeapMaxBytes()));
-            applyBar(rssBar, percent(info.getRssBytes(), info.getSystemTotalBytes()),
-                    formatBarCaption(info.getRssBytes(), info.getSystemTotalBytes()));
+            if (info.getHeapMaxBytes() <= 0 && info.getHeapUsedBytes() <= 0) {
+                applyBar(heapBar, 0, Translator.R("CPRunningAppsMemoryUnavailable"));
+            } else {
+                applyBar(heapBar, percent(info.getHeapUsedBytes(), info.getHeapMaxBytes()),
+                        formatBarCaption(info.getHeapUsedBytes(), info.getHeapMaxBytes()));
+            }
+            if (info.getRssBytes() <= 0 || info.getSystemTotalBytes() <= 0) {
+                applyBar(rssBar, 0, Translator.R("CPRunningAppsMemoryUnavailable"));
+            } else {
+                applyBar(rssBar, percent(info.getRssBytes(), info.getSystemTotalBytes()),
+                        formatBarCaption(info.getRssBytes(), info.getSystemTotalBytes()));
+            }
         }
 
         private static int percent(long usedBytes, long maxBytes) {

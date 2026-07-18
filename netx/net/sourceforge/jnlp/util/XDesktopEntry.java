@@ -634,8 +634,9 @@ public class XDesktopEntry implements GenericDesktopEntry {
                 }
             }
         } catch (Exception ex) {
-            //favicon 404 or similar
-            OutputController.getLogger().log(ex);
+            if (JNLPRuntime.isDebug()) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+            }
         }
         return null;
     }

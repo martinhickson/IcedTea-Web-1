@@ -63,7 +63,8 @@ public class OutputController {
         WARNING_ALL, // - stdout+stderr/log in all cases (default for
         WARNING_DEBUG, // - stdou+stde/logrr in verbose/debug mode
         ERROR_ALL, // - stderr/log in all cases (default for
-        ERROR_DEBUG; // - stderr/log in verbose/debug mode
+        ERROR_DEBUG, // - stderr/log in verbose/debug mode
+        TRACE; // - stderr/log only when trace mode is enabled
         //ERROR_DEBUG is default for Throwable
         //MESSAGE_DEBUG is default  for String
 
@@ -77,8 +78,13 @@ public class OutputController {
         public  boolean isError() {
             return this == Level.ERROR_ALL
                     || this == Level.ERROR_DEBUG
+                    || this == Level.TRACE
                     || this == Level.WARNING_ALL
                     || this == Level.WARNING_DEBUG;
+        }
+
+        public boolean isTrace() {
+            return this == Level.TRACE;
         }
 
         public  boolean isWarning() {
@@ -158,6 +164,9 @@ public class OutputController {
             if (LogConfig.getLogConfig().isLogToFile() && LogConfig.getLogConfig().isLogToFileForClientApp()) {
                 getAppFileLog().log(proceedHeader(s));
             }
+            return;
+        }
+        if (!JNLPRuntime.isTrace() && s.getHeader().level == Level.TRACE) {
             return;
         }
         if (!JNLPRuntime.isDebug() && (s.getHeader().level == Level.MESSAGE_DEBUG
@@ -374,6 +383,14 @@ public class OutputController {
     }
 
     private boolean shouldLog(Level level) {
+        if (level.isTrace()) {
+            try {
+                return JNLPRuntime.isTrace();
+            } catch (Throwable t) {
+                // Throwable caught to handle initialisation circular dependency.
+                return false;
+            }
+        }
         if (level.isDebug()) {
             try {
                 return JNLPRuntime.isDebug();

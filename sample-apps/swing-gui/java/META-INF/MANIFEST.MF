@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Main-Class: net.sourceforge.icedteaweb.sample1.SampleApp1Main
+Application-Name: IcedTea-Web Swing GUI Sample
+Permissions: all-permissions
+Codebase: *
+Application-Library-Allowable-Codebase: *

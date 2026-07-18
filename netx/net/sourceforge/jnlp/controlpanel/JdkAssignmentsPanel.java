@@ -305,7 +305,11 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
         text.append('\n').append(Translator.R("CPJDKAssignmentsLaunchOutputCommand")).append('\n');
         text.append(result.getCommandLine()).append("\n\n");
         if (result.getExitCode() != null) {
-            text.append(Translator.R("CPJDKAssignmentsLaunchOutputExit", result.getExitCode())).append('\n');
+            if (result.getExitCode() == 0) {
+                text.append(Translator.R("CPJDKAssignmentsLaunchOutputSuccess")).append('\n');
+            } else {
+                text.append(Translator.R("CPJDKAssignmentsLaunchOutputExit", result.getExitCode())).append('\n');
+            }
         } else if (result.isStillRunning()) {
             text.append(Translator.R("CPJDKAssignmentsLaunchOutputStillRunning")).append('\n');
         }

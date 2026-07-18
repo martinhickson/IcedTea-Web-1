@@ -65,6 +65,7 @@ public class OptionsDefinitions {
         PROPERTY("-property", "name=value", "BOProperty", NumberOfArguments.ONE_OR_MORE),
         UPDATE("-update", "seconds", "BOUpdate", NumberOfArguments.ONE),
         VERBOSE("-verbose", "BOVerbose"),
+        TRACE("-trace", "BOTrace"),
         DETAILS("-details", "BOVerbose"), //backward compatibility for itweb settings
         NOSEC("-nosecurity", "BONosecurity"),
         NOUPDATE("-noupdate", "BONoupdate"),
@@ -212,6 +213,7 @@ public class OptionsDefinitions {
             OPTIONS.PROPERTY,
             OPTIONS.UPDATE,
             OPTIONS.VERBOSE,
+            OPTIONS.TRACE,
             OPTIONS.NOSEC,
             OPTIONS.NOUPDATE,
             OPTIONS.HEADLESS,

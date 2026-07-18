@@ -61,8 +61,39 @@ public final class JvmDescriptor {
         return validationState;
     }
 
+    /**
+     * Normalizes {@code java.home} to the JDK root whose {@code bin/jcmd} applies to this runtime.
+     * {@code java.home} may refer to a nested JRE image without diagnostic tools.
+     */
+    public static String resolveToolsHome(String javaHome) {
+        if (javaHome == null || javaHome.trim().isEmpty()) {
+            return "";
+        }
+        File homeDir = new File(javaHome.trim());
+        if (hasToolBinary(homeDir, "jcmd")) {
+            return homeDir.getAbsolutePath();
+        }
+        if ("jre".equalsIgnoreCase(homeDir.getName())) {
+            File parentHome = homeDir.getParentFile();
+            if (parentHome != null && hasToolBinary(parentHome, "jcmd")) {
+                return parentHome.getAbsolutePath();
+            }
+        }
+        File parent = homeDir.getParentFile();
+        if (parent != null && hasToolBinary(parent, "jcmd")) {
+            return parent.getAbsolutePath();
+        }
+        return homeDir.getAbsolutePath();
+    }
+
+    private static boolean hasToolBinary(File home, String toolName) {
+        File tool = new File(home, "bin" + File.separator + toolName
+                + (JNLPRuntime.isWindows() ? ".exe" : ""));
+        return tool.isFile();
+    }
+
     public static JvmDescriptor describeCurrentRuntime() {
-        String home = System.getProperty("java.home", "").trim();
+        String home = resolveToolsHome(System.getProperty("java.home", "").trim());
         String combined = (safeProperty("java.runtime.name") + " "
                 + safeProperty("java.runtime.version") + " "
                 + safeProperty("java.vm.name") + " "

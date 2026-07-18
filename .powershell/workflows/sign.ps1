@@ -1,15 +1,21 @@
 # Windows release build and sign on the host (no Docker).
 # Copy sign.env.template to sign.env, customize, then run:
-#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .powershell\workflows\sign.ps1
+#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .powershell\workflows\sign.ps1 -Signing Off -UseLocalSource
+#   powershell.exe -NoProfile -ExecutionPolicy Bypass -File .powershell\workflows\sign.ps1 -Signing On
 
 param(
-    [string]$EnvFile = ''
+    [string]$EnvFile = '',
+    [ValidateSet('', 'On', 'Off')]
+    [string]$Signing = '',
+    [switch]$UseLocalSource,
+    [switch]$SkipToolchain
 )
 
 $ErrorActionPreference = 'Stop'
 
 . (Join-Path $PSScriptRoot 'jdk.ps1')
 . (Join-Path $PSScriptRoot 'ensure-pack200.ps1')
+. (Join-Path $PSScriptRoot 'git-bash.ps1')
 
 function Write-Step {
     param([Parameter(Mandatory = $true)][string]$Message)
@@ -54,196 +60,12 @@ function Add-UniquePathPrefix {
     }
 
     $normalized = $Dir.Trim().TrimEnd('\')
-    if ((Test-Path -LiteralPath $normalized) -and ($env:Path -notlike "*$normalized*")) {
+    if (-not (Test-AccessiblePathRoot -Path $normalized)) {
+        return
+    }
+    if ($env:Path -notlike "*$normalized*") {
         $env:Path = "$normalized;$env:Path"
     }
-}
-
-function Get-GitInstallRootFromGitExe {
-    param([Parameter(Mandatory = $true)][string]$GitExe)
-
-    $binDir = (Split-Path -Parent $GitExe).TrimEnd('\')
-    $leaf = Split-Path -Leaf $binDir
-    switch ($leaf.ToLowerInvariant()) {
-        'cmd' { return (Split-Path -Parent $binDir) }
-        'bin' {
-            $parent = Split-Path -Parent $binDir
-            if ((Split-Path -Leaf $parent).ToLowerInvariant() -eq 'mingw64') {
-                return (Split-Path -Parent $parent)
-            }
-            return $parent
-        }
-    }
-
-    return $null
-}
-
-function Get-BashCandidatesFromGitRoot {
-    param([Parameter(Mandatory = $true)][string]$GitRoot)
-
-    $root = $GitRoot.Trim().TrimEnd('\')
-    return @(
-        (Join-Path $root 'bin\bash.exe'),
-        (Join-Path $root 'usr\bin\bash.exe')
-    )
-}
-
-function Get-GitPathDirsFromRoot {
-    param([Parameter(Mandatory = $true)][string]$GitRoot)
-
-    $root = $GitRoot.Trim().TrimEnd('\')
-    return @(
-        (Join-Path $root 'cmd'),
-        (Join-Path $root 'bin'),
-        (Join-Path $root 'mingw64\bin'),
-        (Join-Path $root 'usr\bin')
-    )
-}
-
-function Test-IsWslOrAppsBashStub {
-    param([string]$Path)
-
-    if ([string]::IsNullOrWhiteSpace($Path)) {
-        return $true
-    }
-
-    $normalized = $Path.ToLowerInvariant()
-    return (
-        $normalized -like '*\windowsapps\*' -or
-        $normalized -like '*\system32\bash.exe'
-    )
-}
-
-function Resolve-GitBashExe {
-    $candidateList = New-Object 'System.Collections.Generic.List[string]'
-    $seen = @{}
-
-    function Add-LocalGitBashCandidate {
-        param([AllowEmptyString()][AllowNull()][string]$Path)
-
-        if ([string]::IsNullOrWhiteSpace($Path)) {
-            return
-        }
-
-        $normalized = $Path.Trim().Trim('"')
-        if (-not $normalized.EndsWith('.exe', [StringComparison]::OrdinalIgnoreCase)) {
-            $normalized = Join-Path $normalized 'bin\bash.exe'
-        }
-
-        $key = $normalized.ToLowerInvariant()
-        if ($seen.ContainsKey($key)) {
-            return
-        }
-
-        $seen[$key] = $true
-        [void]$candidateList.Add($normalized)
-    }
-
-    foreach ($name in @('GIT_BASH', 'GIT_HOME', 'GIT_INSTALL_ROOT')) {
-        $value = [Environment]::GetEnvironmentVariable($name)
-        if ($name -eq 'GIT_BASH') {
-            Add-LocalGitBashCandidate -Path $value
-            continue
-        }
-        if (-not [string]::IsNullOrWhiteSpace($value)) {
-            foreach ($bash in (Get-BashCandidatesFromGitRoot -GitRoot $value)) {
-                Add-LocalGitBashCandidate -Path $bash
-            }
-        }
-    }
-
-    $gitExePaths = New-Object 'System.Collections.Generic.List[string]'
-    foreach ($gitCmd in @(Get-Command git -All -ErrorAction SilentlyContinue)) {
-        if ($gitCmd.Source) {
-            [void]$gitExePaths.Add($gitCmd.Source)
-        }
-    }
-
-    $whereGit = & where.exe git 2>$null
-    if ($LASTEXITCODE -eq 0 -and $whereGit) {
-        foreach ($line in @($whereGit)) {
-            if (-not [string]::IsNullOrWhiteSpace($line)) {
-                [void]$gitExePaths.Add($line.Trim())
-            }
-        }
-    }
-
-    foreach ($gitExe in ($gitExePaths | Select-Object -Unique)) {
-        if (-not (Test-Path -LiteralPath $gitExe)) {
-            continue
-        }
-
-        $gitRoot = Get-GitInstallRootFromGitExe -GitExe $gitExe
-        if ($gitRoot) {
-            foreach ($bash in (Get-BashCandidatesFromGitRoot -GitRoot $gitRoot)) {
-                Add-LocalGitBashCandidate -Path $bash
-            }
-        }
-    }
-
-    foreach ($registryPath in @(
-        'HKLM:\SOFTWARE\GitForWindows',
-        'HKLM:\SOFTWARE\WOW6432Node\GitForWindows'
-    )) {
-        if (-not (Test-Path -LiteralPath $registryPath)) {
-            continue
-        }
-        $installPath = (Get-ItemProperty -LiteralPath $registryPath -ErrorAction SilentlyContinue).InstallPath
-        if ([string]::IsNullOrWhiteSpace($installPath)) {
-            continue
-        }
-        foreach ($bash in (Get-BashCandidatesFromGitRoot -GitRoot $installPath)) {
-            Add-LocalGitBashCandidate -Path $bash
-        }
-    }
-
-    foreach ($root in @('D:\Git', 'C:\Git', 'C:\Program Files\Git', 'C:\Program Files (x86)\Git')) {
-        foreach ($bash in (Get-BashCandidatesFromGitRoot -GitRoot $root)) {
-            Add-LocalGitBashCandidate -Path $bash
-        }
-    }
-
-    foreach ($candidate in $candidateList) {
-        if (Test-IsWslOrAppsBashStub -Path $candidate) {
-            continue
-        }
-        if (Test-Path -LiteralPath $candidate) {
-            return (Resolve-Path -LiteralPath $candidate).Path
-        }
-    }
-
-    return $null
-}
-
-function Ensure-GitBashOnPath {
-    $gitBash = Resolve-GitBashExe
-    if (-not $gitBash) {
-        throw @(
-            'Git Bash is required for Maven build steps but bash.exe was not found.'
-            'Install Git for Windows (choco install git) or disable the Windows "bash.exe" app execution alias under Settings -> Apps -> App execution aliases.'
-        ) -join ' '
-    }
-
-    $gitRoot = Split-Path -Parent (Split-Path -Parent $gitBash)
-    if ((Split-Path -Leaf (Split-Path -Parent $gitBash)).ToLowerInvariant() -eq 'usr') {
-        $gitRoot = Split-Path -Parent $gitRoot
-    }
-
-    foreach ($dir in (Get-GitPathDirsFromRoot -GitRoot $gitRoot)) {
-        Add-UniquePathPrefix -Dir $dir
-    }
-
-    # Maven exec plugin resolves "bash" via PATH. Windows App Execution Aliases can
-    # intercept that name with the WSL installer stub unless Git Bash wins first.
-    $shimDir = Join-Path $PSScriptRoot '.bash-shim'
-    New-Item -ItemType Directory -Force -Path $shimDir | Out-Null
-    $shimPath = Join-Path $shimDir 'bash.cmd'
-    Set-Content -LiteralPath $shimPath -Encoding ascii -Value "@echo off`r`n`"$gitBash`" %*"
-    $env:Path = "$shimDir;$env:Path"
-
-    Write-Detail "Git install root:    $gitRoot"
-    Write-Detail "Git Bash executable: $gitBash"
-    Write-Detail "bash PATH shim:      $shimPath"
 }
 
 function Resolve-WorkflowScript {
@@ -298,6 +120,32 @@ function Test-IsDryRun {
         'on' { return $true }
         default { return $false }
     }
+}
+
+function Test-IsSigningEnabled {
+    param(
+        [string]$SigningParam = '',
+        [hashtable]$Config = @{}
+    )
+
+    if ($SigningParam -eq 'On') { return $true }
+    if ($SigningParam -eq 'Off') { return $false }
+
+    foreach ($source in @($env:ITW_SIGNING, $Config['ITW_SIGNING'])) {
+        if ([string]::IsNullOrWhiteSpace($source)) { continue }
+        switch ($source.Trim().ToLowerInvariant()) {
+            'off' { return $false }
+            'false' { return $false }
+            '0' { return $false }
+            'no' { return $false }
+            'on' { return $true }
+            'true' { return $true }
+            '1' { return $true }
+            'yes' { return $true }
+        }
+    }
+
+    return -not (Test-IsDryRun -Value $env:ITW_DRY_RUN) -and -not (Test-IsDryRun -Value $Config['ITW_DRY_RUN'])
 }
 
 function Get-GitCloneUrl {
@@ -577,13 +425,18 @@ function Get-MavenSettingsArgs {
 }
 
 function Invoke-HostSignPipeline {
-    param([Parameter(Mandatory = $true)][string]$Root)
+    param(
+        [Parameter(Mandatory = $true)][string]$Root,
+        [bool]$SigningEnabled = $true
+    )
 
     Set-Location $Root
 
-    $dryRun = Test-IsDryRun
+    $dryRun = -not $SigningEnabled
     if ($dryRun) {
-        Write-Detail 'Dry run mode: enabled (full build; signing step runs sign --version only)'
+        Write-Detail 'Signing: off (full Maven + MSI build; Authenticode / Key Vault signing skipped)'
+    } else {
+        Write-Detail 'Signing: on'
     }
 
     $version = if ([string]::IsNullOrWhiteSpace($env:ITW_VERSION)) {
@@ -622,7 +475,7 @@ function Invoke-HostSignPipeline {
     Write-Detail "Maven settings:      $($mavenSettings.Path)"
 
     Ensure-Pack200MavenDependency
-    Ensure-GitBashOnPath
+    $gitBash = Ensure-GitBashOnPath -WriteDetail ${function:Write-Detail}
 
     $mvnArgs = $mavenSettings.Args + @(
         '-P', 'maven-distribution',
@@ -632,6 +485,7 @@ function Invoke-HostSignPipeline {
         '-Dmaven.test.skip=true',
         '-DskipTests',
         "-Djdk11.home=$($resolvedJdk.JdkHome)",
+        "-Dbash.executable=`"$($gitBash -replace '\\', '/')`"",
         "-Ditw.dotnet.selfContained=$selfContained",
         '-Ditw.dotnet.runtime.identifier=win-x64',
         "-Ditw.corretto.url=$correttoUrl"
@@ -657,18 +511,20 @@ function Invoke-HostSignPipeline {
     $signScript = Resolve-WorkflowScript -Root $Root -RelativePath '.jenkins\workflows\sign.ps1'
     Write-Detail "Signing script:      $signScript"
 
-    if (-not $dryRun) {
+    if ($SigningEnabled) {
         Invoke-CheckedCommand -StepName 'Step 2/4: Sign launcher EXEs in dist and rebuild ZIP' -Command {
             Write-Detail "Running: $signScript -Phase Distribution"
             & $signScript -Phase Distribution
         }
         $env:ITW_REQUIRE_SIGNED_DIST = 'true'
+    } else {
+        Remove-Item Env:ITW_REQUIRE_SIGNED_DIST -ErrorAction SilentlyContinue
     }
 
     $msiScript = Resolve-WorkflowScript -Root $Root -RelativePath '.packaging\workflows\windows\container-build-msi.ps1'
     Write-Detail "MSI build script:   $msiScript"
 
-    Invoke-CheckedCommand -StepName $(if ($dryRun) { 'Step 2/4: WiX MSI build' } else { 'Step 3/4: WiX MSI build' }) -Command {
+    Invoke-CheckedCommand -StepName $(if ($SigningEnabled) { 'Step 3/4: WiX MSI build' } else { 'Step 2/4: WiX MSI build' }) -Command {
         Write-Detail "Running: $msiScript"
         & $msiScript
     }
@@ -679,18 +535,17 @@ function Invoke-HostSignPipeline {
     }
     Write-Detail "Built MSI: $($msiFiles[0].FullName)"
 
-    Invoke-CheckedCommand -StepName $(if ($dryRun) { 'Step 3/4: Sign EXE and MSI with Azure Key Vault (dry run)' } else { 'Step 4/4: Sign MSI with Azure Key Vault' }) -Command {
-        if ($dryRun) {
-            Write-Detail "Running: $signScript -Phase All"
-            & $signScript -Phase All
-        } else {
+    if ($SigningEnabled) {
+        Invoke-CheckedCommand -StepName 'Step 4/4: Sign MSI with Azure Key Vault' -Command {
             Write-Detail "Running: $signScript -Phase Msi"
             & $signScript -Phase Msi
         }
+    } else {
+        Write-Step 'Step 3/4: Signing skipped (Signing=Off / ITW_SIGNING=off / ITW_DRY_RUN=true)'
     }
 
-    if ($dryRun) {
-        Write-Step 'Host PowerShell workflow completed successfully (dry run; artifacts not signed)'
+    if (-not $SigningEnabled) {
+        Write-Step 'Host PowerShell workflow completed successfully (unsigned build)'
     }
     Write-Detail "MSI checksum:      $($msiFiles[0].FullName).sha256.txt"
 }
@@ -742,29 +597,44 @@ function Run-HostSignWorkflow {
 
     Write-Step 'Step 1/4: Load signing environment'
     $envMap = Read-EnvFile -Path $EnvFile
-    $dryRun = Test-IsDryRun -Value $env:ITW_DRY_RUN
-    if (-not $dryRun) {
-        $dryRun = Test-IsDryRun -Value $envMap['ITW_DRY_RUN']
-    }
-    if ($dryRun) {
+    $signingEnabled = Test-IsSigningEnabled -SigningParam $Signing -Config $envMap
+    if (-not $signingEnabled) {
         $env:ITW_DRY_RUN = 'true'
-        Write-Detail 'Dry run mode: enabled'
+        $env:ITW_SIGNING = 'off'
+        Write-Detail 'Signing: off'
+    } else {
+        $env:ITW_SIGNING = 'on'
+        Write-Detail 'Signing: on'
     }
 
-    Initialize-SigningEnvironment -Config $envMap -WorkflowDir $WorkflowDir -DryRun:$dryRun
+    Initialize-SigningEnvironment -Config $envMap -WorkflowDir $WorkflowDir -DryRun:(-not $signingEnabled)
 
     Write-Step 'Step 2/4: Ensure host toolchain (skip already-installed tools)'
-    if (-not (Test-Path -LiteralPath $toolchainScript)) {
-        throw "install-toolchain.ps1 not found: $toolchainScript"
-    }
-    Invoke-WindowsPowerShellFile -FilePath $toolchainScript -ArgumentList @('-InstallTools')
-    if ($LASTEXITCODE -ne 0) {
-        throw "install-toolchain.ps1 failed with exit code $LASTEXITCODE."
+    if ($SkipToolchain) {
+        Write-Detail 'SkipToolchain: verifying existing tools only'
+        $null = Resolve-CompileJdkForBuild -Config $envMap
+        if (-not (Get-Command mvn -ErrorAction SilentlyContinue)) {
+            throw 'Maven (mvn) is not available. Install Maven or run without -SkipToolchain.'
+        }
+        if (-not (Get-Command git -ErrorAction SilentlyContinue)) {
+            throw 'git is not available. Install Git for Windows or run without -SkipToolchain.'
+        }
+        if (-not (Get-Command dotnet -ErrorAction SilentlyContinue)) {
+            throw 'dotnet SDK is not available. Install .NET 8 SDK or run without -SkipToolchain.'
+        }
+        Update-DotNetToolsPath
+    } else {
+        if (-not (Test-Path -LiteralPath $toolchainScript)) {
+            throw "install-toolchain.ps1 not found: $toolchainScript"
+        }
+        Invoke-WindowsPowerShellFile -FilePath $toolchainScript -ArgumentList @('-InstallTools')
+        if ($LASTEXITCODE -ne 0) {
+            throw "install-toolchain.ps1 failed with exit code $LASTEXITCODE."
+        }
+        Update-DotNetToolsPath
     }
 
-    Update-DotNetToolsPath
-
-    if (-not (Get-Command sign -ErrorAction SilentlyContinue)) {
+    if ($signingEnabled -and -not (Get-Command sign -ErrorAction SilentlyContinue)) {
         throw "Microsoft Sign CLI ('sign') is not available after toolchain install. Re-run: install-toolchain.ps1 -InstallTools"
     }
 
@@ -772,14 +642,21 @@ function Run-HostSignWorkflow {
         throw 'git is still unavailable after toolchain install.'
     }
 
-    Write-Step 'Step 3/4: Clone fresh git source on host'
     $driverRoot = (Resolve-Path -LiteralPath (Join-Path $WorkflowDir '..\..')).Path
     $env:ITW_WORKFLOW_SCRIPTS_ROOT = $driverRoot
     Write-Detail "Workflow scripts root: $driverRoot"
-    $repoRoot = Initialize-SourceCheckout -WorkflowDirectory $WorkflowDir -Config $envMap
+
+    if ($UseLocalSource) {
+        Write-Step 'Step 3/4: Use local checkout (skip git clone)'
+        $repoRoot = $driverRoot
+        Write-Detail "Source root:         $repoRoot"
+    } else {
+        Write-Step 'Step 3/4: Clone fresh git source on host'
+        $repoRoot = Initialize-SourceCheckout -WorkflowDirectory $WorkflowDir -Config $envMap
+    }
 
     Write-Step 'Step 4/4: Build, package, and sign on host'
-    Invoke-HostSignPipeline -Root $repoRoot
+    Invoke-HostSignPipeline -Root $repoRoot -SigningEnabled:$signingEnabled
 
     Write-Step 'Host PowerShell workflow completed successfully'
     Write-Detail "Artifacts under: $repoRoot\icedtea-web-distribution\target\"

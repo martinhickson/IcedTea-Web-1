@@ -1,6 +1,7 @@
 package net.sourceforge.jnlp.cache;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 import java.io.ByteArrayOutputStream;
@@ -489,6 +490,41 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         gos.write(Files.readAllBytes(pack.toPath()));
         gos.finish();
         gos.close();
+    }
+
+    @Test
+    public void isFavIconUrlDetectsCommonPaths() throws Exception {
+        assertTrue(ResourceDownloader.isFavIconUrl(new URL("http://127.0.0.1:4201/jnlp/favicon.ico")));
+        assertTrue(ResourceDownloader.isFavIconUrl(new URL("http://127.0.0.1:4201/favicon.ico")));
+        assertFalse(ResourceDownloader.isFavIconUrl(new URL("http://127.0.0.1:4201/jnlp/app.jar")));
+    }
+
+    @Test
+    public void faviconDownloadFailureIsTraceOnlyWhenDebugEnabled() throws Exception {
+        redirectErr();
+        try {
+            JNLPRuntime.setDebug(true);
+            JNLPRuntime.setTrace(false);
+            currentErrorStream.getBuffer().setLength(0);
+
+            URL favicon = new URL("http://127.0.0.1:4201/jnlp/favicon.ico");
+            ResourceDownloader.logFavIconTrace(new IOException(favicon.toExternalForm()));
+            OutputController.getLogger().flush();
+
+            String logged = currentErrorStream.toString("utf-8");
+            Assert.assertEquals("", logged);
+
+            JNLPRuntime.setTrace(true);
+            currentErrorStream.getBuffer().setLength(0);
+            ResourceDownloader.logFavIconTrace(new IOException(favicon.toExternalForm()));
+            OutputController.getLogger().flush();
+
+            logged = currentErrorStream.toString("utf-8");
+            Assert.assertTrue(logged.contains("FileNotFoundException") || logged.contains(favicon.toExternalForm()));
+        } finally {
+            JNLPRuntime.setTrace(false);
+            redirectErrBack();
+        }
     }
 
     //JDK 14 and later doesn't have built-in Pack200 functionality

@@ -186,7 +186,7 @@ public final class JnlpLockMetadata {
 
     public static void write(File lockFile, int port, int processId, String jnlpPath,
             String appTitle, String appVersion) throws IOException {
-        write(lockFile, port, new ProcessEntry(processId, jnlpPath, appTitle, appVersion));
+        write(lockFile, port, entryFromCurrentRuntime(processId, jnlpPath, appTitle, appVersion));
     }
 
     public static void write(File lockFile, int port, ProcessEntry entry) throws IOException {
