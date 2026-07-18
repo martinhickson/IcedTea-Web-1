@@ -43,6 +43,9 @@ import static net.sourceforge.jnlp.runtime.Translator.R;
 import java.awt.BorderLayout;
 import java.awt.Component;
 import java.awt.Dimension;
+import java.awt.Toolkit;
+import java.awt.datatransfer.Clipboard;
+import java.awt.datatransfer.StringSelection;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -74,7 +77,9 @@ public class BasicExceptionDialog {
      * @param exception the exception to indicate
      */
     public static void show(Exception exception) {
-        String detailsText = OutputController.exceptionToString(exception);
+        final String detailsText = buildCopyTraceText(exception);
+        // Always persist dialog errors to the ITW log directory (itw-javantx-*.log).
+        OutputController.getLogger().logExceptionDialog(exception);
 
         final JPanel mainPanel = new JPanel(new BorderLayout());
         mainPanel.setBorder(BorderFactory.createEmptyBorder(5,5,5,5));
@@ -103,9 +108,14 @@ public class BasicExceptionDialog {
         quickInfoPanelMessage.add(errorLabel);
 
         final JButton viewDetails = new JButton(R("ButShowDetails"));
+        viewDetails.setName("showDetailsButton");
         viewDetails.setAlignmentY(JComponent.LEFT_ALIGNMENT);
         viewDetails.setActionCommand("show");
         quickInfoPanelButtons.add(viewDetails);
+
+        final JButton copyTraceButton = getCopyTraceButton(errorDialog, detailsText);
+        copyTraceButton.setAlignmentY(JComponent.LEFT_ALIGNMENT);
+        quickInfoPanelButtons.add(copyTraceButton);
 
         final JButton cacheButton = getClearCacheButton(errorDialog);
         cacheButton.setAlignmentY(JComponent.LEFT_ALIGNMENT);
@@ -149,6 +159,40 @@ public class BasicExceptionDialog {
         errorDialog.setVisible(true);
         errorDialog.dispose();
         BasicExceptionDialog.willBeHidden();
+    }
+
+    /**
+     * Plain-text payload for the Copy Trace action (message + full stack).
+     */
+    static String buildCopyTraceText(Throwable exception) {
+        if (exception == null) {
+            return "";
+        }
+        String details = OutputController.exceptionToString(exception);
+        return details == null ? "" : details;
+    }
+
+    public static JButton getCopyTraceButton(final Component parent, final String detailsText) {
+        final JButton copyTraceButton = new JButton(R("ButCopyTrace"));
+        copyTraceButton.setName("copyTraceButton");
+        copyTraceButton.setToolTipText(R("ButCopyTraceTip"));
+        copyTraceButton.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                try {
+                    StringSelection selection = new StringSelection(detailsText == null ? "" : detailsText);
+                    Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();
+                    clipboard.setContents(selection, selection);
+                    JOptionPane.showMessageDialog(parent, R("ButCopyTraceDone"), R("ButCopyTrace"),
+                            JOptionPane.INFORMATION_MESSAGE);
+                } catch (Exception ex) {
+                    OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);
+                    JOptionPane.showMessageDialog(parent, ex.getMessage(), R("Error"),
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            }
+        });
+        return copyTraceButton;
     }
 
      public static JButton getShowButton(final Component parent) {

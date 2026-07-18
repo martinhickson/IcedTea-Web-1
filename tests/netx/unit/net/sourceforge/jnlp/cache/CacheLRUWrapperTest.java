@@ -117,6 +117,17 @@ public class CacheLRUWrapperTest {
     }
 
     @Test
+    public void isPathUnderCacheDirAcceptsMixedSeparators() {
+        String cacheRoot = "C:\\Users\\Example\\work\\target/itw-test-home\\.cache\\icedtea-web\\cache";
+        String entry = "C:\\Users\\Example\\work\\target\\itw-test-home\\.cache\\icedtea-web\\cache\\3\\http\\127.0.0.1\\jnlp";
+        assertTrue(CacheLRUWrapper.isPathUnderCacheDir(entry, cacheRoot));
+        assertTrue(CacheLRUWrapper.isPathUnderCacheDir(
+                cacheRoot.replace('\\', '/') + "/0/http/host/app.jnlp", cacheRoot));
+        assertFalse(CacheLRUWrapper.isPathUnderCacheDir(
+                "C:\\Users\\Example\\elsewhere\\file", cacheRoot));
+    }
+
+    @Test
     public void testLoadStoreTiming() throws InterruptedException {
 
         final File cacheIndexFile = clw.getRecentlyUsedFile().getFile();

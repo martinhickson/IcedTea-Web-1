@@ -371,6 +371,30 @@ public class OutputControllerTest {
 
     }
 
+    @Test
+    public void logExceptionDialogAlwaysWritesToFileEvenWhenFileLoggingDisabled() throws Exception {
+        LogConfig.getLogConfig().setEnableLogging(false);
+        LogConfig.getLogConfig().setLogToFile(false);
+        LogConfig.getLogConfig().setLogToStreams(false);
+        LogConfig.getLogConfig().setLogToSysLog(false);
+
+        ByteArrayOutputStream os1 = new ByteArrayOutputStream();
+        ByteArrayOutputStream os2 = new ByteArrayOutputStream();
+        OutputController oc = new OutputController(new PrintStream(os1), new PrintStream(os2));
+        File logFile = File.createTempFile("exceptionDialog", "itwTest");
+        logFile.deleteOnExit();
+        oc.setFileLog(new WriterBasedFileLog(logFile.getAbsolutePath(), false));
+
+        RuntimeException ex = new RuntimeException("dialog-error-marker");
+        oc.logExceptionDialog(ex);
+
+        String logged = StreamUtils.readStreamAsString(new FileInputStream(logFile), true);
+        Assert.assertTrue("dialog errors must be written to the ITW log file",
+                logged.contains("Exception dialog shown:"));
+        Assert.assertTrue(logged.contains("dialog-error-marker"));
+        Assert.assertTrue(logged.contains("RuntimeException"));
+    }
+
     /**
      * add syslog once implemented
      */

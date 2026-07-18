@@ -40,6 +40,8 @@ import static net.sourceforge.jnlp.runtime.Translator.R;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -194,19 +196,48 @@ public class CacheLRUWrapper {
                 continue;
             }
 
-            // 2. check path format - does the path look correct?
-            if (path != null) {
-                if (!path.contains(getCacheDir().getFullPath())) {
-                    it.remove();
-                    modified = true;
-                }
-            } else {
+            // 2. check path is under the cache dir (normalize separators; Windows
+            // paths often mix '/' from XDG_* with '\' from File APIs).
+            if (path == null || !isPathUnderCacheDir(path)) {
                 it.remove();
                 modified = true;
             }
         }
         
         return modified;
+    }
+
+    /**
+     * True if {@code path} is the cache directory or a file beneath it.
+     * Uses {@link Path} comparison so mixed {@code /} and {@code \} separators
+     * (common when {@code XDG_CACHE_HOME} is Maven-style) are not treated as corrupt.
+     */
+    static boolean isPathUnderCacheDir(String path, String cacheDirPath) {
+        if (path == null || path.isEmpty() || cacheDirPath == null || cacheDirPath.isEmpty()) {
+            return false;
+        }
+        try {
+            Path cache = Paths.get(cacheDirPath).toAbsolutePath().normalize();
+            Path candidate = Paths.get(path).toAbsolutePath().normalize();
+            return candidate.startsWith(cache);
+        } catch (Exception ex) {
+            // Fall back to separator-normalized substring match.
+            String normalizedPath = path.replace('/', File.separatorChar).replace('\\', File.separatorChar);
+            String normalizedRoot = cacheDirPath.replace('/', File.separatorChar).replace('\\', File.separatorChar);
+            while (normalizedPath.contains(File.separator + File.separator)) {
+                normalizedPath = normalizedPath.replace(File.separator + File.separator, File.separator);
+            }
+            while (normalizedRoot.contains(File.separator + File.separator)) {
+                normalizedRoot = normalizedRoot.replace(File.separator + File.separator, File.separator);
+            }
+            return normalizedPath.equalsIgnoreCase(normalizedRoot)
+                    || normalizedPath.regionMatches(true, 0, normalizedRoot + File.separator, 0,
+                            normalizedRoot.length() + 1);
+        }
+    }
+
+    private boolean isPathUnderCacheDir(String path) {
+        return isPathUnderCacheDir(path, getCacheDir().getFullPath());
     }
 
     /**

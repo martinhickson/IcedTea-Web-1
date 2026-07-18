@@ -180,9 +180,16 @@ public class CacheEntry {
             return false;
         }
         try {
-            long cachedModified = Long.parseLong(properties.getProperty(KEY_LAST_MODIFIED));
+            long cachedModified = Long.parseLong(properties.getProperty(KEY_LAST_MODIFIED, "0"));
             OutputController.getLogger().log("isCurrent:lastModified cache:" + cachedModified +  " actual:" + lastModified);
-            return lastModified > 0 && lastModified <= cachedModified;
+            // Servers that omit Last-Modified (common for simple local HTTP such as
+            // Undertow test hosts) report 0. Treating that as "not current" forced a
+            // new cache slot on every launch while the download still wrote the old
+            // slot — FileNotFoundException on the empty new path (Windows IT).
+            if (lastModified <= 0) {
+                return true;
+            }
+            return lastModified <= cachedModified;
         } catch (Exception ex){
             OutputController.getLogger().log(ex);
             return cached;

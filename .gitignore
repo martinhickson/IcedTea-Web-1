@@ -1,4 +1,5 @@
 .idea
+.notes/
 bin
 common/target
 core/target
@@ -44,3 +45,4 @@ target
 .powershell/workflows/.source/
 .powershell/workflows/sign.env
 **/*.bak
+**/it-run*.txt

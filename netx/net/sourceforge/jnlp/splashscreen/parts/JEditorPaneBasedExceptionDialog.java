@@ -101,6 +101,8 @@ public class JEditorPaneBasedExceptionDialog extends JDialog implements Hyperlin
         List<String> l = infoElementToList(information);
         this.message = getText(ex, l, anotherInfo, shown);
         this.exception = ex;
+        // Always persist splash/error-dialog exceptions to the ITW log directory.
+        OutputController.getLogger().logExceptionDialog(ex);
         if (exception == null) {
             closeAndCopyButton.setVisible(false);
         }

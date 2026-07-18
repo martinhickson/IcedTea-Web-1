@@ -49,6 +49,13 @@ import sun.awt.AppContext;
  */
 class JNLPSecurityManager extends SecurityManager {
 
+    /**
+     * Prevents {@code getApplication} → {@code ClassLoader.getParent} →
+     * {@code checkPermission} → {@code JNLPPolicy.getPermissions} →
+     * {@code getApplication} recursion ({@link StackOverflowError}).
+     */
+    private static final ThreadLocal<Boolean> GETTING_APPLICATION = new ThreadLocal<>();
+
     // todo: some apps like JDiskReport can close the VM even when
     // an exit class is set - fix!
 
@@ -194,25 +201,15 @@ class JNLPSecurityManager extends SecurityManager {
      * Return the current Application, or null.
      */
     protected ApplicationInstance getApplication(Thread thread, Class<?> stack[], int maxDepth) {
-        ClassLoader cl;
-        JNLPClassLoader jnlpCl;
-
-        cl = thread.getContextClassLoader();
-        while (cl != null) {
-            jnlpCl = getJnlpClassLoader(cl);
-            if (jnlpCl != null && jnlpCl.getApplication() != null) {
-                return jnlpCl.getApplication();
-            }
-            cl = cl.getParent();
+        if (Boolean.TRUE.equals(GETTING_APPLICATION.get())) {
+            return null;
         }
+        GETTING_APPLICATION.set(Boolean.TRUE);
+        try {
+            ClassLoader cl;
+            JNLPClassLoader jnlpCl;
 
-        if (maxDepth <= 0) {
-            maxDepth = stack.length;
-        }
-
-        // this needs to be tightened up
-        for (int i = 0; i < stack.length && i < maxDepth; i++) {
-            cl = stack[i].getClassLoader();
+            cl = thread.getContextClassLoader();
             while (cl != null) {
                 jnlpCl = getJnlpClassLoader(cl);
                 if (jnlpCl != null && jnlpCl.getApplication() != null) {
@@ -220,8 +217,26 @@ class JNLPSecurityManager extends SecurityManager {
                 }
                 cl = cl.getParent();
             }
+
+            if (maxDepth <= 0) {
+                maxDepth = stack.length;
+            }
+
+            // this needs to be tightened up
+            for (int i = 0; i < stack.length && i < maxDepth; i++) {
+                cl = stack[i].getClassLoader();
+                while (cl != null) {
+                    jnlpCl = getJnlpClassLoader(cl);
+                    if (jnlpCl != null && jnlpCl.getApplication() != null) {
+                        return jnlpCl.getApplication();
+                    }
+                    cl = cl.getParent();
+                }
+            }
+            return null;
+        } finally {
+            GETTING_APPLICATION.remove();
         }
-        return null;
     }
 
     /**

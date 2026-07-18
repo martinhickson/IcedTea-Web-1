@@ -323,6 +323,32 @@ public class OutputController {
         log(Level.ERROR_DEBUG, (Object) s);
     }
 
+    /**
+     * Log an exception shown in a user-facing error dialog.
+     * Always records to the ITW file log under the configured log directory
+     * (itw-javantx-*.log), even when {@code deployment.log.file} is false.
+     *
+     * @param exception the exception displayed in the dialog (may be null)
+     */
+    public void logExceptionDialog(Throwable exception) {
+        String details = exceptionToString(exception);
+        if (details == null || details.isEmpty()) {
+            details = exception == null ? NULL_OBJECT : String.valueOf(exception);
+        }
+        String message = "Exception dialog shown:\n" + details;
+        log(Level.ERROR_ALL, message);
+        // Normal consume() only writes to file when deployment.log.file=true.
+        // Dialog errors must always land in the ITW log directory.
+        if (!LogConfig.getLogConfig().isLogToFile()) {
+            try {
+                getFileLog().log(message);
+            } catch (Throwable t) {
+                printErrorLn("Failed to write exception dialog to ITW log file: " + t);
+            }
+        }
+        flush();
+    }
+
     private void log(Level level, Object o) {
         if (!shouldLog(level)) {
             return;
