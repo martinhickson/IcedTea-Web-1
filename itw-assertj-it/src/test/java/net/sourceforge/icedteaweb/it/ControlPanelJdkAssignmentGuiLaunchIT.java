@@ -7,7 +7,6 @@ import static org.assertj.swing.data.TableCell.row;
 import javax.swing.JFrame;
 import net.sourceforge.icedteaweb.it.apps.GuiSampleJnlpMain;
 import net.sourceforge.jnlp.controlpanel.ControlPanel;
-import net.sourceforge.jnlp.util.JnlpRunningProcessSupport.RunningProcess;
 import org.assertj.swing.core.BasicRobot;
 import org.assertj.swing.core.GenericTypeMatcher;
 import org.assertj.swing.core.Robot;
@@ -55,11 +54,11 @@ class ControlPanelJdkAssignmentGuiLaunchIT {
         robot.waitForIdle();
         controlPanelWindow.button("jdkAssignmentLaunchButton").click();
         controlPanelWindow.dialog("jdkAssignmentLaunchOutputDialog").requireVisible();
-        controlPanelWindow.button("jdkAssignmentLaunchOutputOkButton").click();
-        robot.waitForIdle();
-
-        RunningProcess running = JnlpLaunchTestSupport.waitForRunningApp("JDK Assignments GUI", 90_000);
-        assertThat(running).isNotNull();
+        String output = ControlPanelTestSupport.waitForLaunchOutput(
+                controlPanelWindow, "ITW_INTEGRATION_SUCCESS", 120_000);
+        assertThat(output)
+                .containsPattern("(?i)icedtea-web version:")
+                .contains("ITW_INTEGRATION_SUCCESS");
 
         Robot sampleRobot = BasicRobot.robotWithNewAwtHierarchy();
         try {
@@ -80,6 +79,9 @@ class ControlPanelJdkAssignmentGuiLaunchIT {
         } finally {
             sampleRobot.cleanUp();
         }
+
+        controlPanelWindow.button("jdkAssignmentLaunchOutputOkButton").click();
+        robot.waitForIdle();
     }
 
     static boolean guiLaunchAvailable() {

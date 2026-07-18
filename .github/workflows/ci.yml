@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - 1.8
+  pull_request:
+    branches:
+      - 1.8
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }}, JDK ${{ matrix.java-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            java-version: '11'
+            profile: ci
+            pack200-bootstrap: false
+            bash-executable: bash
+          - os: windows-2025
+            java-version: '11'
+            profile: ci
+            pack200-bootstrap: false
+            bash-executable: 'C:\Program Files\Git\usr\bin\bash.exe'
+          - os: ubuntu-latest
+            java-version: '17'
+            profile: ci-pack200-unpack
+            pack200-bootstrap: true
+            bash-executable: bash
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Corretto ${{ matrix.java-version }}
+        uses: actions/setup-java@v5
+        with:
+          java-version: ${{ matrix.java-version }}
+          distribution: 'corretto'
+
+      - name: Set up Git Bash
+        if: runner.os == 'Windows'
+        run: |
+          if (-not (Test-Path "C:\Program Files\Git\usr\bin\bash.exe")) {
+            choco install git.install -y --no-progress
+          }
+          echo "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files\Git\bin" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-jdk${{ matrix.java-version }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-jdk${{ matrix.java-version }}-m2-
+
+      - name: Ensure pack200 Maven artifact
+        if: matrix.pack200-bootstrap
+        run: |
+          if ($env:OS -eq 'Windows_NT') {
+            function Write-Detail { param([string]$Message) Write-Host $Message }
+            . ./.powershell/workflows/ensure-pack200.ps1
+            Ensure-Pack200MavenDependency
+          } else {
+            chmod +x scripts/ensure-pack200-maven.sh
+            ./scripts/ensure-pack200-maven.sh
+          }
+        shell: pwsh
+
+      - name: Run unit tests
+        run: |
+          $mvnArgs = @(
+            "-s", "${{ github.workspace }}/.powershell/workflows/maven-settings.xml",
+            "test",
+            "-pl", "icedtea-web",
+            "-am",
+            "-P${{ matrix.profile }}",
+            "-Djdk11.home=$env:JAVA_HOME",
+            "-Dbash.executable=${{ matrix.bash-executable }}"
+          )
+          & mvn @mvnArgs
+        shell: pwsh

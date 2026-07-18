@@ -1,0 +1,251 @@
+name: Integration Tests
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: 'Which integration module(s) to run'
+        required: true
+        default: all
+        type: choice
+        options:
+          - all
+          - assertj-it
+          - process-launch
+          - autodetect-windows
+      strict_autodetect:
+        description: 'Fail autodetect-windows job on test failure (default ignores failures while TDD)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml
+
+jobs:
+  assertj-it:
+    name: AssertJ Swing (Ubuntu, VNC)
+    if: inputs.suite == 'all' || inputs.suite == 'assertj-it'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 11, 17, and 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: |
+            11
+            17
+            21
+
+      - name: Remember JDK homes
+        run: |
+          echo "JDK11_HOME=$JAVA_HOME_11_X64" >> "$GITHUB_ENV"
+          echo "JDK17_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "JDK21_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          for name in JDK11_HOME JDK17_HOME JDK21_HOME; do
+            eval "home=\$$name"
+            if [ ! -x "$home/bin/java" ]; then
+              echo "Missing JDK at $name=$home" >&2
+              exit 1
+            fi
+          done
+
+      - name: Install TigerVNC
+        run: sudo apt-get update && sudo apt-get install -y tigervnc-standalone-server x11-utils
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2
+          key: ubuntu-assertj-it-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ubuntu-assertj-it-m2-
+
+      - name: Ensure pack200 Maven artifact
+        run: |
+          chmod +x scripts/ensure-pack200-maven.sh
+          ./scripts/ensure-pack200-maven.sh
+
+      - name: Build icedtea-web uber JAR
+        run: |
+          export JAVA_HOME="$JDK11_HOME"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          mvn -s "$MAVEN_SETTINGS" install -pl icedtea-web -am -DskipTests \
+            -Djdk11.home="$JDK11_HOME" \
+            -Dbash.executable=bash
+
+      - name: Run AssertJ Swing integration tests
+        run: |
+          export JAVA_HOME="$JDK11_HOME"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          cd itw-assertj-it
+          mvn -s "$MAVEN_SETTINGS" verify -Pvnc \
+            -Ditw.jdk17.home="$JDK17_HOME" \
+            -Ditw.jdk21.home="$JDK21_HOME"
+
+  process-launch:
+    name: Process launch (Ubuntu, multi-JDK)
+    if: inputs.suite == 'all' || inputs.suite == 'process-launch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up JDK 8, 11, 17, and 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: |
+            8
+            11
+            17
+            21
+
+      - name: Remember JDK homes
+        run: |
+          echo "JDK8_HOME=$JAVA_HOME_8_X64" >> "$GITHUB_ENV"
+          echo "JDK11_HOME=$JAVA_HOME_11_X64" >> "$GITHUB_ENV"
+          echo "JDK17_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "JDK21_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+          for name in JDK8_HOME JDK11_HOME JDK17_HOME JDK21_HOME; do
+            eval "home=\$$name"
+            if [ ! -x "$home/bin/java" ]; then
+              echo "Missing JDK at $name=$home" >&2
+              exit 1
+            fi
+          done
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2
+          key: ubuntu-process-launch-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ubuntu-process-launch-m2-
+
+      - name: Ensure pack200 Maven artifact
+        run: |
+          chmod +x scripts/ensure-pack200-maven.sh
+          ./scripts/ensure-pack200-maven.sh
+
+      - name: Build icedtea-web and run process-launch ITs
+        run: |
+          export JAVA_HOME="$JDK11_HOME"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          mvn -s "$MAVEN_SETTINGS" verify -pl icedtea-web-integration -am -DskipTests \
+            -Djdk11.home="$JDK11_HOME" \
+            -Dbash.executable=bash \
+            -Ditw.jdk8.home="$JDK8_HOME" \
+            -Ditw.jdk11.home="$JDK11_HOME" \
+            -Ditw.jdk17.home="$JDK17_HOME" \
+            -Ditw.jdk21.home="$JDK21_HOME"
+
+  autodetect-windows:
+    name: Windows JDK autodetect
+    if: inputs.suite == 'all' || inputs.suite == 'autodetect-windows'
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Corretto 11 (Maven)
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: '11'
+
+      - name: Remember JDK 11 home
+        run: echo "JDK11_HOME=$env:JAVA_HOME" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Set up Corretto 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: '17'
+
+      - name: Remember JDK 17 home
+        run: echo "JDK17_HOME=$env:JAVA_HOME" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Set up Corretto 11 (Maven runtime)
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: '11'
+
+      - name: Set up .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Set up Git Bash
+        run: |
+          if (-not (Test-Path "C:\Program Files\Git\usr\bin\bash.exe")) {
+            choco install git.install -y --no-progress
+          }
+          echo "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files\Git\bin" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2
+          key: windows-autodetect-it-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: windows-autodetect-it-m2-
+
+      - name: Ensure pack200 Maven artifact
+        run: |
+          function Write-Detail { param([string]$Message) Write-Host $Message }
+          . ./.powershell/workflows/ensure-pack200.ps1
+          Ensure-Pack200MavenDependency
+        shell: pwsh
+
+      - name: Build Windows distribution (unsigned)
+        run: |
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-P", "maven-distribution",
+            "-pl", "icedtea-web-distribution",
+            "-am",
+            "install",
+            "-Dmaven.test.skip=true",
+            "-DskipTests",
+            "-Djdk8.home=$env:JDK11_HOME",
+            "-Djdk11.home=$env:JDK11_HOME",
+            "-Ditw.dotnet.selfContained=true",
+            "-Ditw.dotnet.runtime.identifier=win-x64",
+            "-Dbash.executable=C:\Program Files\Git\usr\bin\bash.exe"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
+      - name: Publish discoverable JDK 17 for autodetect
+        run: |
+          $env:ITW_JDK17_HOME = $env:JDK17_HOME
+          & ./itw-autodetect-it/scripts/ensure-discoverable-jdk17.ps1
+        shell: pwsh
+
+      - name: Run Windows autodetect integration tests
+        run: |
+          $strict = "${{ inputs.strict_autodetect }}"
+          $ignoreFlag = if ($strict -eq 'true') { 'false' } else { 'true' }
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-f", "itw-autodetect-it/pom.xml",
+            "verify",
+            "-Ditw.jdk11.home=$env:JDK11_HOME",
+            "-Ditw.jdk17.home=$env:JDK17_HOME",
+            "-Ditw.autodetect.it.failure.ignore=$ignoreFlag"
+          )
+          & mvn @mvnArgs
+        shell: pwsh

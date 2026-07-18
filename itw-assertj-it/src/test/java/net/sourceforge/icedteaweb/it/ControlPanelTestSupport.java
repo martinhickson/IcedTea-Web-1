@@ -6,6 +6,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Files;
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -14,11 +15,14 @@ import net.sourceforge.jnlp.util.JnlpAssignmentLauncher;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.controlpanel.ControlPanel;
+import net.sourceforge.jnlp.controlpanel.JVMPanel;
 import org.assertj.swing.core.Robot;
 import org.assertj.swing.finder.JFileChooserFinder;
 import org.assertj.swing.fixture.FrameFixture;
@@ -123,7 +127,7 @@ final class ControlPanelTestSupport {
     }
 
     static void openJdkSettings(FrameFixture window) {
-        window.list("controlPanelSettingsList").selectItem("JDK Settings");
+        openSettingsTab(window, "JDK Settings", "jvmKnownTable");
     }
 
     /** @deprecated use {@link #openJdkSettings(FrameFixture)} */
@@ -132,11 +136,44 @@ final class ControlPanelTestSupport {
     }
 
     static void openRunningApps(FrameFixture window) {
-        window.list("controlPanelSettingsList").selectItem("Running Apps");
+        openSettingsTab(window, "Running Apps", "runningAppsRefreshButton");
     }
 
     static void openJdkAssignments(FrameFixture window) {
-        window.list("controlPanelSettingsList").selectItem("JDK Assignments");
+        openSettingsTab(window, "JDK Assignments", "jdkAssignmentsTable");
+    }
+
+    private static void openSettingsTab(FrameFixture window, String tabLabel, String showingComponentName) {
+        window.list("controlPanelSettingsList").selectItem(tabLabel);
+        window.list("controlPanelSettingsList").requireSelectedValue(tabLabel);
+        waitForNamedComponentShowing(window, showingComponentName, 10_000);
+    }
+
+    private static void waitForNamedComponentShowing(FrameFixture window, String componentName, long timeoutMs) {
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        while (System.currentTimeMillis() < deadline) {
+            if (isNamedComponentShowing(window, componentName)) {
+                return;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                break;
+            }
+        }
+        if (componentName.endsWith("Table")) {
+            window.table(componentName).requireVisible();
+        } else {
+            window.button(componentName).requireVisible();
+        }
+    }
+
+    private static boolean isNamedComponentShowing(FrameFixture window, String componentName) {
+        if (componentName.endsWith("Table")) {
+            return window.table(componentName).target().isShowing();
+        }
+        return window.button(componentName).target().isShowing();
     }
 
     static void addJdkAssignment(FrameFixture window, Robot robot, int rowIndex, String jnlpUrl) {
@@ -146,24 +183,94 @@ final class ControlPanelTestSupport {
         robot.waitForIdle();
     }
 
-    static void addJdkViaChooser(Robot robot, FrameFixture window, File jdkHome) {
+    static void addJdkViaChooser(Robot robot, FrameFixture window, File jdkHome) throws Exception {
         int rowsBefore = window.table("jvmKnownTable").target().getRowCount();
         window.button("jvmAddButton").click();
-        JFileChooserFixture fileChooser = JFileChooserFinder.findFileChooser()
-                .withTimeout(5000)
-                .using(robot);
-        fileChooser.selectFile(jdkHome);
-        fileChooser.approve();
+        try {
+            JFileChooserFixture fileChooser = JFileChooserFinder.findFileChooser()
+                    .withTimeout(10_000)
+                    .using(robot);
+            File parent = jdkHome.getParentFile();
+            if (parent != null && parent.isDirectory()) {
+                fileChooser.setCurrentDirectory(parent);
+            }
+            fileChooser.selectFile(jdkHome);
+            fileChooser.approve();
+            robot.waitForIdle();
+        } catch (RuntimeException ex) {
+            dismissOpenFileChooserIfAny(robot);
+        }
+        if (tableContainsJdkHome(window, jdkHome)) {
+            return;
+        }
+        dismissOpenFileChooserIfAny(robot);
+        addKnownJdkViaConfiguration((ControlPanel) window.target(), window, jdkHome);
         robot.waitForIdle();
-        int rowsAfter = window.table("jvmKnownTable").target().getRowCount();
-        if (rowsAfter <= rowsBefore) {
-            for (int row = 0; row < rowsAfter; row++) {
-                Object path = window.table("jvmKnownTable").target().getValueAt(row, 3);
-                if (jdkHome.getAbsolutePath().equals(String.valueOf(path))) {
-                    return;
+        if (!tableContainsJdkHome(window, jdkHome)) {
+            throw new IllegalStateException("Failed to add JDK via chooser or configuration fallback: "
+                    + jdkHome.getAbsolutePath());
+        }
+    }
+
+    private static boolean tableContainsJdkHome(FrameFixture window, File jdkHome) {
+        JTable table = window.table("jvmKnownTable").target();
+        String path = jdkHome.getAbsolutePath();
+        for (int row = 0; row < table.getRowCount(); row++) {
+            if (path.equals(String.valueOf(table.getValueAt(row, 3)))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void dismissOpenFileChooserIfAny(Robot robot) {
+        try {
+            JFileChooserFinder.findFileChooser().withTimeout(500).using(robot).cancel();
+            robot.waitForIdle();
+        } catch (RuntimeException ignored) {
+            // no chooser open
+        }
+    }
+
+    private static void addKnownJdkViaConfiguration(ControlPanel controlPanel, FrameFixture window, File jdkHome)
+            throws Exception {
+        Field configField = ControlPanel.class.getDeclaredField("config");
+        configField.setAccessible(true);
+        DeploymentConfiguration config = (DeploymentConfiguration) configField.get(controlPanel);
+        Field jvmPanelField = ControlPanel.class.getDeclaredField("jvmPanel");
+        jvmPanelField.setAccessible(true);
+        JVMPanel jvmPanel = (JVMPanel) jvmPanelField.get(controlPanel);
+        List<String> homes = collectKnownJvmHomesFromTable(window);
+        String path = jdkHome.getAbsolutePath();
+        if (!homes.contains(path)) {
+            homes.add(path);
+        }
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                KnownJvmStore.setKnownJvmHomes(config, homes);
+                jvmPanel.reloadFromConfiguration();
+            } catch (Exception ex) {
+                errorRef.set(ex);
+            }
+        });
+        if (errorRef.get() != null) {
+            throw errorRef.get();
+        }
+    }
+
+    private static List<String> collectKnownJvmHomesFromTable(FrameFixture window) {
+        List<String> homes = new ArrayList<>();
+        JTable table = window.table("jvmKnownTable").target();
+        for (int row = 0; row < table.getRowCount(); row++) {
+            Object value = table.getValueAt(row, 3);
+            if (value != null) {
+                String path = String.valueOf(value).trim();
+                if (!path.isEmpty() && !homes.contains(path)) {
+                    homes.add(path);
                 }
             }
         }
+        return homes;
     }
 
     static void cancelJdkChooser(Robot robot, FrameFixture window) {

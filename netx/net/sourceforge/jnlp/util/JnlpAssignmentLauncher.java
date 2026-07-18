@@ -215,6 +215,7 @@ public final class JnlpAssignmentLauncher {
     }
 
     private static void propagateLaunchEnvironment(ProcessBuilder pb) {
+        copyEnvIfSet(pb, "DISPLAY");
         copyEnvIfSet(pb, "XDG_CONFIG_HOME");
         copyEnvIfSet(pb, "XDG_CACHE_HOME");
         copyEnvIfSet(pb, "XDG_DATA_HOME");

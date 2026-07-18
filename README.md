@@ -1,8 +1,27 @@
 # IcedTea-Web
 
+[![CI](https://github.com/martinhickson/IcedTea-Web-1/actions/workflows/ci.yml/badge.svg?branch=1.8)](https://github.com/martinhickson/IcedTea-Web-1/actions/workflows/ci.yml)
+
 Free Software implementation of **Java Web Start (JNLP)** — a maintained fork for running legacy desktop applications on modern JDKs (11–21+) when Oracle Java Web Start is unavailable.
 
+**Latest release:** [IcedTea-Web 2.7.8](https://github.com/martinhickson/IcedTea-Web-1/releases/tag/icedtea-web-2.7.8) · [All releases](https://github.com/martinhickson/IcedTea-Web-1/releases)
+
 This repository continues development from [AdoptOpenJDK/IcedTea-Web](https://github.com/AdoptOpenJDK/IcedTea-Web). Default branch: **`1.8`**.
+
+## Why this fork?
+
+Oracle removed Java Web Start after JDK 8, and most upstream IcedTea-Web branches are unmaintained. **This fork is for teams that still depend on signed JNLP desktop apps** and need a supported launcher stack on current JDKs — not a browser plugin revival.
+
+| Capability | What you get |
+|------------|--------------|
+| **Multi-JDK discovery** | Scans common vendor install locations on Windows, macOS, and Linux (`JvmAutodetector`); honours `JAVA_HOME`, `JDK17_HOME`, and related env vars. |
+| **Per-JNLP JDK assignments** | Map each cached JNLP URL to a specific installed JDK in **JDK Assignments**; launch or re-test from the control panel without editing global defaults. |
+| **Match strategies** | Choose **exact** or **minimum** JDK version matching when a JNLP declares `<j2se version="…"/>`. |
+| **Missing-JDK autodetect** | When a JNLP needs a JDK that is not configured, the launcher can drive an **Autodetect** flow (Windows integration tests cover this path). |
+| **Running Apps** | See live JNLP processes, their JVM, heap/RSS usage, **Stop** / **Force Stop**, **Trim Heap**, and **Tune** (max heap, GC) with optional relaunch. |
+| **Modern runtime** | Pack200 unpack via the maintained [`io.pack200`](https://github.com/martinhickson/pack200) fork on JDK 14+; build and test matrix covers JDK 11–21+. |
+| **Native launchers** | `javaws` / `javawsc` .NET executables (self-contained or system runtime) — no browser or NPAPI dependency. |
+| **Shippable packages** | MSI, DMG/ZIP, deb/rpm from maintained workflows; sample Angular catalog for local smoke testing. |
 
 ## What you get
 
@@ -14,7 +33,7 @@ This repository continues development from [AdoptOpenJDK/IcedTea-Web](https://gi
 
 ## Releases
 
-Pre-built installers and checksums are published on [GitHub Releases](https://github.com/martinhickson/IcedTea-Web-1/releases).
+Pre-built installers and checksums are published on [GitHub Releases](https://github.com/martinhickson/IcedTea-Web-1/releases). The current stable tag is **[icedtea-web-2.7.8](https://github.com/martinhickson/IcedTea-Web-1/releases/tag/icedtea-web-2.7.8)** (MSI, DMG, deb, rpm, and ZIP assets).
 
 Typical Windows install location:
 
@@ -113,7 +132,12 @@ cd itw-autodetect-it && mvn verify    # Windows desktop + JDK 17 autodetect
 | [icedtea-web-integration](icedtea-web-integration/README.md) | Process launch | Multi-JDK JNLP launch, .NET handoff |
 | [sample-apps](sample-apps/README.md) | npm scripts | End-to-end JNLP launch smoke |
 
-GitHub Actions: [`.github/workflows/build.yml`](.github/workflows/build.yml) (matrix build + smoke) and [`.github/workflows/release.yml`](.github/workflows/release.yml) (release artifacts).
+GitHub Actions:
+
+- [**CI**](.github/workflows/ci.yml) — **`ci` Maven profile** on Ubuntu and Windows (JDK 11) plus Pack200 unpack tests (JDK 17) on every push/PR to `1.8`. Locally: `powershell -File scripts/run-ci-unit-tests.ps1`.
+- [**Integration Tests**](.github/workflows/integration.yml) — manual workflow for AssertJ Swing control-panel ITs (Linux + VNC), multi-JDK process-launch ITs, and Windows JDK autodetect ITs. Not run on every PR (GUI / multi-JDK / desktop session).
+
+Full unit suite (includes excluded CI tests): `mvn test -pl icedtea-web -am`.
 
 ## Repository layout
 
@@ -127,7 +151,7 @@ itw-assertj-it/           Swing UI integration tests
 itw-autodetect-it/        Windows JDK autodetect integration tests
 .powershell/workflows/    Windows host build + sign pipeline
 .packaging/workflows/     WiX MSI, Linux deb/rpm, macOS DMG scripts
-.github/workflows/        CI and release automation
+.github/workflows/        CI, integration, and release automation
 ```
 
 ## Contributing

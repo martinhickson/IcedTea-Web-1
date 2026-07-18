@@ -19,6 +19,7 @@ class JdkAutodetectJavawsLaunchIT {
         ControlPanelTestSupport.resetDeploymentConfig();
         Properties props = new Properties();
         props.setProperty(DeploymentConfiguration.KEY_AUTODETECT_JDKS, "false");
+        ControlPanelTestSupport.enableFileLoggingForIntegrationTests(props);
         ControlPanelTestSupport.writeDeploymentProperties(props);
     }
 
@@ -64,8 +65,10 @@ class JdkAutodetectJavawsLaunchIT {
         Process process = JnlpLaunchTestSupport.launchJnlpViaJavaws("java18-plus-app", 5, starterJdk11);
         process.waitFor(180, TimeUnit.SECONDS);
 
+        String output = JnlpLaunchTestSupport.readProcessOutput(process, 5_000);
         String javantxLog = JnlpLaunchTestSupport.readJavantxLogSince(startedAt, 30_000);
-        assertThat(javantxLog)
+        String combined = output + "\n" + javantxLog;
+        assertThat(combined)
                 .contains("18+")
                 .containsPattern("(?i)Relaunching with configured JRE:")
                 .contains(jdk21.getAbsolutePath())

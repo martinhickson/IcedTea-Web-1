@@ -8,6 +8,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -21,6 +22,7 @@ import java.util.zip.GZIPOutputStream;
 
 import org.junit.AfterClass;
 import org.junit.Assert;
+import org.junit.Assume;
 import org.junit.BeforeClass;
 import org.junit.Test;
 
@@ -31,6 +33,7 @@ import net.sourceforge.jnlp.Version;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.JarFile;
+import net.sourceforge.jnlp.util.logging.LogConfig;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
@@ -72,6 +75,7 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
 
         }
         currentErrorStream = new ByteArrayOutputStream();
+        LogConfig.enableStreamLoggingForTests();
         System.setOut(new PrintStream(currentErrorStream));
         System.setErr(new PrintStream(currentErrorStream));
         OutputController.getLogger().setOut(new PrintStream(currentErrorStream));
@@ -478,8 +482,7 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         JarFile jarFile = new JarFile(orig.getAbsolutePath());
         FileOutputStream fos = new FileOutputStream(pack);
 
-        io.pack200.Pack200.Packer p = io.pack200.Pack200.newPacker();
-        p.pack(jarFile, fos);
+        packJarForTests(jarFile, fos);
         fos.close();
 
         File packgz = new File(downloadDir, fileName + ".jar.pack.gz");
@@ -505,7 +508,7 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         try {
             JNLPRuntime.setDebug(true);
             JNLPRuntime.setTrace(false);
-            currentErrorStream.getBuffer().setLength(0);
+            currentErrorStream.reset();
 
             URL favicon = new URL("http://127.0.0.1:4201/jnlp/favicon.ico");
             ResourceDownloader.logFavIconTrace(new IOException(favicon.toExternalForm()));
@@ -515,7 +518,7 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
             Assert.assertEquals("", logged);
 
             JNLPRuntime.setTrace(true);
-            currentErrorStream.getBuffer().setLength(0);
+            currentErrorStream.reset();
             ResourceDownloader.logFavIconTrace(new IOException(favicon.toExternalForm()));
             OutputController.getLogger().flush();
 
@@ -527,16 +530,51 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         }
     }
 
-    //JDK 14 and later doesn't have built-in Pack200 functionality
-    private static boolean isJDK14OrLater() {
+    /**
+     * Use the JDK's built-in Pack200 for test fixtures on JDK 8–16. JDK 17 removed
+     * Pack200 from the JDK API; reflect so test sources still compile on JDK 17+.
+     */
+    private static void packJarForTests(JarFile jarFile, FileOutputStream fos) throws IOException {
+        if (isJDK17OrLater()) {
+            assumeExternalPack200Works();
+            io.pack200.Pack200.Packer packer = io.pack200.Pack200.newPacker();
+            packer.pack(jarFile, fos);
+        } else {
+            packJarWithJdkBuiltin(jarFile, fos);
+        }
+    }
+
+    private static void packJarWithJdkBuiltin(JarFile jarFile, OutputStream fos) throws IOException {
+        try {
+            Class<?> pack200Class = Class.forName("java.util.jar.Pack200");
+            Object packer = pack200Class.getMethod("newPacker").invoke(null);
+            packer.getClass().getMethod("pack", JarFile.class, OutputStream.class).invoke(packer, jarFile, fos);
+        } catch (ReflectiveOperationException ex) {
+            throw new IOException("JDK built-in Pack200 unavailable", ex);
+        }
+    }
+
+    private static void assumeExternalPack200Works() {
+        try {
+            Object packer = io.pack200.Pack200.newPacker();
+            Assume.assumeTrue("External pack200 packer unavailable", packer instanceof io.pack200.Pack200.Packer);
+            Object unpacker = io.pack200.Pack200.newUnpacker();
+            Assume.assumeTrue("External pack200 unpacker unavailable", unpacker instanceof io.pack200.Pack200.Unpacker);
+        } catch (Throwable ex) {
+            Assume.assumeNoException(ex);
+        }
+    }
+
+    private static boolean isJDK17OrLater() {
+        return getJavaMajorVersion() >= 17;
+    }
+
+    private static int getJavaMajorVersion() {
         String[] elements = System.getProperty("java.version").split("\\.");
-        int version;
         int discard = Integer.parseInt(elements[0]);
         if (discard == 1) {
-            version = Integer.parseInt(elements[1]);
-        } else {
-            version = discard;
+            return Integer.parseInt(elements[1]);
         }
-        return version >= 14;
+        return discard;
     }
 }
