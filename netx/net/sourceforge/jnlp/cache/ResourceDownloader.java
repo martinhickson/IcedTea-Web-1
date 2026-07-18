@@ -23,8 +23,10 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.jar.JarOutputStream;
 import java.util.zip.GZIPInputStream;
 
@@ -39,18 +41,89 @@ import net.sourceforge.jnlp.security.SecurityDialogs;
 import net.sourceforge.jnlp.security.dialogs.InetSecurity511Panel;
 import net.sourceforge.jnlp.util.HttpUtils;
 import net.sourceforge.jnlp.util.UrlUtils;
+import net.sourceforge.jnlp.util.XDesktopEntry;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 public class ResourceDownloader implements Runnable {
 
     private static final long[] RETRY_DELAYS = {2000L, 3000L, 5000L, 8000L};
     private static final int RETRY_COUNT = 5;
+    private static final Set<String> LOGGED_MISSING_FAVICONS = new HashSet<>();
     private final Resource resource;
     private final Object lock;
 
     public ResourceDownloader(Resource resource, Object lock) {
         this.resource = resource;
         this.lock = lock;
+    }
+
+    static boolean isFavIconUrl(URL url) {
+        if (url == null) {
+            return false;
+        }
+        String path = url.getPath();
+        if (path == null) {
+            return false;
+        }
+        return path.endsWith("/" + XDesktopEntry.FAVICON)
+                || path.endsWith("\\" + XDesktopEntry.FAVICON)
+                || path.endsWith(XDesktopEntry.FAVICON);
+    }
+
+    static void logMissingFavIconInfo(URL url) {
+        String key = url != null ? url.toExternalForm() : "<unknown>";
+        synchronized (LOGGED_MISSING_FAVICONS) {
+            if (!LOGGED_MISSING_FAVICONS.add(key)) {
+                return;
+            }
+        }
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                "INFO: This application does not have a favourite icon yet"
+                + (url != null ? " (" + url + ")" : "")
+                + ". Add favicon.ico to the JNLP codebase root"
+                + " (for example sample-apps/public/favicon.ico on the Angular dev server).");
+    }
+
+    static void logFavIconTrace(String message) {
+        OutputController.getLogger().log(OutputController.Level.TRACE, message);
+    }
+
+    static void logFavIconTrace(Throwable ex) {
+        OutputController.getLogger().log(OutputController.Level.TRACE, ex);
+    }
+
+    private static void logResourceDebug(URL context, String message) {
+        if (isFavIconUrl(context)) {
+            logFavIconTrace(message);
+        } else {
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, message);
+        }
+    }
+
+    private static void logResourceDebug(URL context, Throwable ex) {
+        if (isFavIconUrl(context)) {
+            logFavIconTrace(ex);
+        } else {
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+        }
+    }
+
+    private static void logDownloadFailure(URL url, Exception ex) {
+        if (isFavIconUrl(url)) {
+            logMissingFavIconInfo(url);
+            logFavIconTrace(ex);
+            return;
+        }
+        OutputController.getLogger().log(ex);
+    }
+
+    private static void logDownloadFailure(URL url, IOException ex) {
+        if (isFavIconUrl(url)) {
+            logMissingFavIconInfo(url);
+            logFavIconTrace(ex);
+            return;
+        }
+        OutputController.getLogger().log(ex);
     }
 
     //JDK 14 and later doesn't have built-in Pack200 functionality
@@ -95,14 +168,16 @@ public class ResourceDownloader implements Runnable {
 
             /* Fully consuming current request helps with connection re-use
              * See http://docs.oracle.com/javase/1.5.0/docs/guide/net/http-keepalive.html */
-            HttpUtils.consumeAndCloseConnectionSilently(httpConnection);
+            HttpUtils.consumeAndCloseConnectionSilently(httpConnection, url);
 
             result.result = responseCode;
         }
 
-        Map<String, List<String>> header = connection.getHeaderFields();
-        for (Map.Entry<String, List<String>> entry : header.entrySet()) {
-            OutputController.getLogger().log("Key : " + entry.getKey() + " ,Value : " + entry.getValue());
+        if (!isFavIconUrl(url)) {
+            Map<String, List<String>> header = connection.getHeaderFields();
+            for (Map.Entry<String, List<String>> entry : header.entrySet()) {
+                OutputController.getLogger().log("Key : " + entry.getKey() + " ,Value : " + entry.getValue());
+            }
         }
         /*
          * Do this only on 301,302,303(?)307,308>
@@ -271,7 +346,11 @@ public class ResourceDownloader implements Runnable {
                     resource.changeStatus(EnumSet.of(PREDOWNLOAD, DOWNLOADING), EnumSet.of(DOWNLOADED));
                 }
             } else {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "You are trying to get resource " + resource.getLocation().toExternalForm() + " but it is not in cache and could not be downloaded. Attempting to continue, but you may expect failure");
+                if (isFavIconUrl(resource.getLocation())) {
+                    logMissingFavIconInfo(resource.getLocation());
+                } else {
+                    OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "You are trying to get resource " + resource.getLocation().toExternalForm() + " but it is not in cache and could not be downloaded. Attempting to continue, but you may expect failure");
+                }
                 resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
             }
 
@@ -301,8 +380,9 @@ public class ResourceDownloader implements Runnable {
         }
 
         List<URL> urls = new ResourceUrlCreator(resource, options).getUrls();
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Finding best URL for: " + resource.getLocation() + " : " + options.toString());
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "All possible urls for "
+        URL resourceLocation = resource.getLocation();
+        logResourceDebug(resourceLocation, "Finding best URL for: " + resource.getLocation() + " : " + options.toString());
+        logResourceDebug(resourceLocation, "All possible urls for "
                 + resource.toString() + " : " + urls);
         for (ResourceTracker.RequestMethods requestMethod : ResourceTracker.RequestMethods.getValidRequestMethods()) {
             for (int i = 0; i < urls.size(); i++) {
@@ -326,7 +406,7 @@ public class ResourceDownloader implements Runnable {
                     }
                     if (response.shouldRedirect()) {
                         if (response.URL == null) {
-                            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Although " + resource.toString() + " got redirect " + response.result + " code for " + requestMethod + " request for " + url.toExternalForm() + " the target was null. Not following");
+                            logResourceDebug(resourceLocation, "Although " + resource.toString() + " got redirect " + response.result + " code for " + requestMethod + " request for " + url.toExternalForm() + " the target was null. Not following");
                         } else {
                             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Resource " + resource.toString() + " got redirect " + response.result + " code for " + requestMethod + " request for " + url.toExternalForm() + " adding " + response.URL.toExternalForm() + " to list of possible urls");
                             if (!JNLPRuntime.isAllowRedirect()) {
@@ -335,9 +415,9 @@ public class ResourceDownloader implements Runnable {
                             urls.add(response.URL);
                         }
                     } else if (response.isInvalid()) {
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "For " + resource.toString() + " the server returned " + response.result + " code for " + requestMethod + " request for " + url.toExternalForm());
+                        logResourceDebug(resourceLocation, "For " + resource.toString() + " the server returned " + response.result + " code for " + requestMethod + " request for " + url.toExternalForm());
                     } else {
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "best url for " + resource.toString() + " is " + url.toString() + " by " + requestMethod);
+                        logResourceDebug(resourceLocation, "best url for " + resource.toString() + " is " + url.toString() + " by " + requestMethod);
                         if (response.URL == null) {
                             response.URL = url;
                         }
@@ -346,8 +426,8 @@ public class ResourceDownloader implements Runnable {
                     }
                 } catch (IOException e) {
                     // continue to next candidate
-                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "While processing " + url.toString() + " by " + requestMethod + " for resource " + resource.toString() + " got " + e + ": ");
-                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, e);
+                    logResourceDebug(resourceLocation, "While processing " + url.toString() + " by " + requestMethod + " for resource " + resource.toString() + " got " + e + ": ");
+                    logResourceDebug(resourceLocation, e);
                 }
             }
         }
@@ -366,7 +446,7 @@ public class ResourceDownloader implements Runnable {
 
             String contentEncoding = connection.getContentEncoding();
 
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Downloading " + downloadTo + " using "
+            logResourceDebug(downloadTo, "Downloading " + downloadTo + " using "
                     + downloadFrom + " (encoding : " + contentEncoding + ") ");
 
             boolean packgz = "pack200-gzip".equals(contentEncoding)
@@ -391,7 +471,7 @@ public class ResourceDownloader implements Runnable {
             }
             resource.fireDownloadEvent(); // fire DOWNLOADED
         } catch (Exception ex) {
-            OutputController.getLogger().log(ex);
+            logDownloadFailure(downloadFrom, ex);
             resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
             synchronized (lock) {
                 lock.notifyAll();
@@ -454,7 +534,7 @@ public class ResourceDownloader implements Runnable {
     private void downloadFile(URLConnection connection, URL downloadLocation, boolean packGZ, CacheEntry entry) throws IOException {
         CacheEntry downloadEntry = entry != null ? entry
                 : new CacheEntry(downloadLocation, resource.getDownloadVersion());
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Downloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
+        logResourceDebug(downloadLocation, "Downloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
         if (!downloadEntry.isCurrent(connection.getLastModified())) {
             try {
                 InputStream resultInputStream;
@@ -465,6 +545,10 @@ public class ResourceDownloader implements Runnable {
                 }
                 writeDownloadToFile(downloadEntry.getLocation(), resultInputStream);
             } catch (IOException ex) {
+                if (isFavIconUrl(downloadLocation)) {
+                    logMissingFavIconInfo(downloadLocation);
+                    return;
+                }
                 String IH = "Invalid Http response";
                 if (ex.getMessage().equals(IH)) {
                     OutputController.getLogger().log(ex);
@@ -477,7 +561,7 @@ public class ResourceDownloader implements Runnable {
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
                     writeDownloadToFile(downloadEntry.getLocation(), new ByteArrayInputStream(body));
                 } else {
-                    OutputController.getLogger().log(ex);
+                    logDownloadFailure(downloadLocation, ex);
                     int retryCount = RETRY_COUNT;
                     String retryCountString = System.getProperty("sonata.rda.retry.count");
                     if (retryCountString != null) {
@@ -492,7 +576,7 @@ public class ResourceDownloader implements Runnable {
                             retryDownload(connection, downloadLocation, downloadEntry, i);
                             break;
                         } catch(IOException ex2) {
-                            OutputController.getLogger().log(ex2);
+                            logDownloadFailure(downloadLocation, ex2);
                         }
                     }
                 }

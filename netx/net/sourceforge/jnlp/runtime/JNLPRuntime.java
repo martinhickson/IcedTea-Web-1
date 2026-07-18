@@ -144,6 +144,9 @@ public class JNLPRuntime {
     /** whether debug mode is on */
     private static boolean debug = false;
 
+    /** whether trace mode is on (more verbose than debug; favicon diagnostics) */
+    private static boolean trace = false;
+
     /**
      * whether plugin debug mode is on
      */
@@ -692,6 +695,17 @@ public class JNLPRuntime {
     }
 
     /**
+     * @return whether trace-level diagnostics should be printed.
+     */
+    public static boolean isTrace() {
+        return trace || Boolean.getBoolean("icedtea.trace");
+    }
+
+    public static boolean isSetTrace() {
+        return trace;
+    }
+
+    /**
      * Sets whether debug statements for the JNLP client code
      * should be printed to the standard output.
      *
@@ -701,6 +715,17 @@ public class JNLPRuntime {
     public static void setDebug(boolean enabled) {
         checkExitClass();
         debug = enabled;
+    }
+
+    /**
+     * Sets whether trace-level diagnostics should be printed.
+     *
+     * @param enabled set to true for trace output (e.g. favicon download details)
+     * @throws IllegalStateException if caller is not the exit class
+     */
+    public static void setTrace(boolean enabled) {
+        checkExitClass();
+        trace = enabled;
     }
 
   

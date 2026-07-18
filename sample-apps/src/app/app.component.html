@@ -1,0 +1,23 @@
+<div class="page">
+  <header class="topbar">
+    <a routerLink="/" class="brand">
+      <span class="brand-mark" aria-hidden="true">ITW</span>
+      <div>
+        <p class="eyebrow">IcedTea-Web developer samples</p>
+        <h1>Sample Apps</h1>
+      </div>
+    </a>
+    <nav class="nav">
+      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{ exact: true }">Catalog</a>
+      <a routerLink="/samples/swing-gui" routerLinkActive="active">Swing GUI</a>
+      <a routerLink="/samples/console" routerLinkActive="active">Console</a>
+    </nav>
+  </header>
+
+  <router-outlet />
+
+  <footer class="footer">
+    <span>IcedTea-Web Maintainers · manual test harness</span>
+    <span class="muted">Single dev server · http://127.0.0.1:4200</span>
+  </footer>
+</div>

@@ -36,12 +36,34 @@
  */
 package net.sourceforge.jnlp.util;
 
-import net.sourceforge.jnlp.util.logging.OutputController;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
+import java.net.URL;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 public class HttpUtils {
+
+    private static boolean isFavIconUrl(URL url) {
+        if (url == null) {
+            return false;
+        }
+        String path = url.getPath();
+        if (path == null) {
+            return false;
+        }
+        return path.endsWith("/" + XDesktopEntry.FAVICON)
+                || path.endsWith("\\" + XDesktopEntry.FAVICON)
+                || path.endsWith(XDesktopEntry.FAVICON);
+    }
+
+    private static void logFavIconTrace(String message) {
+        OutputController.getLogger().log(OutputController.Level.TRACE, message);
+    }
+
+    private static void logFavIconTrace(Throwable ex) {
+        OutputController.getLogger().log(OutputController.Level.TRACE, ex);
+    }
 
     /**
      * Ensure a HttpURLConnection is fully read, required for correct behavior.
@@ -49,9 +71,28 @@ public class HttpUtils {
      * @param c the connection to be closed silently
      */
     public static void consumeAndCloseConnectionSilently(HttpURLConnection c) {
+        consumeAndCloseConnectionSilently(c, null);
+    }
+
+    /**
+     * Ensure a HttpURLConnection is fully read, required for correct behavior.
+     * Captured IOException is consumed and printed
+     * @param c the connection to be closed silently
+     * @param contextUrl URL used to classify harmless favicon failures
+     */
+    public static void consumeAndCloseConnectionSilently(HttpURLConnection c, URL contextUrl) {
         try {
             consumeAndCloseConnection(c);
         } catch (IOException ex) {
+            URL url = contextUrl;
+            if (url == null) {
+                url = c.getURL();
+            }
+            if (isFavIconUrl(url)) {
+                logFavIconTrace("Following exception: '" + ex.getMessage() + "' should be harmless, but may help in finding root cause.");
+                logFavIconTrace(ex);
+                return;
+            }
             OutputController.getLogger().log("Following exception: '" + ex.getMessage() + "' should be harmless, but may help in finding root cause.");
             OutputController.getLogger().log(ex);
         }

@@ -188,7 +188,7 @@
             <configuration>
               <skip>${itw.native.packages.skip}</skip>
               <workingDirectory>${project.basedir}/..</workingDirectory>
-              <executable>bash</executable>
+              <executable>${bash.executable}</executable>
               <environmentVariables>
                 <ITW_VERSION>${project.version}</ITW_VERSION>
                 <ITW_NATIVE_OUTPUT_DIR>${project.build.directory}/native-packages</ITW_NATIVE_OUTPUT_DIR>

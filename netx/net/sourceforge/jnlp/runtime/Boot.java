@@ -191,6 +191,9 @@ public final class Boot implements PrivilegedAction<Void> {
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.VERBOSE)) {
             JNLPRuntime.setDebug(true);
         }
+        if (optionParser.hasOption(OptionsDefinitions.OPTIONS.TRACE)) {
+            JNLPRuntime.setTrace(true);
+        }
 
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.HELP1)) {
             handleMessage();

@@ -1,0 +1,26 @@
+.catalog {
+  flex: 1;
+}
+
+.sample-card {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.sample-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  align-items: start;
+}
+
+.sample-card h2 {
+  margin: 0.15rem 0 0;
+  font-size: 1.25rem;
+}
+
+.actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}

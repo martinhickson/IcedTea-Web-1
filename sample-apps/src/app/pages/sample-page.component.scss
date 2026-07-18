@@ -1,0 +1,25 @@
+.layout {
+  flex: 1;
+}
+
+.hero {
+  grid-row: span 2;
+}
+
+.side {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.launch-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.05rem;
+}

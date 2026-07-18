@@ -29,6 +29,7 @@
     <junit.version>5.10.2</junit.version>
     <!-- Java 17: 1.10.19+, Java 21: 1.14.3+, Java 25: 1.17.0+ (see byte-buddy README compatibility table) -->
     <bytebuddy.version>1.18.8</bytebuddy.version>
+    <bash.executable>bash</bash.executable>
   </properties>
 
   <dependencyManagement>

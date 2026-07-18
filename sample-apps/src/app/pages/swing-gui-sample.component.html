@@ -1,0 +1,34 @@
+<main class="layout">
+  <section class="hero card">
+    <p class="eyebrow">{{ sample.eyebrow }}</p>
+    <h1>{{ sample.title }}</h1>
+    <p class="lede">{{ sample.summary }}</p>
+
+    <div class="launch-row">
+      <button type="button" class="btn primary" (click)="launch()">Launch JNLP application</button>
+      <button type="button" class="btn secondary" (click)="copyUrl()">
+        @switch (copyState()) {
+          @case ('copied') { Copied }
+          @case ('error') { Copy failed }
+          @default { Copy JNLP URL }
+        }
+      </button>
+    </div>
+
+    <div class="url-box">
+      <span class="url-label">Launch URL</span>
+      <code class="url-value">{{ jnlpUrl() }}</code>
+    </div>
+  </section>
+
+  <aside class="side">
+    <section class="card">
+      <h2>Expected stdout</h2>
+      <pre class="snippet">{{ sample.successMarker }}17.x vendor=...</pre>
+    </section>
+    <section class="card">
+      <h2>Notes</h2>
+      <p class="muted">Angular shell has <code>public/favicon.ico</code>; the JNLP tree under <code>/jnlp/swing-gui/</code> does not ship a favicon.</p>
+    </section>
+  </aside>
+</main>

@@ -1,0 +1,35 @@
+<main class="layout">
+  <section class="hero card">
+    <p class="eyebrow">{{ sample.eyebrow }}</p>
+    <h1>{{ sample.title }}</h1>
+    <p class="lede">
+      {{ sample.summary }} Missing favicon under the JNLP codebase should log a single INFO line in verbose mode, not stack traces.
+    </p>
+
+    <div class="url-box">
+      <span class="url-label">JNLP URL</span>
+      <code class="url-value">{{ jnlpUrl() }}</code>
+      <button type="button" class="btn secondary" (click)="copyUrl()">
+        @switch (copyState()) {
+          @case ('copied') { Copied }
+          @case ('error') { Copy failed }
+          @default { Copy URL }
+        }
+      </button>
+    </div>
+
+    <pre class="snippet">{{ sample.successMarker }}17.x vendor=...</pre>
+  </section>
+
+  <aside class="side">
+    <section class="card">
+      <h2>Windows launch</h2>
+      <p class="muted">Use <code>javawsc</code> for console apps:</p>
+      <pre class="snippet">npm run launch:console</pre>
+    </section>
+    <section class="card">
+      <h2>Automated check</h2>
+      <pre class="snippet">npm run test:console</pre>
+    </section>
+  </aside>
+</main>
