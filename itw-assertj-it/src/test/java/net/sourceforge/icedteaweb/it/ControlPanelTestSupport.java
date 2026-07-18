@@ -145,7 +145,11 @@ final class ControlPanelTestSupport {
 
     private static void openSettingsTab(FrameFixture window, String tabLabel, String showingComponentName) {
         window.list("controlPanelSettingsList").selectItem(tabLabel);
-        window.list("controlPanelSettingsList").requireSelectedValue(tabLabel);
+        Object selected = window.list("controlPanelSettingsList").target().getSelectedValue();
+        if (selected == null || !tabLabel.equals(String.valueOf(selected))) {
+            throw new IllegalStateException(
+                    "Expected settings tab '" + tabLabel + "' but selected '" + selected + "'");
+        }
         waitForNamedComponentShowing(window, showingComponentName, 10_000);
     }
 
@@ -184,7 +188,6 @@ final class ControlPanelTestSupport {
     }
 
     static void addJdkViaChooser(Robot robot, FrameFixture window, File jdkHome) throws Exception {
-        int rowsBefore = window.table("jvmKnownTable").target().getRowCount();
         window.button("jvmAddButton").click();
         try {
             JFileChooserFixture fileChooser = JFileChooserFinder.findFileChooser()
@@ -245,6 +248,7 @@ final class ControlPanelTestSupport {
         if (!homes.contains(path)) {
             homes.add(path);
         }
+        AtomicReference<Exception> errorRef = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
             try {
                 KnownJvmStore.setKnownJvmHomes(config, homes);
