@@ -475,6 +475,7 @@ public class Launcher {
             if (javaHome != null && !javaHome.trim().isEmpty()) {
                 pb.environment().put("JAVA_HOME", javaHome);
             }
+            propagateRelaunchEnvironment(pb);
             pb.inheritIO();
             Process p =pb.start();
             StreamUtils.waitForSafely(p);
@@ -1104,16 +1105,94 @@ public class Launcher {
     }
 
     private String extractRequestedJreVersion(JNLPFile file) {
-        for (String arg : file.getNewVMArgs()) {
-            if (arg.startsWith("-Dicedtea-web.relaunch.requestedJre=")) {
-                return arg.substring("-Dicedtea-web.relaunch.requestedJre=".length());
-            }
-        }
+        String fromJnlp = readRequestedJreFromJnlp(file);
+        String fromRelaunch = readRelaunchRequestedJre(file);
+        return reconcileRequestedJreVersion(fromJnlp, fromRelaunch);
+    }
+
+    private static String readRequestedJreFromJnlp(JNLPFile file) {
         JREDesc[] jres = file.getResources().getJREs();
         if (jres.length > 0) {
             return jres[0].getVersion().toString();
         }
         return null;
+    }
+
+    private static String readRelaunchRequestedJre(JNLPFile file) {
+        for (String arg : file.getNewVMArgs()) {
+            String parsed = parseRelaunchRequestedJreArg(arg);
+            if (parsed != null) {
+                return parsed;
+            }
+        }
+        String property = System.getProperty("icedtea-web.relaunch.requestedJre");
+        if (property != null && !property.trim().isEmpty()) {
+            return decodeRequestedJreVersionForRelaunch(property.trim());
+        }
+        return null;
+    }
+
+    private static String parseRelaunchRequestedJreArg(String arg) {
+        String prefix = "-Dicedtea-web.relaunch.requestedJre=";
+        if (arg != null && arg.startsWith(prefix)) {
+            return decodeRequestedJreVersionForRelaunch(arg.substring(prefix.length()));
+        }
+        return null;
+    }
+
+    static String decodeRequestedJreVersionForRelaunch(String value) {
+        if (value == null) {
+            return null;
+        }
+        return value.replace("%2B", "+");
+    }
+
+    private static String reconcileRequestedJreVersion(String fromJnlp, String fromRelaunch) {
+        if (fromRelaunch == null || fromRelaunch.isEmpty()) {
+            return fromJnlp;
+        }
+        if (fromJnlp == null || fromJnlp.isEmpty()) {
+            return fromRelaunch;
+        }
+        if (fromJnlp.endsWith("+") && !fromRelaunch.endsWith("+")) {
+            String jnlpMajor = stripMinimumModifier(fromJnlp);
+            String relaunchMajor = stripMinimumModifier(fromRelaunch);
+            if (jnlpMajor.equals(relaunchMajor)) {
+                return fromJnlp;
+            }
+        }
+        return fromRelaunch;
+    }
+
+    private static String stripMinimumModifier(String version) {
+        String trimmed = version.trim();
+        if (trimmed.endsWith("+")) {
+            return trimmed.substring(0, trimmed.length() - 1);
+        }
+        return trimmed;
+    }
+
+    private static void propagateRelaunchEnvironment(ProcessBuilder pb) {
+        copyEnvIfSet(pb, "DISPLAY");
+        copyEnvIfSet(pb, "XDG_CONFIG_HOME");
+        copyEnvIfSet(pb, "XDG_CACHE_HOME");
+        copyEnvIfSet(pb, "XDG_DATA_HOME");
+        copyEnvIfSet(pb, "JDK8_HOME");
+        copyEnvIfSet(pb, "JDK11_HOME");
+        copyEnvIfSet(pb, "JDK17_HOME");
+        copyEnvIfSet(pb, "JDK21_HOME");
+        copyEnvIfSet(pb, "JDK25_HOME");
+        String userHome = System.getProperty("user.home");
+        if (userHome != null && !userHome.trim().isEmpty()) {
+            pb.environment().put("HOME", userHome.trim());
+        }
+    }
+
+    private static void copyEnvIfSet(ProcessBuilder pb, String name) {
+        String value = System.getenv(name);
+        if (value != null && !value.trim().isEmpty()) {
+            pb.environment().put(name, value.trim());
+        }
     }
 
        /**

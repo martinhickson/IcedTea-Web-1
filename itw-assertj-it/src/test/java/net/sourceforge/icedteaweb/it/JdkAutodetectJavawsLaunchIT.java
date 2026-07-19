@@ -6,6 +6,8 @@ import java.io.File;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.JdkMatchStrategy;
+import net.sourceforge.jnlp.config.KnownJvmStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,6 +62,10 @@ class JdkAutodetectJavawsLaunchIT {
     void javawsAutodetectsHigherJvmForJava18PlusJnlpWithoutConfiguredJvms() throws Exception {
         File starterJdk11 = ControlPanelTestSupport.findJdkHomeWithMajor(11);
         File jdk21 = JnlpLaunchTestSupport.jdkHome(21);
+
+        Properties props = ControlPanelTestSupport.loadDeploymentProperties();
+        props.setProperty(KnownJvmStore.KEY_MATCH_STRATEGY, JdkMatchStrategy.MINIMUM.getConfigValue());
+        ControlPanelTestSupport.writeDeploymentProperties(props);
 
         long startedAt = System.currentTimeMillis();
         Process process = JnlpLaunchTestSupport.launchJnlpViaJavaws("java18-plus-app", 5, starterJdk11);

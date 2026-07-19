@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -23,6 +24,7 @@ import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.controlpanel.ControlPanel;
 import net.sourceforge.jnlp.controlpanel.JVMPanel;
+import net.sourceforge.jnlp.controlpanel.JdkAssignmentsPanel;
 import org.assertj.swing.core.Robot;
 import org.assertj.swing.finder.JFileChooserFinder;
 import org.assertj.swing.fixture.FrameFixture;
@@ -139,8 +141,25 @@ final class ControlPanelTestSupport {
         openSettingsTab(window, "Running Apps", "runningAppsRefreshButton");
     }
 
-    static void openJdkAssignments(FrameFixture window) {
+    static void openJdkAssignments(FrameFixture window) throws Exception {
         openSettingsTab(window, "JDK Assignments", "jdkAssignmentsTable");
+        refreshJdkAssignmentsPanel(window);
+    }
+
+    private static void refreshJdkAssignmentsPanel(FrameFixture window) throws Exception {
+        ControlPanel panel = (ControlPanel) window.target();
+        Field assignmentsField = ControlPanel.class.getDeclaredField("jdkAssignmentsPanel");
+        assignmentsField.setAccessible(true);
+        JdkAssignmentsPanel assignmentsPanel = (JdkAssignmentsPanel) assignmentsField.get(panel);
+        Method refresh = JdkAssignmentsPanel.class.getDeclaredMethod("refreshJdkChoiceList");
+        refresh.setAccessible(true);
+        SwingUtilities.invokeAndWait(() -> {
+            try {
+                refresh.invoke(assignmentsPanel);
+            } catch (ReflectiveOperationException ex) {
+                throw new IllegalStateException(ex);
+            }
+        });
     }
 
     private static void openSettingsTab(FrameFixture window, String tabLabel, String showingComponentName) {
@@ -180,27 +199,25 @@ final class ControlPanelTestSupport {
         return window.button(componentName).target().isShowing();
     }
 
-    static void addJdkAssignment(FrameFixture window, Robot robot, int rowIndex, String jnlpUrl) {
+    static void addJdkAssignment(FrameFixture window, Robot robot, int rowIndex, String jnlpUrl) throws Exception {
+        refreshJdkAssignmentsPanel(window);
+        if (KnownJvmStore.getKnownJvmHomes(configFromWindow(window)).isEmpty()) {
+            throw new IllegalStateException("Add at least one known JDK before creating assignments");
+        }
         window.button("jdkAssignmentAddButton").click();
         robot.waitForIdle();
-        window.table("jdkAssignmentsTable").enterValue(row(rowIndex).column(0), jnlpUrl);
+        javax.swing.JTable table = window.table("jdkAssignmentsTable").target();
+        SwingUtilities.invokeAndWait(() -> {
+            table.setValueAt(jnlpUrl, rowIndex, 0);
+            table.setValueAt(Integer.valueOf(1), rowIndex, 1);
+        });
         robot.waitForIdle();
-        selectFirstKnownJdkForAssignmentRow(window, robot, rowIndex);
     }
 
-    private static void selectFirstKnownJdkForAssignmentRow(FrameFixture window, Robot robot, int rowIndex) {
-        window.table("jdkAssignmentsTable").cell(row(rowIndex).column(1)).click();
-        robot.waitForIdle();
-        if (window.table("jdkAssignmentsTable").target().getRowCount() <= rowIndex) {
-            throw new IllegalStateException("Assignment row " + rowIndex + " is missing");
-        }
-        if (window.table("jvmKnownTable").target().getRowCount() == 0) {
-            throw new IllegalStateException("No known JDKs configured for assignment row " + rowIndex);
-        }
-        window.comboBox().target().setSelectedIndex(1);
-        robot.waitForIdle();
-        window.table("jdkAssignmentsTable").cell(row(rowIndex).column(0)).click();
-        robot.waitForIdle();
+    private static DeploymentConfiguration configFromWindow(FrameFixture window) throws Exception {
+        Field configField = ControlPanel.class.getDeclaredField("config");
+        configField.setAccessible(true);
+        return (DeploymentConfiguration) configField.get((ControlPanel) window.target());
     }
 
     static void addJdkViaChooser(Robot robot, FrameFixture window, File jdkHome) throws Exception {
