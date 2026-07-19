@@ -1,4 +1,15 @@
-# IcedTea-Web Integration Tests
+# Legacy WildFly integration tests (superseded)
+
+> **Note:** This directory is **not** part of the active Maven reactor or CI.
+> Current process-launch integration tests live in
+> [`icedtea-web-integration/`](../icedtea-web-integration/README.md).
+> AssertJ Swing and Windows autodetect ITs are in
+> [`itw-assertj-it/`](../itw-assertj-it/README.md) and
+> [`itw-autodetect-it/`](../itw-autodetect-it/README.md).
+
+The content below describes an older WildFly/Arquillian experiment and is kept for reference only.
+
+---
 
 This module contains integration tests for IcedTea-Web using WildFly 36 and Arquillian.
 
@@ -39,11 +50,3 @@ mvn clean integration-test
 
 - `arquillian.xml` - Arquillian container configuration for WildFly
 - The tests use the `wildfly-managed` container which automatically downloads and manages WildFly
-
-## Future Enhancements
-
-- Add actual JNLP launching tests using IcedTea-Web
-- Add end-to-end browser automation tests
-- Add tests for signed JARs
-- Add tests for various JNLP features
-

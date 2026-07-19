@@ -4,7 +4,7 @@
 
 Free Software implementation of **Java Web Start (JNLP)** — a maintained fork for running legacy desktop applications on modern JDKs (11–21+) when Oracle Java Web Start is unavailable.
 
-**Latest release:** [IcedTea-Web 2.7.8](https://github.com/martinhickson/IcedTea-Web-1/releases/tag/icedtea-web-2.7.8) · [All releases](https://github.com/martinhickson/IcedTea-Web-1/releases)
+**Latest release:** [IcedTea-Web 2.8.3](https://github.com/martinhickson/IcedTea-Web-1/releases/tag/icedtea-web-2.8.3) · [All releases](https://github.com/martinhickson/IcedTea-Web-1/releases)
 
 This repository continues development from [AdoptOpenJDK/IcedTea-Web](https://github.com/AdoptOpenJDK/IcedTea-Web). Default branch: **`1.8`**.
 
@@ -33,7 +33,13 @@ Oracle removed Java Web Start after JDK 8, and most upstream IcedTea-Web branche
 
 ## Releases
 
-Pre-built installers and checksums are published on [GitHub Releases](https://github.com/martinhickson/IcedTea-Web-1/releases). The current stable tag is **[icedtea-web-2.7.8](https://github.com/martinhickson/IcedTea-Web-1/releases/tag/icedtea-web-2.7.8)** (MSI, DMG, deb, rpm, and ZIP assets).
+Pre-built installers and checksums are published on [GitHub Releases](https://github.com/martinhickson/IcedTea-Web-1/releases). The current stable tag is **[icedtea-web-2.8.3](https://github.com/martinhickson/IcedTea-Web-1/releases/tag/icedtea-web-2.8.3)** (MSI, DMG, deb, rpm, and ZIP assets).
+
+**2.8.3 highlights:**
+
+- **Multi-JDK relaunch fixes** — correct handling of `18+` / `11+` JNLP version tags when relaunching on a different installed JDK; environment propagation (`DISPLAY`, `JDK*_HOME`, `XDG_*`) for forked `javaws` on Linux CI.
+- **Integration test suite green** — AssertJ Swing control-panel ITs (Ubuntu + VNC), multi-JDK process-launch ITs, and Windows JDK autodetect ITs validated in CI.
+- **JaCoCo coverage** — unit-test coverage reports uploaded from CI (`-Pcoverage` profile).
 
 Typical Windows install location:
 
@@ -134,8 +140,10 @@ cd itw-autodetect-it && mvn verify    # Windows desktop + JDK 17 autodetect
 
 GitHub Actions:
 
-- [**CI**](.github/workflows/ci.yml) — **`ci` Maven profile** on Ubuntu and Windows (JDK 11) plus Pack200 unpack tests (JDK 17) on every push/PR to `1.8`. Locally: `powershell -File scripts/run-ci-unit-tests.ps1`.
-- [**Integration Tests**](.github/workflows/integration.yml) — manual workflow for AssertJ Swing control-panel ITs (Linux + VNC), multi-JDK process-launch ITs, and Windows JDK autodetect ITs. Not run on every PR (GUI / multi-JDK / desktop session).
+- [**CI**](.github/workflows/ci.yml) — **`ci` Maven profile** on Ubuntu and Windows (JDK 11) plus Pack200 unpack tests (JDK 17) on every push/PR to `1.8`. Runs with **JaCoCo** (`-Pcoverage`); HTML reports uploaded from Ubuntu JDK 11. Locally: `powershell -File scripts/run-ci-unit-tests.ps1` (add `-Coverage` for the report).
+- [**Integration Tests**](.github/workflows/integration.yml) — manual workflow for AssertJ Swing control-panel ITs (Linux + VNC), multi-JDK process-launch ITs, and Windows JDK autodetect ITs. Not run on every PR (GUI / multi-JDK / desktop session); validated green for **2.8.3**.
+
+Unit tests with coverage: `mvn test -pl icedtea-web -am -Pci,coverage` — report at `icedtea-web/target/site/jacoco/index.html`.
 
 Full unit suite (includes excluded CI tests): `mvn test -pl icedtea-web -am`.
 

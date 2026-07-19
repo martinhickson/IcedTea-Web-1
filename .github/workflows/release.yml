@@ -128,6 +128,15 @@ jobs:
 
           ### Highlights
 
+          * **Multi-JDK JNLP relaunch**
+            Correct relaunch when a JNLP declares minimum JDK versions (`11+`, `18+`, etc.) and the launcher selects a different installed JDK; environment variables propagate to forked `javaws` on Linux and macOS.
+
+          * **Integration test validation**
+            AssertJ Swing control-panel ITs (Linux + VNC), multi-JDK process-launch ITs, and Windows JDK autodetect ITs are exercised via the Integration Tests workflow before release.
+
+          * **Unit test coverage (JaCoCo)**
+            CI publishes JaCoCo HTML reports for the `icedtea-web` unit-test suite (`-Pcoverage` Maven profile).
+
           * **Cross-platform support**
             Provides consistent execution of JNLP applications on Windows x64, Linux x64, and macOS (Intel and Apple Silicon).
 

@@ -1,49 +1,54 @@
-# IcedTea-Web Integration Tests
+# IcedTea-Web process-launch integration tests
 
-This module contains integration tests for IcedTea-Web using WildFly 36 and Arquillian.
-
-## Setup
-
-1. The tests use Arquillian to automatically download and start WildFly 36
-2. A sample JNLP application is deployed to WildFly
-3. The tests verify that IcedTea-Web can launch and run the JNLP application
+Maven module in the parent reactor that launches JNLP applications via the shaded
+IcedTea-Web `javaws` wrapper and the .NET launcher handoff path.
 
 ## Prerequisites
 
-- JDK 17 or higher
-- Maven 3.6.0 or higher
+- JDK 11+ to run Maven
+- Installed JDKs for multi-JDK cases (8, 11, 17, 21) — paths passed as Maven properties
+- Built `icedtea-web` uber JAR (the module resolves `javaws` from the distribution layout)
 
-## Running the Tests
-
-```bash
-mvn clean verify
-```
-
-Or to run just the integration tests:
+Build the main project first:
 
 ```bash
-mvn clean integration-test
+mvn install -pl icedtea-web -am -DskipTests
 ```
 
-**Note:** The current setup uses basic JUnit tests. Full Arquillian/WildFly integration requires Arquillian container dependencies that may need to be configured based on your Maven repository setup. WildFly will be automatically downloaded during the build process.
+## Run locally
 
-## Test Structure
+From the repository root (recommended — pulls in `icedtea-web`):
 
-- `SampleApplication.java` - A simple Java application that will be packaged as a JAR and served via JNLP
-- `JNLPIntegrationTest.java` - Arquillian-based integration tests that:
-  - Deploy the sample application to WildFly
-  - Verify the JNLP file is accessible
-  - Test that IcedTea-Web can launch the application
+```bash
+mvn verify -pl icedtea-web-integration -am \
+  -Ditw.jdk8.home=/path/to/jdk8 \
+  -Ditw.jdk11.home=/path/to/jdk11 \
+  -Ditw.jdk17.home=/path/to/jdk17 \
+  -Ditw.jdk21.home=/path/to/jdk21
+```
 
-## Configuration
+On Windows, set `-Dbash.executable` to Git Bash if Maven helper scripts are invoked.
 
-- `arquillian.xml` - Arquillian container configuration for WildFly
-- The tests use the `wildfly-managed` container which automatically downloads and manages WildFly
+Integration tests are executed by **Failsafe** (`*IT.java`).
 
-## Future Enhancements
+## What is covered
 
-- Add actual JNLP launching tests using IcedTea-Web
-- Add end-to-end browser automation tests
-- Add tests for signed JARs
-- Add tests for various JNLP features
+| Test class | Scope |
+|------------|--------|
+| `MultiJdkJnlpLaunchIT` | Headless JNLP launch under JDK 8, 11, 17, and 21 via local Undertow JNLP host |
+| `JnlpRelaunchIT` | Relaunch when JNLP declares a different JRE version |
+| `DotnetLauncherDetachIT` | .NET `javaws` handoff, detached launcher, and audit log output |
 
+## CI
+
+The [**Integration Tests**](https://github.com/martinhickson/IcedTea-Web-1/actions/workflows/integration.yml) workflow runs this module in the **process-launch** job (Ubuntu, multi-JDK). Use `-Pcoverage` to collect JaCoCo reports alongside unit tests:
+
+```bash
+mvn verify -Pcoverage \
+  -Ditw.jdk8.home=... -Ditw.jdk11.home=... \
+  -Ditw.jdk17.home=... -Ditw.jdk21.home=...
+```
+
+## Coverage note
+
+JaCoCo instruments the **test JVM**. These ITs fork external `javaws` processes, so runtime `netx/` code inside the uber JAR is not counted unless the agent is attached to those subprocesses separately.

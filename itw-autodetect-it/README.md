@@ -13,7 +13,7 @@ Standalone Maven module (not part of the main reactor) that exercises the
 5. Opens the ITW control panel and asserts the autodetected JDK 17 is listed
 
 Failsafe ignores test failures by default (`itw.autodetect.it.failure.ignore=true`).
-Flip to `false` once the path is green.
+Set `-Ditw.autodetect.it.failure.ignore=false` for strict CI runs (used by the Integration Tests workflow).
 
 ## Prerequisites
 
@@ -66,7 +66,7 @@ mvn verify `
 
 Override paths to match local installs. Both JDK 11 and JDK 17 must exist or the test is skipped.
 
-Require a failing verify (no ignore) once Autodetect is fixed:
+Strict verify (no failure ignore):
 
 ```powershell
 mvn verify "-Ditw.autodetect.it.failure.ignore=false"
@@ -74,6 +74,10 @@ mvn verify "-Ditw.autodetect.it.failure.ignore=false"
 
 Each run uses an isolated config home under `target/itw-test-home/` via
 `-Duser.home=...` / `XDG_CONFIG_HOME`.
+
+## CI
+
+The [**Integration Tests**](https://github.com/martinhickson/IcedTea-Web-1/actions/workflows/integration.yml) workflow runs this module in the **autodetect-windows** job. The strict path (`itw.autodetect.it.failure.ignore=false`) passed for release **2.8.3**.
 
 ## Manual sample host (no javaws)
 

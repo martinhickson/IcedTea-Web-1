@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Security fixes are applied on the active development branch **`1.8`** and released via [GitHub Releases](https://github.com/martinhickson/IcedTea-Web-1/releases).
+Security fixes are applied on the active development branch **`1.8`** and released via [GitHub Releases](https://github.com/martinhickson/IcedTea-Web-1/releases). The current release is **[2.8.3](https://github.com/martinhickson/IcedTea-Web-1/releases/tag/icedtea-web-2.8.3)**.
 
 Older release tags may receive fixes at maintainer discretion. Prefer upgrading to the latest release.
 

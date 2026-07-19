@@ -5,7 +5,7 @@ Standalone Maven module (not part of the main reactor) that drives the
 
 ## Prerequisites
 
-- JDK 11+ for running tests
+- JDK 11+ for running tests; JDK 17 and 21 homes for multi-JDK launch cases
 - A built and installed `icedtea-web` uber JAR in the local Maven repository
 - A graphical display for the default profile (`$DISPLAY` set)
 
@@ -20,7 +20,9 @@ mvn install -pl icedtea-web -am -DskipTests
 
 ```bash
 cd itw-assertj-it
-mvn verify
+mvn verify \
+  -Ditw.jdk17.home=/path/to/jdk17 \
+  -Ditw.jdk21.home=/path/to/jdk21
 ```
 
 Integration tests are executed by **Failsafe** (`*IT.java`). Unit-test Surefire is disabled.
@@ -32,7 +34,9 @@ Each run uses an isolated config home under `target/itw-test-home/` via `-Duser.
 Use the `vnc` profile to start a TigerVNC virtual framebuffer before integration tests:
 
 ```bash
-mvn verify -Pvnc
+mvn verify -Pvnc \
+  -Ditw.jdk17.home=/path/to/jdk17 \
+  -Ditw.jdk21.home=/path/to/jdk21
 ```
 
 Requires **TigerVNC** (`tigervnc-standalone-server`, providing `/usr/bin/Xvnc`) and optionally
@@ -42,6 +46,16 @@ The profile uses `scripts/start-vnc.sh` and `scripts/stop-vnc.sh`.
 
 ## What is covered
 
-`ControlPanelJvmSelectionIT` opens the control panel, selects **JVM Settings**, adds the
-current `java.home` through the file chooser, clicks **Apply**, and verifies
-`deployment.jdk.1` and `deployment.jre.dir` in `deployment.properties`.
+| Area | Example test classes |
+|------|----------------------|
+| JVM settings | `ControlPanelJvmSelectionIT`, `ControlPanelJvmAutodetectIT`, `DeploymentAutodetectJdksOnLoadIT` |
+| JDK assignments | `ControlPanelJdkAssignmentIT`, `ControlPanelJdkAssignmentLaunchIT`, `ControlPanelJdkAssignmentGuiLaunchIT` |
+| Match strategies & overrides | `JvmMatchStrategyIT`, `JvmAssignmentOverrideIT`, `ControlPanelJdkAssignmentOverrideIT` |
+| JNLP launch paths | `JdkAssignmentJavawsLaunchIT`, `JdkAutodetectJavawsLaunchIT`, `MultiBytecodeJnlpLaunchIT` |
+| Running Apps & cache | `ControlPanelRunningAppsIT`, `FileUrlCacheIT`, `ControlPanelJdkAssignmentCacheListIT` |
+
+## CI
+
+The [**Integration Tests**](https://github.com/martinhickson/IcedTea-Web-1/actions/workflows/integration.yml) workflow runs this module in the **assertj-it** job (Ubuntu + TigerVNC). All ITs passed for release **2.8.3**.
+
+On GitHub Actions, JFileChooser-dependent tests are skipped automatically (`GITHUB_ACTIONS=true`).
