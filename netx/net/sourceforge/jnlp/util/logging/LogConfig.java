@@ -199,4 +199,9 @@ public class LogConfig {
         return logClientAppToFile;
     }
 
+    /** Enables stream logging for unit tests that capture OutputController output. */
+    public static void enableStreamLoggingForTests() {
+        LogConfigHolder.INSTANCE.setLogToStreams(true);
+    }
+
 }

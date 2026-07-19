@@ -96,5 +96,5 @@ compile_sample "${ITW_JDK25_HOME:-/usr/lib/jvm/java-25-openjdk-amd64}" java25-ap
 
 compile_sample "${ITW_JDK17_HOME:-/usr/lib/jvm/java-17-openjdk-amd64}" gui-app \
   "ITW JDK Assignments GUI Sample" \
-  "$APPS/GuiSampleJnlpMain.java" \
+  "$APPS/GuiSampleJnlpMain.java" "$APPS/HeadlessHoldJnlpMain.java" \
   "net.sourceforge.icedteaweb.it.apps.GuiSampleJnlpMain"

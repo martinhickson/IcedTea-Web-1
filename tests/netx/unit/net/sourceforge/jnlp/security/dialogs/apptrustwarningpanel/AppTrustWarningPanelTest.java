@@ -40,19 +40,21 @@ public class AppTrustWarningPanelTest {
 
     
     public static void backupAppletSecurity() throws IOException {
-        appletSecurityBackup = File.createTempFile("appletSecurity", "itwTestBAckup");
-        FirefoxProfilesOperator.copyFile(PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile(), appletSecurityBackup);
+        if (PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile().exists()) {
+            appletSecurityBackup = File.createTempFile("appletSecurity", "itwTestBackup");
+            FirefoxProfilesOperator.copyFile(PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile(), appletSecurityBackup);
+        }
     }
 
     public static void removeAppletSecurityImpl() throws IOException {
-        if (appletSecurityBackup.exists()) {
+        if (appletSecurityBackup != null && appletSecurityBackup.exists()) {
             PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile().delete();
         }
     }
 
     @AfterClass
     public static void restoreAppletSecurity() throws IOException {
-        if (appletSecurityBackup.exists()) {
+        if (appletSecurityBackup != null && appletSecurityBackup.exists()) {
             removeAppletSecurityImpl();
             FirefoxProfilesOperator.copyFile(appletSecurityBackup, PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile());
             appletSecurityBackup.delete();

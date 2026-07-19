@@ -934,7 +934,8 @@ public class JNLPFile {
         JREDesc[] jres = getResources().getJREs();
         for (JREDesc jre : jres) {
             if (!jre.getVersion().matchesJreVersion()) {
-                newVMArgs.add("-Dicedtea-web.relaunch.requestedJre=" + jre.getVersion());
+                newVMArgs.add("-Dicedtea-web.relaunch.requestedJre="
+                        + encodeRequestedJreVersionForRelaunch(jre.getVersion().toString()));
             }
             String initialHeapSize = jre.getInitialHeapSize();
             if (initialHeapSize != null) {
@@ -952,6 +953,14 @@ public class JNLPFile {
         }
 
         return newVMArgs;
+    }
+
+    /** Encode {@code +} so relaunch VM args survive shell launchers that split on {@code +}. */
+    static String encodeRequestedJreVersionForRelaunch(String version) {
+        if (version == null) {
+            return "";
+        }
+        return version.replace("+", "%2B");
     }
 
     /**

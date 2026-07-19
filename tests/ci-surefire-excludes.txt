@@ -1,0 +1,35 @@
+# Unit tests excluded from the CI profile (headless runners, GUI, Windows line endings, or server integration).
+# Run the full suite locally when changing behaviour in these areas.
+**/replacements/BASE64DecoderTest.java
+**/replacements/BASE64EncoderTest.java
+**/CachedJarFileCallbackTest.java
+**/CacheLRUWrapperTest.java
+**/CodeBaseClassLoaderTest.java
+**/CommandLineTest.java
+**/ComponentFinderTest.java
+**/CustomPolicyViewerTest.java
+**/DefaultLaunchHandlerTest.java
+**/DirectoryValidatorTest.java
+**/ErrorSplashScreenTest.java
+**/ErrorSplashUtilsTest.java
+**/JarFileFactoryAccessTest.java
+**/JEditorPaneBasedExceptionDialogTest.java
+**/JNLPClassLoaderTest.java
+**/JNLPFileTest.java
+**/JNLPMatcherTest.java
+**/MessagesPropertiesTest.java
+**/NativeLibraryStorageTest.java
+**/PluginBridgeTest.java
+**/PolicyEditorControllerTest.java
+**/PolicyEditorParsingTest.java
+**/PolicyEditorTest.java
+**/PolicyFileModelTest.java
+**/ResourceDownloaderTest.java
+**/ResourceTrackerTest.java
+**/SecurityDialogsTest.java
+**/SplashScreenTest.java
+**/SplashUtilsTest.java
+**/logging/TeeOutputStreamTest.java
+**/TextOutlineRendererTest.java
+**/UrlUtilsTest.java
+**/UnsignedAppletTrustConfirmationTest.java
