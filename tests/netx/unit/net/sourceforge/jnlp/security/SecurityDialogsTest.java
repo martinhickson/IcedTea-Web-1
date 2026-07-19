@@ -660,6 +660,10 @@ public class SecurityDialogsTest extends NoStdOutErrTest {
             //no we fake queue
             fakeQueue();
             //file exists our 6 rememberable dialogues should pass
+            File parent = f.getParentFile();
+            if (parent != null) {
+                parent.mkdirs();
+            }
             FileUtils.saveFile(appletSecurityContent, f);
             runRememeberableClasses(ExpectedResults.PositiveResults);
             FileUtils.saveFile(appletSecurityContent.replace("{YES}", "{NO}"), f);

@@ -112,15 +112,26 @@ public class UnsignedAppletTrustConfirmationTest {
    private static File backup;
 
     @BeforeClass
-    public static void backupAppTrust() throws IOException{
-        backup = File.createTempFile("appletExtendedSecurity", "itwUnittest");
-        backup.deleteOnExit();
-        FirefoxProfilesOperator.copyFile(PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile(), backup);
+    public static void backupAppTrust() throws IOException {
+        File trust = PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile();
+        // Fresh CI runners have no prior trust file; only backup when one exists.
+        if (trust.exists()) {
+            backup = File.createTempFile("appletExtendedSecurity", "itwUnittest");
+            backup.deleteOnExit();
+            FirefoxProfilesOperator.copyFile(trust, backup);
+        }
     }
-    
+
     @AfterClass
-    public static void restoreAppTrust() throws IOException{
-        FirefoxProfilesOperator.copyFile(backup, PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile());
+    public static void restoreAppTrust() throws IOException {
+        if (backup != null && backup.exists()) {
+            File trust = PathsAndFiles.APPLET_TRUST_SETTINGS_USER.getFile();
+            File parent = trust.getParentFile();
+            if (parent != null) {
+                parent.mkdirs();
+            }
+            FirefoxProfilesOperator.copyFile(backup, trust);
+        }
     }
 
     @Test

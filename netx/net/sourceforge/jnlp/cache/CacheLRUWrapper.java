@@ -216,14 +216,18 @@ public class CacheLRUWrapper {
         if (path == null || path.isEmpty() || cacheDirPath == null || cacheDirPath.isEmpty()) {
             return false;
         }
+        // Normalize \\ to / so mixed Windows/Maven separators compare correctly on all OSes.
+        // Paths.get treats \\ as a literal character on Unix, which broke startsWith checks in CI.
+        final String normalizedPathInput = path.replace('\\', '/');
+        final String normalizedRootInput = cacheDirPath.replace('\\', '/');
         try {
-            Path cache = Paths.get(cacheDirPath).toAbsolutePath().normalize();
-            Path candidate = Paths.get(path).toAbsolutePath().normalize();
+            Path cache = Paths.get(normalizedRootInput).toAbsolutePath().normalize();
+            Path candidate = Paths.get(normalizedPathInput).toAbsolutePath().normalize();
             return candidate.startsWith(cache);
         } catch (Exception ex) {
             // Fall back to separator-normalized substring match.
-            String normalizedPath = path.replace('/', File.separatorChar).replace('\\', File.separatorChar);
-            String normalizedRoot = cacheDirPath.replace('/', File.separatorChar).replace('\\', File.separatorChar);
+            String normalizedPath = normalizedPathInput.replace('/', File.separatorChar);
+            String normalizedRoot = normalizedRootInput.replace('/', File.separatorChar);
             while (normalizedPath.contains(File.separator + File.separator)) {
                 normalizedPath = normalizedPath.replace(File.separator + File.separator, File.separator);
             }

@@ -54,18 +54,36 @@ public class CommandLineTest extends NoStdOutErrTest{
     @BeforeClass
     public static void setup() throws IOException {
         userDeployFile = PathsAndFiles.USER_DEPLOYMENT_FILE.getFile();
-        userDeployContents = new String(Files.readAllBytes(userDeployFile.toPath()));
+        ensureParentDir(userDeployFile);
+        // Fresh CI runners have no prior ITW install; create an empty deployment.properties.
+        if (userDeployFile.exists()) {
+            userDeployContents = new String(Files.readAllBytes(userDeployFile.toPath()));
+        } else {
+            userDeployContents = "";
+            Files.write(userDeployFile.toPath(), new byte[0]);
+        }
         clearDeployFile();
     }
 
     @AfterClass
     public static void afterClass() throws IOException {
+        if (userDeployFile == null) {
+            return;
+        }
+        ensureParentDir(userDeployFile);
         Files.write(userDeployFile.toPath(), userDeployContents.getBytes());
     }
 
     private static void clearDeployFile() throws IOException {
-        String clear = "";
-        Files.write(userDeployFile.toPath(), clear.getBytes());
+        ensureParentDir(userDeployFile);
+        Files.write(userDeployFile.toPath(), new byte[0]);
+    }
+
+    private static void ensureParentDir(File file) {
+        File parent = file.getParentFile();
+        if (parent != null) {
+            parent.mkdirs();
+        }
     }
 
     private ByteArrayOutputStream getOutputControllerStream() {
