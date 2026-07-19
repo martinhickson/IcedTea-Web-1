@@ -43,10 +43,12 @@ import static org.junit.Assert.assertNotEquals;
 import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 
+import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import sun.security.provider.PolicyParser;
 
+import java.awt.GraphicsEnvironment;
 import java.util.Collection;
 
 public class CustomPolicyViewerTest {
@@ -57,6 +59,8 @@ public class CustomPolicyViewerTest {
 
     @Before
     public void setupViewer() {
+        Assume.assumeFalse("CustomPolicyViewer constructs Swing UI; HeadlessException under java.awt.headless=true",
+                GraphicsEnvironment.isHeadless());
         viewer = new CustomPolicyViewer(new PolicyEditor(null), IDENTIFIER);
     }
 

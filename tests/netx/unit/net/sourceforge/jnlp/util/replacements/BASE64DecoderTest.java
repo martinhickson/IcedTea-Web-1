@@ -38,6 +38,7 @@ package net.sourceforge.jnlp.util.replacements;
 
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
+import java.util.Base64;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -45,8 +46,6 @@ import org.junit.Test;
  * Test various corner cases of the parser
  */
 public class BASE64DecoderTest {
-
-    private static final String sunClassE = "sun.misc.BASE64Encoder";
 
     @Test
     public void testEmbededBase64Decoder() throws Exception {
@@ -60,19 +59,17 @@ public class BASE64DecoderTest {
 
     @Test
     /*
-     * This test will fail, in case taht sun.misc.BASE64Encoder will be removed from builders java
+     * Cross-check against java.util.Base64 MIME decoder (JDK replacement for sun.misc.BASE64Decoder).
      */
-    public void testEmbededBase64DecoderAgainstSunOne() throws Exception {
+    public void testEmbededBase64DecoderAgainstJdkMimeDecoder() throws Exception {
         final byte[] data = getData();
         ByteArrayOutputStream out2 = new ByteArrayOutputStream();
         BASE64Decoder e2 = new BASE64Decoder();
         e2.decodeBuffer(new ByteArrayInputStream(data), out2);
-        byte[] encoded2 = out2.toByteArray();
-        Object encoder = BASE64EncoderTest.createInsatnce(sunClassE);
-        ByteArrayOutputStream out = new ByteArrayOutputStream();
-        BASE64EncoderTest.getAndInvokeMethod(encoder, "encodeBuffer", encoded2, out);
-        Assert.assertArrayEquals(data, out.toByteArray());
-        Assert.assertArrayEquals(getData(), out.toByteArray());
+        byte[] fromEmbedded = out2.toByteArray();
+        byte[] fromJdk = Base64.getMimeDecoder().decode(new String(data, "utf-8"));
+        Assert.assertArrayEquals(fromJdk, fromEmbedded);
+        Assert.assertEquals(BASE64EncoderTest.sSrc, new String(fromEmbedded, "utf-8"));
     }
 
     @Test

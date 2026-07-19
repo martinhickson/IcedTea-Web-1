@@ -40,6 +40,12 @@ import org.junit.Test;
 
 public class CommandLineTest extends NoStdOutErrTest{
 
+    /** Normalize Windows CRLF so message assertions match LF expectations. */
+    private static String normalizeNewlines(String s) {
+        return s.replace("\r\n", "\n");
+    }
+
+
     public static final int ERROR = 1;
     public static final int SUCCESS = 0;
     private static File userDeployFile;
@@ -98,7 +104,7 @@ public class CommandLineTest extends NoStdOutErrTest{
         CommandLine commandLine = new CommandLine(optionParser);
         int status = commandLine.handleSetCommand();
 
-        String output = outStream.toString();
+        String output = normalizeNewlines(outStream.toString());
         assertEquals(output, R("CLWarningUnknownProperty", "unknown") + "\n");
         assertEquals(SUCCESS, status);
 
@@ -117,7 +123,7 @@ public class CommandLineTest extends NoStdOutErrTest{
         int status = commandLine.handleSetCommand();
         String contents = new String(Files.readAllBytes(userDeployFile.toPath()));
 
-        String output = outStream.toString();
+        String output = normalizeNewlines(outStream.toString());
         assertEquals(output, R("CLWarningUnknownProperty", "blah") + "\n");
         assertEquals(SUCCESS, status);
         assertTrue(contents.contains("blah=blah"));
@@ -138,7 +144,7 @@ public class CommandLineTest extends NoStdOutErrTest{
         int status = commandLine.handleSetCommand();
         String contents = new String(Files.readAllBytes(userDeployFile.toPath()));
 
-        String output = outStream.toString();
+        String output = normalizeNewlines(outStream.toString());
         assertTrue(output.contains(R("CLWarningUnknownProperty", "blue") + "\n"));
         assertTrue(output.contains(R("CLWarningUnknownProperty", "blah") + "\n"));
         assertTrue(contents.contains("blue=blah"));
@@ -191,7 +197,7 @@ public class CommandLineTest extends NoStdOutErrTest{
         int status = commandLine.handleSetCommand();
         String contents = new String(Files.readAllBytes(userDeployFile.toPath()));
 
-        String output = outStream.toString();
+        String output = normalizeNewlines(outStream.toString());
         assertTrue(output.contains(R("CLWarningUnknownProperty", "blue") + "\n"));
         assertTrue(contents.contains("blue=blah red"));
         assertEquals(SUCCESS, status);
@@ -212,7 +218,7 @@ public class CommandLineTest extends NoStdOutErrTest{
         int status = commandLine.handleSetCommand();
         String contents = new String(Files.readAllBytes(userDeployFile.toPath()));
 
-        String output = outStream.toString();
+        String output = normalizeNewlines(outStream.toString());
         assertTrue(output.contains(R("CLWarningUnknownProperty", "blue green") + "\n"));
         assertTrue(contents.contains("blue\\ green=blah"));
         assertEquals(SUCCESS, status);

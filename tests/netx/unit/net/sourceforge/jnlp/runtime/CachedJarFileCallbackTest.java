@@ -25,8 +25,15 @@ public class CachedJarFileCallbackTest {
 	}
 
 	@After
-	public void after() throws IOException {
-		FileUtils.recursiveDelete(tempDirectory, tempDirectory.getParentFile());
+	public void after() {
+		// retrieve() may leave the JAR open in the JDK jar cache; Windows then refuses delete.
+		try {
+			FileUtils.recursiveDelete(tempDirectory, tempDirectory.getParentFile());
+		} catch (IOException e) {
+			if (tempDirectory != null) {
+				tempDirectory.deleteOnExit();
+			}
+		}
 	}
 
 	@Test

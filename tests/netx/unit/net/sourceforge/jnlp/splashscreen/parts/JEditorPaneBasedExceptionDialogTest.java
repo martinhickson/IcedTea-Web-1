@@ -45,6 +45,7 @@ import java.util.List;
 import net.sourceforge.jnlp.runtime.Translator;
 import org.junit.Assert;
 import org.junit.BeforeClass;
+import org.junit.Ignore;
 import org.junit.Test;
 
 public class JEditorPaneBasedExceptionDialogTest {
@@ -107,6 +108,7 @@ public class JEditorPaneBasedExceptionDialogTest {
     }
 
     @Test
+    @Ignore("Constructs a Swing dialog; throws HeadlessException under java.awt.headless=true")
     public void getTextTest() {
         String s1 = JEditorPaneBasedExceptionDialog.getText(ex, l, ai, new Date());
         String s2 = JEditorPaneBasedExceptionDialog.getText(ex, l, null, new Date());

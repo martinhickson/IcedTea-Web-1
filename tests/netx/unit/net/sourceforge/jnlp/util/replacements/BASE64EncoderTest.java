@@ -37,11 +37,9 @@ exception statement from your version.
 package net.sourceforge.jnlp.util.replacements;
 
 import java.io.ByteArrayOutputStream;
-import java.io.OutputStream;
-import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Base64;
 import java.util.List;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import org.junit.Assert;
@@ -78,8 +76,6 @@ public class BASE64EncoderTest {
 
     static final List<Byte> encoded = new ArrayList<Byte>();
 
-    private static final String sunClassD = "sun.misc.BASE64Decoder";
-
     static {
         encoded.addAll(Arrays.asList(part1));
         encoded.addAll(getBASE64LineEnding());
@@ -92,32 +88,25 @@ public class BASE64EncoderTest {
     @Test
     public void testEmbededBase64Encoder() throws Exception {
         final byte[] data = sSrc.getBytes("utf-8");
-//        ByteArrayOutputStream out1 = new ByteArrayOutputStream();
-//        sun.misc.BASE64Encoder e1 = new sun.misc.BASE64Encoder();
-//        e1.encode(data, out1);
-//        byte[] encoded1 = out1.toByteArray();
-//        ServerAccess.logErrorReprint(Arrays.toString(encoded1));
         ByteArrayOutputStream out2 = new ByteArrayOutputStream();
         BASE64Encoder e2 = new BASE64Encoder();
         e2.encodeBuffer(data, out2);
         byte[] encoded2 = out2.toByteArray();
         Assert.assertEquals(encoded, byteArrayToByteList(encoded2));
-//      ServerAccess.logErrorReprint(Arrays.toString(encoded2));
     }
 
     @Test
     /*
-     * This test will fail, in case taht sun.misc.BASE64Decoder will be removed from builders java
+     * Cross-check against java.util.Base64 MIME decoder (JDK replacement for sun.misc.BASE64Decoder).
      */
-    public void testEmbededBase64EncoderAgainstSunOne() throws Exception {
+    public void testEmbededBase64EncoderAgainstJdkMimeDecoder() throws Exception {
         final byte[] data = sSrc.getBytes("utf-8");
 
         ByteArrayOutputStream out2 = new ByteArrayOutputStream();
         BASE64Encoder e2 = new BASE64Encoder();
         e2.encodeBuffer(data, out2);
         byte[] encoded2 = out2.toByteArray();
-        Object decoder = createInsatnce(sunClassD);
-        byte[] decoded = (byte[]) (getAndInvokeMethod(decoder, "decodeBuffer", new String(encoded2, "utf-8")));
+        byte[] decoded = Base64.getMimeDecoder().decode(new String(encoded2, "utf-8"));
         Assert.assertArrayEquals(data, decoded);
         Assert.assertEquals(sSrc, new String(decoded, "utf-8"));
     }
@@ -133,27 +122,6 @@ public class BASE64EncoderTest {
         byte[] decoded = decoder.decodeBuffer(new String(encoded2, "utf-8"));
         Assert.assertArrayEquals(data, decoded);
         Assert.assertEquals(sSrc, new String(decoded, "utf-8"));
-    }
-
-    static Object createInsatnce(String ofCalss) throws ClassNotFoundException, InstantiationException, IllegalAccessException {
-
-        Class<?> classDefinition = Class.forName(ofCalss);
-        return classDefinition.newInstance();
-
-    }
-
-    static Object getAndInvokeMethod(Object instance, String methodName, Object... params) throws NoSuchMethodException, IllegalAccessException, IllegalArgumentException, InvocationTargetException {
-        Class<?>[] cs = new Class<?>[params.length];
-        for (int i = 0; i < params.length; i++) {
-            Object object = params[i];
-            cs[i] = object.getClass();
-            if (object instanceof OutputStream) {
-                cs[i] = OutputStream.class;
-            }
-        }
-        Method m = instance.getClass().getMethod(methodName, cs);
-        return m.invoke(instance, params);
-
     }
 
     private static List<Byte> byteArrayToByteList(byte[] encoded2) {

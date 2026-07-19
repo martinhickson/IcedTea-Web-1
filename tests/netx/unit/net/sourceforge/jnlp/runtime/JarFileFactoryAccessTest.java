@@ -8,44 +8,46 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.net.URL;
 import java.util.jar.JarFile;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
 public class JarFileFactoryAccessTest {
 
+    private static File testJar;
+    private static URL testJarUrl;
+
+    @BeforeAll
+    static void createTestJar() throws IOException {
+        // deleteOnExit: JarFileFactory keeps the file open, so TempDir cleanup fails on Windows
+        testJar = File.createTempFile("factory-access-test", ".jar");
+        testJar.deleteOnExit();
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().putValue("Manifest-Version", "1.0");
+        try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(testJar), manifest)) {
+            // empty jar is enough for cache lookup
+        }
+        testJarUrl = testJar.toURI().toURL();
+    }
+
     @Test
     public void testGetCachedJarFile_validJar() throws IOException {
-        // Use a known jar URL, e.g. a Java runtime JAR or a local file URL to a JAR on your system
-        // Example: use java.home/lib/rt.jar (for JDK 8) or a test JAR in resources
-        // Adjust path accordingly or use a dummy file URL for demonstration
-
-        // Example for JDK 8 (may not exist on JDK 9+ modular JVMs):
-        String javaHome = System.getProperty("java.home");
-        String filePath = "C:\\Program Files\\Amazon Corretto\\jdk1.8.0_412\\jre\\lib\\rt.jar";
-        File file = new File(filePath);
-        URL jarUrl = file.toURI().toURL();
-
-        JarFile jarFile = JarFileFactoryAccess.getCachedJarFile(jarUrl);
+        JarFile jarFile = JarFileFactoryAccess.getCachedJarFile(testJarUrl);
         assertNotNull(jarFile);
-        // Compare system paths (both are non-URL-encoded paths)
-        assertEquals(file.getAbsolutePath(), jarFile.getName());
-
-        // Note: Do NOT close jarFile here - it comes from JDK's global cache
-        // and is managed by the JDK itself. Closing it would cause issues.
+        assertEquals(testJar.getAbsolutePath(), jarFile.getName());
+        // Do not close jarFile — JDK global JarFile cache owns it
     }
 
     @Test
     public void testIsCached_returnsTrueForCachedJar() throws IOException {
-        String javaHome = System.getProperty("java.home");
-        String filePath = "C:\\Program Files\\Amazon Corretto\\jdk1.8.0_412\\jre\\lib\\rt.jar";
-        File file = new File(filePath);
-        URL jarUrl = file.toURI().toURL();
-
-        boolean cached = JarFileFactoryAccess.isCached(jarUrl);
-        assertTrue(cached);
+        JarFileFactoryAccess.getCachedJarFile(testJarUrl);
+        assertTrue(JarFileFactoryAccess.isCached(testJarUrl));
     }
 
     @Test

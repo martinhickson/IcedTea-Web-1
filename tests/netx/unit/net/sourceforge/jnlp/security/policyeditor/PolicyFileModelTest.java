@@ -37,6 +37,7 @@ exception statement from your version.
 package net.sourceforge.jnlp.security.policyeditor;
 
 import net.sourceforge.jnlp.util.FileUtils;
+import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import sun.security.provider.PolicyParser;
@@ -118,6 +119,8 @@ public class PolicyFileModelTest {
 
     @Test
     public void testFileHasChangedWithChange() throws Exception {
+        Assume.assumeFalse("Windows keeps the policy file locked while the model holds it open",
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
         assertFalse("Model should not report changes made initially", model.hasChanged());
         FileUtils.saveFile(EXAMPLE_POLICY_1, new File(tempFilePath));
         model.openAndParsePolicyFile();

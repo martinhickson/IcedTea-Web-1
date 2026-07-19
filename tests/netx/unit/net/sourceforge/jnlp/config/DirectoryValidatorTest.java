@@ -42,6 +42,7 @@ import java.io.File;
 import java.io.IOException;
 import java.util.Arrays;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
+import org.junit.Assume;
 import org.junit.Test;
 
 public class DirectoryValidatorTest extends NoStdOutErrTest{
@@ -77,6 +78,8 @@ public class DirectoryValidatorTest extends NoStdOutErrTest{
 
     @Test
     public void testMainDirTestExistsAsDirButNotWritable() throws IOException {
+        Assume.assumeFalse("Windows File.setWritable(false) does not reliably deny owner write",
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
         File f = File.createTempFile("test", "testMainDirs");
         assertTrue(f.delete());
         assertTrue(f.mkdir());
@@ -91,6 +94,8 @@ public class DirectoryValidatorTest extends NoStdOutErrTest{
 
     @Test
     public void testMainDirTestExistsAsDirButNotReadable() throws IOException {
+        Assume.assumeFalse("Windows File.setReadable(false) does not reliably deny owner read",
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
         File f = File.createTempFile("test", "testMainDirs");
         assertTrue(f.delete());
         assertTrue(f.mkdir());
@@ -134,6 +139,8 @@ public class DirectoryValidatorTest extends NoStdOutErrTest{
 
     @Test
     public void testMainDirTestExistsAsDirButNotWritableWithSubdir() throws IOException {
+        Assume.assumeFalse("Windows File.setWritable(false) does not reliably deny owner write",
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
         File f = File.createTempFile("test", "testMainDirs");
         assertTrue(f.delete());
         assertTrue(f.mkdir());
@@ -148,6 +155,8 @@ public class DirectoryValidatorTest extends NoStdOutErrTest{
 
     @Test
     public void testMainDirTestExistsAsDirButNotReadableWithSubdir() throws IOException {
+        Assume.assumeFalse("Windows File.setReadable(false) does not reliably deny owner read",
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
         File f = File.createTempFile("test", "testMainDirs");
         assertTrue(f.delete());
         assertTrue(f.mkdir());
@@ -198,6 +207,8 @@ public class DirectoryValidatorTest extends NoStdOutErrTest{
 
     @Test
     public void testDirectoryValidator() throws IOException {
+        Assume.assumeFalse("Windows File.setWritable(false) does not reliably deny owner write",
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
         File f1 = File.createTempFile("test", "testMainDirs");
         File f2 = File.createTempFile("test", "testMainDirs");
         DirectoryValidator dv = new DirectoryValidator(Arrays.asList(f1, f2));

@@ -50,6 +50,12 @@ import org.junit.Test;
 
 public class DefaultLaunchHandlerTest {
 
+    /** Normalize Windows CRLF so assertions match product messages that use PrintStream platform newlines. */
+    private static String normalizeNewlines(String s) {
+        return s.replace("\r\n", "\n");
+    }
+
+
     private static class LocalLogger extends OutputController {
 
         private static class AccessibleStream extends PrintStream {
@@ -107,7 +113,7 @@ public class DefaultLaunchHandlerTest {
         boolean continueLaunch = handler.launchWarning(warning);
 
         assertTrue(continueLaunch);
-        assertEquals("netx: warning type: test warning\n", l.getStream1());
+        assertEquals("netx: warning type: test warning\n", normalizeNewlines(l.getStream1()));
     }
 
     @Test
@@ -119,7 +125,7 @@ public class DefaultLaunchHandlerTest {
                 "severe", "error type", "test error", "this is a test of the error");
         handler.launchError(error);
 
-        assertEquals("netx: error type: test error\n", l.getStream1());
+        assertEquals("netx: error type: test error\n", normalizeNewlines(l.getStream1()));
     }
 
     @Test
@@ -132,7 +138,7 @@ public class DefaultLaunchHandlerTest {
                 "severe", "error type", "test error", "this is a test of the error");
         handler.launchError(error);
 
-        assertEquals("netx: error type: test error (no information element)\n", l.getStream1());
+        assertEquals("netx: error type: test error (no information element)\n", normalizeNewlines(l.getStream1()));
     }
 
     @Test
@@ -146,7 +152,8 @@ public class DefaultLaunchHandlerTest {
                 "severe", "error type", "test error", "this is a test of the error");
         handler.launchError(error);
 
-        assertEquals("netx: error type: test error (programmer made a mistake (no information element))\n", l.getStream1());
+        assertEquals("netx: error type: test error (programmer made a mistake (no information element))\n",
+                normalizeNewlines(l.getStream1()));
     }
 
     @Test
@@ -158,6 +165,6 @@ public class DefaultLaunchHandlerTest {
                 "severe", "validation-error type", "test validation-error", "this is a test of a validation error");
         handler.validationError(error);
 
-        assertEquals("netx: validation-error type: test validation-error\n", l.getStream1());
+        assertEquals("netx: validation-error type: test validation-error\n", normalizeNewlines(l.getStream1()));
     }
 }

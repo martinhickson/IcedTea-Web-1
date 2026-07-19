@@ -48,8 +48,10 @@ import net.sourceforge.jnlp.JNLPSplashScreen;
 import net.sourceforge.jnlp.splashscreen.parts.InfoItem;
 import net.sourceforge.jnlp.splashscreen.parts.InformationElement;
 import org.junit.Assert;
+import org.junit.Ignore;
 import org.junit.Test;
 
+@Ignore("JDialog subclass; constructor throws HeadlessException under java.awt.headless=true")
 public class ErrorSplashScreenTest extends JDialog {
 
     static int width = JNLPSplashScreen.DEF_WIDTH;

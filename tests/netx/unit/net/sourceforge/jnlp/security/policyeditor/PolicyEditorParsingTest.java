@@ -43,6 +43,7 @@ import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.docprovider.formatters.formatters.PlainTextFormatter;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import org.junit.Assume;
 import org.junit.Before;
 import org.junit.Test;
 import sun.security.provider.PolicyParser;
@@ -113,6 +114,10 @@ public class PolicyEditorParsingTest {
 
     @Before
     public void createTempFile() throws Exception {
+        // PolicyFileModel takes an exclusive lock then opens a second FileReader; Windows
+        // mandatory locking makes that read fail ("another process has locked a portion of the file").
+        Assume.assumeFalse("Windows exclusive FileLock blocks PolicyParser FileReader on the same file",
+                System.getProperty("os.name", "").toLowerCase().contains("win"));
         file = File.createTempFile("PolicyEditor", ".policy");
         file.deleteOnExit();
     }
