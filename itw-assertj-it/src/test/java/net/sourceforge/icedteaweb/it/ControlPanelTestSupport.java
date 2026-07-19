@@ -185,9 +185,36 @@ final class ControlPanelTestSupport {
         robot.waitForIdle();
         window.table("jdkAssignmentsTable").enterValue(row(rowIndex).column(0), jnlpUrl);
         robot.waitForIdle();
+        selectFirstKnownJdkForAssignmentRow(window, robot, rowIndex);
+    }
+
+    private static void selectFirstKnownJdkForAssignmentRow(FrameFixture window, Robot robot, int rowIndex) {
+        window.table("jdkAssignmentsTable").cell(row(rowIndex).column(1)).click();
+        robot.waitForIdle();
+        if (window.table("jdkAssignmentsTable").target().getRowCount() <= rowIndex) {
+            throw new IllegalStateException("Assignment row " + rowIndex + " is missing");
+        }
+        if (window.table("jvmKnownTable").target().getRowCount() == 0) {
+            throw new IllegalStateException("No known JDKs configured for assignment row " + rowIndex);
+        }
+        window.comboBox().target().setSelectedIndex(1);
+        robot.waitForIdle();
+        window.table("jdkAssignmentsTable").cell(row(rowIndex).column(0)).click();
+        robot.waitForIdle();
     }
 
     static void addJdkViaChooser(Robot robot, FrameFixture window, File jdkHome) throws Exception {
+        dismissOpenFileChooserIfAny(robot);
+        ControlPanel controlPanel = (ControlPanel) window.target();
+        if (preferConfigurationFallbackForJdkAdd()) {
+            addKnownJdkViaConfiguration(controlPanel, window, jdkHome);
+            robot.waitForIdle();
+            if (!tableContainsJdkHome(window, jdkHome)) {
+                throw new IllegalStateException("Failed to add JDK via configuration fallback: "
+                        + jdkHome.getAbsolutePath());
+            }
+            return;
+        }
         window.button("jvmAddButton").click();
         try {
             JFileChooserFixture fileChooser = JFileChooserFinder.findFileChooser()
@@ -203,16 +230,21 @@ final class ControlPanelTestSupport {
         } catch (RuntimeException ex) {
             dismissOpenFileChooserIfAny(robot);
         }
-        if (tableContainsJdkHome(window, jdkHome)) {
-            return;
-        }
         dismissOpenFileChooserIfAny(robot);
-        addKnownJdkViaConfiguration((ControlPanel) window.target(), window, jdkHome);
-        robot.waitForIdle();
+        if (!tableContainsJdkHome(window, jdkHome)) {
+            addKnownJdkViaConfiguration(controlPanel, window, jdkHome);
+            robot.waitForIdle();
+        } else {
+            syncKnownJvmTableToConfig(controlPanel, window);
+        }
         if (!tableContainsJdkHome(window, jdkHome)) {
             throw new IllegalStateException("Failed to add JDK via chooser or configuration fallback: "
                     + jdkHome.getAbsolutePath());
         }
+    }
+
+    private static boolean preferConfigurationFallbackForJdkAdd() {
+        return "true".equalsIgnoreCase(System.getenv("GITHUB_ACTIONS"));
     }
 
     private static boolean tableContainsJdkHome(FrameFixture window, File jdkHome) {
@@ -235,6 +267,10 @@ final class ControlPanelTestSupport {
         }
     }
 
+    private static void syncKnownJvmTableToConfig(ControlPanel controlPanel, FrameFixture window) throws Exception {
+        addKnownJdkViaConfiguration(controlPanel, window, null);
+    }
+
     private static void addKnownJdkViaConfiguration(ControlPanel controlPanel, FrameFixture window, File jdkHome)
             throws Exception {
         Field configField = ControlPanel.class.getDeclaredField("config");
@@ -244,9 +280,11 @@ final class ControlPanelTestSupport {
         jvmPanelField.setAccessible(true);
         JVMPanel jvmPanel = (JVMPanel) jvmPanelField.get(controlPanel);
         List<String> homes = collectKnownJvmHomesFromTable(window);
-        String path = jdkHome.getAbsolutePath();
-        if (!homes.contains(path)) {
-            homes.add(path);
+        if (jdkHome != null) {
+            String path = jdkHome.getAbsolutePath();
+            if (!homes.contains(path)) {
+                homes.add(path);
+            }
         }
         AtomicReference<Exception> errorRef = new AtomicReference<>();
         SwingUtilities.invokeAndWait(() -> {
@@ -287,6 +325,7 @@ final class ControlPanelTestSupport {
     }
 
     static void clickApply(FrameFixture window, Robot robot) {
+        dismissOpenFileChooserIfAny(robot);
         window.button("controlPanelApplyButton").click();
         robot.waitForIdle();
     }

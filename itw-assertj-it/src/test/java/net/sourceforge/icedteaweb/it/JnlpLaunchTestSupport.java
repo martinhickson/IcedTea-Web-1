@@ -119,6 +119,7 @@ final class JnlpLaunchTestSupport {
         pb.environment().put("XDG_CONFIG_HOME", testConfigHome());
         pb.environment().put("XDG_CACHE_HOME", testCacheHome());
         pb.environment().put("HOME", System.getProperty("user.home"));
+        propagateJdkDiscoveryEnvironment(pb);
         pb.redirectErrorStream(true);
         Process process = pb.start();
         launched.add(process);
@@ -242,6 +243,31 @@ final class JnlpLaunchTestSupport {
             return new File("target/test-jnlp-samples");
         }
         return new File(JNLP_ROOT);
+    }
+
+    private static void propagateJdkDiscoveryEnvironment(ProcessBuilder pb) {
+        copyEnvIfSet(pb, "DISPLAY");
+        copyEnvIfSet(pb, "JDK11_HOME");
+        copyEnvIfSet(pb, "JDK17_HOME");
+        copyEnvIfSet(pb, "JDK21_HOME");
+        copyEnvIfSet(pb, "JDK25_HOME");
+        copyEnvIfSet(pb, "ITW_JDK17_HOME");
+        copyEnvIfSet(pb, "ITW_JDK21_HOME");
+        copyEnvIfSet(pb, "ITW_JDK25_HOME");
+        for (int major : new int[] {11, 17, 21, 25}) {
+            String property = System.getProperty("itw.jdk" + major + ".home");
+            if (property != null && !property.isBlank()) {
+                pb.environment().put("JDK" + major + "_HOME", property.trim());
+                pb.environment().put("ITW_JDK" + major + "_HOME", property.trim());
+            }
+        }
+    }
+
+    private static void copyEnvIfSet(ProcessBuilder pb, String name) {
+        String value = System.getenv(name);
+        if (value != null && !value.isBlank()) {
+            pb.environment().put(name, value.trim());
+        }
     }
 
     private static String testConfigHome() {
