@@ -33,13 +33,14 @@ Test the areas your change touches. You do not need every platform for every PR,
 
 | Change type | Suggested verification |
 |-------------|------------------------|
-| `netx/` runtime, control panel | `mvn install -pl icedtea-web -am -DskipTests`; relevant unit tests under `tests/netx/unit/` |
+| `netx/` runtime, control panel | `powershell -File scripts/run-ci-unit-tests.ps1` or `mvn test -pl icedtea-web -am -Pci` |
+| Code coverage (unit tests) | `mvn test -pl icedtea-web -am -Pci,coverage` — report at `icedtea-web/target/site/jacoco/index.html` |
 | Control panel / Swing UI | [itw-assertj-it](itw-assertj-it/README.md): `cd itw-assertj-it && mvn verify` |
 | Windows JDK autodetect | [itw-autodetect-it](itw-autodetect-it/README.md) (Windows desktop session required) |
 | Launcher / handoff | [icedtea-web-integration](icedtea-web-integration/README.md) or `scripts/run-windows-dotnet-jnlp-smoke.ps1` |
 | JNLP samples / dev UX | [sample-apps](sample-apps/README.md): `npm run build:jnlp`, `npm run test:console` |
 | Windows MSI / packaging | Full `sign.ps1 -Signing Off -UseLocalSource`; install MSI and smoke-launch a JNLP |
-| `.github/workflows/` | Describe which workflow you exercised; Release runs on PRs to `1.8` |
+| `.github/workflows/` | Describe which workflow you exercised; **CI** runs automatically on PRs to `1.8`; [**Integration Tests**](.github/workflows/integration.yml) are manual (GUI / multi-JDK) |
 
 ## Code guidelines
 
@@ -59,13 +60,18 @@ Test the areas your change touches. You do not need every platform for every PR,
    - **Summary** — what changed and why (1–3 bullets).
    - **Test plan** — commands run and results (platform, JDK version, pass/fail).
    - **Screenshots** — for control panel or Running Apps UI changes.
+
+   The [**CI workflow**](.github/workflows/ci.yml) must pass (unit tests on Ubuntu and Windows; JaCoCo reports uploaded from Ubuntu JDK 11). For control-panel or autodetect changes, run the [**Integration Tests workflow**](.github/workflows/integration.yml) manually and link the Actions run. Link CI runs if you re-push after review feedback.
+
 4. Link related **GitHub Issues** when applicable.
 
 Maintainers may ask for a rebuild on a specific OS before merge.
 
 ## Reporting bugs
 
-Use [GitHub Issues](https://github.com/martinhickson/IcedTea-Web-1/issues). Include:
+Use [GitHub Issues](https://github.com/martinhickson/IcedTea-Web-1/issues). For **security vulnerabilities**, follow [SECURITY.md](SECURITY.md) instead of filing a public issue.
+
+Include:
 
 - OS and IcedTea-Web version (or commit SHA)
 - JDK version(s) installed

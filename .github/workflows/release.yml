@@ -181,8 +181,8 @@ jobs:
           fi
 
   dotnet-distribution:
-    if: always()
     needs: release
+    if: ${{ !cancelled() && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
     name: Distribution (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     strategy:

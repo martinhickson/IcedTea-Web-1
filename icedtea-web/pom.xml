@@ -25,6 +25,8 @@
     <pack200.version>11.0.2</pack200.version>
     <pack200.verify.dir>${project.build.directory}/pack200-verify</pack200.verify.dir>
     <uberjar.file>${project.build.directory}/${project.build.finalName}-${uberjar.classifier}.jar</uberjar.file>
+    <jacocoArgLine></jacocoArgLine>
+    <itw.jpms.argLine></itw.jpms.argLine>
   </properties>
 
   <dependencies>
@@ -218,6 +220,7 @@
             <include>**/*Test.java</include>
             <include>**/Test*.java</include>
           </includes>
+          <argLine>@{jacocoArgLine} @{itw.jpms.argLine}</argLine>
         </configuration>
       </plugin>
 
@@ -563,21 +566,79 @@
     </profile>
 
     <profile>
-      <id>modular-jdk-test</id>
-      <activation>
-        <jdk>[9,)</jdk>
-      </activation>
+      <id>ci</id>
       <build>
         <plugins>
           <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
-              <argLine>@{itw.jpms.argLine}</argLine>
+              <systemPropertyVariables>
+                <java.awt.headless>true</java.awt.headless>
+              </systemPropertyVariables>
+              <excludesFile>${project.basedir}/../tests/ci-surefire-excludes.txt</excludesFile>
             </configuration>
           </plugin>
         </plugins>
       </build>
+    </profile>
+
+    <profile>
+      <id>ci-pack200-unpack</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-surefire-plugin</artifactId>
+            <configuration>
+              <systemPropertyVariables>
+                <java.awt.headless>true</java.awt.headless>
+              </systemPropertyVariables>
+              <test>${pack200.unpack.tests}</test>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
+      <properties>
+        <pack200.unpack.tests>ResourceDownloaderTest#testDownloadPackGzResource+testDownloadVersionedPackGzResource</pack200.unpack.tests>
+      </properties>
+    </profile>
+
+    <profile>
+      <id>coverage</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>prepare-agent</id>
+                <goals>
+                  <goal>prepare-agent</goal>
+                </goals>
+                <configuration>
+                  <propertyName>jacocoArgLine</propertyName>
+                </configuration>
+              </execution>
+              <execution>
+                <id>report</id>
+                <phase>test</phase>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+
+    <profile>
+      <id>modular-jdk-test</id>
+      <activation>
+        <jdk>[9,)</jdk>
+      </activation>
       <properties>
         <itw.jpms.argLine>--add-exports java.base/sun.net.www.protocol.jar=ALL-UNNAMED
           --add-opens java.base/sun.net.www.protocol.jar=ALL-UNNAMED

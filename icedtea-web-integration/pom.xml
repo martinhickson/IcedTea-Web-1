@@ -29,6 +29,7 @@
     <itw.jdk17.home>/usr/lib/jvm/java-17-amazon-corretto</itw.jdk17.home>
     <itw.jdk21.home>/usr/lib/jvm/java-21-amazon-corretto</itw.jdk21.home>
     <itw.launch.timeout.seconds>180</itw.launch.timeout.seconds>
+    <jacocoArgLine></jacocoArgLine>
   </properties>
 
   <dependencies>
@@ -191,6 +192,7 @@
           <includes>
             <include>**/*IT.java</include>
           </includes>
+          <argLine>@{jacocoArgLine}</argLine>
           <systemPropertyVariables>
             <itw.javaws.bin>${project.build.directory}/bin/javaws</itw.javaws.bin>
             <itw.uber.jar>${project.build.directory}/icedtea-web-${itw.uberjar.classifier}.jar</itw.uber.jar>
@@ -212,5 +214,37 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <id>coverage</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <executions>
+              <execution>
+                <id>prepare-agent-integration</id>
+                <goals>
+                  <goal>prepare-agent-integration</goal>
+                </goals>
+                <configuration>
+                  <propertyName>jacocoArgLine</propertyName>
+                </configuration>
+              </execution>
+              <execution>
+                <id>report</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>report</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 
 </project>

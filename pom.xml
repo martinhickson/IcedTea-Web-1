@@ -27,6 +27,7 @@
     <maven.compiler.executable>${jdk11.home}/bin/javac</maven.compiler.executable>
     <maven.compiler.fork>true</maven.compiler.fork>
     <junit.version>5.10.2</junit.version>
+    <jacoco.version>0.8.12</jacoco.version>
     <!-- Java 17: 1.10.19+, Java 21: 1.14.3+, Java 25: 1.17.0+ (see byte-buddy README compatibility table) -->
     <bytebuddy.version>1.18.8</bytebuddy.version>
     <bash.executable>bash</bash.executable>
@@ -78,11 +79,42 @@
           <artifactId>maven-enforcer-plugin</artifactId>
           <version>${maven.enforcer.plugin.version}</version>
         </plugin>
+        <plugin>
+          <groupId>org.jacoco</groupId>
+          <artifactId>jacoco-maven-plugin</artifactId>
+          <version>${jacoco.version}</version>
+          <configuration>
+            <excludes>
+              <exclude>net/sourceforge/jnlp/mock/**</exclude>
+            </excludes>
+          </configuration>
+        </plugin>
       </plugins>
     </pluginManagement>
   </build>
 
   <profiles>
+    <profile>
+      <id>coverage</id>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.jacoco</groupId>
+            <artifactId>jacoco-maven-plugin</artifactId>
+            <inherited>false</inherited>
+            <executions>
+              <execution>
+                <id>report-aggregate</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>report-aggregate</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
     <profile>
       <id>maven-distribution</id>
       <modules>

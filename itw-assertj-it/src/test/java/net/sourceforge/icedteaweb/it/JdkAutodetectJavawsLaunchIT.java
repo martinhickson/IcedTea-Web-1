@@ -6,6 +6,8 @@ import java.io.File;
 import java.util.Properties;
 import java.util.concurrent.TimeUnit;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.JdkMatchStrategy;
+import net.sourceforge.jnlp.config.KnownJvmStore;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -17,8 +19,10 @@ class JdkAutodetectJavawsLaunchIT {
     @BeforeEach
     void resetConfig() throws Exception {
         ControlPanelTestSupport.resetDeploymentConfig();
+        JnlpLaunchTestSupport.clearIcedTeaWebLogs();
         Properties props = new Properties();
         props.setProperty(DeploymentConfiguration.KEY_AUTODETECT_JDKS, "false");
+        ControlPanelTestSupport.enableFileLoggingForIntegrationTests(props);
         ControlPanelTestSupport.writeDeploymentProperties(props);
     }
 
@@ -60,16 +64,24 @@ class JdkAutodetectJavawsLaunchIT {
         File starterJdk11 = ControlPanelTestSupport.findJdkHomeWithMajor(11);
         File jdk21 = JnlpLaunchTestSupport.jdkHome(21);
 
+        Properties props = ControlPanelTestSupport.loadDeploymentProperties();
+        props.setProperty(KnownJvmStore.KEY_MATCH_STRATEGY, JdkMatchStrategy.MINIMUM.getConfigValue());
+        ControlPanelTestSupport.writeDeploymentProperties(props);
+
         long startedAt = System.currentTimeMillis();
         Process process = JnlpLaunchTestSupport.launchJnlpViaJavaws("java18-plus-app", 5, starterJdk11);
         process.waitFor(180, TimeUnit.SECONDS);
 
+        String output = JnlpLaunchTestSupport.readProcessOutput(process, 5_000);
         String javantxLog = JnlpLaunchTestSupport.readJavantxLogSince(startedAt, 30_000);
-        assertThat(javantxLog)
+        String combined = output + "\n" + javantxLog;
+        assertThat(combined)
                 .contains("18+")
-                .containsPattern("(?i)Relaunching with configured JRE:")
+                .containsPattern("(?i)Selected JVM for JNLP request \\[18\\+\\]")
                 .contains(jdk21.getAbsolutePath())
-                .contains("Invoking main()");
+                .contains("Invoking main()")
+                .contains("ITW_INTEGRATION_SUCCESS")
+                .doesNotContain("No suitable JVM is configured for JNLP request [18].");
         if (!process.isAlive()) {
             assertThat(process.exitValue()).isZero();
         }
