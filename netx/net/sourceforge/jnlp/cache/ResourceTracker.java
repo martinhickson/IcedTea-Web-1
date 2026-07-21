@@ -347,8 +347,24 @@ public class ResourceTracker {
             if (resource.isSet(ERROR))
                 return null;
 
-            if (resource.getLocalFile() != null)
-                return resource.getLocalFile();
+            if (resource.getLocalFile() != null) {
+                File local = resource.getLocalFile();
+                if (local.isFile() && local.length() > 0) {
+                    return local;
+                }
+                // Ghost localFile (reserved .info slot / cleared folder). Recover an older
+                // complete copy of the same URL if one still exists on disk.
+                try {
+                    File recovered = CacheUtil.findExistingCacheFile(location, resource.getDownloadVersion());
+                    if (recovered != null) {
+                        resource.setLocalFile(recovered);
+                        return recovered;
+                    }
+                } catch (Exception ex) {
+                    OutputController.getLogger().log(ex);
+                }
+                return local;
+            }
 
             if (CacheUtil.USE_LEGACY_FILE_URL_CACHE_BYPASS && location.getProtocol().equalsIgnoreCase("file")) {
                 File file = UrlUtils.decodeUrlAsFile(location);

@@ -258,7 +258,24 @@ public class ResourceDownloader implements Runnable {
             if (lm == null) {
                 lm = connection.getLastModified();
             }
-            boolean current = CacheUtil.isCurrent(resource.getLocation(), resource.getRequestVersion(), lm, entry, localFile) && resource.getUpdatePolicy() != UpdatePolicy.FORCE;
+            // If the newest LRU slot is a ghost (.info-only) but an older folder still has the
+            // jar, reuse that copy when it is still current. Do not point localFile at the old
+            // copy when a re-download is required — writes must keep using the newest slot.
+            File existingOnDisk = null;
+            if (localFile == null || !localFile.isFile() || localFile.length() == 0) {
+                existingOnDisk = CacheUtil.findExistingCacheFile(resource.getLocation(), resource.getDownloadVersion());
+            }
+            File fileForCurrency = (localFile != null && localFile.isFile() && localFile.length() > 0)
+                    ? localFile : existingOnDisk;
+            boolean current = fileForCurrency != null
+                    && CacheUtil.isCurrent(resource.getLocation(), resource.getRequestVersion(), lm, entry, fileForCurrency)
+                    && resource.getUpdatePolicy() != UpdatePolicy.FORCE;
+            if (current && existingOnDisk != null
+                    && (localFile == null || !localFile.isFile() || localFile.length() == 0)) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                        "Reusing existing cache file " + existingOnDisk + " instead of missing " + localFile);
+                localFile = existingOnDisk;
+            }
             if (!current) {
                 if (entry.isCached()) {
                     entry.markForDelete();
@@ -278,8 +295,9 @@ public class ResourceDownloader implements Runnable {
                 resource.setSize(size);
                 resource.changeStatus(EnumSet.of(PRECONNECT, CONNECTING), EnumSet.of(CONNECTED, PREDOWNLOAD));
 
-                // check if up-to-date; if so set as downloaded
-                if (current) {
+                // Never mark DOWNLOADED when the local file is missing — that is what produced
+                // NoSuchFileException in JarCertVerifier with corrupt/partial cache state.
+                if (current && localFile != null && localFile.isFile() && localFile.length() > 0) {
                     resource.changeStatus(EnumSet.of(PREDOWNLOAD, DOWNLOADING), EnumSet.of(DOWNLOADED));
                 }
             }
@@ -534,23 +552,22 @@ public class ResourceDownloader implements Runnable {
     private void downloadFile(URLConnection connection, URL downloadLocation, boolean packGZ, CacheEntry entry) throws IOException {
         CacheEntry downloadEntry = entry != null ? entry
                 : new CacheEntry(downloadLocation, resource.getDownloadVersion());
+        // Always persist to the cache entry location (usually resource.getLocation()).
+        // downloadLocation may be a version-encoded / .pack.gz URL used only for HTTP.
+        final URL cacheLocation = downloadEntry.getLocation();
         logResourceDebug(downloadLocation, "Downloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
         if (!downloadEntry.isCurrent(connection.getLastModified())) {
+            boolean wrote = false;
             try {
-                InputStream resultInputStream;
-                if (packGZ) {
-                    resultInputStream = unpack(connection.getInputStream());
-                } else {
-                    resultInputStream = new BufferedInputStream(connection.getInputStream());
-                }
-                writeDownloadToFile(downloadEntry.getLocation(), resultInputStream);
+                writeDownloadStream(cacheLocation, connection.getInputStream(), packGZ);
+                wrote = true;
             } catch (IOException ex) {
                 if (isFavIconUrl(downloadLocation)) {
                     logMissingFavIconInfo(downloadLocation);
                     return;
                 }
                 String IH = "Invalid Http response";
-                if (ex.getMessage().equals(IH)) {
+                if (ex.getMessage() != null && ex.getMessage().equals(IH)) {
                     OutputController.getLogger().log(ex);
                     OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "'" + IH + "' message detected. Attempting direct socket");
                     Object[] result = UrlUtils.loadUrlWithInvalidHeaderBytes(connection.getURL());
@@ -559,7 +576,8 @@ public class ResourceDownloader implements Runnable {
                     byte[] body = (byte[]) result[1];
                     OutputController.getLogger().log(head);
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
-                    writeDownloadToFile(downloadEntry.getLocation(), new ByteArrayInputStream(body));
+                    writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ);
+                    wrote = true;
                 } else {
                     logDownloadFailure(downloadLocation, ex);
                     int retryCount = RETRY_COUNT;
@@ -571,24 +589,49 @@ public class ResourceDownloader implements Runnable {
                             retryCount = RETRY_COUNT;
                         }
                     }
-                    for (int i=0;i<retryCount;i++) {
+                    IOException lastFailure = ex;
+                    for (int i = 0; i < retryCount; i++) {
                         try {
-                            retryDownload(connection, downloadLocation, downloadEntry, i);
+                            retryDownload(connection, downloadLocation, downloadEntry, packGZ, i);
+                            wrote = true;
                             break;
-                        } catch(IOException ex2) {
+                        } catch (IOException ex2) {
+                            lastFailure = ex2;
                             logDownloadFailure(downloadLocation, ex2);
                         }
                     }
+                    if (!wrote) {
+                        throw lastFailure;
+                    }
                 }
             }
+            File cached = downloadEntry.getCacheFile();
+            if (cached == null || !cached.isFile() || cached.length() == 0) {
+                throw new IOException("Download of " + downloadLocation + " did not produce a cache file at "
+                        + (cached != null ? cached.getAbsolutePath() : cacheLocation));
+            }
         } else {
-            resource.setTransferred(CacheUtil.getCacheFile(downloadLocation, resource.getDownloadVersion()).length());
+            resource.setTransferred(downloadEntry.getCacheFile().length());
         }
 
-        storeEntryFields(downloadEntry, connection.getContentLengthLong(), connection.getLastModified());
+        // After pack200 unpack the on-disk size differs from Content-Length; store actual size.
+        long storedLength = downloadEntry.getCacheFile().isFile()
+                ? downloadEntry.getCacheFile().length()
+                : connection.getContentLengthLong();
+        storeEntryFields(downloadEntry, storedLength, connection.getLastModified());
     }
 
-    private void retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry, int count) throws IOException {
+    /**
+     * Write a download stream into the cache. When {@code packGZ} is true the stream is
+     * pack200-gzip decoded first — retries must use the same path as the first attempt.
+     */
+    private void writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ) throws IOException {
+        InputStream in = packGZ ? unpack(raw) : new BufferedInputStream(raw);
+        writeDownloadToFile(cacheLocation, in);
+    }
+
+    private void retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry,
+            boolean packGZ, int count) throws IOException {
         try {
             int retryDelay = -1;
             String retryDelayString = System.getProperty("sonata.rda.retry.delay");
@@ -605,11 +648,11 @@ public class ResourceDownloader implements Runnable {
         }
         OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Redownloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
         connection = getDownloadConnection(connection.getURL());
-        try {
-            writeDownloadToFile(downloadLocation, new BufferedInputStream(connection.getInputStream()));
-        } catch (IOException ex2) {
-            throw ex2;
-        }
+        // Must write to the cache entry location and unpack pack200 the same as the first attempt.
+        // Writing downloadLocation (version-encoded / .pack.gz URL) left ghost cache slots and
+        // raw gzip bytes under names like sonata-dao__V....jar while JarCertVerifier opened the
+        // missing unversioned sonata-dao.jar (Windows production launch failure).
+        writeDownloadStream(downloadEntry.getLocation(), connection.getInputStream(), packGZ);
     }
 
     private void storeEntryFields(CacheEntry entry, long contentLength, long lastModified) {

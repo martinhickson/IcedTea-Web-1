@@ -240,6 +240,29 @@ public class JarCertVerifier implements CertVerifier {
                 continue;
             }
 
+            // Heal stale Resource.localFile pointing at a deleted/ghost cache slot when a
+            // usable copy of the same jar still exists under another LRU folder.
+            if (!jarFile.isFile() || jarFile.length() == 0) {
+                try {
+                    File recovered = net.sourceforge.jnlp.cache.CacheUtil.findExistingCacheFile(
+                            jar.getLocation(), jar.getVersion());
+                    if (recovered != null) {
+                        OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                                "JarCertVerifier: recovering missing cache file " + jarFile
+                                        + " -> " + recovered);
+                        jarFile = recovered;
+                    } else {
+                        OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                                "JarCertVerifier: skipping missing cache file " + jarFile
+                                        + " for " + jar.getLocation());
+                        continue;
+                    }
+                } catch (Exception recoverEx) {
+                    OutputController.getLogger().log(OutputController.Level.ERROR_ALL, recoverEx);
+                    continue;
+                }
+            }
+
             String localFile = jarFile.getAbsolutePath();
             if (verifiedJars.contains(localFile)
                     || unverifiedJars.contains(localFile)) {

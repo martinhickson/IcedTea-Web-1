@@ -132,6 +132,27 @@ public class CacheEntryTest {
     }
 
     @Test
+    public void verifyNotCachedIfFileIsEmpty() throws IOException {
+        File empty = File.createTempFile("CacheEntryTestEmpty", ".jar");
+        empty.deleteOnExit();
+
+        CacheEntry entry = new TestCacheEntry(url, version, empty);
+
+        assertFalse(entry.isCached());
+    }
+
+    @Test
+    public void verifyMissingFileNotCurrentEvenWhenRemoteOmitsLastModified() {
+        // lastModified<=0 used to short-circuit to "current" after isCached; a ghost
+        // reserved cache slot must never be treated as ready for JarCertVerifier.
+        File doesNotExist = new File("/foo/bar/baz/spam/eggs-missing.jar");
+        CacheEntry entry = new TestCacheEntry(url, version, doesNotExist);
+
+        assertFalse(entry.isCurrent(0L));
+        assertFalse(entry.isCurrent(-1L, doesNotExist));
+    }
+
+    @Test
     public void verifyNotCachedIfContentLengthsDiffer() throws IOException {
         File cachedFile = createFile("Foo");
 

@@ -183,9 +183,8 @@ public class CacheEntry {
             long cachedModified = Long.parseLong(properties.getProperty(KEY_LAST_MODIFIED, "0"));
             OutputController.getLogger().log("isCurrent:lastModified cache:" + cachedModified +  " actual:" + lastModified);
             // Servers that omit Last-Modified (common for simple local HTTP such as
-            // Undertow test hosts) report 0. Treating that as "not current" forced a
-            // new cache slot on every launch while the download still wrote the old
-            // slot — FileNotFoundException on the empty new path (Windows IT).
+            // Undertow test hosts) report 0. Only treat as current when THIS entry's
+            // file is present — never when another LRU slot happens to contain a jar.
             if (lastModified <= 0) {
                 return true;
             }
@@ -207,17 +206,17 @@ public class CacheEntry {
     }
 
     public boolean isCached(File cachedFile) {
-        final File localFile;
-        if (null == version && null != cachedFile) {
-            localFile = cachedFile;
-        } else {
-            localFile = getCacheFile();
-        }
-        if (!localFile.exists())
+        // Always evaluate THIS entry's file (via getCacheFile()/localFile). Re-querying
+        // CacheUtil.getCacheFile() can return a different LRU slot while this entry still
+        // points at a newer empty reserved path — which then gets marked DOWNLOADED and
+        // fails in JarCertVerifier with NoSuchFileException.
+        final File fileToCheck = cachedFile != null ? cachedFile : getCacheFile();
+        if (fileToCheck == null || !fileToCheck.isFile() || fileToCheck.length() == 0) {
             return false;
+        }
 
         try {
-            long cachedLength = localFile.length();
+            long cachedLength = fileToCheck.length();
             long remoteLength = Long.parseLong(properties.getProperty(KEY_CONTENT_LENGTH, "-1"));
 
             OutputController.getLogger().log("isCached: remote:" + remoteLength + " cached:" + cachedLength);
@@ -234,9 +233,13 @@ public class CacheEntry {
     }
 
     /**
-     * Seam for testing
+     * Seam for testing. Production entries stay bound to the path captured at construction
+     * so currency checks cannot drift to a different LRU slot mid-flight.
      */
     File getCacheFile() {
+        if (localFile != null) {
+            return localFile;
+        }
         return CacheUtil.getCacheFile(directPackGz ? removePackGzSuffix(location) : location, version);
     }
 

@@ -558,15 +558,24 @@ public class CacheUtil {
         synchronized (lruHandler) {
             File cacheFile = null;
             List<Entry<String, String>> entries = lruHandler.getLRUSortedEntries();
-            // Start searching from the most recent to least recent.
+            // Newest first so an intentional makeNewCacheFile reserved slot wins for writes.
             for (Entry<String, String> e : entries) {
                 final String key = e.getKey();
                 final String path = e.getValue();
                 try {
                     if (pathToURLPath(path).equals(urlPath.getPath())) { // Match found.
-                        cacheFile = new File(path);
+                        File candidate = new File(path);
+                        File infoFile = new File(path + CacheDirectory.INFO_SUFFIX);
+                        // Skip fully orphaned LRU rows (neither jar nor .info). Keep .info-only
+                        // reserved slots so in-progress downloads still write to the same path.
+                        if (!candidate.isFile() && !infoFile.isFile()) {
+                            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                                    "Ignoring orphaned cache path listed in recently_used: " + path);
+                            continue;
+                        }
+                        cacheFile = candidate;
                         lruHandler.updateEntry(key);
-                        break; // Stop searching since we got newest one already.
+                        break;
                     }
                 } catch (Exception e2) {
                     //Fuzzy logic to prevent catastrophic startup failure by effectively downloading
@@ -576,6 +585,46 @@ public class CacheUtil {
             }
             return cacheFile;
         }
+    }
+
+    /**
+     * Find an on-disk cached copy of {@code source} even when the newest LRU slot is a
+     * ghost (.info-only / deleted folder). Used to recover launches that would otherwise
+     * open a missing path in JarCertVerifier while a good jar still exists elsewhere.
+     *
+     * @return an existing non-empty cache file, or {@code null}
+     */
+    public static File findExistingCacheFile(URL source, Version version) {
+        if (!isCacheable(source, version)) {
+            return null;
+        }
+        File urlPath = urlToPath(source, "");
+        CacheLRUWrapper lruHandler = CacheLRUWrapper.getInstance();
+        synchronized (lruHandler) {
+            try {
+                lruHandler.lock();
+                lruHandler.load();
+                for (Entry<String, String> e : lruHandler.getLRUSortedEntries()) {
+                    final String path = e.getValue();
+                    try {
+                        if (!pathToURLPath(path).equals(urlPath.getPath())) {
+                            continue;
+                        }
+                        File candidate = new File(path);
+                        if (candidate.isFile() && candidate.length() > 0) {
+                            lruHandler.updateEntry(e.getKey());
+                            lruHandler.store();
+                            return candidate;
+                        }
+                    } catch (Exception ex) {
+                        OutputController.getLogger().log(ex);
+                    }
+                }
+            } finally {
+                lruHandler.unlock();
+            }
+        }
+        return null;
     }
 
     /**
