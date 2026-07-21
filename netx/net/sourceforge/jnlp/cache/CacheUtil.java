@@ -564,7 +564,16 @@ public class CacheUtil {
                 final String path = e.getValue();
                 try {
                     if (pathToURLPath(path).equals(urlPath.getPath())) { // Match found.
-                        cacheFile = new File(path);
+                        File candidate = new File(path);
+                        File infoFile = new File(path + CacheDirectory.INFO_SUFFIX);
+                        // Keep reserved slots (.info created by makeNewCacheFile before the
+                        // download finishes). Skip only orphaned LRU paths with neither file.
+                        if (!candidate.isFile() && !infoFile.isFile()) {
+                            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                                    "Ignoring orphaned cache path listed in recently_used: " + path);
+                            continue;
+                        }
+                        cacheFile = candidate;
                         lruHandler.updateEntry(key);
                         break; // Stop searching since we got newest one already.
                     }

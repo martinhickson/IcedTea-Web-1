@@ -425,6 +425,15 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
 
         File downloadedFile = resource.getLocalFile();
         assertTrue(downloadedFile.exists() && downloadedFile.isFile());
+        // Pack200 is fetched from the version-encoded URL (...__V1.0.jar.pack.gz) but must be
+        // stored under the unversioned resource location. Writing the raw gzip to the __V path
+        // left JarCertVerifier opening a missing download-packgz.jar (Windows production break).
+        assertFalse("cache path must not be the version-encoded download URL",
+                downloadedFile.getName().contains("__V"));
+        assertEquals("download-packgz.jar", downloadedFile.getName());
+        byte[] header = Files.readAllBytes(downloadedFile.toPath());
+        assertTrue("cached resource must be an unpacked jar (PK), not raw gzip",
+                header.length >= 2 && header[0] == 'P' && header[1] == 'K');
 
         JarFile jf = new JarFile(downloadedFile);
         Manifest m = jf.getManifest();
