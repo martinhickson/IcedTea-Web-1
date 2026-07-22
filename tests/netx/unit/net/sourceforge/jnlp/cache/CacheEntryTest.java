@@ -44,12 +44,17 @@ import static org.junit.Assert.fail;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.PrintStream;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.concurrent.CountDownLatch;
+import java.util.jar.Attributes;
+import java.util.jar.JarOutputStream;
+import java.util.jar.Manifest;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -154,7 +159,7 @@ public class CacheEntryTest {
 
     @Test
     public void verifyNotCachedIfContentLengthsDiffer() throws IOException {
-        File cachedFile = createFile("Foo");
+        File cachedFile = createMinimalJar();
 
         CacheEntry entry = new TestCacheEntry(url, version, cachedFile);
         entry.setRemoteContentLength(10000);
@@ -164,23 +169,38 @@ public class CacheEntryTest {
 
     @Test
     public void verifyCachedIfContentLengthsAreSame() throws IOException {
-        String contents = "Foo";
-        File cachedFile = createFile(contents);
+        File cachedFile = createMinimalJar();
 
         CacheEntry entry = new TestCacheEntry(url, version, cachedFile);
-        entry.setRemoteContentLength(contents.length());
+        entry.setRemoteContentLength(cachedFile.length());
 
         assertTrue(entry.isCached());
     }
 
     @Test
+    public void verifyNotCachedIfJarIsVersionProtocolErrorBody() throws IOException {
+        // Production failure: version servlet returned this text with HTTP 200; ITW cached it
+        // as sonata-rda-launcher.jar and JarCertVerifier died with zip END header not found.
+        File bad = File.createTempFile("CacheEntryTest-version-miss", ".jar");
+        bad.deleteOnExit();
+        byte[] body = "11 Could not locate requested version\r\n".getBytes(StandardCharsets.US_ASCII);
+        Files.write(bad.toPath(), body);
+
+        CacheEntry entry = new TestCacheEntry(url, version, bad);
+        entry.setRemoteContentLength(body.length);
+        entry.setLastModified(0L);
+
+        assertFalse(entry.isCached());
+        assertFalse("corrupt jar must not stick when remote omits Last-Modified", entry.isCurrent(0L));
+    }
+
+    @Test
     public void verifyCurrentWhenCacheEntryHasSameTimeStamp() throws IOException {
         long lastModified = 10;
-        String contents = "Foo";
-        File cachedFile = createFile(contents);
+        File cachedFile = createMinimalJar();
 
         CacheEntry entry = new TestCacheEntry(url, version, cachedFile);
-        entry.setRemoteContentLength(contents.length());
+        entry.setRemoteContentLength(cachedFile.length());
         entry.setLastModified(lastModified);
 
         assertTrue(entry.isCurrent(lastModified));
@@ -190,19 +210,22 @@ public class CacheEntryTest {
     public void verifyNotCurrentWhenRemoteContentIsNewer() throws IOException {
         long oldTimeStamp = 10;
         long newTimeStamp = 100;
-        String contents = "Foo";
-        File cachedFile = createFile(contents);
+        File cachedFile = createMinimalJar();
 
         CacheEntry entry = new TestCacheEntry(url, version, cachedFile);
-        entry.setRemoteContentLength(contents.length());
+        entry.setRemoteContentLength(cachedFile.length());
         entry.setLastModified(oldTimeStamp);
 
         assertFalse(entry.isCurrent(newTimeStamp));
     }
 
-    private static File createFile(String contents) throws IOException {
-        File cachedFile = File.createTempFile("CacheEntryTest", null);
-        Files.write(cachedFile.toPath(), contents.getBytes());
+    private static File createMinimalJar() throws IOException {
+        File cachedFile = File.createTempFile("CacheEntryTest", ".jar");
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, "1.0");
+        try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(cachedFile), manifest)) {
+            // manifest-only jar is enough for zip-magic / length checks
+        }
         cachedFile.deleteOnExit();
         return cachedFile;
     }

@@ -349,11 +349,13 @@ public class ResourceTracker {
 
             if (resource.getLocalFile() != null) {
                 File local = resource.getLocalFile();
-                if (local.isFile() && local.length() > 0) {
+                boolean usable = local.isFile() && local.length() > 0
+                        && (!CacheUtil.isJarResourceUrl(location) || CacheUtil.isValidJarFile(local));
+                if (usable) {
                     return local;
                 }
-                // Ghost localFile (reserved .info slot / cleared folder). Recover an older
-                // complete copy of the same URL if one still exists on disk.
+                // Ghost / corrupt localFile (reserved .info slot, cleared folder, or a
+                // non-zip payload cached as .jar). Recover an older good copy if present.
                 try {
                     File recovered = CacheUtil.findExistingCacheFile(location, resource.getDownloadVersion());
                     if (recovered != null) {
@@ -363,7 +365,7 @@ public class ResourceTracker {
                 } catch (Exception ex) {
                     OutputController.getLogger().log(ex);
                 }
-                return local;
+                return usable ? local : null;
             }
 
             if (CacheUtil.USE_LEGACY_FILE_URL_CACHE_BYPASS && location.getProtocol().equalsIgnoreCase("file")) {

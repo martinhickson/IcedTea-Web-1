@@ -591,13 +591,17 @@ public class CacheUtil {
      * Find an on-disk cached copy of {@code source} even when the newest LRU slot is a
      * ghost (.info-only / deleted folder). Used to recover launches that would otherwise
      * open a missing path in JarCertVerifier while a good jar still exists elsewhere.
+     * For {@code .jar} URLs, candidates must pass {@link #isValidJarFile(File)} so a
+     * sticky JNLP version-protocol error body (e.g. {@code 11 Could not locate requested
+     * version}) cannot win over a real jar in another LRU folder.
      *
-     * @return an existing non-empty cache file, or {@code null}
+     * @return an existing non-empty (and, for jars, zip-magic) cache file, or {@code null}
      */
     public static File findExistingCacheFile(URL source, Version version) {
         if (!isCacheable(source, version)) {
             return null;
         }
+        final boolean requireJarMagic = isJarResourceUrl(source);
         File urlPath = urlToPath(source, "");
         CacheLRUWrapper lruHandler = CacheLRUWrapper.getInstance();
         synchronized (lruHandler) {
@@ -611,7 +615,8 @@ public class CacheUtil {
                             continue;
                         }
                         File candidate = new File(path);
-                        if (candidate.isFile() && candidate.length() > 0) {
+                        if (candidate.isFile() && candidate.length() > 0
+                                && (!requireJarMagic || isValidJarFile(candidate))) {
                             lruHandler.updateEntry(e.getKey());
                             lruHandler.store();
                             return candidate;
@@ -625,6 +630,68 @@ public class CacheUtil {
             }
         }
         return null;
+    }
+
+    /**
+     * Whether {@code location} names a jar resource (path ends with {@code .jar}, ignoring
+     * query/fragment). Used to decide when zip-magic validation applies.
+     */
+    public static boolean isJarResourceUrl(URL location) {
+        if (location == null) {
+            return false;
+        }
+        String path = location.getPath();
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        int slash = path.lastIndexOf('/');
+        String name = slash >= 0 ? path.substring(slash + 1) : path;
+        // Version-encoded downloads use name__V1.2.jar
+        return name.toLowerCase().endsWith(".jar");
+    }
+
+    /**
+     * True when {@code file} exists, is non-empty, and begins with a ZIP local-file or
+     * empty-archive header ({@code PK\x03\x04} / {@code PK\x05\x06}). Rejects JNLP download
+     * servlet error bodies and raw {@code .pack.gz} bytes mistakenly stored as {@code .jar}.
+     */
+    public static boolean isValidJarFile(File file) {
+        if (file == null || !file.isFile() || file.length() < 4) {
+            return false;
+        }
+        try (InputStream in = new BufferedInputStream(Files.newInputStream(file.toPath()))) {
+            byte[] header = new byte[4];
+            int n = in.read(header);
+            if (n < 4) {
+                return false;
+            }
+            return header[0] == 'P' && header[1] == 'K'
+                    && ((header[2] == 3 && header[3] == 4) || (header[2] == 5 && header[3] == 6));
+        } catch (IOException ex) {
+            OutputController.getLogger().log(ex);
+            return false;
+        }
+    }
+
+    /**
+     * Short printable preview of a corrupt payload for logs / exception messages.
+     */
+    public static String previewFileHead(File file, int maxChars) {
+        if (file == null || !file.isFile() || maxChars <= 0) {
+            return null;
+        }
+        try {
+            byte[] all = Files.readAllBytes(file.toPath());
+            int n = Math.min(all.length, maxChars);
+            StringBuilder sb = new StringBuilder(n);
+            for (int i = 0; i < n; i++) {
+                char c = (char) (all[i] & 0xff);
+                sb.append(c < 32 || c == 127 ? ' ' : c);
+            }
+            return sb.toString().trim();
+        } catch (IOException ex) {
+            return null;
+        }
     }
 
     /**
