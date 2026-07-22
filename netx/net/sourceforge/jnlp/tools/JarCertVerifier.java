@@ -240,21 +240,33 @@ public class JarCertVerifier implements CertVerifier {
                 continue;
             }
 
-            // Heal stale Resource.localFile pointing at a deleted/ghost cache slot when a
+            // Heal stale/corrupt Resource.localFile (ghost slot or non-zip error body) when a
             // usable copy of the same jar still exists under another LRU folder.
-            if (!jarFile.isFile() || jarFile.length() == 0) {
+            boolean missingOrEmpty = !jarFile.isFile() || jarFile.length() == 0;
+            boolean corruptJar = !missingOrEmpty
+                    && !net.sourceforge.jnlp.cache.CacheUtil.isValidJarFile(jarFile);
+            if (missingOrEmpty || corruptJar) {
                 try {
                     File recovered = net.sourceforge.jnlp.cache.CacheUtil.findExistingCacheFile(
                             jar.getLocation(), jar.getVersion());
                     if (recovered != null) {
                         OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
-                                "JarCertVerifier: recovering missing cache file " + jarFile
-                                        + " -> " + recovered);
+                                "JarCertVerifier: recovering "
+                                        + (corruptJar ? "corrupt" : "missing")
+                                        + " cache file " + jarFile + " -> " + recovered
+                                        + (corruptJar ? " preview="
+                                        + net.sourceforge.jnlp.cache.CacheUtil.previewFileHead(jarFile, 80)
+                                        : ""));
                         jarFile = recovered;
                     } else {
                         OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
-                                "JarCertVerifier: skipping missing cache file " + jarFile
-                                        + " for " + jar.getLocation());
+                                "JarCertVerifier: skipping "
+                                        + (corruptJar ? "corrupt" : "missing")
+                                        + " cache file " + jarFile
+                                        + " for " + jar.getLocation()
+                                        + (corruptJar ? " preview="
+                                        + net.sourceforge.jnlp.cache.CacheUtil.previewFileHead(jarFile, 80)
+                                        : ""));
                         continue;
                     }
                 } catch (Exception recoverEx) {

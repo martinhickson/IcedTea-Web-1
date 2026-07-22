@@ -479,6 +479,28 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         assertTrue(resource.hasFlags(EnumSet.of(Resource.Status.ERROR)));
     }
 
+    @Test
+    public void testDownloadRejectsJnlpVersionProtocolErrorBodyAsJar() throws IOException {
+        // Mirrors Windows production: versioned jar URL returned plain text with HTTP 200.
+        setupFile("version-miss.jar", "11 Could not locate requested version\r\n");
+
+        Resource resource = Resource.getResource(downloadServer.getUrl("version-miss.jar"), null, UpdatePolicy.FORCE);
+        ResourceDownloader resourceDownloader = new ResourceDownloader(resource, new Object());
+        resource.setStatusFlag(Resource.Status.PRECONNECT);
+        resource.setDownloadOptions(new DownloadOptions(false, false));
+        resourceDownloader.run();
+
+        assertTrue("non-jar payload must surface as download ERROR, not a cached fake jar",
+                resource.hasFlags(EnumSet.of(Resource.Status.ERROR)));
+        File local = resource.getLocalFile();
+        if (local != null && local.isFile()) {
+            assertFalse("corrupt payload must not remain on disk as a jar",
+                    CacheUtil.isValidJarFile(local));
+            // writeDownloadStream deletes the bad file; anything left must not look usable
+            assertTrue(local.length() == 0 || !CacheUtil.isValidJarFile(local));
+        }
+    }
+
     private void setupPackGzFile(String fileName, String version) throws IOException {
         File downloadDir = downloadServer.getDir();
 

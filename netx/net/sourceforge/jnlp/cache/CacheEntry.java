@@ -214,6 +214,15 @@ public class CacheEntry {
         if (fileToCheck == null || !fileToCheck.isFile() || fileToCheck.length() == 0) {
             return false;
         }
+        // JNLP versioning can return a text error body with HTTP 200
+        // ("11 Could not locate requested version"). That must never count as cached,
+        // especially when lastModified is 0 (isCurrent would otherwise stick forever).
+        if (CacheUtil.isJarResourceUrl(location) && !CacheUtil.isValidJarFile(fileToCheck)) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                    "isCached: rejecting non-jar payload at " + fileToCheck
+                            + " preview=" + CacheUtil.previewFileHead(fileToCheck, 80));
+            return false;
+        }
 
         try {
             long cachedLength = fileToCheck.length();

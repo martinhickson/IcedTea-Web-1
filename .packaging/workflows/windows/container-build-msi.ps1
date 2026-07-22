@@ -33,9 +33,12 @@ $PackageName = if ($env:ITW_PACKAGE_NAME) { $env:ITW_PACKAGE_NAME } else { "Iced
 $Manufacturer = if ($env:ITW_PACKAGE_MANUFACTURER) { $env:ITW_PACKAGE_MANUFACTURER } else { "IcedTea-Web Maintainers" }
 $PackageId = "IcedTeaWeb"
 $UpgradeCode = "6F7858B2-4764-4D75-9F3A-E8B87BB71D89"
-# Match win-installer/installer.json.in: vendorDirName + installDirName (no hyphen in path).
+# Match win-installer/installer.json.in: vendorDirName + installDirName (no hyphen in path)
+# and environmentVariables PATH append of [INSTALLDIR]bin.
 $VendorDirName = if ($env:ITW_VENDOR_DIR_NAME) { $env:ITW_VENDOR_DIR_NAME } else { "IcedTeaWeb" }
 $InstallDirName = if ($env:ITW_INSTALL_DIR_NAME) { $env:ITW_INSTALL_DIR_NAME } else { "WebStart" }
+# Stable GUID so upgrades keep the same PATH Environment component identity.
+$PathEnvironmentComponentGuid = "8C2E4F91-6A7B-4D3E-9F1C-2B5A8D0E7C34"
 $SafeVersion = ($Version -replace "-SNAPSHOT$", ".0" -replace "[^0-9.]", ".")
 if ($SafeVersion -notmatch "^\d+\.\d+\.\d+(\.\d+)?$") {
     $SafeVersion = "1.0.1.0"
@@ -189,6 +192,14 @@ foreach ($file in $files) {
     [void]$componentsXml.AppendLine("    </Component>")
     [void]$componentRefsXml.AppendLine("      <ComponentRef Id=`"$componentId`" />")
 }
+
+# Restore legacy win-installer PATH registration (installer.json.in environmentVariables).
+# Appends [INSTALLFOLDER]bin to the machine PATH; removed on uninstall.
+$pathComponentId = "CmpPathEnvironment"
+[void]$componentsXml.AppendLine("    <Component Id=`"$pathComponentId`" Directory=`"INSTALLFOLDER`" Guid=`"$PathEnvironmentComponentGuid`" KeyPath=`"yes`">")
+[void]$componentsXml.AppendLine("      <Environment Id=`"IcedTeaWebPath`" Name=`"PATH`" Value=`"[INSTALLFOLDER]bin`" Permanent=`"no`" Part=`"last`" Action=`"set`" System=`"yes`" />")
+[void]$componentsXml.AppendLine("    </Component>")
+[void]$componentRefsXml.AppendLine("      <ComponentRef Id=`"$pathComponentId`" />")
 
 @"
 <?xml version="1.0" encoding="UTF-8"?>

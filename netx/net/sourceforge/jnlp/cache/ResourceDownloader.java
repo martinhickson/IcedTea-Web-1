@@ -262,18 +262,19 @@ public class ResourceDownloader implements Runnable {
             // jar, reuse that copy when it is still current. Do not point localFile at the old
             // copy when a re-download is required — writes must keep using the newest slot.
             File existingOnDisk = null;
-            if (localFile == null || !localFile.isFile() || localFile.length() == 0) {
+            boolean localUsable = localFile != null && localFile.isFile() && localFile.length() > 0
+                    && (!CacheUtil.isJarResourceUrl(resource.getLocation())
+                    || CacheUtil.isValidJarFile(localFile));
+            if (!localUsable) {
                 existingOnDisk = CacheUtil.findExistingCacheFile(resource.getLocation(), resource.getDownloadVersion());
             }
-            File fileForCurrency = (localFile != null && localFile.isFile() && localFile.length() > 0)
-                    ? localFile : existingOnDisk;
+            File fileForCurrency = localUsable ? localFile : existingOnDisk;
             boolean current = fileForCurrency != null
                     && CacheUtil.isCurrent(resource.getLocation(), resource.getRequestVersion(), lm, entry, fileForCurrency)
                     && resource.getUpdatePolicy() != UpdatePolicy.FORCE;
-            if (current && existingOnDisk != null
-                    && (localFile == null || !localFile.isFile() || localFile.length() == 0)) {
+            if (current && existingOnDisk != null && !localUsable) {
                 OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
-                        "Reusing existing cache file " + existingOnDisk + " instead of missing " + localFile);
+                        "Reusing existing cache file " + existingOnDisk + " instead of missing/corrupt " + localFile);
                 localFile = existingOnDisk;
             }
             if (!current) {
@@ -297,7 +298,9 @@ public class ResourceDownloader implements Runnable {
 
                 // Never mark DOWNLOADED when the local file is missing — that is what produced
                 // NoSuchFileException in JarCertVerifier with corrupt/partial cache state.
-                if (current && localFile != null && localFile.isFile() && localFile.length() > 0) {
+                if (current && localFile != null && localFile.isFile() && localFile.length() > 0
+                        && (!CacheUtil.isJarResourceUrl(resource.getLocation())
+                        || CacheUtil.isValidJarFile(localFile))) {
                     resource.changeStatus(EnumSet.of(PREDOWNLOAD, DOWNLOADING), EnumSet.of(DOWNLOADED));
                 }
             }
@@ -558,8 +561,9 @@ public class ResourceDownloader implements Runnable {
         logResourceDebug(downloadLocation, "Downloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
         if (!downloadEntry.isCurrent(connection.getLastModified())) {
             boolean wrote = false;
+            File writtenFile = null;
             try {
-                writeDownloadStream(cacheLocation, connection.getInputStream(), packGZ);
+                writtenFile = writeDownloadStream(cacheLocation, connection.getInputStream(), packGZ);
                 wrote = true;
             } catch (IOException ex) {
                 if (isFavIconUrl(downloadLocation)) {
@@ -576,7 +580,7 @@ public class ResourceDownloader implements Runnable {
                     byte[] body = (byte[]) result[1];
                     OutputController.getLogger().log(head);
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
-                    writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ);
+                    writtenFile = writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ);
                     wrote = true;
                 } else {
                     logDownloadFailure(downloadLocation, ex);
@@ -592,7 +596,7 @@ public class ResourceDownloader implements Runnable {
                     IOException lastFailure = ex;
                     for (int i = 0; i < retryCount; i++) {
                         try {
-                            retryDownload(connection, downloadLocation, downloadEntry, packGZ, i);
+                            writtenFile = retryDownload(connection, downloadLocation, downloadEntry, packGZ, i);
                             wrote = true;
                             break;
                         } catch (IOException ex2) {
@@ -605,18 +609,21 @@ public class ResourceDownloader implements Runnable {
                     }
                 }
             }
-            File cached = downloadEntry.getCacheFile();
+            // Prefer the path actually written; CacheEntry.localFile can lag a new LRU slot.
+            File cached = writtenFile != null ? writtenFile : downloadEntry.getCacheFile();
             if (cached == null || !cached.isFile() || cached.length() == 0) {
                 throw new IOException("Download of " + downloadLocation + " did not produce a cache file at "
                         + (cached != null ? cached.getAbsolutePath() : cacheLocation));
             }
+            resource.setLocalFile(cached);
         } else {
             resource.setTransferred(downloadEntry.getCacheFile().length());
         }
 
         // After pack200 unpack the on-disk size differs from Content-Length; store actual size.
-        long storedLength = downloadEntry.getCacheFile().isFile()
-                ? downloadEntry.getCacheFile().length()
+        File storedFile = resource.getLocalFile() != null ? resource.getLocalFile() : downloadEntry.getCacheFile();
+        long storedLength = storedFile != null && storedFile.isFile()
+                ? storedFile.length()
                 : connection.getContentLengthLong();
         storeEntryFields(downloadEntry, storedLength, connection.getLastModified());
     }
@@ -624,13 +631,30 @@ public class ResourceDownloader implements Runnable {
     /**
      * Write a download stream into the cache. When {@code packGZ} is true the stream is
      * pack200-gzip decoded first — retries must use the same path as the first attempt.
+     *
+     * @return the cache file that was written
      */
-    private void writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ) throws IOException {
+    private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ) throws IOException {
         InputStream in = packGZ ? unpack(raw) : new BufferedInputStream(raw);
-        writeDownloadToFile(cacheLocation, in);
+        // Validate the exact file we wrote — a second getCacheFile() can resolve a different
+        // LRU slot and falsely reject a good pack200 unpack (or leave poison on disk).
+        File written = writeDownloadToFile(cacheLocation, in);
+        if (CacheUtil.isJarResourceUrl(cacheLocation) && !CacheUtil.isValidJarFile(written)) {
+            String preview = CacheUtil.previewFileHead(written, 80);
+            if (written != null && written.isFile()) {
+                try {
+                    java.nio.file.Files.deleteIfExists(written.toPath());
+                } catch (IOException deleteEx) {
+                    OutputController.getLogger().log(deleteEx);
+                }
+            }
+            throw new IOException("Download of " + cacheLocation + " is not a valid JAR"
+                    + (preview != null && !preview.isEmpty() ? " (" + preview + ")" : ""));
+        }
+        return written;
     }
 
-    private void retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry,
+    private File retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry,
             boolean packGZ, int count) throws IOException {
         try {
             int retryDelay = -1;
@@ -652,7 +676,7 @@ public class ResourceDownloader implements Runnable {
         // Writing downloadLocation (version-encoded / .pack.gz URL) left ghost cache slots and
         // raw gzip bytes under names like sonata-dao__V....jar while JarCertVerifier opened the
         // missing unversioned sonata-dao.jar (Windows production launch failure).
-        writeDownloadStream(downloadEntry.getLocation(), connection.getInputStream(), packGZ);
+        return writeDownloadStream(downloadEntry.getLocation(), connection.getInputStream(), packGZ);
     }
 
     private void storeEntryFields(CacheEntry entry, long contentLength, long lastModified) {
@@ -678,17 +702,18 @@ public class ResourceDownloader implements Runnable {
         }
     }
 
-    private void writeDownloadToFile(URL downloadLocation, InputStream in) throws IOException {
+    private File writeDownloadToFile(URL downloadLocation, InputStream in) throws IOException {
+        File localFile = CacheUtil.getCacheFile(downloadLocation, resource.getDownloadVersion());
         byte buf[] = new byte[1024];
         int rlen;
-        try (OutputStream out = CacheUtil.getOutputStream(downloadLocation, resource.getDownloadVersion())) {
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(localFile))) {
             while (-1 != (rlen = in.read(buf))) {
                 resource.incrementTransferred(rlen);
                 out.write(buf, 0, rlen);
             }
-
             in.close();
         }
+        return localFile;
     }
 
     private void uncompressGzip(URL compressedLocation, URL uncompressedLocation, Version version) throws IOException {
