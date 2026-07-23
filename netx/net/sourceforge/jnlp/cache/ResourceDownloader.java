@@ -11,7 +11,6 @@ import static net.sourceforge.jnlp.cache.Resource.Status.PREDOWNLOAD;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -21,6 +20,8 @@ import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
+import java.nio.file.Files;
+import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -512,14 +513,6 @@ public class ResourceDownloader implements Runnable {
         return con;
     }
 
-    public InputStream unpack(InputStream input) throws IOException {
-        final ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-        try (final JarOutputStream outputStream = new JarOutputStream(buffer)) {
-            Pack200.newUnpacker().unpack(new GZIPInputStream(input), outputStream);
-        }
-        return new ByteArrayInputStream(buffer.toByteArray());
-    }
-
     private void downloadPackGzFile(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {
         if (downloadFrom.equals(downloadTo)) {
             downloadFrom = new URL(downloadFrom + ".pack.gz");
@@ -630,20 +623,22 @@ public class ResourceDownloader implements Runnable {
 
     /**
      * Write a download stream into the cache. When {@code packGZ} is true the stream is
-     * pack200-gzip decoded first — retries must use the same path as the first attempt.
+     * pack200-gzip decoded straight into the cache jar file (no full-jar heap buffer).
+     * Retries must use the same path as the first attempt.
      *
      * @return the cache file that was written
      */
     private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ) throws IOException {
-        InputStream in = packGZ ? unpack(raw) : new BufferedInputStream(raw);
         // Validate the exact file we wrote — a second getCacheFile() can resolve a different
         // LRU slot and falsely reject a good pack200 unpack (or leave poison on disk).
-        File written = writeDownloadToFile(cacheLocation, in);
+        File written = packGZ
+                ? unpackPackGzToCacheFile(cacheLocation, raw)
+                : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw));
         if (CacheUtil.isJarResourceUrl(cacheLocation) && !CacheUtil.isValidJarFile(written)) {
             String preview = CacheUtil.previewFileHead(written, 80);
             if (written != null && written.isFile()) {
                 try {
-                    java.nio.file.Files.deleteIfExists(written.toPath());
+                    Files.deleteIfExists(written.toPath());
                 } catch (IOException deleteEx) {
                     OutputController.getLogger().log(deleteEx);
                 }
@@ -652,6 +647,24 @@ public class ResourceDownloader implements Runnable {
                     + (preview != null && !preview.isEmpty() ? " (" + preview + ")" : ""));
         }
         return written;
+    }
+
+    /**
+     * Pack200-gzip decode directly to the cache jar path.
+     * Avoids buffering the entire unpacked jar in a {@code ByteArrayOutputStream}.
+     */
+    private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream) throws IOException {
+        File localFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
+        try (InputStream in = new GZIPInputStream(new BufferedInputStream(packGzStream));
+             OutputStream fileOut = Files.newOutputStream(localFile.toPath(),
+                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+             JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+            Pack200.newUnpacker().unpack(in, jarOut);
+        }
+        if (localFile.isFile() && localFile.length() > 0) {
+            resource.incrementTransferred(localFile.length());
+        }
+        return localFile;
     }
 
     private File retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry,
@@ -740,15 +753,13 @@ public class ResourceDownloader implements Runnable {
     private void uncompressPackGz(URL compressedLocation, URL uncompressedLocation, Version version) throws IOException {
         OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Extracting packgz: " + compressedLocation + " to " + uncompressedLocation);
 
-        try (GZIPInputStream gzInputStream = new GZIPInputStream(new FileInputStream(CacheUtil
-                .getCacheFile(compressedLocation, version)))) {
-            InputStream inputStream = new BufferedInputStream(gzInputStream);
-            JarOutputStream outputStream = new JarOutputStream(new FileOutputStream(CacheUtil
-                    .getCacheFile(uncompressedLocation, version)));
-            Pack200.Unpacker unpacker = Pack200.newUnpacker();
-            unpacker.unpack(inputStream, outputStream);
-            outputStream.close();
-            inputStream.close();
+        File packed = CacheUtil.getCacheFile(compressedLocation, version);
+        File unpacked = CacheUtil.getCacheFile(uncompressedLocation, version);
+        try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
+             OutputStream fileOut = Files.newOutputStream(unpacked.toPath(),
+                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+             JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+            Pack200.newUnpacker().unpack(in, jarOut);
         }
     }
 
