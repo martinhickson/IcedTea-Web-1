@@ -1228,12 +1228,18 @@ public class JNLPClassLoader extends URLClassLoader {
                 PermissionCollection permissions = security.getSandBoxPermissions();
 
                 // If more than default is needed:
-                // 1. Code must be signed
+                // 1. Code must be signed (or the whole app is already FULLY trusted with ALL/J2EE)
                 // 2. ALL or J2EE permissions must be requested (note: plugin requests ALL automatically)
                 if (cs == null) {
                     throw new NullPointerException("Code source was null");
                 }
-                if (cs.getCodeSigners() != null) {
+                // Fully signed + ALL/J2EE: elevate every CodeSource under this loader, including
+                // synthetic domains with no CodeSigners (JDK proxies, ByteBuddy-generated classes).
+                // Otherwise those frames stay sandboxed and AccessController denies getClassLoader
+                // even though the application jars themselves are trusted.
+                if (shouldGrantElevatedPermissionsWithoutCodeSigners(signing, security)) {
+                    permissions = security.getPermissions(cs);
+                } else if (cs.getCodeSigners() != null) {
                     if (cs.getLocation() == null) {
                         throw new NullPointerException("Code source location was null");
                     }
@@ -2020,6 +2026,22 @@ public class JNLPClassLoader extends URLClassLoader {
 
     public boolean getSigning() {
         return signing == SigningState.FULL;
+    }
+
+    /**
+     * True when a fully signed application was granted ALL/J2EE permissions, so
+     * synthetic CodeSources without CodeSigners (JDK dynamic proxies, ByteBuddy
+     * generated classes, null-location domains) must inherit those permissions
+     * instead of remaining sandboxed.
+     */
+    static boolean shouldGrantElevatedPermissionsWithoutCodeSigners(SigningState signingState,
+            SecurityDesc securityDesc) {
+        if (signingState != SigningState.FULL || securityDesc == null) {
+            return false;
+        }
+        Object type = securityDesc.getSecurityType();
+        return SecurityDesc.ALL_PERMISSIONS.equals(type)
+                || SecurityDesc.J2EE_PERMISSIONS.equals(type);
     }
 
     /**

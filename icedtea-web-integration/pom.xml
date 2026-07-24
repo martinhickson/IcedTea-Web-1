@@ -42,6 +42,13 @@
     </dependency>
 
     <dependency>
+      <groupId>net.bytebuddy</groupId>
+      <artifactId>byte-buddy</artifactId>
+      <version>${bytebuddy.version}</version>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
       <version>${version.junit}</version>
@@ -58,11 +65,31 @@
 
   <build>
     <plugins>
-      <plugin>
+        <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-dependency-plugin</artifactId>
         <version>3.6.0</version>
         <executions>
+          <execution>
+            <id>copy-byte-buddy-for-synthetic-app</id>
+            <phase>generate-test-resources</phase>
+            <goals>
+              <goal>copy</goal>
+            </goals>
+            <configuration>
+              <artifactItems>
+                <artifactItem>
+                  <groupId>net.bytebuddy</groupId>
+                  <artifactId>byte-buddy</artifactId>
+                  <version>${bytebuddy.version}</version>
+                  <type>jar</type>
+                  <overWrite>true</overWrite>
+                  <outputDirectory>${project.build.directory}</outputDirectory>
+                  <destFileName>byte-buddy-unsigned.jar</destFileName>
+                </artifactItem>
+              </artifactItems>
+            </configuration>
+          </execution>
           <execution>
             <id>copy-uber-jar</id>
             <phase>pre-integration-test</phase>
@@ -114,13 +141,6 @@
               </target>
             </configuration>
           </execution>
-        </executions>
-      </plugin>
-
-      <plugin>
-        <groupId>org.apache.maven.plugins</groupId>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <executions>
           <execution>
             <id>compile-headless-app-java8</id>
             <phase>process-test-classes</phase>
@@ -167,6 +187,46 @@
                   <arg value="-keypass"/>
                   <arg value="changeit"/>
                   <arg value="${project.build.directory}/icedtea-web-integration-${project.version}-headless-app.jar"/>
+                  <arg value="itw-integration"/>
+                </exec>
+
+                <!-- Synthetic getClassLoader app (JDK proxy + ByteBuddy) for TrustedAllPermissionsSyntheticCodeIT.
+                     byte-buddy-unsigned.jar is copied earlier by dependency:copy-byte-buddy-for-synthetic-app -->
+                <mkdir dir="${project.build.directory}/synthetic-classes"/>
+                <exec executable="${itw.jdk8.home}/bin/javac" failonerror="true">
+                  <arg value="-cp"/>
+                  <arg value="${project.build.directory}/byte-buddy-unsigned.jar"/>
+                  <arg value="-d"/>
+                  <arg value="${project.build.directory}/synthetic-classes"/>
+                  <arg value="${project.basedir}/src/test/java8/net/sourceforge/jnlp/integration/SyntheticCodePermissionsMain.java"/>
+                </exec>
+                <jar destfile="${project.build.directory}/icedtea-web-integration-${project.version}-synthetic-permissions-app.jar"
+                     basedir="${project.build.directory}/synthetic-classes">
+                  <manifest>
+                    <attribute name="Main-Class" value="net.sourceforge.jnlp.integration.SyntheticCodePermissionsMain"/>
+                  </manifest>
+                </jar>
+                <exec executable="${itw.jdk8.home}/bin/jarsigner" failonerror="true">
+                  <arg value="-keystore"/>
+                  <arg value="${project.build.directory}/itw-integration-test-keystore.jks"/>
+                  <arg value="-storepass"/>
+                  <arg value="changeit"/>
+                  <arg value="-keypass"/>
+                  <arg value="changeit"/>
+                  <arg value="${project.build.directory}/icedtea-web-integration-${project.version}-synthetic-permissions-app.jar"/>
+                  <arg value="itw-integration"/>
+                </exec>
+                <copy file="${project.build.directory}/byte-buddy-unsigned.jar"
+                      tofile="${project.build.directory}/byte-buddy-signed.jar"
+                      overwrite="true"/>
+                <exec executable="${itw.jdk8.home}/bin/jarsigner" failonerror="true">
+                  <arg value="-keystore"/>
+                  <arg value="${project.build.directory}/itw-integration-test-keystore.jks"/>
+                  <arg value="-storepass"/>
+                  <arg value="changeit"/>
+                  <arg value="-keypass"/>
+                  <arg value="changeit"/>
+                  <arg value="${project.build.directory}/byte-buddy-signed.jar"/>
                   <arg value="itw-integration"/>
                 </exec>
               </target>
