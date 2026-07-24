@@ -552,7 +552,12 @@ public class ResourceDownloader implements Runnable {
         // downloadLocation may be a version-encoded / .pack.gz URL used only for HTTP.
         final URL cacheLocation = downloadEntry.getLocation();
         logResourceDebug(downloadLocation, "Downloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
-        if (!downloadEntry.isCurrent(connection.getLastModified())) {
+        File existingCached = downloadEntry.getCacheFile();
+        boolean existingUsable = existingCached != null && existingCached.isFile() && existingCached.length() > 0
+                && (!CacheUtil.isJarResourceUrl(cacheLocation) || CacheUtil.isValidJarFile(existingCached));
+        // isCurrent alone is not enough: a stale .info / vanished file must not mark
+        // DOWNLOADED with a null localFile (that produced Unknown Main-Class).
+        if (!downloadEntry.isCurrent(connection.getLastModified()) || !existingUsable) {
             boolean wrote = false;
             File writtenFile = null;
             try {
@@ -610,7 +615,8 @@ public class ResourceDownloader implements Runnable {
             }
             resource.setLocalFile(cached);
         } else {
-            resource.setTransferred(downloadEntry.getCacheFile().length());
+            resource.setLocalFile(existingCached);
+            resource.setTransferred(existingCached.length());
         }
 
         // After pack200 unpack the on-disk size differs from Content-Length; store actual size.

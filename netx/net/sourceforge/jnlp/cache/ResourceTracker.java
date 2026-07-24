@@ -152,6 +152,10 @@ public class ResourceTracker {
             if (resources.contains(resource))
                 return;
             resource.addTracker(this);
+            // Shared Resource instances are keyed by URL only; a prior launch in this JVM
+            // may have spent the one-shot unusable-terminal retry. New tracking must allow
+            // recovery again (ghost cache / premature ERROR → Unknown Main-Class).
+            resource.clearUnusableTerminalRetry();
             resources.add(resource);
             resourcesMap.put(location.toString(), resource);
         }
@@ -341,31 +345,25 @@ public class ResourceTracker {
     public File getCacheFile(URL location) {
         try {
             Resource resource = getResource(location);
-            if (!(resource.isSet(DOWNLOADED) || resource.isSet(ERROR)))
-                waitForResource(location, 0);
-
-            if (resource.isSet(ERROR))
-                return null;
-
-            if (resource.getLocalFile() != null) {
-                File local = resource.getLocalFile();
-                boolean usable = local.isFile() && local.length() > 0
-                        && (!CacheUtil.isJarResourceUrl(location) || CacheUtil.isValidJarFile(local));
-                if (usable) {
-                    return local;
+            // At most two passes: initial wait, then one recovery re-download when the
+            // terminal state had no usable local jar (ghost cache / premature ERROR).
+            for (int pass = 0; pass < 2; pass++) {
+                if (!(resource.isSet(DOWNLOADED) || resource.isSet(ERROR))) {
+                    waitForResource(location, 0);
                 }
-                // Ghost / corrupt localFile (reserved .info slot, cleared folder, or a
-                // non-zip payload cached as .jar). Recover an older good copy if present.
-                try {
-                    File recovered = CacheUtil.findExistingCacheFile(location, resource.getDownloadVersion());
-                    if (recovered != null) {
-                        resource.setLocalFile(recovered);
-                        return recovered;
-                    }
-                } catch (Exception ex) {
-                    OutputController.getLogger().log(ex);
+
+                File usable = resolveUsableLocalFile(resource, location);
+                if (usable != null) {
+                    return usable;
                 }
-                return usable ? local : null;
+
+                if (pass == 0 && requeueUnusableTerminal(resource)) {
+                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                            "Cache file missing/unusable for " + location
+                                    + " after terminal download state; retrying download once");
+                    continue;
+                }
+                break;
             }
 
             if (CacheUtil.USE_LEGACY_FILE_URL_CACHE_BYPASS && location.getProtocol().equalsIgnoreCase("file")) {
@@ -389,6 +387,66 @@ public class ResourceTracker {
             OutputController.getLogger().log(ex);
             return null; // need an error exception to throw
         }
+    }
+
+    /**
+     * True when the resource's localFile is present and, for jar URLs, a real zip.
+     */
+    static boolean hasUsableLocalFile(Resource resource) {
+        if (resource == null) {
+            return false;
+        }
+        File local = resource.getLocalFile();
+        if (local == null || !local.isFile() || local.length() == 0) {
+            return false;
+        }
+        URL location = resource.getLocation();
+        return !CacheUtil.isJarResourceUrl(location) || CacheUtil.isValidJarFile(local);
+    }
+
+    private File resolveUsableLocalFile(Resource resource, URL location) {
+        if (resource.getLocalFile() != null) {
+            File local = resource.getLocalFile();
+            boolean usable = local.isFile() && local.length() > 0
+                    && (!CacheUtil.isJarResourceUrl(location) || CacheUtil.isValidJarFile(local));
+            if (usable) {
+                return local;
+            }
+        }
+        // Ghost / corrupt localFile (reserved .info slot, cleared folder, or a
+        // non-zip payload cached as .jar). Recover an older good copy if present.
+        try {
+            File recovered = CacheUtil.findExistingCacheFile(location, resource.getDownloadVersion());
+            if (recovered != null) {
+                resource.setLocalFile(recovered);
+                return recovered;
+            }
+        } catch (Exception ex) {
+            OutputController.getLogger().log(ex);
+        }
+        return null;
+    }
+
+    /**
+     * Clear a terminal DOWNLOADED/ERROR that left no usable jar and enqueue one more download.
+     *
+     * @return true if a re-download was started
+     */
+    private boolean requeueUnusableTerminal(Resource resource) {
+        synchronized (resource) {
+            if (hasUsableLocalFile(resource) && resource.isSet(DOWNLOADED)) {
+                return false;
+            }
+            if (!(resource.isSet(ERROR) || resource.isSet(DOWNLOADED))) {
+                return false;
+            }
+            if (!resource.consumeUnusableTerminalRetry()) {
+                return false;
+            }
+            resource.prepareRedownloadAfterUnusableTerminal();
+        }
+        startResource(resource);
+        return true;
     }
 
     /**
@@ -485,8 +543,19 @@ public class ResourceTracker {
         boolean enqueue;
 
         synchronized (resource) {
-            if (resource.isSet(ERROR))
+            // DOWNLOADED/ERROR without a usable jar: clear and enqueue a fresh attempt.
+            // Do NOT consume the one-shot retry here — wait/getCacheFile consume it when
+            // they observe another terminal-unusable result after this download finishes.
+            boolean terminalUnusable = (resource.isSet(ERROR) || resource.isSet(DOWNLOADED))
+                    && !hasUsableLocalFile(resource);
+            if (terminalUnusable) {
+                if (resource.isUnusableTerminalRetried()) {
+                    return true;
+                }
+                resource.prepareRedownloadAfterUnusableTerminal();
+            } else if (resource.isSet(ERROR) || resource.isSet(DOWNLOADED)) {
                 return true;
+            }
 
             enqueue = !resource.isSet(PROCESSING);
 
@@ -621,32 +690,66 @@ public class ResourceTracker {
         // wait for completion
         while (true) {
             boolean finished = true;
+            List<Resource> requeue = new ArrayList<>();
 
             synchronized (lock) {
-                // check for completion
+                // check for completion — DOWNLOADED/ERROR alone is not enough: a ghost
+                // localFile or premature ERROR must not unblock waitForJars before a
+                // usable main jar exists (Unknown Main-Class race).
                 for (Resource resource : resources) {
-                    //NetX Deadlocking may be solved by removing this
-                    //synch block.
                     synchronized (resource) {
-                        if (!(resource.isSet(DOWNLOADED) || resource.isSet(ERROR))) {
-                            finished = false;
-                            break;
+                        if (resource.isSet(DOWNLOADED) && hasUsableLocalFile(resource)) {
+                            continue;
                         }
+                        if (resource.isSet(ERROR)
+                                || (resource.isSet(DOWNLOADED) && !hasUsableLocalFile(resource))) {
+                            // First observation of terminal-unusable: allow the in-flight /
+                            // just-started recovery from startResource. Only consume+requeue
+                            // when that recovery already finished badly (flag not yet set
+                            // means startResource cleared state but download has not completed
+                            // a failed recovery — treat as in-progress only when still
+                            // CONNECTING/DOWNLOADING). Here status is already ERROR/DOWNLOADED.
+                            if (!resource.isUnusableTerminalRetried()
+                                    && resource.consumeUnusableTerminalRetry()) {
+                                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                                        "Resource " + resource.getLocation()
+                                                + " finished without usable cache file; retrying once");
+                                resource.prepareRedownloadAfterUnusableTerminal();
+                                requeue.add(resource);
+                                finished = false;
+                            }
+                            // else terminal failure for this resource — count as done
+                            continue;
+                        }
+                        finished = false;
                     }
                 }
-                if (finished)
+                if (finished) {
                     return true;
+                }
 
                 // wait
                 long waitTime = 0;
 
                 if (timeout > 0) {
                     waitTime = timeout - (System.currentTimeMillis() - startTime);
-                    if (waitTime <= 0)
+                    if (waitTime <= 0) {
                         return false;
+                    }
                 }
 
-                lock.wait(waitTime);
+                if (requeue.isEmpty()) {
+                    lock.wait(waitTime);
+                }
+            }
+
+            for (Resource resource : requeue) {
+                startResource(resource);
+            }
+            if (!requeue.isEmpty()) {
+                synchronized (lock) {
+                    lock.notifyAll();
+                }
             }
         }
     }

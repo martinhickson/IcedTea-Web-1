@@ -102,6 +102,13 @@ public class Resource {
     private DownloadOptions downloadOptions;
 
     /**
+     * Whether we already cleared a terminal DOWNLOADED/ERROR that had no usable
+     * local file and re-queued a download. One automatic recovery attempt only —
+     * avoids hang loops when the server truly cannot supply the jar.
+     */
+    private boolean unusableTerminalRetried;
+
+    /**
      * Create a resource.
      */
     private Resource(URL location, Version requestVersion, UpdatePolicy updatePolicy) {
@@ -367,6 +374,46 @@ public class Resource {
     public void resetStatus() {
         synchronized (status) {
             status.clear();
+        }
+    }
+
+    /**
+     * If this resource ended DOWNLOADED/ERROR without a usable cache file, claim the
+     * single automatic re-download attempt. Returns {@code false} when that attempt
+     * was already used.
+     */
+    boolean consumeUnusableTerminalRetry() {
+        synchronized (status) {
+            if (unusableTerminalRetried) {
+                return false;
+            }
+            unusableTerminalRetried = true;
+            return true;
+        }
+    }
+
+    boolean isUnusableTerminalRetried() {
+        synchronized (status) {
+            return unusableTerminalRetried;
+        }
+    }
+
+    /**
+     * Allow one automatic recovery again (new tracker / new launch sharing this URL).
+     */
+    void clearUnusableTerminalRetry() {
+        synchronized (status) {
+            unusableTerminalRetried = false;
+        }
+    }
+
+    /**
+     * Clear status and local file so {@link ResourceTracker} can enqueue a fresh download.
+     */
+    void prepareRedownloadAfterUnusableTerminal() {
+        synchronized (this) {
+            localFile = null;
+            resetStatus();
         }
     }
 
