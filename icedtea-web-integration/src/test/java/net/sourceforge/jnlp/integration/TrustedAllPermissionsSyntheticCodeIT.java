@@ -26,18 +26,20 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
- * Regression for Sonata CXF login failure:
- * {@code AccessControlException: RuntimePermission getClassLoader} when a JDK
- * proxy / ByteBuddy-generated frame (no CodeSigners) is on the ACC stack under
- * ITW SecurityManager, even though the JNLP has {@code <all-permissions/>} and
- * jars are signed.
+ * HARD-CASE regression for Sonata/GTT getClassLoader denials under ITW SM.
+ * Fully signed {@code <all-permissions/>} only (not partial signing).
+ * <p>
+ * Requires synthetic frames whose ProtectionDomain does <em>not</em> imply
+ * {@code getClassLoader}, then {@code AccessController.checkPermission} through
+ * those frames must still succeed (SM trust bypass — Policy-only is insufficient).
  */
 public class TrustedAllPermissionsSyntheticCodeIT {
 
     private static final String JAVAWS_BIN = System.getProperty("itw.javaws.bin");
+    // Prefer JDKs where ITW still installs SecurityManager (not 21+ where SM is unsupported).
     private static final String JDK_HOME = firstNonBlank(
-            System.getProperty("itw.jdk11.home"),
             System.getProperty("itw.jdk17.home"),
+            System.getProperty("itw.jdk11.home"),
             System.getProperty("itw.jdk8.home"));
     private static final int TIMEOUT_SECONDS = Integer.getInteger("itw.launch.timeout.seconds", 180);
 
@@ -87,7 +89,7 @@ public class TrustedAllPermissionsSyntheticCodeIT {
     }
 
     @Test
-    void proxyAndByteBuddyGetClassLoaderMustSucceedUnderAllPermissions() throws Exception {
+    void hardEmptyStaticPdAndProxyMustSucceedUnderAllPermissions() throws Exception {
         Path marker = markerDir.resolve("success.marker");
         writeJnlp(marker);
 
@@ -97,14 +99,31 @@ public class TrustedAllPermissionsSyntheticCodeIT {
                         && result.output.contains("getClassLoader"),
                 "PRODUCTION FAILURE MODE: getClassLoader denied on synthetic stack:\n"
                         + result.output);
+
+        // Decisive hard case: static empty PD (Policy never consulted).
+        assertTrue(result.output.contains("ITW_EMPTY_STATIC_PD_HARD_OK"),
+                "HARD CASE missing: empty static PD must not imply getClassLoader:\n"
+                        + result.output);
+        assertTrue(result.output.contains("ITW_EMPTY_STATIC_PD_IMPLIES_GETCLASSLOADER=false"),
+                "HARD CASE missing: expected empty static PD implies=false:\n" + result.output);
+        assertTrue(result.output.contains("ITW_EMPTY_STATIC_PD_SM_BYPASS_OK"),
+                "HARD CASE failed: AccessController from empty static PD still denied:\n"
+                        + result.output);
+        assertTrue(result.output.contains("ITW_EMPTY_STATIC_PD_GETCLASSLOADER_OK"),
+                "empty static PD path did not complete:\n" + result.output);
+
+        assertTrue(result.output.contains("ITW_PROXY_SM_BYPASS_OK"),
+                "JDK proxy AccessController path did not succeed:\n" + result.output);
         assertTrue(result.output.contains("ITW_PROXY_GETCLASSLOADER_OK"),
                 "JDK proxy getClassLoader path did not succeed:\n" + result.output);
+        assertTrue(result.output.contains("ITW_BYTEBUDDY_SM_BYPASS_OK"),
+                "ByteBuddy AccessController path did not succeed:\n" + result.output);
         assertTrue(result.output.contains("ITW_BYTEBUDDY_GETCLASSLOADER_OK"),
                 "ByteBuddy-generated getClassLoader path did not succeed:\n" + result.output);
         assertTrue(result.output.contains("ITW_JARFILE_BYTEBUDDY_PATH_OK"),
                 "JarFile path under ITW ByteBuddy protection did not succeed:\n" + result.output);
         assertTrue(result.success,
-                "synthetic-code all-permissions launch must succeed:\n" + result.output);
+                "hard-case synthetic-code all-permissions launch must succeed:\n" + result.output);
     }
 
     private void writeJnlp(Path marker) throws Exception {
@@ -171,11 +190,15 @@ public class TrustedAllPermissionsSyntheticCodeIT {
             if (Files.exists(outputFile)) {
                 String out = new String(Files.readAllBytes(outputFile), StandardCharsets.UTF_8);
                 if (out.contains("ITW_INTEGRATION_SUCCESS")
-                        && out.contains("ITW_PROXY_GETCLASSLOADER_OK")
-                        && out.contains("ITW_BYTEBUDDY_GETCLASSLOADER_OK")) {
+                        && out.contains("ITW_EMPTY_STATIC_PD_SM_BYPASS_OK")
+                        && out.contains("ITW_PROXY_SM_BYPASS_OK")
+                        && out.contains("ITW_BYTEBUDDY_SM_BYPASS_OK")) {
                     return true;
                 }
                 if (out.contains("AccessControlException") && out.contains("getClassLoader")) {
+                    return false;
+                }
+                if (out.contains("HARD CASE required")) {
                     return false;
                 }
             }
@@ -185,8 +208,10 @@ public class TrustedAllPermissionsSyntheticCodeIT {
                 }
                 String out = new String(Files.readAllBytes(outputFile), StandardCharsets.UTF_8);
                 return out.contains("ITW_INTEGRATION_SUCCESS")
-                        && out.contains("ITW_PROXY_GETCLASSLOADER_OK")
-                        && out.contains("ITW_BYTEBUDDY_GETCLASSLOADER_OK")
+                        && out.contains("ITW_EMPTY_STATIC_PD_HARD_OK")
+                        && out.contains("ITW_EMPTY_STATIC_PD_SM_BYPASS_OK")
+                        && out.contains("ITW_PROXY_SM_BYPASS_OK")
+                        && out.contains("ITW_BYTEBUDDY_SM_BYPASS_OK")
                         && out.contains("ITW_JARFILE_BYTEBUDDY_PATH_OK");
             }
             Thread.sleep(500);

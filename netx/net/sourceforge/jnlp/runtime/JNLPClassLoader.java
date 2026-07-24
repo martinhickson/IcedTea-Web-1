@@ -2045,6 +2045,30 @@ public class JNLPClassLoader extends URLClassLoader {
     }
 
     /**
+     * True when SecurityManager checks should treat this application as trusted
+     * elevated (JNLP requested ALL/J2EE, user did not choose sandbox).
+     * <p>
+     * Broader than {@link #shouldGrantElevatedPermissionsWithoutCodeSigners}:
+     * PARTIAL signing demotes {@link #security} to sandbox while signed jar
+     * CodeSources stay elevated — leaving JDK proxy frames denied. GTT /
+     * TestComplete stacks hit that shape; bypass SM for the whole trusted app.
+     */
+    boolean shouldBypassSecurityManagerForTrustedApp() {
+        if (securityDelegate != null && securityDelegate.getRunInSandbox()) {
+            return false;
+        }
+        if (file == null || file.getSecurity() == null) {
+            return false;
+        }
+        if (signing != SigningState.FULL && signing != SigningState.PARTIAL) {
+            return false;
+        }
+        Object type = file.getSecurity().getSecurityType();
+        return SecurityDesc.ALL_PERMISSIONS.equals(type)
+                || SecurityDesc.J2EE_PERMISSIONS.equals(type);
+    }
+
+    /**
      * Call this when it's suspected that an applet's permission level may have
      * just changed from Full Signing to Partial Signing. This will display a
      * one-time prompt asking the user to confirm running the partially signed

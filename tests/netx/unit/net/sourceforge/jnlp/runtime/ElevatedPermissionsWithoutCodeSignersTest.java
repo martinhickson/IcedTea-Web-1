@@ -49,4 +49,14 @@ public class ElevatedPermissionsWithoutCodeSignersTest extends NoStdOutErrTest {
         assertFalse(JNLPClassLoader.shouldGrantElevatedPermissionsWithoutCodeSigners(
                 SigningState.FULL, null));
     }
+
+    @Test
+    public void policyHelperStillRequiresFullSigning() throws Exception {
+        // Policy path stays strict; SM bypass (PARTIAL + ALL JNLP) is separate.
+        DummyJNLPFile file = new DummyJNLPFile();
+        SecurityDesc all = new SecurityDesc(file, SecurityDesc.ALL_PERMISSIONS, new URL("http://example.invalid/"));
+        assertFalse("PARTIAL must not use Policy-only elevation helper",
+                JNLPClassLoader.shouldGrantElevatedPermissionsWithoutCodeSigners(
+                        SigningState.PARTIAL, all));
+    }
 }

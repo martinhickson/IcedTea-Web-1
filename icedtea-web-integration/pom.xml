@@ -128,6 +128,11 @@
             <configuration>
               <target>
                 <mkdir dir="${project.build.directory}/bin"/>
+                <!-- Prefer reactor uber jar so Failsafe never runs against a stale ~/.m2 copy. -->
+                <copy file="${project.basedir}/../icedtea-web/target/icedtea-web-${project.version}-uber.jar"
+                      tofile="${project.build.directory}/icedtea-web-${itw.uberjar.classifier}.jar"
+                      overwrite="true"
+                      failonerror="true"/>
                 <copy file="${project.basedir}/../icedtea-web/target/bin/byte-buddy-agent.jar"
                       tofile="${project.build.directory}/bin/byte-buddy-agent.jar" failonerror="true"/>
                 <copy file="${project.basedir}/../scripts/javaws.sh" tofile="${project.build.directory}/bin/javaws" overwrite="true" filtering="true">

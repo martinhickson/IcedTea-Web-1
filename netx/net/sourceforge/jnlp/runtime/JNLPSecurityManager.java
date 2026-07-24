@@ -292,6 +292,23 @@ class JNLPSecurityManager extends SecurityManager {
             throw new SecurityException(R("RCantReplaceSM"));
         }
 
+        // While resolving the current ApplicationInstance, Class.getClassLoader() /
+        // ClassLoader.getParent() re-enter checkPermission. Must allow getClassLoader
+        // during that lookup or the trust bypass below never engages (hard IT / GTT).
+        if (Boolean.TRUE.equals(GETTING_APPLICATION.get())
+                && perm instanceof RuntimePermission
+                && "getClassLoader".equals(name)) {
+            return;
+        }
+
+        // JDK dynamic proxies / instrumentation often use static ProtectionDomains
+        // that never consult JNLPPolicy. AccessController then denies getClassLoader
+        // even for trusted <all-permissions/> apps (seen in GTT/TestComplete stacks).
+        // Short-circuit here — Policy-only fixes are not enough for that shape.
+        if (isTrustedElevatedApplication()) {
+            return;
+        }
+
         try {
             // deny all permissions to stopped applications
             // The call to getApplication() below might not work if an
@@ -309,6 +326,28 @@ class JNLPSecurityManager extends SecurityManager {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, 
                     "Denying permission: " + perm);
             throw ex;
+        }
+    }
+
+    /**
+     * Whether the current JNLP application requested ALL/J2EE permissions and is
+     * not running in sandbox mode. Used to ignore synthetic stack frames that
+     * would otherwise fail AccessController despite a trusted launch.
+     */
+    private boolean isTrustedElevatedApplication() {
+        if (Boolean.TRUE.equals(GETTING_APPLICATION.get())) {
+            return false;
+        }
+        try {
+            // Do not call JNLPRuntime.getApplication() — that delegates to this
+            // SecurityManager's stack walk and nests under GETTING_APPLICATION.
+            ApplicationInstance app = getApplication();
+            if (app == null || !(app.getClassLoader() instanceof JNLPClassLoader)) {
+                return false;
+            }
+            return ((JNLPClassLoader) app.getClassLoader()).shouldBypassSecurityManagerForTrustedApp();
+        } catch (RuntimeException e) {
+            return false;
         }
     }
 
