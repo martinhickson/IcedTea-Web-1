@@ -14,6 +14,7 @@ ENV DOTNET_ROOT=C:\dotnet
 ENV PATH=C:\dotnet;C:\Users\ContainerAdministrator\.dotnet\tools;C:\Windows\System32;C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0
 
 # Pin WiX 5.x — WiX 7+ requires OSMF EULA acceptance (WIX7015) even for `extension add`.
+# Keep Util.wixext on the same major so `extension add` does not pull incompatible 7.0.0.
 RUN ["C:\\dotnet\\dotnet.exe", "tool", "install", "--global", "wix", "--version", "5.0.2"]
 RUN ["C:\\Users\\ContainerAdministrator\\.dotnet\\tools\\wix.exe", "--version"]
-RUN ["C:\\Users\\ContainerAdministrator\\.dotnet\\tools\\wix.exe", "extension", "add", "-g", "WixToolset.Util.wixext"]
+RUN ["C:\\Users\\ContainerAdministrator\\.dotnet\\tools\\wix.exe", "extension", "add", "-g", "WixToolset.Util.wixext/5.0.2"]

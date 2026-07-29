@@ -239,10 +239,10 @@ $WixExe = if (Test-Path "C:\Users\ContainerAdministrator\.dotnet\tools\wix.exe" 
     "wix"
 }
 
-# Util extension provides BroadcastEnvironmentChange; ensure it is available in the image.
-& $WixExe extension add -g WixToolset.Util.wixext 2>$null | Out-Null
+# Util extension provides BroadcastEnvironmentChange; pin to WiX 5.x to match the image tool.
+& $WixExe extension add -g WixToolset.Util.wixext/5.0.2 2>$null | Out-Null
 
-& $WixExe build -acceptEula -ext WixToolset.Util.wixext $WxsPath -arch x64 -o $MsiPath
+& $WixExe build -ext WixToolset.Util.wixext $WxsPath -arch x64 -o $MsiPath
 if ($LASTEXITCODE -ne 0) {
     throw "WiX MSI build failed."
 }
