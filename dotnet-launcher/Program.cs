@@ -1247,6 +1247,10 @@ internal static class Program
         return File.Exists(javaw) ? javaw : javaExecutable;
     }
 
+    /// <summary>
+    /// Quote for CreateProcessW / CommandLineToArgvW so paths with spaces (and embedded quotes)
+    /// survive as a single argv token — required for JNLP paths like {@code Sonata (4).jnlpx}.
+    /// </summary>
     private static string QuoteCommandLineArg(string arg)
     {
         if (arg.Length == 0)
@@ -1259,7 +1263,40 @@ internal static class Program
             return arg;
         }
 
-        return "\"" + arg.Replace("\"", "\\\"", StringComparison.Ordinal) + "\"";
+        var builder = new StringBuilder(arg.Length + 8);
+        builder.Append('"');
+        var backslashes = 0;
+        foreach (var ch in arg)
+        {
+            if (ch == '\\')
+            {
+                backslashes++;
+                continue;
+            }
+
+            if (ch == '"')
+            {
+                builder.Append('\\', backslashes * 2 + 1);
+                builder.Append('"');
+                backslashes = 0;
+                continue;
+            }
+
+            if (backslashes > 0)
+            {
+                builder.Append('\\', backslashes);
+                backslashes = 0;
+            }
+            builder.Append(ch);
+        }
+
+        // Trailing backslashes before the closing quote must be doubled.
+        if (backslashes > 0)
+        {
+            builder.Append('\\', backslashes * 2);
+        }
+        builder.Append('"');
+        return builder.ToString();
     }
 
     private static IEnumerable<string> ModularJdkArguments()

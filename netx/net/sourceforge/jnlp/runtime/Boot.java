@@ -16,7 +16,10 @@
 package net.sourceforge.jnlp.runtime;
 
 import java.io.File;
+import java.io.UnsupportedEncodingException;
+import java.net.URI;
 import java.net.URL;
+import java.net.URLDecoder;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
 import java.util.Arrays;
@@ -383,15 +386,7 @@ public final class Boot implements PrivilegedAction<Void> {
         URL url = null;
 
         try {
-            if (new File(location).exists()) // TODO: Should be toURI().toURL()
-            {
-                url = new File(location).toURL(); // Why use file.getCanonicalFile?
-            } else if (ServiceUtil.getBasicService() != null) {
-                OutputController.getLogger().log("Warning, null basicService");
-                url = new URL(ServiceUtil.getBasicService().getCodeBase(), location);
-            } else {
-                url = new URL(location);
-            }
+            url = locationToUrl(location);
         } catch (Exception e) {
             OutputController.getLogger().log(e);
             fatalError("Invalid jnlp file " + location);
@@ -401,11 +396,60 @@ public final class Boot implements PrivilegedAction<Void> {
     }
 
     /**
+     * Resolves a local path, {@code file:} URL (including unencoded spaces), or remote URL.
+     */
+    static URL locationToUrl(String location) throws Exception {
+        File asFile = new File(location);
+        if (asFile.exists()) {
+            return asFile.toURI().toURL();
+        }
+
+        File fromFileUrl = fileUrlToExistingFile(location);
+        if (fromFileUrl != null) {
+            return fromFileUrl.toURI().toURL();
+        }
+
+        if (ServiceUtil.getBasicService() != null) {
+            return new URL(ServiceUtil.getBasicService().getCodeBase(), location);
+        }
+
+        try {
+            return new URI(encodeSpacesForUri(location)).toURL();
+        } catch (Exception primary) {
+            return new URL(location);
+        }
+    }
+
+    private static File fileUrlToExistingFile(String location) {
+        if (location == null || !location.regionMatches(true, 0, "file:", 0, 5)) {
+            return null;
+        }
+        try {
+            String path = location.substring(5);
+            path = path.replaceFirst("(?i)^//localhost", "");
+            path = path.replaceFirst("^///?", "/");
+            // Windows file URL: /C:/Users/...
+            if (path.length() >= 3 && path.charAt(0) == '/' && path.charAt(2) == ':') {
+                path = path.substring(1);
+            }
+            path = URLDecoder.decode(path, "UTF-8");
+            File file = new File(path);
+            return file.exists() ? file : null;
+        } catch (IllegalArgumentException | UnsupportedEncodingException e) {
+            return null;
+        }
+    }
+
+    private static String encodeSpacesForUri(String location) {
+        // URI rejects raw spaces; keep other characters intact for http(s) and file URLs.
+        return location.replace(" ", "%20");
+    }
+
+    /**
      * Gets the JNLP file from the command line arguments, or exits upon error.
      */
     private static String getMainFile() throws InvalidArgumentException {
-        if (optionParser.getMainArgs().size() > 1
-                || (optionParser.mainArgExists() && optionParser.hasOption(OptionsDefinitions.OPTIONS.JNLP))
+        if ((optionParser.mainArgExists() && optionParser.hasOption(OptionsDefinitions.OPTIONS.JNLP))
                 || (optionParser.mainArgExists() && optionParser.hasOption(OptionsDefinitions.OPTIONS.HTML))
                 || (optionParser.hasOption(OptionsDefinitions.OPTIONS.JNLP) && optionParser.hasOption(OptionsDefinitions.OPTIONS.HTML))) {
             throw new InvalidArgumentException(optionParser.getMainArgs().toString());
@@ -414,12 +458,38 @@ public final class Boot implements PrivilegedAction<Void> {
         } else if (optionParser.hasOption(OptionsDefinitions.OPTIONS.HTML)) {
             return optionParser.getParam(OptionsDefinitions.OPTIONS.HTML);
         } else if (optionParser.mainArgExists()) {
-            return fixJnlpProtocol(optionParser.getMainArg());
+            return fixJnlpProtocol(resolveMainFileFromArgs(optionParser.getMainArgs()));
         }
 
         handleMessage();
         JNLPRuntime.exit(0);
         return null;
+    }
+
+    /**
+     * Unquoted paths with spaces arrive as multiple argv tokens. Rejoin them when they form
+     * an existing file (or a plausible local path); otherwise keep historical single-arg behavior.
+     */
+    static String resolveMainFileFromArgs(List<String> mainArgs) throws InvalidArgumentException {
+        if (mainArgs == null || mainArgs.isEmpty()) {
+            throw new InvalidArgumentException("[]");
+        }
+        if (mainArgs.size() == 1) {
+            return mainArgs.get(0);
+        }
+
+        String joined = String.join(" ", mainArgs);
+        File joinedFile = new File(joined);
+        if (joinedFile.exists() || fileUrlToExistingFile(joined) != null) {
+            return joined;
+        }
+
+        // Still accept the rejoined path for relative/not-yet-resolved local files with spaces.
+        if (!joined.contains("://") && (joined.contains(File.separator) || joined.contains("/") || joined.contains("\\"))) {
+            return joined;
+        }
+
+        throw new InvalidArgumentException(mainArgs.toString());
     }
 
     static ParserSettings init(Map<String, List<String>> extra) {

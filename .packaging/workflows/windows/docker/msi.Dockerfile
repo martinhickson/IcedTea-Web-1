@@ -13,6 +13,7 @@ RUN [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tl
 ENV DOTNET_ROOT=C:\dotnet
 ENV PATH=C:\dotnet;C:\Users\ContainerAdministrator\.dotnet\tools;C:\Windows\System32;C:\Windows;C:\Windows\System32\WindowsPowerShell\v1.0
 
-RUN ["C:\\dotnet\\dotnet.exe", "tool", "install", "--global", "wix"]
+# Pin WiX 5.x — WiX 7+ requires OSMF EULA acceptance (WIX7015) even for `extension add`.
+RUN ["C:\\dotnet\\dotnet.exe", "tool", "install", "--global", "wix", "--version", "5.0.2"]
 RUN ["C:\\Users\\ContainerAdministrator\\.dotnet\\tools\\wix.exe", "--version"]
 RUN ["C:\\Users\\ContainerAdministrator\\.dotnet\\tools\\wix.exe", "extension", "add", "-g", "WixToolset.Util.wixext"]

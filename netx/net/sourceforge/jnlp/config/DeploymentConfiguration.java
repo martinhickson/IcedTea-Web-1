@@ -829,9 +829,7 @@ public final class DeploymentConfiguration {
     }
 
     private static boolean isKnownDynamicDeploymentKey(String key) {
-        return key.matches("^deployment\\.jdk\\.\\d+$")
-                || key.matches("^deployment\\.jdk\\d+\\.assignment\\d+$")
-                || net.sourceforge.jnlp.config.KnownJvmStore.KEY_MATCH_STRATEGY.equals(key);
+        return KnownJvmStore.isKnownDynamicKey(key);
     }
 
     /**

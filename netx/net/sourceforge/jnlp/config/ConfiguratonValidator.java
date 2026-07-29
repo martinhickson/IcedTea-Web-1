@@ -86,6 +86,8 @@ public class ConfiguratonValidator {
                         incorrectEntries.add(strange);
                     }
                 }
+            } else if (KnownJvmStore.isKnownDynamicKey(key)) {
+                // deployment.jdk.N / assignments are user-managed, not Defaults entries
             } else {
                 // check for unknown settings
                 Setting<String> strange = new Setting<String>(toValidate.get(key));

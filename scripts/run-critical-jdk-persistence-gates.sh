@@ -31,6 +31,8 @@ echo "Using icedtea-web.version=$ITW_VERSION"
 echo "==> Unit gates: Apply / launch-autodetect persistence"
 mvn -s "$MAVEN_SETTINGS" -pl icedtea-web -am \
   -Dexec.skip=true \
+  -Djdk11.home="$JDK11_HOME" \
+  -Dbash.executable=bash \
   -Dtest=DeploymentConfigurationJdkApplyPersistTest,KnownJvmStoreEnsureHomeTest,JvmSelectorTest,MultiJ2seVmArgsTest \
   -DfailIfNoTests=false \
   test

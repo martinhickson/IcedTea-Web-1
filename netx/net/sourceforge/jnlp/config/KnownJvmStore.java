@@ -16,8 +16,22 @@ public final class KnownJvmStore {
 
     private static final int MAX_JDK_ENTRIES = 64;
     private static final Pattern JDK_KEY = Pattern.compile("^deployment\\.jdk\\.(\\d+)$");
+    private static final Pattern JDK_ASSIGNMENT_KEY = Pattern.compile("^deployment\\.jdk\\d+\\.assignment\\d+$");
 
     private KnownJvmStore() {
+    }
+
+    /**
+     * User-managed JDK list / assignment keys are not in {@link Defaults} but are first-class
+     * deployment.properties entries. Treat them as known so load/check/validator do not flag them.
+     */
+    public static boolean isKnownDynamicKey(String key) {
+        if (key == null) {
+            return false;
+        }
+        return JDK_KEY.matcher(key).matches()
+                || JDK_ASSIGNMENT_KEY.matcher(key).matches()
+                || KEY_MATCH_STRATEGY.equals(key);
     }
 
     public static List<String> getKnownJvmHomes(DeploymentConfiguration config) {

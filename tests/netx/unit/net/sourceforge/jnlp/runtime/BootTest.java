@@ -36,6 +36,13 @@
  */
 package net.sourceforge.jnlp.runtime;
 
+import java.io.File;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Collections;
+import net.sourceforge.jnlp.util.optionparser.InvalidArgumentException;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
 import org.junit.Assert;
 
@@ -51,6 +58,35 @@ public class BootTest extends NoStdOutErrTest {
         Assert.assertEquals("https://www.com/file.jnlp", Boot.fixJnlpProtocol("jnlp:https://www.com/file.jnlp"));
         Assert.assertEquals("http://www.com/file.jnlp", Boot.fixJnlpProtocol("jnlps:http://www.com/file.jnlp"));
         Assert.assertEquals("https://www.com/file.jnlp", Boot.fixJnlpProtocol("jnlps:https://www.com/file.jnlp"));
+    }
+
+    @Test
+    public void resolveMainFileRejoinsSplitPathWithSpaces() throws Exception {
+        File dir = Files.createTempDirectory("itw-space path").toFile();
+        File jnlp = new File(dir, "Sonata (4).jnlpx");
+        Files.write(jnlp.toPath(), "<jnlp/>".getBytes(StandardCharsets.UTF_8));
+        try {
+            String[] parts = jnlp.getAbsolutePath().split(" ");
+            Assert.assertTrue("fixture must contain spaces", parts.length > 1);
+            String resolved = Boot.resolveMainFileFromArgs(Arrays.asList(parts));
+            Assert.assertEquals(jnlp.getAbsolutePath(), resolved);
+            URL url = Boot.locationToUrl(resolved);
+            Assert.assertTrue(url.toString().contains("Sonata"));
+            Assert.assertTrue(new File(url.toURI()).exists());
+        } finally {
+            jnlp.delete();
+            dir.delete();
+        }
+    }
+
+    @Test
+    public void resolveMainFileKeepsSingleArg() throws Exception {
+        Assert.assertEquals("app.jnlp", Boot.resolveMainFileFromArgs(Collections.singletonList("app.jnlp")));
+    }
+
+    @Test(expected = InvalidArgumentException.class)
+    public void resolveMainFileRejectsUnrelatedMultipleArgs() throws Exception {
+        Boot.resolveMainFileFromArgs(Arrays.asList("one", "two"));
     }
 
 }

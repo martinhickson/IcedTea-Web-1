@@ -7,12 +7,15 @@
 package net.sourceforge.jnlp.runtime;
 
 import java.io.File;
+import java.io.UnsupportedEncodingException;
+import java.net.URLDecoder;
 import java.util.ArrayList;
 import java.util.List;
 import javax.swing.JFileChooser;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.filechooser.FileFilter;
+import javax.swing.filechooser.FileNameExtensionFilter;
 import net.sourceforge.jnlp.Launcher;
 
 /**
@@ -69,17 +72,12 @@ public final class JavawsUberLauncher {
                 chooser.setDialogTitle("Choose JNLP Application to Launch");
                 chooser.setFileSelectionMode(JFileChooser.FILES_ONLY);
                 chooser.setAcceptAllFileFilterUsed(true);
-                chooser.setFileFilter(new FileFilter() {
-                    @Override
-                    public boolean accept(File file) {
-                        return file.isDirectory() || file.getName().toLowerCase().endsWith(".jnlp");
-                    }
-
-                    @Override
-                    public String getDescription() {
-                        return "JNLP applications (*.jnlp)";
-                    }
-                });
+                FileFilter jnlpFilter = new FileNameExtensionFilter(
+                        "JNLP applications (*.jnlp, *.jnlpx, *.itw)",
+                        "jnlp", "jnlpx", "itw");
+                chooser.addChoosableFileFilter(jnlpFilter);
+                // Default to All Files so custom extensions remain selectable without filter fights.
+                chooser.setFileFilter(chooser.getAcceptAllFileFilter());
                 int result = chooser.showOpenDialog(null);
                 if (result == JFileChooser.APPROVE_OPTION) {
                     selected[0] = chooser.getSelectedFile();
@@ -105,7 +103,8 @@ public final class JavawsUberLauncher {
         }
 
         // Fallback: direct java -jar relaunch cannot pass -J flags; still set location for diagnostics.
-        String jarPath = JavawsUberLauncher.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+        String jarPath = decodeCodeSourcePath(
+                JavawsUberLauncher.class.getProtectionDomain().getCodeSource().getLocation().getPath());
         System.setProperty(Launcher.KEY_JAVAWS_LOCATION, jarPath);
         if (System.getProperty("icedtea-web.bin.name") == null) {
             System.setProperty("icedtea-web.bin.name", "javaws");
@@ -116,7 +115,8 @@ public final class JavawsUberLauncher {
      * Locate target/bin/javaws next to the uber JAR (Maven package layout).
      */
     private static File findCompanionJavawsScript() {
-        String jarPath = JavawsUberLauncher.class.getProtectionDomain().getCodeSource().getLocation().getPath();
+        String jarPath = decodeCodeSourcePath(
+                JavawsUberLauncher.class.getProtectionDomain().getCodeSource().getLocation().getPath());
         File jarFile = new File(jarPath);
         File targetDir = jarFile.getParentFile();
         if (targetDir == null) {
@@ -137,5 +137,26 @@ public final class JavawsUberLauncher {
             }
         }
         return null;
+    }
+
+    /** {@code CodeSource#getLocation().getPath()} is URL-encoded and may start with {@code /C:/}. */
+    static String decodeCodeSourcePath(String path) {
+        if (path == null) {
+            return null;
+        }
+        String decoded;
+        try {
+            decoded = URLDecoder.decode(path, "UTF-8");
+        } catch (IllegalArgumentException | UnsupportedEncodingException e) {
+            decoded = path;
+        }
+        if (File.separatorChar == '\\'
+                && decoded.length() >= 3
+                && decoded.charAt(0) == '/'
+                && Character.isLetter(decoded.charAt(1))
+                && decoded.charAt(2) == ':') {
+            decoded = decoded.substring(1);
+        }
+        return decoded;
     }
 }
