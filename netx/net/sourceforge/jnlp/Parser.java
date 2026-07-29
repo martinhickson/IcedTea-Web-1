@@ -30,6 +30,7 @@ import net.sourceforge.jnlp.SecurityDesc.RequestedPermissionLevel;
 import net.sourceforge.jnlp.UpdateDesc.Check;
 import net.sourceforge.jnlp.UpdateDesc.Policy;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.util.JvmArgumentPolicy;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
@@ -1229,6 +1230,7 @@ public final class Parser {
      * Drop unsupported java-vm-args instead of rejecting the entire attribute.
      * A single unknown flag (e.g. {@code -XX:+UseZGC}) previously caused ITW to
      * ignore all JVM args including {@code -Xmx}.
+     * Hardcoded allowlists plus optional {@code deployment.jvm.arguments.whitelist}.
      */
     private String sanitizeVMArgs(String vmArgs) {
         if (vmArgs == null || vmArgs.isBlank()) {
@@ -1243,26 +1245,17 @@ public final class Parser {
             if (isValidVMArg(argument)) {
                 kept.add(argument);
             } else {
-                OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
-                        "Ignoring unsupported java-vm-args entry: " + argument);
+                JvmArgumentPolicy.logUnsupportedVmArg(argument);
             }
         }
         return kept.isEmpty() ? null : String.join(" ", kept);
     }
 
     private boolean isValidVMArg(String argument) {
-        List<String> validArguments = Arrays.asList(getValidVMArguments());
-        List<String> validStartingArguments = Arrays.asList(getValidStartingVMArguments());
-
-        if (validArguments.contains(argument)) {
-            return true;
-        }
-        for (String validStartingArgument : validStartingArguments) {
-            if (argument.startsWith(validStartingArgument)) {
-                return true;
-            }
-        }
-        return false;
+        return JvmArgumentPolicy.isAllowed(
+                argument,
+                new HashSet<>(Arrays.asList(getValidVMArguments())),
+                Arrays.asList(getValidStartingVMArguments()));
     }
 
     /**

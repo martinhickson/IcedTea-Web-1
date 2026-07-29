@@ -23,6 +23,9 @@ internal static class Program
     private const string KeepJavawsProcessProperty = "deployment.keepJavawsProcess";
     private const string KeepJavaPrelaunchProcessProperty = "deployment.keepjavaPrelaunchProcess";
     private const string UserLogDirProperty = "deployment.user.logdir";
+    private const string JvmIpTypeProperty = "deployment.jvm.ip.type";
+    private const string PreferIpv4StackProperty = "java.net.preferIPv4Stack";
+    private const string PreferIpv6AddressesProperty = "java.net.preferIPv6Addresses";
     private const int PrelaunchProbeTimeoutMs = 15_000;
 
     private static int Main(string[] args)
@@ -472,7 +475,8 @@ internal static class Program
             command.Add("-Djava.security.manager=allow");
         }
 
-        command.AddRange(forwardedJvmArgs);
+        // deployment.jvm.ip.type wins over any user -Djava.net.preferIPv* (default ipv4).
+        command.AddRange(ApplyConfiguredIpStack(forwardedJvmArgs));
 
         if (javaMajorVersion <= 8)
         {
@@ -1301,6 +1305,51 @@ internal static class Program
 
     private static bool HasSecurityManagerCompatibilityFlag(IEnumerable<string> forwardedJvmArgs) =>
         forwardedJvmArgs.Any(arg => arg.StartsWith("-Djava.security.manager=", StringComparison.Ordinal));
+
+    /// <summary>
+    /// Apply deployment.jvm.ip.type to JVM args. Removes any user prefer-IP -D flags,
+    /// then injects ipv4 (default) or ipv6 settings. auto leaves prefer-IP unset.
+    /// </summary>
+    private static List<string> ApplyConfiguredIpStack(IEnumerable<string> forwardedJvmArgs)
+    {
+        var args = forwardedJvmArgs
+            .Where(arg => !IsPreferIpJvmArg(arg))
+            .ToList();
+        switch (ResolveConfiguredIpType())
+        {
+            case "ipv6":
+                args.Add("-D" + PreferIpv4StackProperty + "=false");
+                args.Add("-D" + PreferIpv6AddressesProperty + "=true");
+                break;
+            case "auto":
+                break;
+            default:
+                args.Add("-D" + PreferIpv4StackProperty + "=true");
+                break;
+        }
+        return args;
+    }
+
+    private static bool IsPreferIpJvmArg(string arg) =>
+        arg.StartsWith("-D" + PreferIpv4StackProperty, StringComparison.Ordinal)
+        || arg.StartsWith("-D" + PreferIpv6AddressesProperty, StringComparison.Ordinal);
+
+    private static string ResolveConfiguredIpType()
+    {
+        var raw = ReadDeploymentProperty(JvmIpTypeProperty);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return "ipv4";
+        }
+
+        return raw.Trim().ToLowerInvariant() switch
+        {
+            "ipv6" => "ipv6",
+            "auto" => "auto",
+            "ipv4" => "ipv4",
+            _ => "ipv4",
+        };
+    }
 
     private static string JavaExecutableName() =>
         RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "java.exe" : "java";

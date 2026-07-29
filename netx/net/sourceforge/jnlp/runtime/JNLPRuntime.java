@@ -74,11 +74,12 @@ import net.sourceforge.jnlp.security.SecurityUtil;
 import net.sourceforge.jnlp.services.XServiceManagerStub;
 import net.sourceforge.jnlp.util.BasicExceptionDialog;
 import net.sourceforge.jnlp.util.FileUtils;
+import net.sourceforge.jnlp.util.JvmArgumentPolicy;
 import net.sourceforge.jnlp.util.NetxRunningDetailsRegistry;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 import net.sourceforge.jnlp.util.logging.JavaConsole;
-import net.sourceforge.jnlp.util.logging.LogConfig;
 import net.sourceforge.jnlp.util.logging.OutputController;
+import net.sourceforge.jnlp.util.logging.LogConfig;
 import net.sourceforge.jnlp.util.JavaVersionUtils;
 
 /**
@@ -260,6 +261,9 @@ public class JNLPRuntime {
         //The version stored will be the same as java's version.
         System.setProperty("javawebstart.version", "javaws-" +
                 System.getProperty("java.version"));
+
+        // Prefer deployment.jvm.ip.type over any user -Djava.net.preferIPv* for in-process launches.
+        JvmArgumentPolicy.applyConfiguredIpStackToSystemProperties();
 
         if (!isHeadless() && indicator == null)
             indicator = new DefaultDownloadIndicator();

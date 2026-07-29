@@ -50,6 +50,7 @@ import javax.swing.JOptionPane;
 import net.sourceforge.jnlp.splashscreen.SplashUtils;
 import net.sourceforge.jnlp.util.JavaVersionUtils;
 import net.sourceforge.jnlp.util.ItwLauncherPaths;
+import net.sourceforge.jnlp.util.JvmArgumentPolicy;
 import net.sourceforge.jnlp.util.JvmAutodetector;
 import net.sourceforge.jnlp.util.JvmDescriptor;
 import net.sourceforge.jnlp.util.JvmSelector;
@@ -462,6 +463,8 @@ public class Launcher {
             List<String> vmArgsWithCompat = new ArrayList<>(vmArgs);
             JavaVersionUtils.removeLegacyJavaXmlBindAddModules(vmArgsWithCompat, javaHome);
             JavaVersionUtils.addSecurityManagerCompatibilityArgs(vmArgsWithCompat, javaHome);
+            // deployment.jvm.ip.type wins over any user -Djava.net.preferIPv* in java-vm-args
+            JvmArgumentPolicy.applyConfiguredIpStack(vmArgsWithCompat);
             // use -Jargument format to pass arguments to the JVM through the launcher
             for (String arg : vmArgsWithCompat) {
                 commands.add("-J" + arg);

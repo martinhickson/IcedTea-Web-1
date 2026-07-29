@@ -433,6 +433,20 @@ public class Defaults {
                         null,
                         null
                 },
+                // CSV whitelist additive to hardcoded java-vm-args allowlist
+                {
+                        DeploymentConfiguration.KEY_JVM_ARGS_WHITELIST,
+                        null,
+                        null
+                },
+                // Preferred IP stack for launched JVMs (ipv4 default)
+                {
+                        DeploymentConfiguration.KEY_JVM_IP_TYPE,
+                        BasicValueValidators.getStringValidator(new String[] {
+                                "ipv4", "ipv6", "auto"
+                        }),
+                        "ipv4"
+                },
                //unsigned applet security level
                 {
                 DeploymentConfiguration.KEY_SECURITY_LEVEL,

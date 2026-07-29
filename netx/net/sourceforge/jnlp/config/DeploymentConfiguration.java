@@ -292,6 +292,16 @@ public final class DeploymentConfiguration {
      * JVM arguments for plugin
      */
     public static final String KEY_PLUGIN_JVM_ARGUMENTS= "deployment.plugin.jvm.arguments";
+    /**
+     * CSV of extra {@code java-vm-args} tokens allowed in addition to the hardcoded allowlist.
+     * Match is on the token before the first {@code =} (or the full token if none).
+     */
+    public static final String KEY_JVM_ARGS_WHITELIST = "deployment.jvm.arguments.whitelist";
+    /**
+     * Preferred IP stack for launched JVMs: {@code ipv4} (default), {@code ipv6}, or {@code auto}.
+     * Takes precedence over user {@code -Djava.net.preferIPv*} in {@code java-vm-args}.
+     */
+    public static final String KEY_JVM_IP_TYPE = "deployment.jvm.ip.type";
     public static final String KEY_JRE_DIR= "deployment.jre.dir";
     public static final String KEY_AUTODETECT_JDKS = "deployment.autodetectJDKs";
     public static final String KEY_KEEP_JAVAWS_PROCESS = "deployment.keepJavawsProcess";
