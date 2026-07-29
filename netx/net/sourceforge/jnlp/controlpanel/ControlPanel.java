@@ -456,6 +456,30 @@ public class ControlPanel extends JFrame {
         updateEditorButtons();
     }
 
+    /**
+     * Re-read deployment.properties from disk and refresh all settings panels.
+     * Used when another process (e.g. javaws launch autodetect) updated the file
+     * while the Control Panel is open.
+     */
+    void reloadConfigurationFromDisk() {
+        try {
+            config.load();
+        } catch (ConfigurationException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            JOptionPane.showMessageDialog(this, e);
+            return;
+        }
+        config.beginSuppressedPropertyUpdates();
+        try {
+            for (SettingsPanelReloader reloader : settingsReloaders) {
+                reloader.reloadFromConfiguration();
+            }
+        } finally {
+            config.endSuppressedPropertyUpdates();
+        }
+        updateEditorButtons();
+    }
+
     private void performApply() {
         saveConfiguration();
         int validationResult = validateJdk();

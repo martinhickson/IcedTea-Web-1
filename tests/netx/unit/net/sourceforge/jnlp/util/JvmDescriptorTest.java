@@ -43,6 +43,25 @@ public class JvmDescriptorTest {
                 descriptor.getHomePath());
     }
 
+    @Test
+    public void detectFlavourFromPathRecognizesCorrettoAndTemurinInstallLayouts() {
+        assertEquals("Amazon Corretto",
+                JvmDescriptor.detectFlavourFromPath("C:\\Program Files\\Amazon Corretto\\jdk17.0.15_6"));
+        assertEquals("Eclipse Temurin",
+                JvmDescriptor.detectFlavourFromPath("C:\\Program Files\\Eclipse Adoptium\\jdk-21.0.11.9-hotspot"));
+        assertEquals("Eclipse Temurin",
+                JvmDescriptor.detectFlavourFromPath("/usr/lib/jvm/temurin-17-jdk-amd64"));
+        assertEquals("", JvmDescriptor.detectFlavourFromPath("C:\\Program Files\\Java\\jdk-17"));
+    }
+
+    @Test
+    public void detectFlavourRecognizesAdoptiumTokenInVersionOutput() {
+        assertEquals("Eclipse Temurin",
+                JvmDescriptor.detectFlavour("openjdk runtime environment temurin-21.0.11+9"));
+        assertEquals("Eclipse Temurin",
+                JvmDescriptor.detectFlavour("eclipse adoptium openjdk"));
+    }
+
     private static File createTempDir(String prefix) throws IOException {
         File dir = File.createTempFile(prefix, "");
         assertTrue(dir.delete());

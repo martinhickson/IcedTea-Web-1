@@ -250,7 +250,7 @@ if ($LASTEXITCODE -ne 0) {
 # Fail the build if PATH registration did not make it into the MSI (the 2.9.5 regression),
 # unless the release workflow explicitly skips critical gates.
 if ($env:ITW_SKIP_CRITICAL_RELEASE_GATES -eq "true") {
-    Write-Warning "ITW_SKIP_CRITICAL_RELEASE_GATES=true — skipping MSI PATH Environment verification."
+    Write-Warning "ITW_SKIP_CRITICAL_RELEASE_GATES=true - skipping MSI PATH Environment verification."
 } else {
     & (Join-Path $PSScriptRoot "verify-msi-path.ps1") -MsiPath $MsiPath
 }

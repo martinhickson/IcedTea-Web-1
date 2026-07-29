@@ -33,7 +33,7 @@ mvn -s "$MAVEN_SETTINGS" -pl icedtea-web -am \
   -Dexec.skip=true \
   -Djdk11.home="$JDK11_HOME" \
   -Dbash.executable=bash \
-  -Dtest=DeploymentConfigurationJdkApplyPersistTest,KnownJvmStoreEnsureHomeTest,JvmSelectorTest,MultiJ2seVmArgsTest \
+  -Dtest=DeploymentConfigurationJdkApplyPersistTest,KnownJvmStoreEnsureHomeTest,KnownJvmStorePrecedenceTest,JvmSelectorTest,MultiJ2seVmArgsTest \
   -DfailIfNoTests=false \
   test
 
@@ -55,6 +55,6 @@ mvn -s "$MAVEN_SETTINGS" verify -Pvnc \
   -Ditw.jdk17.home="$IT_JDK17" \
   -Ditw.jdk21.home="$IT_JDK21" \
   -Ditw.jdk25.home="$IT_JDK25" \
-  -Dit.test='ControlPanelJvmAutodetectIT,ControlPanelJvmSelectionIT,DeploymentAutodetectJdksOnLoadIT'
+  -Dit.test='ControlPanelJvmAutodetectIT,ControlPanelJvmSelectionIT,ControlPanelJvmPrecedenceIT,DeploymentAutodetectJdksOnLoadIT,JvmMatchStrategyIT,JdkPrecedenceJavawsLaunchIT'
 
-echo "Critical JDK persistence gates passed."
+echo "JDK persistence and precedence gates passed."

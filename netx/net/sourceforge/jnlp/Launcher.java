@@ -50,6 +50,7 @@ import javax.swing.JOptionPane;
 import net.sourceforge.jnlp.splashscreen.SplashUtils;
 import net.sourceforge.jnlp.util.JavaVersionUtils;
 import net.sourceforge.jnlp.util.ItwLauncherPaths;
+import net.sourceforge.jnlp.util.JavawsRelaunchHandoff;
 import net.sourceforge.jnlp.util.JvmArgumentPolicy;
 import net.sourceforge.jnlp.util.JvmAutodetector;
 import net.sourceforge.jnlp.util.JvmDescriptor;
@@ -471,16 +472,23 @@ public class Launcher {
             }
             commands.addAll(javawsArgs);
 
-            String[] command = commands.toArray(new String[] {});
-
-            ProcessBuilder pb = new ProcessBuilder(command);
+            ProcessBuilder pb = new ProcessBuilder(commands);
             pb.environment().put("ICEDTEA_WEB_SPLASH", "none");
             if (javaHome != null && !javaHome.trim().isEmpty()) {
                 pb.environment().put("JAVA_HOME", javaHome);
             }
             propagateRelaunchEnvironment(pb);
+
+            if (JavawsRelaunchHandoff.shouldHandoff(JNLPRuntime.getConfiguration())) {
+                // Default: detach like .NET javaws handoff — file/NUL stdio, audit log, exit.
+                // Does not return on success.
+                JavawsRelaunchHandoff.handoffAndExit(commands, pb);
+                return;
+            }
+
+            // Legacy path (deployment.keepJavawsRelaunchProcess=true): inherit IO and wait.
             pb.inheritIO();
-            Process p =pb.start();
+            Process p = pb.start();
             StreamUtils.waitForSafely(p);
         } catch (NullPointerException ex) {
             throw launchError(new LaunchException(null, null, R("LSFatal"), R("LCExternalLaunch"), R("LNetxJarMissing"), R("LNetxJarMissingInfo")));

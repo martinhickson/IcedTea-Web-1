@@ -10,6 +10,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Properties;
 import net.sourceforge.jnlp.util.JnlpAssignmentLauncher;
@@ -118,6 +119,12 @@ final class ControlPanelTestSupport {
             }
         }
         return saved;
+    }
+
+    static DeploymentConfiguration loadDeploymentConfiguration() throws Exception {
+        DeploymentConfiguration config = new DeploymentConfiguration();
+        config.load(false);
+        return config;
     }
 
     static List<File> discoverValidJdkHomes() throws Exception {
@@ -442,16 +449,34 @@ final class ControlPanelTestSupport {
     }
 
     static File findJdkHomeWithMajor(int major) throws Exception {
+        List<File> homes = findJdkHomesWithMajor(major, 1);
+        return homes.isEmpty() ? null : homes.get(0);
+    }
+
+    /** Distinct valid JDK homes reporting the given major, up to {@code limit}. */
+    static List<File> findJdkHomesWithMajor(int major, int limit) throws Exception {
+        LinkedHashSet<String> seen = new LinkedHashSet<>();
+        List<File> matches = new ArrayList<>();
         if (JnlpLaunchTestSupport.hasSampleJdk(major)) {
-            return JnlpLaunchTestSupport.jdkHome(major);
-        }
-        for (File home : discoverValidJdkHomes()) {
-            if (net.sourceforge.jnlp.util.JvmAutodetector.majorVersionOfJvmHome(
-                    home.getAbsolutePath()) == major) {
-                return home;
+            File sample = JnlpLaunchTestSupport.jdkHome(major).getCanonicalFile();
+            if (seen.add(sample.getAbsolutePath())) {
+                matches.add(sample);
             }
         }
-        return null;
+        for (File home : discoverValidJdkHomes()) {
+            if (matches.size() >= limit) {
+                break;
+            }
+            File canonical = home.getCanonicalFile();
+            if (!seen.add(canonical.getAbsolutePath())) {
+                continue;
+            }
+            if (net.sourceforge.jnlp.util.JvmAutodetector.majorVersionOfJvmHome(
+                    canonical.getAbsolutePath()) == major) {
+                matches.add(canonical);
+            }
+        }
+        return matches;
     }
 
     static void writeDeploymentProperties(Properties props) throws Exception {

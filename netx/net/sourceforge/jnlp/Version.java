@@ -88,8 +88,10 @@ public class Version {
                     } else {
                         throw new RuntimeException(e);
                     }
-                } else {
-                    OutputController.getLogger().log(OutputController.Level.WARNING_ALL, s);
+                } else if (!warned) {
+                    // JNLP is often re-parsed several times before relaunch; log once.
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, s);
+                    warned = true;
                 }
             } else {
                 OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "good - your JRE - " + getJreVersion() + " - match requested JRE - " + v);

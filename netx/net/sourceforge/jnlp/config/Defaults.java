@@ -545,6 +545,11 @@ public class Defaults {
                         DeploymentConfiguration.KEY_KEEP_JAVA_PRELAUNCH_PROCESS,
                         BasicValueValidators.getBooleanValidator(),
                         "false"
+                },
+                {
+                        DeploymentConfiguration.KEY_KEEP_JAVAWS_RELAUNCH_PROCESS,
+                        BasicValueValidators.getBooleanValidator(),
+                        "false"
                 }
         };
 

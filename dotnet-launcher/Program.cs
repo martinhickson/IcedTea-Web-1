@@ -232,8 +232,25 @@ internal static class Program
 
     private static IReadOnlyList<string> ReadKnownJvmHomes()
     {
+        // Preference order: legacy deployment.jre.dir first, then numbered deployment.jdk.N.
         const int maxJdkEntries = 64;
         var homes = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        void AddHome(string? home)
+        {
+            if (string.IsNullOrWhiteSpace(home))
+            {
+                return;
+            }
+            var trimmed = home.Trim();
+            if (seen.Add(trimmed))
+            {
+                homes.Add(trimmed);
+            }
+        }
+
+        AddHome(ReadDeploymentProperty("deployment.jre.dir"));
         for (var i = 1; i <= maxJdkEntries; i++)
         {
             var home = ReadDeploymentProperty("deployment.jdk." + i);
@@ -241,16 +258,7 @@ internal static class Program
             {
                 break;
             }
-            homes.Add(home.Trim());
-        }
-
-        if (homes.Count == 0)
-        {
-            var legacy = ReadDeploymentProperty("deployment.jre.dir");
-            if (!string.IsNullOrWhiteSpace(legacy))
-            {
-                homes.Add(legacy.Trim());
-            }
+            AddHome(home);
         }
 
         return homes;
@@ -280,13 +288,16 @@ internal static class Program
         }
 
         var requestedMajor = ParseRequestedMajor(requestedVersion);
-        var matching = candidates.Where(c => requestedMajor == 0 || c.Major == requestedMajor || VersionMatches(requestedVersion, c.Major)).ToList();
-        if (matching.Count == 0)
+        // Version-level match first; among matches keep configured preference order.
+        foreach (var candidate in candidates)
         {
-            return null;
+            if (requestedMajor == 0 || candidate.Major == requestedMajor || VersionMatches(requestedVersion, candidate.Major))
+            {
+                return candidate.Home;
+            }
         }
 
-        return matching.OrderByDescending(c => c.Major).First().Home;
+        return null;
     }
 
     private static bool VersionMatches(string requestedVersion, int major)

@@ -12,6 +12,7 @@ import java.util.List;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import java.util.Properties;
 import net.sourceforge.jnlp.util.JavaVersionUtils;
@@ -159,7 +160,7 @@ final class JnlpLaunchTestSupport {
         return new File(testConfigHome(), "icedtea-web/log");
     }
 
-    static void clearIcedTeaWebLogs() throws IOException {
+    static void clearIcedTeaWebLogs() {
         File logDir = icedteaWebLogDir();
         if (!logDir.isDirectory()) {
             return;
@@ -169,8 +170,27 @@ final class JnlpLaunchTestSupport {
             return;
         }
         for (File file : files) {
-            if (file.isFile() && !file.delete()) {
-                throw new IOException("Failed to delete " + file);
+            if (!file.isFile()) {
+                continue;
+            }
+            if (file.delete()) {
+                continue;
+            }
+            // Windows may keep a handle while a forked app JVM is still alive; best-effort only.
+            for (int attempt = 0; attempt < 5; attempt++) {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+                if (file.delete()) {
+                    break;
+                }
+            }
+            File quarantine = new File(file.getParentFile(), file.getName() + ".stale-" + System.nanoTime());
+            if (!file.renameTo(quarantine)) {
+                // Leave the locked file; callers filter logs by startedAt.
             }
         }
     }
@@ -238,13 +258,38 @@ final class JnlpLaunchTestSupport {
 
     static void stopLaunchedProcesses() {
         for (Process process : launched) {
-            if (process.isAlive()) {
-                process.destroyForcibly();
-            }
+            destroyProcessTree(process);
         }
         launched.clear();
+    }
+
+    private static void destroyProcessTree(Process process) {
+        if (process == null) {
+            return;
+        }
+        try {
+            process.toHandle().descendants().forEach(ProcessHandle::destroyForcibly);
+        } catch (RuntimeException ignored) {
+            // ProcessHandle may be unsupported for some handles
+        }
+        if (process.isAlive()) {
+            process.destroyForcibly();
+        }
+        try {
+            process.waitFor(5, TimeUnit.SECONDS);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Best-effort kill of ITW-tracked app JVMs; safe to call outside timed tearDown. */
+    static void stopTrackedRunningApps() {
         for (RunningProcess running : JnlpRunningProcessSupport.listRunningJnlpProcesses()) {
-            JnlpRunningProcessSupport.stopProcess(running.getPid(), true);
+            try {
+                JnlpRunningProcessSupport.stopProcess(running.getPid(), true);
+            } catch (RuntimeException ignored) {
+                // ignore cleanup races on Windows
+            }
         }
     }
 
@@ -327,20 +372,20 @@ final class JnlpLaunchTestSupport {
     static String readProcessOutput(Process process, long timeoutMs) throws Exception {
         StringBuilder output = new StringBuilder();
         long deadline = System.currentTimeMillis() + timeoutMs;
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            while (System.currentTimeMillis() < deadline) {
-                while (reader.ready()) {
-                    output.append((char) reader.read());
-                }
-                if (!process.isAlive()) {
-                    break;
-                }
-                Thread.sleep(200);
-            }
+        // Do not close process.getInputStream() — callers may poll the same Process.
+        BufferedReader reader = new BufferedReader(
+                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8));
+        while (System.currentTimeMillis() < deadline) {
             while (reader.ready()) {
                 output.append((char) reader.read());
             }
+            if (!process.isAlive()) {
+                break;
+            }
+            Thread.sleep(200);
+        }
+        while (reader.ready()) {
+            output.append((char) reader.read());
         }
         return output.toString();
     }

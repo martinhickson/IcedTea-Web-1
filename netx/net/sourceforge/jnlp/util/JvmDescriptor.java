@@ -124,12 +124,74 @@ public final class JvmDescriptor {
         boolean valid = validation.id == JvmValidationResult.STATE.VALID_JDK;
         String combined = (validation.getReportableOutput() == null ? "" : validation.getReportableOutput())
                 .toLowerCase(Locale.ROOT);
+        // Probe fast-path may only emit synthetic `version "N"` without vendor tokens.
         String flavour = detectFlavour(combined);
+        if (!isSpecificVendorFlavour(flavour)) {
+            String fromPath = detectFlavourFromPath(normalized);
+            if (!fromPath.isEmpty()) {
+                flavour = fromPath;
+            }
+        }
         String version = detectVersion(combined);
         if (version.isEmpty()) {
             version = detectVersionFromPath(normalized);
         }
         return new JvmDescriptor(normalized, flavour, version, valid, validation.id);
+    }
+
+    static boolean isSpecificVendorFlavour(String flavour) {
+        if (flavour == null || flavour.isEmpty()) {
+            return false;
+        }
+        String lower = flavour.toLowerCase(Locale.ROOT);
+        return lower.contains("corretto")
+                || lower.contains("temurin")
+                || lower.contains("zulu")
+                || lower.contains("semeru")
+                || lower.contains("graal")
+                || lower.contains("sapmachine")
+                || lower.contains("dragonwell")
+                || lower.contains("microsoft")
+                || lower.contains("oracle")
+                || lower.contains("ibm");
+    }
+
+    /**
+     * Vendor from install path when {@code java -version} / probe output lacks distribution tags
+     * (common with synthetic probe output that only carries {@code version "N"}).
+     */
+    static String detectFlavourFromPath(String homePath) {
+        if (homePath == null || homePath.isEmpty()) {
+            return "";
+        }
+        String lower = homePath.toLowerCase(Locale.ROOT).replace('/', '\\');
+        if (lower.contains("\\amazon corretto\\") || lower.contains("\\corretto\\")
+                || lower.contains("corretto")) {
+            return "Amazon Corretto";
+        }
+        if (lower.contains("\\eclipse adoptium\\") || lower.contains("\\adoptium\\")
+                || lower.contains("temurin") || lower.contains("adoptium")) {
+            return "Eclipse Temurin";
+        }
+        if (lower.contains("\\zulu\\") || lower.contains("zulu")) {
+            return "Azul Zulu";
+        }
+        if (lower.contains("semeru")) {
+            return "IBM Semeru";
+        }
+        if (lower.contains("graalvm") || lower.contains("\\graal\\")) {
+            return "GraalVM";
+        }
+        if (lower.contains("sapmachine")) {
+            return "SapMachine";
+        }
+        if (lower.contains("dragonwell")) {
+            return "Dragonwell";
+        }
+        if (lower.contains("\\microsoft\\") && lower.contains("jdk")) {
+            return "Microsoft OpenJDK";
+        }
+        return "";
     }
 
     static String detectFlavour(String versionOutput) {
@@ -139,7 +201,7 @@ public final class JvmDescriptor {
         if (versionOutput.contains("corretto")) {
             return "Amazon Corretto";
         }
-        if (versionOutput.contains("temurin")) {
+        if (versionOutput.contains("temurin") || versionOutput.contains("adoptium")) {
             return "Eclipse Temurin";
         }
         if (versionOutput.contains("zulu")) {

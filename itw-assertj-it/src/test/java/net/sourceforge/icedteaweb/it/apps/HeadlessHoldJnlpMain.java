@@ -16,7 +16,8 @@ public final class HeadlessHoldJnlpMain {
         }
         String payload = "ok jdk=" + System.getProperty("java.version")
                 + " class=" + System.getProperty("java.class.version")
-                + " vendor=" + System.getProperty("java.vendor");
+                + " vendor=" + System.getProperty("java.vendor")
+                + " home=" + System.getProperty("java.home");
         System.out.println("ITW_INTEGRATION_SUCCESS " + payload);
         System.out.flush();
         if (marker != null && !marker.trim().isEmpty()) {

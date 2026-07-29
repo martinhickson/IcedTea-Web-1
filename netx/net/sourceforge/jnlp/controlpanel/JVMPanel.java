@@ -9,6 +9,7 @@ import java.awt.Dimension;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.Window;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ItemEvent;
@@ -16,13 +17,16 @@ import java.awt.event.ItemListener;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import javax.naming.ConfigurationException;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JFileChooser;
 import javax.swing.JLabel;
+import javax.swing.JOptionPane;
 import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.table.DefaultTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.DefaultListCellRenderer;
@@ -63,6 +67,9 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
     private static final int COLUMN_VENDOR = 1;
     private static final int COLUMN_VERSION = 2;
     private static final int COLUMN_PATH = 3;
+
+    /** Compile-time only; not a deployment.properties setting. Keep false for a clean JDK Settings UI. */
+    private static final boolean SHOW_KNOWN_JVM_LIST_DESCRIPTION = false;
 
     private final DeploymentConfiguration config;
     private File lastPath = new File("/usr/lib/jvm/");
@@ -220,10 +227,57 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
         persistKnownJvms();
     }
 
+    private void moveSelectedJvm(int delta) {
+        int selected = knownJvmTable.getSelectedRow();
+        if (selected < 0 || selected >= knownJvms.size()) {
+            return;
+        }
+        int target = selected + delta;
+        if (target < 0 || target >= knownJvms.size()) {
+            return;
+        }
+        JvmDescriptor moved = knownJvms.remove(selected);
+        knownJvms.add(target, moved);
+        knownJvmModel.moveRow(selected, selected, target);
+        knownJvmTable.getSelectionModel().setSelectionInterval(target, target);
+        persistKnownJvms();
+    }
+
     private void autodetectKnownJvms() {
         if (KnownJvmStore.applyAutodetectedJvms(config)) {
             reloadKnownJvmsFromConfig();
         }
+    }
+
+    /**
+     * Discard the in-memory JDK table view and reload {@code deployment.properties}
+     * from disk (picks up launch-time autodetect writes while Settings is open).
+     */
+    private void refreshKnownJvmsFromProperties() {
+        if (config.hasPendingChanges()) {
+            int choice = JOptionPane.showConfirmDialog(
+                    this,
+                    Translator.R("CPJVMRefreshDiscardPending"),
+                    Translator.R("CPJVMRefresh"),
+                    JOptionPane.OK_CANCEL_OPTION,
+                    JOptionPane.WARNING_MESSAGE);
+            if (choice != JOptionPane.OK_OPTION) {
+                return;
+            }
+        }
+        Window ancestor = SwingUtilities.getWindowAncestor(this);
+        if (ancestor instanceof ControlPanel) {
+            ((ControlPanel) ancestor).reloadConfigurationFromDisk();
+            return;
+        }
+        try {
+            config.load();
+        } catch (ConfigurationException ex) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);
+            JOptionPane.showMessageDialog(this, ex);
+            return;
+        }
+        reloadFromConfiguration();
     }
 
     private static JFileChooser createJvmDirectoryChooser(File startDir, String dialogTitle) {
@@ -268,7 +322,9 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
                 new DocumentAdapter(config, DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS));
         pluginJvmArgumentsField.setText(config.getProperty(DeploymentConfiguration.KEY_PLUGIN_JVM_ARGUMENTS));
 
-        final JLabel descriptionExec = new JLabel("<html>" + Translator.R("CPJVMKnownListDescription") + "<hr /></html>");
+        final JLabel descriptionExec = SHOW_KNOWN_JVM_LIST_DESCRIPTION
+                ? new JLabel("<html>" + Translator.R("CPJVMKnownListDescription") + "<hr /></html>")
+                : null;
         final JScrollPane knownJvmScroll = new JScrollPane(knownJvmTable);
         knownJvmScroll.setName("jvmKnownScrollPane");
         knownJvmTable.setPreferredScrollableViewportSize(new Dimension(400, 132));
@@ -279,6 +335,16 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
             @Override
             public void actionPerformed(ActionEvent e) {
                 autodetectKnownJvms();
+            }
+        });
+
+        final JButton refreshJvm = new JButton(Translator.R("CPJVMRefresh"));
+        refreshJvm.setName("jvmRefreshButton");
+        refreshJvm.setToolTipText(Translator.R("CPJVMRefreshTip"));
+        refreshJvm.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                refreshKnownJvmsFromProperties();
             }
         });
 
@@ -314,6 +380,24 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
             }
         });
 
+        final JButton moveUpJvm = new JButton(Translator.R("CPJVMMoveUp"));
+        moveUpJvm.setName("jvmMoveUpButton");
+        moveUpJvm.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                moveSelectedJvm(-1);
+            }
+        });
+
+        final JButton moveDownJvm = new JButton(Translator.R("CPJVMMoveDown"));
+        moveDownJvm.setName("jvmMoveDownButton");
+        moveDownJvm.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                moveSelectedJvm(1);
+            }
+        });
+
         GridBagConstraints c = new GridBagConstraints();
         c.fill = GridBagConstraints.BOTH;
         c.weightx = 1;
@@ -341,8 +425,10 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
         c.gridy++;
         this.add(pluginJvmArgumentsField, c);
         c.gridy++;
-        this.add(descriptionExec, c);
-        c.gridy++;
+        if (descriptionExec != null) {
+            this.add(descriptionExec, c);
+            c.gridy++;
+        }
         c.weighty = 1;
         this.add(knownJvmScroll, c);
         c.gridy++;
@@ -352,15 +438,25 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
         buttonRow.gridwidth = 1;
         buttonRow.weightx = 0;
         this.add(autodetectJvm, buttonRow);
+        GridBagConstraints refreshButton = (GridBagConstraints) buttonRow.clone();
+        refreshButton.gridx = 1;
+        this.add(refreshJvm, refreshButton);
         GridBagConstraints addButton = (GridBagConstraints) buttonRow.clone();
-        addButton.gridx = 1;
+        addButton.gridx = 2;
         this.add(addJvm, addButton);
         GridBagConstraints editButton = (GridBagConstraints) buttonRow.clone();
-        editButton.gridx = 2;
+        editButton.gridx = 3;
         this.add(editJvm, editButton);
-        GridBagConstraints removeButton = (GridBagConstraints) buttonRow.clone();
-        removeButton.gridx = 3;
-        this.add(removeJvm, removeButton);
+        c.gridy++;
+        GridBagConstraints orderRow = (GridBagConstraints) buttonRow.clone();
+        orderRow.gridy = c.gridy;
+        this.add(removeJvm, orderRow);
+        GridBagConstraints moveUpButton = (GridBagConstraints) orderRow.clone();
+        moveUpButton.gridx = 1;
+        this.add(moveUpJvm, moveUpButton);
+        GridBagConstraints moveDownButton = (GridBagConstraints) orderRow.clone();
+        moveDownButton.gridx = 2;
+        this.add(moveDownJvm, moveDownButton);
     }
 
     public static JvmValidationResult validateJvm(String cmd) {

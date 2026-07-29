@@ -315,8 +315,8 @@ public class XDesktopEntry implements GenericDesktopEntry {
                 try {
                     cacheIcon();
                 } catch (NonFileProtocolException ex) {
-                    OutputController.getLogger().log(ex);
-                    //default icon will be used later
+                    logNoAvailableIcons();
+                    // default icon will be used later
                 }
             }
             if (isDesktop) {
@@ -567,12 +567,17 @@ public class XDesktopEntry implements GenericDesktopEntry {
         try {
             cacheIcon();
         } catch (NonFileProtocolException ex) {
-            OutputController.getLogger().log(ex);
+            logNoAvailableIcons();
         }
         catch (final IOException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
         return this.iconLocation;
+    }
+
+    private void logNoAvailableIcons() {
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                "Application has no available icons for desktop shortcut; using default.");
     }
     
     static String getFavIcon(JNLPFile file) {

@@ -2,12 +2,16 @@ package net.sourceforge.jnlp.config;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.sourceforge.jnlp.util.JvmAutodetector;
+import net.sourceforge.jnlp.util.JvmDescriptor;
+import net.sourceforge.jnlp.util.JvmSelector;
 
 public final class KnownJvmStore {
 
@@ -34,8 +38,27 @@ public final class KnownJvmStore {
                 || KEY_MATCH_STRATEGY.equals(key);
     }
 
+    /**
+     * Preference-ordered JDK homes: legacy {@code deployment.jre.dir} first (upgrade default slot),
+     * then numbered {@code deployment.jdk.N} in ascending N. Duplicates are collapsed.
+     */
     public static List<String> getKnownJvmHomes(DeploymentConfiguration config) {
         LinkedHashSet<String> homes = new LinkedHashSet<>();
+        String legacy = getLegacyDefaultHome(config);
+        if (legacy != null) {
+            homes.add(legacy);
+        }
+        for (String numbered : getNumberedJvmHomes(config)) {
+            homes.add(numbered);
+        }
+        return new ArrayList<>(homes);
+    }
+
+    /**
+     * Numbered {@code deployment.jdk.N} entries only (no legacy merge).
+     */
+    public static List<String> getNumberedJvmHomes(DeploymentConfiguration config) {
+        List<String> homes = new ArrayList<>();
         for (int i = 1; i <= MAX_JDK_ENTRIES; i++) {
             String home = config.getProperty(jdkKey(i));
             if (home == null || home.trim().isEmpty()) {
@@ -43,15 +66,24 @@ public final class KnownJvmStore {
             }
             homes.add(home.trim());
         }
-        if (homes.isEmpty()) {
-            String legacy = config.getProperty(DeploymentConfiguration.KEY_JRE_DIR);
-            if (legacy != null && !legacy.trim().isEmpty()) {
-                homes.add(legacy.trim());
-            }
-        }
-        return new ArrayList<>(homes);
+        return homes;
     }
 
+    public static String getLegacyDefaultHome(DeploymentConfiguration config) {
+        if (config == null) {
+            return null;
+        }
+        String legacy = config.getProperty(DeploymentConfiguration.KEY_JRE_DIR);
+        if (legacy == null || legacy.trim().isEmpty()) {
+            return null;
+        }
+        return legacy.trim();
+    }
+
+    /**
+     * Persists preference order. Index 0 becomes {@code deployment.jre.dir} (legacy default slot)
+     * and {@code deployment.jdk.1}; remaining entries become {@code deployment.jdk.2+} .
+     */
     public static void setKnownJvmHomes(DeploymentConfiguration config, List<String> homes) {
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         if (homes != null) {
@@ -102,7 +134,8 @@ public final class KnownJvmStore {
     }
 
     /**
-     * Merges autodetected JDK homes into the configuration, matching control panel autodetect behaviour.
+     * Merges autodetected JDK homes after existing preference order. Newly discovered homes are
+     * sorted Corretto → Temurin → others, then preferred majors 17 → 21 → 11 → others.
      *
      * @return true if any new JDK home was added
      */
@@ -111,8 +144,10 @@ public final class KnownJvmStore {
         for (String home : getKnownJvmHomes(config)) {
             merged.add(home);
         }
+        List<String> discovered = new ArrayList<>(JvmAutodetector.discoverValidJvmHomes());
+        Collections.sort(discovered, autodetectionPreferenceComparator());
         boolean changed = false;
-        for (String home : JvmAutodetector.discoverValidJvmHomes()) {
+        for (String home : discovered) {
             if (merged.add(home)) {
                 changed = true;
             }
@@ -121,6 +156,63 @@ public final class KnownJvmStore {
             setKnownJvmHomes(config, new ArrayList<>(merged));
         }
         return changed;
+    }
+
+    /**
+     * Autodetect preference: Corretto, then Temurin, then others; within that, majors 17, 21, 11,
+     * then remaining majors ascending. Used only when inserting newly discovered homes.
+     */
+    public static Comparator<String> autodetectionPreferenceComparator() {
+        return new Comparator<String>() {
+            @Override
+            public int compare(String left, String right) {
+                JvmDescriptor leftDesc = JvmDescriptor.describe(left);
+                JvmDescriptor rightDesc = JvmDescriptor.describe(right);
+                int vendor = Integer.compare(vendorRank(leftDesc), vendorRank(rightDesc));
+                if (vendor != 0) {
+                    return vendor;
+                }
+                int version = Integer.compare(versionRank(leftDesc), versionRank(rightDesc));
+                if (version != 0) {
+                    return version;
+                }
+                return normalizeHome(left).compareToIgnoreCase(normalizeHome(right));
+            }
+        };
+    }
+
+    static int vendorRank(JvmDescriptor descriptor) {
+        if (descriptor == null) {
+            return 2;
+        }
+        String flavour = descriptor.getFlavour() == null ? "" : descriptor.getFlavour();
+        String home = descriptor.getHomePath() == null ? "" : descriptor.getHomePath();
+        String lower = (flavour + " " + home).toLowerCase(Locale.ROOT);
+        if (lower.contains("corretto")) {
+            return 0;
+        }
+        if (lower.contains("temurin") || lower.contains("adoptium")) {
+            return 1;
+        }
+        return 2;
+    }
+
+    static int versionRank(JvmDescriptor descriptor) {
+        int major = descriptor == null ? 0 : JvmSelector.parseMajor(descriptor.getVersion());
+        if (major == 17) {
+            return 0;
+        }
+        if (major == 21) {
+            return 1;
+        }
+        if (major == 11) {
+            return 2;
+        }
+        if (major <= 0) {
+            return 10_000;
+        }
+        // Keep other majors after the preferred set, ordered by major ascending.
+        return 100 + major;
     }
 
     /**

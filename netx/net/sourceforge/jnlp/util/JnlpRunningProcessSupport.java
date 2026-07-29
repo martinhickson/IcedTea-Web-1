@@ -228,8 +228,12 @@ public final class JnlpRunningProcessSupport {
         Process process = null;
         try {
             process = new ProcessBuilder(command).redirectErrorStream(true).start();
-            int exitCode = process.waitFor();
-            return exitCode == 0;
+            boolean finished = process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS);
+            if (!finished) {
+                process.destroyForcibly();
+                return false;
+            }
+            return process.exitValue() == 0;
         } catch (Exception ex) {
             return false;
         } finally {

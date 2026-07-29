@@ -1,8 +1,6 @@
 package net.sourceforge.jnlp.util;
 
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
 import java.util.List;
 import net.sourceforge.jnlp.Version;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
@@ -109,17 +107,14 @@ public final class JvmSelector {
         if (requestedVersion == null || requestedVersion.trim().isEmpty()) {
             return valid.get(0);
         }
-        List<JvmDescriptor> matching = new ArrayList<>();
+        // Version-level match first (Exact / Minimum / Maximum). Among multiple matches,
+        // configured preference order wins — do not re-sort by version.
         for (JvmDescriptor candidate : valid) {
             if (matchesStrategy(candidate, requestedVersion.trim(), strategy)) {
-                matching.add(candidate);
+                return candidate;
             }
         }
-        if (matching.isEmpty()) {
-            return null;
-        }
-        Collections.sort(matching, comparatorFor(strategy));
-        return matching.get(0);
+        return null;
     }
 
     public static boolean matchesStrategy(JvmDescriptor candidate, String requestedVersion, JdkMatchStrategy strategy) {
@@ -142,13 +137,6 @@ public final class JvmSelector {
         return requestedMajor > 0 && parseMajor(jvmVersion) == requestedMajor;
     }
 
-    private static Comparator<JvmDescriptor> comparatorFor(JdkMatchStrategy strategy) {
-        if (strategy == JdkMatchStrategy.MINIMUM) {
-            return VERSION_ASCENDING;
-        }
-        return VERSION_DESCENDING;
-    }
-
     static String stripPlusModifier(String requestedVersion) {
         if (requestedVersion == null) {
             return "";
@@ -159,20 +147,6 @@ public final class JvmSelector {
         }
         return trimmed;
     }
-
-    private static final Comparator<JvmDescriptor> VERSION_DESCENDING = new Comparator<JvmDescriptor>() {
-        @Override
-        public int compare(JvmDescriptor left, JvmDescriptor right) {
-            return Integer.compare(parseMajor(right.getVersion()), parseMajor(left.getVersion()));
-        }
-    };
-
-    private static final Comparator<JvmDescriptor> VERSION_ASCENDING = new Comparator<JvmDescriptor>() {
-        @Override
-        public int compare(JvmDescriptor left, JvmDescriptor right) {
-            return Integer.compare(parseMajor(left.getVersion()), parseMajor(right.getVersion()));
-        }
-    };
 
     public static int parseMajor(String version) {
         if (version == null || version.isEmpty()) {

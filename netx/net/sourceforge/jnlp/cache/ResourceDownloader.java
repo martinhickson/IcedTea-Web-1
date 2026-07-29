@@ -319,21 +319,26 @@ public class ResourceDownloader implements Runnable {
                 //in addition, downloaded name can be really nasty (some generated has from dynamic servlet.jnlp)
                 //anjother issue is forking. If this (eg local) jnlp starts its second isntance, the url *can* be different
                 //in contrary, usally si no. as fork is reusing all args, and only adding xmx/xms and xnofork.
-                String jnlpPath = Boot.getOptionParser().getMainArg(); //get jnlp from args passed
-                if (jnlpPath == null || jnlpPath.equals("")) {
-                    jnlpPath = Boot.getOptionParser().getParam(OptionsDefinitions.OPTIONS.JNLP);
+                if (Boot.getOptionParser() == null) {
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                            "Not-setting jnlp-path: option parser not initialized yet");
+                } else {
+                    String jnlpPath = Boot.getOptionParser().getMainArg(); //get jnlp from args passed
                     if (jnlpPath == null || jnlpPath.equals("")) {
-                        jnlpPath = Boot.getOptionParser().getParam(OptionsDefinitions.OPTIONS.HTML);
+                        jnlpPath = Boot.getOptionParser().getParam(OptionsDefinitions.OPTIONS.JNLP);
                         if (jnlpPath == null || jnlpPath.equals("")) {
-                            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Not-setting jnlp-path for missing main/jnlp/html argument");
+                            jnlpPath = Boot.getOptionParser().getParam(OptionsDefinitions.OPTIONS.HTML);
+                            if (jnlpPath == null || jnlpPath.equals("")) {
+                                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Not-setting jnlp-path for missing main/jnlp/html argument");
+                            } else {
+                                entry.setJnlpPath(jnlpPath);
+                            }
                         } else {
                             entry.setJnlpPath(jnlpPath);
                         }
                     } else {
                         entry.setJnlpPath(jnlpPath);
                     }
-                } else {
-                    entry.setJnlpPath(jnlpPath);
                 }
             } catch (Exception ex){
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);

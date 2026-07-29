@@ -307,6 +307,11 @@ public final class DeploymentConfiguration {
     public static final String KEY_KEEP_JAVAWS_PROCESS = "deployment.keepJavawsProcess";
     public static final String KEY_KEEP_JAVA_PRELAUNCH_PROCESS = "deployment.keepjavaPrelaunchProcess";
     /**
+     * When {@code true}, JDK-version relaunch keeps the legacy inherit-IO + wait parent.
+     * Default {@code false}: parent hands off to the selected JVM and exits (file/NUL stdio).
+     */
+    public static final String KEY_KEEP_JAVAWS_RELAUNCH_PROCESS = "deployment.keepJavawsRelaunchProcess";
+    /**
      * remote configuration properties
      */
     public static final String KEY_SYSTEM_CONFIG = "deployment.system.config";
