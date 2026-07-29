@@ -26,6 +26,7 @@ import java.net.URL;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Calendar;
+import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Locale;
@@ -34,9 +35,15 @@ import java.util.jar.Attributes;
 import net.sourceforge.jnlp.SecurityDesc.RequestedPermissionLevel;
 import net.sourceforge.jnlp.cache.ResourceTracker;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.JdkMatchStrategy;
+import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.runtime.JNLPClassLoader;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.ClasspathMatcher;
+import net.sourceforge.jnlp.util.JavaVersionUtils;
+import net.sourceforge.jnlp.util.JvmDescriptor;
+import net.sourceforge.jnlp.util.JvmSelector;
 import net.sourceforge.jnlp.util.UrlUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
@@ -931,28 +938,66 @@ public class JNLPFile {
 
         List<String> newVMArgs = new LinkedList<>();
 
-        JREDesc[] jres = getResources().getJREs();
-        for (JREDesc jre : jres) {
-            if (!jre.getVersion().matchesJreVersion()) {
-                newVMArgs.add("-Dicedtea-web.relaunch.requestedJre="
-                        + encodeRequestedJreVersionForRelaunch(jre.getVersion().toString()));
-            }
-            String initialHeapSize = jre.getInitialHeapSize();
-            if (initialHeapSize != null) {
-                newVMArgs.add("-Xms" + initialHeapSize);
-            }
-            String maxHeapSize = jre.getMaximumHeapSize();
-            if (maxHeapSize != null) {
-                newVMArgs.add("-Xmx" + maxHeapSize);
-            }
-            String vmArgsFromJre = jre.getVMArgs();
-            if (vmArgsFromJre != null) {
-                String[] args = vmArgsFromJre.split(" ");
-                newVMArgs.addAll(Arrays.asList(args));
-            }
+        // Multiple <j2se> entries are alternatives. Only the selected entry may contribute
+        // requestedJre / heap / java-vm-args — otherwise relaunch gets duplicate requestedJre
+        // values and selection/autodetect incorrectly locks onto the first listed version.
+        JREDesc jre = selectJreDescForLaunch();
+        if (jre == null) {
+            return newVMArgs;
+        }
+        if (jre.getVersion() != null && !jre.getVersion().matchesJreVersion()) {
+            newVMArgs.add("-Dicedtea-web.relaunch.requestedJre="
+                    + encodeRequestedJreVersionForRelaunch(jre.getVersion().toString()));
+        }
+        String initialHeapSize = jre.getInitialHeapSize();
+        if (initialHeapSize != null) {
+            newVMArgs.add("-Xms" + initialHeapSize);
+        }
+        String maxHeapSize = jre.getMaximumHeapSize();
+        if (maxHeapSize != null) {
+            newVMArgs.add("-Xmx" + maxHeapSize);
+        }
+        String vmArgsFromJre = jre.getVMArgs();
+        if (vmArgsFromJre != null) {
+            String[] args = vmArgsFromJre.split(" ");
+            newVMArgs.addAll(Arrays.asList(args));
         }
 
         return newVMArgs;
+    }
+
+    /**
+     * Select the {@code <j2se>} alternative to use for relaunch / JVM matching.
+     * Prefers a version matching the current runtime, else the first listed alternative that
+     * has a known configured JVM, else the first listed entry.
+     */
+    public JREDesc selectJreDescForLaunch() {
+        JREDesc[] jres = getResources().getJREs();
+        if (jres.length == 0) {
+            return null;
+        }
+        List<String> versions = new ArrayList<>(jres.length);
+        for (JREDesc jre : jres) {
+            versions.add(jre.getVersion() == null ? "" : jre.getVersion().toString());
+        }
+        DeploymentConfiguration config = JNLPRuntime.getConfiguration();
+        JdkMatchStrategy strategy = config == null
+                ? JdkMatchStrategy.EXACT
+                : KnownJvmStore.getMatchStrategy(config);
+        List<JvmDescriptor> known = config == null
+                ? Collections.<JvmDescriptor>emptyList()
+                : JvmSelector.describeKnownJvms(config);
+        String selectedVersion = JvmSelector.selectVersionAmongAlternatives(
+                versions, known, strategy, JavaVersionUtils.getRunningMajorVersion());
+        if (selectedVersion == null || selectedVersion.isEmpty()) {
+            return jres[0];
+        }
+        for (JREDesc jre : jres) {
+            if (jre.getVersion() != null && selectedVersion.equals(jre.getVersion().toString())) {
+                return jre;
+            }
+        }
+        return jres[0];
     }
 
     /** Encode {@code +} so relaunch VM args survive shell launchers that split on {@code +}. */

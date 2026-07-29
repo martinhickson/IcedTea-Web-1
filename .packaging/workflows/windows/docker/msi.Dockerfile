@@ -15,3 +15,4 @@ ENV PATH=C:\dotnet;C:\Users\ContainerAdministrator\.dotnet\tools;C:\Windows\Syst
 
 RUN ["C:\\dotnet\\dotnet.exe", "tool", "install", "--global", "wix"]
 RUN ["C:\\Users\\ContainerAdministrator\\.dotnet\\tools\\wix.exe", "--version"]
+RUN ["C:\\Users\\ContainerAdministrator\\.dotnet\\tools\\wix.exe", "extension", "add", "-g", "WixToolset.Util.wixext"]

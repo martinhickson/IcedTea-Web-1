@@ -46,6 +46,11 @@ on:
         required: true
         default: false
         type: boolean
+      skip_critical_release_gates:
+        description: 'NON-DEFAULT escape hatch — skip mandatory JDK persistence + MSI PATH release gates'
+        required: false
+        default: false
+        type: boolean
   pull_request:
     branches:
       - 1.8
@@ -131,6 +136,9 @@ jobs:
           * **Multi-JDK JNLP relaunch**
             Correct relaunch when a JNLP declares minimum JDK versions (`11+`, `18+`, etc.) and the launcher selects a different installed JDK; environment variables propagate to forked `javaws` on Linux and macOS.
 
+          * **Critical release gates (default-on)**
+            JDK Control Panel / launch-autodetect persistence (must survive Apply and relaunch) and Windows MSI machine-PATH registration are mandatory release gates. Disable only via workflow input `skip_critical_release_gates`.
+
           * **Integration test validation**
             AssertJ Swing control-panel ITs (Linux + VNC), multi-JDK process-launch ITs, and Windows JDK autodetect ITs are exercised via the Integration Tests workflow before release.
 
@@ -189,9 +197,58 @@ jobs:
               --notes "${notes}"
           fi
 
-  dotnet-distribution:
+  critical-release-gates:
+    name: Critical JDK persistence gates
     needs: release
-    if: ${{ !cancelled() && (needs.release.result == 'success' || needs.release.result == 'skipped') }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_critical_release_gates != true && needs.release.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout release branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ inputs.release_branch }}
+
+      - name: Set up JDK 11, 17, and 21
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: |
+            11
+            17
+            21
+
+      - name: Remember JDK homes
+        run: |
+          echo "JDK11_HOME=$JAVA_HOME_11_X64" >> "$GITHUB_ENV"
+          echo "JDK17_HOME=$JAVA_HOME_17_X64" >> "$GITHUB_ENV"
+          echo "JDK21_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+
+      - name: Install TigerVNC
+        run: sudo apt-get update && sudo apt-get install -y tigervnc-standalone-server x11-utils
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2
+          key: ubuntu-critical-gates-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ubuntu-critical-gates-m2-
+
+      - name: Ensure pack200 Maven artifact
+        run: |
+          chmod +x scripts/ensure-pack200-maven.sh
+          ./scripts/ensure-pack200-maven.sh
+
+      - name: Run critical JDK persistence gates
+        env:
+          MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml
+        run: |
+          chmod +x scripts/run-critical-jdk-persistence-gates.sh
+          ./scripts/run-critical-jdk-persistence-gates.sh
+
+  dotnet-distribution:
+    needs: [release, critical-release-gates]
+    if: ${{ !cancelled() && (needs.release.result == 'success' || needs.release.result == 'skipped') && (needs.critical-release-gates.result == 'success' || needs.critical-release-gates.result == 'skipped') }}
     name: Distribution (${{ matrix.rid }})
     runs-on: ${{ matrix.os }}
     strategy:
@@ -448,10 +505,23 @@ jobs:
         if: runner.os == 'Windows'
         env:
           ITW_REQUIRE_SIGNED_DIST: ${{ github.event_name == 'workflow_dispatch' && inputs['sign-windows-artifacts'] == true && 'true' || '' }}
+          ITW_SKIP_CRITICAL_RELEASE_GATES: ${{ github.event_name == 'workflow_dispatch' && inputs.skip_critical_release_gates == true && 'true' || '' }}
         run: |
           $env:ITW_VERSION = "${{ env.RELEASE_VERSION }}"
           $env:ITW_DIST_DIR = Join-Path (Get-Location) "icedtea-web-distribution/target/dist/icedtea-web-$($env:ITW_VERSION)"
           & .packaging/workflows/windows/build-msi.ps1
+        shell: pwsh
+
+      - name: Verify Windows MSI machine PATH registration
+        if: runner.os == 'Windows' && (github.event_name != 'workflow_dispatch' || inputs.skip_critical_release_gates != true)
+        run: |
+          $msi = Get-ChildItem "icedtea-web-distribution/target/native-packages/*.msi" |
+            Sort-Object LastWriteTime -Descending |
+            Select-Object -First 1
+          if (-not $msi) {
+            throw "No MSI found to verify PATH registration."
+          }
+          & .packaging/workflows/windows/verify-msi-path.ps1 -MsiPath $msi.FullName
         shell: pwsh
 
       - name: Sign Windows MSI release artifact
@@ -537,8 +607,8 @@ jobs:
 
   upload-release-assets:
     name: Upload release assets
-    needs: dotnet-distribution
-    if: github.event_name == 'workflow_dispatch' && needs.dotnet-distribution.result == 'success'
+    needs: [dotnet-distribution, critical-release-gates]
+    if: ${{ github.event_name == 'workflow_dispatch' && needs.dotnet-distribution.result == 'success' && (needs.critical-release-gates.result == 'success' || (needs.critical-release-gates.result == 'skipped' && inputs.skip_critical_release_gates == true)) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

@@ -103,7 +103,8 @@
             <configuration>
               <target>
                 <chmod file="${project.basedir}/scripts/compile-test-apps.sh" perm="ugo+rx"/>
-                <exec executable="${project.basedir}/scripts/compile-test-apps.sh" failonerror="true">
+                <exec executable="bash" failonerror="true">
+                  <arg value="${project.basedir}/scripts/compile-test-apps.sh"/>
                   <env key="ITW_JDK17_HOME" value="${itw.jdk17.home}"/>
                   <env key="ITW_JDK21_HOME" value="${itw.jdk21.home}"/>
                   <env key="ITW_JDK25_HOME" value="${itw.jdk25.home}"/>
@@ -120,7 +121,8 @@
             <configuration>
               <target>
                 <chmod file="${project.basedir}/scripts/install-test-trust-cert.sh" perm="ugo+rx"/>
-                <exec executable="${project.basedir}/scripts/install-test-trust-cert.sh" failonerror="true">
+                <exec executable="bash" failonerror="true">
+                  <arg value="${project.basedir}/scripts/install-test-trust-cert.sh"/>
                   <arg value="${itw.test.home}"/>
                 </exec>
               </target>
@@ -134,21 +136,13 @@
             </goals>
             <configuration>
               <target>
-                <mkdir dir="${project.build.directory}/bin"/>
-                <copy file="${project.basedir}/../icedtea-web/target/bin/byte-buddy-agent.jar"
-                      tofile="${project.build.directory}/bin/byte-buddy-agent.jar" failonerror="true"/>
-                <copy file="${project.basedir}/../scripts/javaws.sh"
-                      tofile="${project.build.directory}/bin/javaws"
-                      overwrite="true"
-                      filtering="true">
-                  <filterset>
-                    <filter token="ITW_UBER_JAR"
-                            value="${settings.localRepository}/net/sourceforge/icedtea-web/icedtea-web/${icedtea-web.version}/icedtea-web-${icedtea-web.version}-${itw.uberjar.classifier}.jar"/>
-                    <filter token="BYTEBUDDY_AGENT_JAR" value="${project.build.directory}/bin/byte-buddy-agent.jar"/>
-                    <filter token="MAIN_CLASS" value="net.sourceforge.jnlp.runtime.JavawsUberLauncher"/>
-                  </filterset>
-                </copy>
-                <chmod file="${project.build.directory}/bin/javaws" perm="ugo+rx"/>
+                <chmod file="${project.basedir}/scripts/prepare-javaws-launcher.sh" perm="ugo+rx"/>
+                <exec executable="bash" failonerror="true">
+                  <arg value="${project.basedir}/scripts/prepare-javaws-launcher.sh"/>
+                  <arg value="${project.build.directory}/bin"/>
+                  <arg value="${settings.localRepository}/net/sourceforge/icedtea-web/icedtea-web/${icedtea-web.version}/icedtea-web-${icedtea-web.version}-${itw.uberjar.classifier}.jar"/>
+                  <arg value="net.sourceforge.jnlp.runtime.JavawsUberLauncher"/>
+                </exec>
               </target>
             </configuration>
           </execution>

@@ -66,6 +66,7 @@ $dockerRunArgs = @(
     "--workdir", $ContainerWorkspace,
     "--env", "ITW_VERSION=$env:ITW_VERSION",
     "--env", "ITW_REQUIRE_SIGNED_DIST=$env:ITW_REQUIRE_SIGNED_DIST",
+    "--env", "ITW_SKIP_CRITICAL_RELEASE_GATES=$env:ITW_SKIP_CRITICAL_RELEASE_GATES",
     "--env", "ITW_PACKAGE_NAME=$env:ITW_PACKAGE_NAME",
     "--env", "ITW_PACKAGE_MANUFACTURER=$env:ITW_PACKAGE_MANUFACTURER",
     "--env", "ITW_VENDOR_DIR_NAME=$env:ITW_VENDOR_DIR_NAME",

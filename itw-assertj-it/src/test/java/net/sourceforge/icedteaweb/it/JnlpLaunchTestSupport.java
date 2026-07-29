@@ -21,11 +21,34 @@ import net.sourceforge.jnlp.util.JvmAutodetector;
 
 final class JnlpLaunchTestSupport {
 
-    private static final String JAVAWS_BIN = System.getProperty("itw.javaws.bin");
+    private static final String JAVAWS_BIN = resolveJavawsBinProperty();
     private static final String JNLP_ROOT = System.getProperty("itw.test.jnlp.root");
     private static final List<Process> launched = new ArrayList<>();
 
     private JnlpLaunchTestSupport() {
+    }
+
+    private static String resolveJavawsBinProperty() {
+        String configured = System.getProperty("itw.javaws.bin");
+        if (configured == null || configured.isBlank()) {
+            return configured;
+        }
+        File configuredFile = new File(configured);
+        String os = System.getProperty("os.name", "");
+        if (os.toLowerCase(java.util.Locale.ROOT).contains("windows")) {
+            File parent = configuredFile.getParentFile();
+            if (parent != null) {
+                File cmd = new File(parent, "javaws.cmd");
+                if (cmd.isFile()) {
+                    return cmd.getAbsolutePath();
+                }
+                File exe = new File(parent, "javaws.exe");
+                if (exe.isFile()) {
+                    return exe.getAbsolutePath();
+                }
+            }
+        }
+        return configuredFile.getAbsolutePath();
     }
 
     static boolean javawsAvailable() {
@@ -33,7 +56,8 @@ final class JnlpLaunchTestSupport {
             return false;
         }
         File javaws = new File(JAVAWS_BIN);
-        return javaws.isFile() && javaws.canExecute();
+        // .cmd may not report canExecute() on all JDKs; isFile() is enough for Windows wrappers.
+        return javaws.isFile() && (javaws.canExecute() || JAVAWS_BIN.toLowerCase(java.util.Locale.ROOT).endsWith(".cmd"));
     }
 
     static boolean sampleBuilt(String sampleName) {
@@ -163,26 +187,27 @@ final class JnlpLaunchTestSupport {
     }
 
     private static String readAllLogsSince(String prefix, long sinceMs, long timeoutMs) throws Exception {
-        List<File> logFiles = waitForLogFiles(prefix, sinceMs, timeoutMs);
-        StringBuilder combined = new StringBuilder();
-        for (File logFile : logFiles) {
-            combined.append(Files.readString(logFile.toPath(), StandardCharsets.UTF_8));
-            combined.append('\n');
-        }
-        return combined.toString();
-    }
-
-    private static List<File> waitForLogFiles(String prefix, long sinceMs, long timeoutMs)
-            throws InterruptedException {
+        // Keep polling: relaunch writes a new itw-javantx-*.log after the parent log appears.
         long deadline = System.currentTimeMillis() + timeoutMs;
+        String combined = "";
         while (System.currentTimeMillis() < deadline) {
-            List<File> files = logFilesWithPrefixSince(prefix, sinceMs);
-            if (!files.isEmpty()) {
-                return files;
+            List<File> logFiles = logFilesWithPrefixSince(prefix, sinceMs);
+            if (!logFiles.isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                for (File logFile : logFiles) {
+                    sb.append(Files.readString(logFile.toPath(), StandardCharsets.UTF_8));
+                    sb.append('\n');
+                }
+                combined = sb.toString();
+                if (combined.contains("Selected JVM")
+                        || combined.contains("Invoking main()")
+                        || combined.contains("No suitable JVM")) {
+                    return combined;
+                }
             }
             Thread.sleep(200);
         }
-        return logFilesWithPrefixSince(prefix, sinceMs);
+        return combined;
     }
 
     private static List<File> logFilesWithPrefixSince(String prefix, long sinceMs) {

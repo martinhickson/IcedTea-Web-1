@@ -53,6 +53,42 @@ public final class JvmSelector {
         return selectBest(candidates, requestedVersion, JdkMatchStrategy.EXACT);
     }
 
+    /**
+     * Choose among ordered JNLP {@code <j2se>} version alternatives.
+     * Prefer: (1) an alternative matching the current runtime, (2) the first alternative
+     * that has a known configured JVM, else (3) the first listed version (JNLP preference).
+     */
+    public static String selectVersionAmongAlternatives(List<String> orderedVersions,
+            List<JvmDescriptor> knownCandidates, JdkMatchStrategy strategy, int runningMajor) {
+        if (orderedVersions == null || orderedVersions.isEmpty()) {
+            return null;
+        }
+        if (strategy == null) {
+            strategy = JdkMatchStrategy.EXACT;
+        }
+        if (runningMajor > 0) {
+            JvmDescriptor running = new JvmDescriptor("running", "Running JVM",
+                    Integer.toString(runningMajor), true, null);
+            for (String version : orderedVersions) {
+                if (version != null && matchesStrategy(running, version.trim(), strategy)) {
+                    return version.trim();
+                }
+            }
+        }
+        if (knownCandidates != null && !knownCandidates.isEmpty()) {
+            for (String version : orderedVersions) {
+                if (version == null || version.trim().isEmpty()) {
+                    continue;
+                }
+                if (selectBest(knownCandidates, version.trim(), strategy) != null) {
+                    return version.trim();
+                }
+            }
+        }
+        String first = orderedVersions.get(0);
+        return first == null ? null : first.trim();
+    }
+
     public static JvmDescriptor selectBest(List<JvmDescriptor> candidates, String requestedVersion,
             JdkMatchStrategy strategy) {
         if (candidates == null || candidates.isEmpty()) {

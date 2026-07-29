@@ -1,8 +1,10 @@
 package net.sourceforge.jnlp.config;
 
+import java.io.File;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import net.sourceforge.jnlp.util.JvmAutodetector;
@@ -105,5 +107,75 @@ public final class KnownJvmStore {
             setKnownJvmHomes(config, new ArrayList<>(merged));
         }
         return changed;
+    }
+
+    /**
+     * Ensures {@code home} is stored as a numbered {@code deployment.jdk.N} entry.
+     * <p>
+     * {@link #getKnownJvmHomes} can return a path that exists only via the legacy
+     * {@code deployment.jre.dir} fallback. Launch-time autodetect must still persist
+     * a real numbered JDK entry so relaunch / control panel see it.
+     *
+     * @return true if the configuration was modified
+     */
+    public static boolean ensureKnownJvmHome(DeploymentConfiguration config, String home) {
+        if (config == null || home == null || home.trim().isEmpty()) {
+            return false;
+        }
+        String normalized = normalizeHome(home);
+        if (normalized.isEmpty()) {
+            return false;
+        }
+        if (isStoredAsNumberedJdk(config, normalized)) {
+            return false;
+        }
+        List<String> homes = new ArrayList<>();
+        for (String existing : getKnownJvmHomes(config)) {
+            if (!sameHome(existing, normalized)) {
+                homes.add(existing);
+            }
+        }
+        homes.add(normalized);
+        setKnownJvmHomes(config, homes);
+        return true;
+    }
+
+    public static boolean isStoredAsNumberedJdk(DeploymentConfiguration config, String home) {
+        if (config == null || home == null || home.trim().isEmpty()) {
+            return false;
+        }
+        String normalized = normalizeHome(home);
+        for (int i = 1; i <= MAX_JDK_ENTRIES; i++) {
+            String value = config.getProperty(jdkKey(i));
+            if (value == null || value.trim().isEmpty()) {
+                break;
+            }
+            if (sameHome(value, normalized)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeHome(String home) {
+        String trimmed = home.trim();
+        try {
+            return new File(trimmed).getAbsoluteFile().getPath();
+        } catch (Exception ex) {
+            return trimmed;
+        }
+    }
+
+    private static boolean sameHome(String left, String right) {
+        if (left == null || right == null) {
+            return false;
+        }
+        String a = normalizeHome(left).replace('/', '\\');
+        String b = normalizeHome(right).replace('/', '\\');
+        if (a.equals(b)) {
+            return true;
+        }
+        String os = System.getProperty("os.name", "");
+        return os.toLowerCase(Locale.ROOT).contains("win") && a.equalsIgnoreCase(b);
     }
 }

@@ -1055,16 +1055,21 @@ public class Launcher {
     }
 
     private void saveDetectedJvm(JvmDescriptor detected) throws LaunchException {
+        if (detected == null || detected.getHomePath() == null || detected.getHomePath().trim().isEmpty()) {
+            return;
+        }
         DeploymentConfiguration config = JNLPRuntime.getConfiguration();
-        List<String> homes = new ArrayList<>(KnownJvmStore.getKnownJvmHomes(config));
-        if (!homes.contains(detected.getHomePath())) {
-            homes.add(detected.getHomePath());
-            KnownJvmStore.setKnownJvmHomes(config, homes);
-            try {
-                config.save();
-            } catch (IOException ex) {
-                throw new LaunchException(ex);
-            }
+        // Always persist a numbered deployment.jdk.N entry. getKnownJvmHomes() can already
+        // "contain" the path via deployment.jre.dir fallback without any numbered keys on disk.
+        if (!KnownJvmStore.ensureKnownJvmHome(config, detected.getHomePath())) {
+            return;
+        }
+        try {
+            config.save();
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Persisted autodetected JDK to deployment.properties: " + detected.getHomePath());
+        } catch (IOException ex) {
+            throw new LaunchException(ex);
         }
     }
 
@@ -1114,9 +1119,9 @@ public class Launcher {
     }
 
     private static String readRequestedJreFromJnlp(JNLPFile file) {
-        JREDesc[] jres = file.getResources().getJREs();
-        if (jres.length > 0) {
-            return jres[0].getVersion().toString();
+        JREDesc selected = file.selectJreDescForLaunch();
+        if (selected != null && selected.getVersion() != null) {
+            return selected.getVersion().toString();
         }
         return null;
     }

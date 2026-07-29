@@ -70,6 +70,8 @@ class JvmAssignmentOverrideIT {
         KnownJvmStore.setKnownJvmHomes(config, Arrays.asList(
                 jdk21.getAbsolutePath(), jdk25.getAbsolutePath()));
         KnownJvmStore.setMatchStrategy(config, JdkMatchStrategy.MAXIMUM);
+        // config.load() may include leftover assignments from earlier Control Panel ITs
+        KnownJvmAssignmentStore.setAssignments(config, Collections.<KnownJvmAssignmentStore.JvmAssignment>emptyList());
         return config;
     }
 

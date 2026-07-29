@@ -160,6 +160,10 @@ class ControlPanelJvmSelectionIT {
     }
 
     static boolean displayAvailable() {
+        // Native Windows/macOS GUI sessions have no X11 DISPLAY; still runnable when not headless.
+        if (!java.awt.GraphicsEnvironment.isHeadless()) {
+            return true;
+        }
         String display = System.getenv("DISPLAY");
         return display != null && !display.isBlank();
     }

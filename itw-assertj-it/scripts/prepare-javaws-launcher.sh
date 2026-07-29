@@ -1,19 +1,39 @@
 #!/usr/bin/env bash
+# Prepare bash javaws + Windows javaws.cmd for Failsafe ProcessBuilder launches.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ITW_ASSERTJ_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$ITW_ASSERTJ_DIR/.." && pwd)"
-BIN_DIR="$ITW_ASSERTJ_DIR/target/bin"
-ITW_VERSION="${ITW_VERSION:-$(sed -n 's:.*<icedtea-web.version>\(.*\)</icedtea-web.version>.*:\1:p' "$ITW_ASSERTJ_DIR/pom.xml")}"
-UBER_JAR="${UBER_JAR:-$HOME/.m2/repository/net/sourceforge/icedtea-web/icedtea-web/${ITW_VERSION}/icedtea-web-${ITW_VERSION}-uber.jar}"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BIN_DIR="${1:-$ROOT/target/bin}"
+UBER_JAR="${2:?uber jar path required}"
+MAIN_CLASS="${3:-net.sourceforge.jnlp.runtime.JavawsUberLauncher}"
 
 mkdir -p "$BIN_DIR"
-cp "$REPO_ROOT/icedtea-web/target/bin/byte-buddy-agent.jar" "$BIN_DIR/byte-buddy-agent.jar"
-sed \
-  -e "s|@ITW_UBER_JAR@|$UBER_JAR|g" \
-  -e "s|@BYTEBUDDY_AGENT_JAR@|$BIN_DIR/byte-buddy-agent.jar|g" \
-  -e "s|@MAIN_CLASS@|net.sourceforge.jnlp.runtime.JavawsUberLauncher|g" \
-  "$REPO_ROOT/scripts/javaws.sh" > "$BIN_DIR/javaws"
-chmod ugo+rx "$BIN_DIR/javaws"
-echo "$BIN_DIR/javaws"
+BB_SRC="$ROOT/../icedtea-web/target/bin/byte-buddy-agent.jar"
+cp -f "$BB_SRC" "$BIN_DIR/byte-buddy-agent.jar"
+
+# Prefer POSIX paths so the bash wrapper works under Git Bash / MSYS.
+to_posix() {
+  local p="$1"
+  if command -v cygpath >/dev/null 2>&1; then
+    cygpath -u "$p"
+  else
+    echo "$p" | sed -e 's#\\#/#g' -e 's#^\([A-Za-z]\):#/\L\1#'
+  fi
+}
+
+UBER_POSIX="$(to_posix "$UBER_JAR")"
+BB_POSIX="$(to_posix "$BIN_DIR/byte-buddy-agent.jar")"
+
+sed -e "s|@ITW_UBER_JAR@|${UBER_POSIX}|g" \
+    -e "s|@BYTEBUDDY_AGENT_JAR@|${BB_POSIX}|g" \
+    -e "s|@MAIN_CLASS@|${MAIN_CLASS}|g" \
+    "$ROOT/../scripts/javaws.sh" > "$BIN_DIR/javaws"
+chmod +x "$BIN_DIR/javaws"
+
+cat > "$BIN_DIR/javaws.cmd" <<'EOF'
+@echo off
+setlocal
+bash "%~dp0javaws" %*
+EOF
+
+echo "Prepared $BIN_DIR/javaws and $BIN_DIR/javaws.cmd"

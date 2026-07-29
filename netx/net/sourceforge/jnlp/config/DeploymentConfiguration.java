@@ -364,8 +364,18 @@ public final class DeploymentConfiguration {
     /** the current deployment properties */
     private Map<String, Setting<String>> currentConfiguration;
 
-    /** the deployment properties that cannot be changed */
+    /**
+     * Defaults + system baseline used by {@link #save()} to decide which keys belong in the
+     * user deployment.properties file. Must never be refreshed with user values — otherwise
+     * a later Apply writes only the newest delta and drops earlier user keys (e.g. deployment.jdk.*).
+     */
     private Map<String, Setting<String>> unchangeableConfiguration;
+
+    /**
+     * Last-applied / on-disk baseline for control-panel pending-change tracking and Revert.
+     * Updated by {@link #refreshPersistedBaseline()} after a successful Apply.
+     */
+    private Map<String, Setting<String>> persistedConfiguration;
 
     /** when true, setProperty updates are tracked and save() is deferred until Apply */
     private boolean editorSession;
@@ -389,6 +399,7 @@ public final class DeploymentConfiguration {
         userDeploymentFileDescriptor = configFile;
         currentConfiguration = new HashMap<>();
         unchangeableConfiguration = new HashMap<>();
+        persistedConfiguration = new HashMap<>();
          try {
             IcoSpi spi = new IcoSpi();
             IIORegistry.getDefaultInstance().registerServiceProvider(spi);
@@ -477,6 +488,9 @@ public final class DeploymentConfiguration {
         }
 
         currentConfiguration = initialProperties;
+        // Snapshot post-load state for Revert/pending tracking. Do not copy into
+        // unchangeableConfiguration — that must stay defaults+system for save().
+        persistedConfiguration = copySettingsMap(currentConfiguration);
         maybeAutodetectJdksOnLoad();
     }
 
@@ -488,6 +502,7 @@ public final class DeploymentConfiguration {
         if (KnownJvmStore.applyAutodetectedJvms(this)) {
             try {
                 save();
+                persistedConfiguration = copySettingsMap(currentConfiguration);
             } catch (IOException ex) {
                 OutputController.getLogger().log(ex);
             }
@@ -755,20 +770,25 @@ public final class DeploymentConfiguration {
     }
 
     private String getPersistedPropertyValue(String key) {
-        Setting<String> setting = unchangeableConfiguration.get(key);
+        Setting<String> setting = persistedConfiguration.get(key);
         return setting == null ? null : setting.getValue();
     }
 
     private void refreshPersistedBaseline() {
-        for (String key : currentConfiguration.keySet()) {
-            Setting<String> current = currentConfiguration.get(key);
-            Setting<String> persisted = unchangeableConfiguration.get(key);
-            if (persisted != null) {
-                persisted.setValue(current.getValue());
-            } else {
-                unchangeableConfiguration.put(key, new Setting<>(current));
+        persistedConfiguration = copySettingsMap(currentConfiguration);
+    }
+
+    private static Map<String, Setting<String>> copySettingsMap(Map<String, Setting<String>> source) {
+        Map<String, Setting<String>> copy = new HashMap<>();
+        if (source == null) {
+            return copy;
+        }
+        for (Map.Entry<String, Setting<String>> entry : source.entrySet()) {
+            if (entry.getValue() != null) {
+                copy.put(entry.getKey(), new Setting<>(entry.getValue()));
             }
         }
+        return copy;
     }
 
     /**
@@ -995,6 +1015,10 @@ public final class DeploymentConfiguration {
                 comments = comments + System.lineSeparator() + userComments;
             }
             toSave.store(out, comments); ;
+        }
+        // Keep pending/revert baseline aligned after non-editor saves (e.g. launch autodetect).
+        if (!editorSession) {
+            persistedConfiguration = copySettingsMap(currentConfiguration);
         }
     }
 

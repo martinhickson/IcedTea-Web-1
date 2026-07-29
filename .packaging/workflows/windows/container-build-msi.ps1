@@ -195,19 +195,24 @@ foreach ($file in $files) {
 
 # Restore legacy win-installer PATH registration (installer.json.in environmentVariables).
 # Appends [INSTALLFOLDER]bin to the machine PATH; removed on uninstall.
+# Use a RegistryValue keypath — Component/@KeyPath alone was dropped by WiX in 2.9.5 builds
+# (shipped MSI had no Environment table), so PATH never got registered.
 $pathComponentId = "CmpPathEnvironment"
-[void]$componentsXml.AppendLine("    <Component Id=`"$pathComponentId`" Directory=`"INSTALLFOLDER`" Guid=`"$PathEnvironmentComponentGuid`" KeyPath=`"yes`">")
+[void]$componentsXml.AppendLine("    <Component Id=`"$pathComponentId`" Directory=`"INSTALLFOLDER`" Guid=`"$PathEnvironmentComponentGuid`">")
+[void]$componentsXml.AppendLine("      <RegistryValue Root=`"HKLM`" Key=`"Software\IcedTeaWeb\WebStart`" Name=`"InstallPath`" Type=`"string`" Value=`"[INSTALLFOLDER]`" KeyPath=`"yes`" />")
 [void]$componentsXml.AppendLine("      <Environment Id=`"IcedTeaWebPath`" Name=`"PATH`" Value=`"[INSTALLFOLDER]bin`" Permanent=`"no`" Part=`"last`" Action=`"set`" System=`"yes`" />")
 [void]$componentsXml.AppendLine("    </Component>")
 [void]$componentRefsXml.AppendLine("      <ComponentRef Id=`"$pathComponentId`" />")
 
 @"
 <?xml version="1.0" encoding="UTF-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
   <Package Name="$(Escape-Xml $PackageName)" Manufacturer="$(Escape-Xml $Manufacturer)" Version="$SafeVersion" UpgradeCode="$UpgradeCode" Scope="perMachine">
     <SummaryInformation Description="$(Escape-Xml "$PackageName installer")" Manufacturer="$(Escape-Xml $Manufacturer)" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of $(Escape-Xml $PackageName) is already installed." />
     <MediaTemplate EmbedCab="yes" />
+    <util:BroadcastEnvironmentChange />
 
 $iconsXml
     <StandardDirectory Id="ProgramFiles64Folder">
@@ -234,9 +239,20 @@ $WixExe = if (Test-Path "C:\Users\ContainerAdministrator\.dotnet\tools\wix.exe" 
     "wix"
 }
 
-& $WixExe build -acceptEula wix7 $WxsPath -arch x64 -o $MsiPath
+# Util extension provides BroadcastEnvironmentChange; ensure it is available in the image.
+& $WixExe extension add -g WixToolset.Util.wixext 2>$null | Out-Null
+
+& $WixExe build -acceptEula -ext WixToolset.Util.wixext $WxsPath -arch x64 -o $MsiPath
 if ($LASTEXITCODE -ne 0) {
     throw "WiX MSI build failed."
+}
+
+# Fail the build if PATH registration did not make it into the MSI (the 2.9.5 regression),
+# unless the release workflow explicitly skips critical gates.
+if ($env:ITW_SKIP_CRITICAL_RELEASE_GATES -eq "true") {
+    Write-Warning "ITW_SKIP_CRITICAL_RELEASE_GATES=true — skipping MSI PATH Environment verification."
+} else {
+    & (Join-Path $PSScriptRoot "verify-msi-path.ps1") -MsiPath $MsiPath
 }
 
 Write-Host "Built MSI: $MsiPath"

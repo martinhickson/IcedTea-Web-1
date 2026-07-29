@@ -77,8 +77,13 @@ class ControlPanelJvmAutodetectIT {
     }
 
     static boolean displayAvailable() {
+        if (JvmAutodetector.discoverValidJvmHomes().isEmpty()) {
+            return false;
+        }
+        if (!java.awt.GraphicsEnvironment.isHeadless()) {
+            return true;
+        }
         String display = System.getenv("DISPLAY");
-        return display != null && !display.isBlank()
-                && !JvmAutodetector.discoverValidJvmHomes().isEmpty();
+        return display != null && !display.isBlank();
     }
 }
