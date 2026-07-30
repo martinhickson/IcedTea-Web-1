@@ -2,9 +2,12 @@ package net.sourceforge.icedteaweb.it;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Properties;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.util.JvmAutodetector;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -28,7 +31,10 @@ class DeploymentAutodetectJdksOnLoadIT {
         DeploymentConfiguration config = new DeploymentConfiguration();
         config.load();
 
-        List<String> expected = JvmAutodetector.discoverValidJvmHomes();
+        // Autodetect persists discovery order after KnownJvmStore's preference sort
+        // (Corretto → Temurin → others; majors 17 → 21 → 11 → rest).
+        List<String> expected = new ArrayList<>(JvmAutodetector.discoverValidJvmHomes());
+        Collections.sort(expected, KnownJvmStore.autodetectionPreferenceComparator());
         assertThat(expected).isNotEmpty();
         for (int i = 0; i < expected.size(); i++) {
             assertThat(config.getProperty("deployment.jdk." + (i + 1))).isEqualTo(expected.get(i));

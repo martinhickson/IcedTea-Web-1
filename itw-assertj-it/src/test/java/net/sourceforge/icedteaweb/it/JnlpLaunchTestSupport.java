@@ -202,6 +202,24 @@ final class JnlpLaunchTestSupport {
         return readAllLogsSince(JAVANTX_LOG_PREFIX, sinceMs, timeoutMs);
     }
 
+    /**
+     * Non-blocking snapshot of {@code itw-javantx-*} logs modified since {@code sinceMs}.
+     * Unlike {@link #readJavantxLogSince}, this does not return early on "Selected JVM",
+     * so callers can wait for post-relaunch markers such as {@code ITW_INTEGRATION_SUCCESS}.
+     */
+    static String snapshotJavantxLogsSince(long sinceMs) throws Exception {
+        List<File> logFiles = logFilesWithPrefixSince(JAVANTX_LOG_PREFIX, sinceMs);
+        if (logFiles.isEmpty()) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder();
+        for (File logFile : logFiles) {
+            sb.append(Files.readString(logFile.toPath(), StandardCharsets.UTF_8));
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
     static String readClientAppLogSince(long sinceMs, long timeoutMs) throws Exception {
         return readAllLogsSince(CLIENTAPP_LOG_PREFIX, sinceMs, timeoutMs);
     }

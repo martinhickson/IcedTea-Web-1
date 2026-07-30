@@ -175,14 +175,14 @@ class JdkPrecedenceJavawsLaunchIT {
         long deadline = System.currentTimeMillis() + timeoutMs;
         String combined = "";
         while (System.currentTimeMillis() < deadline) {
-            String output = JnlpLaunchTestSupport.readProcessOutput(process, 500);
-            String javantxLog = JnlpLaunchTestSupport.readJavantxLogSince(startedAt, 1_000);
+            String output = JnlpLaunchTestSupport.readProcessOutput(process, 250);
+            // Snapshot all javantx logs (including JDK-relaunch handoff child). Do not use
+            // readJavantxLogSince here — it returns early on "Selected JVM" before the child
+            // prints ITW_INTEGRATION_SUCCESS. Parent Process also exits after handoff.
+            String javantxLog = JnlpLaunchTestSupport.snapshotJavantxLogsSince(startedAt);
             combined = output + "\n" + javantxLog;
             if (combined.contains("ITW_INTEGRATION_SUCCESS")
                     && SELECTED_JVM_HOME.matcher(combined).find()) {
-                return combined;
-            }
-            if (!process.isAlive() && combined.contains("Selected JVM")) {
                 return combined;
             }
             Thread.sleep(250);
