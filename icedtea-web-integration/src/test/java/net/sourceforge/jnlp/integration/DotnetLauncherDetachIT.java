@@ -107,8 +107,7 @@ public class DotnetLauncherDetachIT {
             assertTrue(launchRecord.contains("Handoff status: SUCCESS"), launchRecord);
             assertTrue(launchRecord.contains("Parent process ID (handing off):"), launchRecord);
             assertTrue(launchRecord.contains("Child process ID (handed to):"), launchRecord);
-            assertTrue(launchRecord.contains("Standard Output stream written to:"), launchRecord);
-            assertTrue(launchRecord.contains("Standard Error stream written to:"), launchRecord);
+            assertTrue(launchRecord.contains("Standard Output and Standard Error written to:"), launchRecord);
             assertTrue(launchRecord.contains("no pipe buffer stall risk"), launchRecord);
             assertTrue(launchRecord.contains("Handoff complete: parent launcher exiting"), launchRecord);
 

@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Marks this JVM tree as started from a native/shell wrapper (not bare java -cp).
+export ITW_NATIVE_LAUNCHER=1
+
 NASHORN=lib/ext/nashorn.jar
 JRE=@JRE@
 #unused

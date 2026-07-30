@@ -5,6 +5,9 @@
 
 set -euo pipefail
 
+# Marks this JVM tree as started from a native/shell wrapper (not bare java -cp).
+export ITW_NATIVE_LAUNCHER=1
+
 SCRIPT_SOURCE="${BASH_SOURCE[0]}"
 while [ -h "$SCRIPT_SOURCE" ]; do
   SCRIPT_DIR="$(cd -P "$(dirname "$SCRIPT_SOURCE")" && pwd)"

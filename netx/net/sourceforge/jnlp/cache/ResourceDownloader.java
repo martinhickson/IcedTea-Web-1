@@ -71,10 +71,15 @@ public class ResourceDownloader implements Runnable {
                 || path.endsWith(XDesktopEntry.FAVICON);
     }
 
+    /**
+     * Logs once per origin when favicon probes fail. Parent-directory walks try
+     * many URLs; those must not each print an INFO line.
+     */
     static void logMissingFavIconInfo(URL url) {
-        String key = url != null ? url.toExternalForm() : "<unknown>";
+        String key = faviconMissingLogKey(url);
         synchronized (LOGGED_MISSING_FAVICONS) {
             if (!LOGGED_MISSING_FAVICONS.add(key)) {
+                logFavIconTrace("Favicon missing (already reported for " + key + "): " + url);
                 return;
             }
         }
@@ -83,6 +88,22 @@ public class ResourceDownloader implements Runnable {
                 + (url != null ? " (" + url + ")" : "")
                 + ". Add favicon.ico to the JNLP codebase root"
                 + " (for example sample-apps/public/favicon.ico on the Angular dev server).");
+    }
+
+    /**
+     * Deduplicate by origin so {@code /app/favicon.ico}, {@code /favicon.ico}, and
+     * further parent probes share one notice. {@code file:} URLs share one key.
+     */
+    static String faviconMissingLogKey(URL url) {
+        if (url == null) {
+            return "<unknown>";
+        }
+        String host = url.getHost();
+        if (host == null || host.isEmpty()) {
+            return url.getProtocol() + ":local";
+        }
+        int port = url.getPort();
+        return url.getProtocol() + "://" + host + (port >= 0 ? ":" + port : "");
     }
 
     static void logFavIconTrace(String message) {

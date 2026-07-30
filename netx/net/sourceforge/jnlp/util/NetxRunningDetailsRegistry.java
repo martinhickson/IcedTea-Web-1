@@ -1,15 +1,20 @@
 package net.sourceforge.jnlp.util;
 
+import java.io.BufferedWriter;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.OutputStreamWriter;
 import java.io.RandomAccessFile;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.config.PathsAndFiles;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
  * Optional companion file for {@link PathsAndFiles#MAIN_LOCK}. The existing
@@ -62,7 +67,9 @@ public final class NetxRunningDetailsRegistry {
         try {
             updateRegistry(entry, true);
         } catch (IOException ex) {
-            // Best effort; older builds and lock-byte checks still work.
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "Failed to register running JNLP process " + entry.getProcessId() + ": " + ex);
+            OutputController.getLogger().log(ex);
         }
     }
 
@@ -73,7 +80,7 @@ public final class NetxRunningDetailsRegistry {
         try {
             updateRegistry(new JnlpLockMetadata.ProcessEntry(processId, null), false);
         } catch (IOException ex) {
-            // Best effort.
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
         }
     }
 
@@ -105,7 +112,16 @@ public final class NetxRunningDetailsRegistry {
                 } else {
                     entries = removeEntry(entries, entry.getProcessId());
                 }
-                JnlpLockMetadata.writeProcessEntries(detailsFile, HEADER, entries);
+                // Write through the locked RAF. Re-opening with FileWriter while the
+                // exclusive lock is held fails on Windows and left this file empty.
+                ByteArrayOutputStream bytes = new ByteArrayOutputStream();
+                try (BufferedWriter writer = new BufferedWriter(
+                        new OutputStreamWriter(bytes, StandardCharsets.UTF_8))) {
+                    JnlpLockMetadata.writeProcessEntries(writer, HEADER, entries);
+                }
+                raf.setLength(0);
+                raf.seek(0);
+                raf.write(bytes.toByteArray());
             } finally {
                 fileLock.release();
             }

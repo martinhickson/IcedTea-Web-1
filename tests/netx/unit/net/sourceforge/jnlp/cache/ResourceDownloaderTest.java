@@ -542,6 +542,22 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void faviconMissingLogKeyCollapsesParentDirectoryProbes() throws Exception {
+        Assert.assertEquals(
+                "http://127.0.0.1:4201",
+                ResourceDownloader.faviconMissingLogKey(new URL("http://127.0.0.1:4201/jnlp/favicon.ico")));
+        Assert.assertEquals(
+                "http://127.0.0.1:4201",
+                ResourceDownloader.faviconMissingLogKey(new URL("http://127.0.0.1:4201/favicon.ico")));
+        Assert.assertEquals(
+                "file:local",
+                ResourceDownloader.faviconMissingLogKey(new URL("file:/C:/work/app/favicon.ico")));
+        Assert.assertEquals(
+                "file:local",
+                ResourceDownloader.faviconMissingLogKey(new URL("file:/C:/favicon.ico")));
+    }
+
+    @Test
     public void faviconDownloadFailureIsTraceOnlyWhenDebugEnabled() throws Exception {
         redirectErr();
         try {

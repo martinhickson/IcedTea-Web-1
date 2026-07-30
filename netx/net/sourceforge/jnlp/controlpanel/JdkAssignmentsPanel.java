@@ -211,7 +211,7 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
         }
         final String url = JnlpAssignmentLauncher.canonicalizeJnlpUrl(jnlpUrl);
         final String javaHome = KnownJvmAssignmentStore.findJvmHomeForJnlpUrl(config, url);
-        if (JnlpAssignmentLauncher.resolveJavawsBin() == null) {
+        if (!JnlpAssignmentLauncher.canLaunch()) {
             showLaunchError(Translator.R("CPJDKAssignmentsLaunchNoLauncher"));
             return;
         }

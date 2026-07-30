@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 namespace IcedTeaWeb.Launcher;
 
@@ -12,7 +13,7 @@ internal static class Program
     private const string JavaVersionProbeArg = "--java-version";
 
     // GUI / non-console launches: Rust used Stdio::null() (discard). Set true to capture Java
-    // stdout/stderr into ITW log files (deployment.user.logdir / XDG_CONFIG_HOME/icedtea-web/log).
+    // stdout+stderr (combined) into ITW log files (deployment.user.logdir / XDG_CONFIG_HOME/icedtea-web/log).
     private const bool CaptureGuiStdioToLogFiles = false;
 
     // Console-preserving launches: Rust blocked on child.wait() with inherited stdio after AttachConsole.
@@ -28,11 +29,21 @@ internal static class Program
     private const string PreferIpv6AddressesProperty = "java.net.preferIPv6Addresses";
     private const int PrelaunchProbeTimeoutMs = 15_000;
 
+    /// <summary>
+    /// Set on the .NET process so child JVMs inherit it. Java uses this to tell
+    /// native wrapper launches (javaws/javawsc/itweb-settings) apart from direct
+    /// {@code java -cp uber.jar ...} runs, which must relaunch the same way.
+    /// </summary>
+    private const string NativeLauncherEnvVar = "ITW_NATIVE_LAUNCHER";
+
     private static int Main(string[] args)
     {
         var exitCode = 1;
         try
         {
+            // Inherit to all CreateProcess / Process.Start children (lpEnvironment null).
+            Environment.SetEnvironmentVariable(NativeLauncherEnvVar, "1");
+
             SplitLauncherArgs(args, out var javaArgs, out var javawsArgs);
 
             var executablePath = Environment.ProcessPath ?? Process.GetCurrentProcess().MainModule?.FileName
@@ -637,15 +648,12 @@ internal static class Program
             process,
             process.StandardOutput.BaseStream,
             process.StandardError.BaseStream,
-            Stream.Null,
             Stream.Null);
     }
 
     private static int RunJavaWithRedirectedOutput(string javaExecutable, IReadOnlyList<string> command)
     {
-        var logPaths = CreateLauncherLogPaths("redirect");
-        var stdoutPath = logPaths.StdoutPath;
-        var stderrPath = logPaths.StderrPath;
+        var logPath = CreateLauncherLogPath("redirect");
         var startInfo = new ProcessStartInfo
         {
             FileName = javaExecutable,
@@ -661,27 +669,25 @@ internal static class Program
 
         using var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Unable to start Java process");
-        using var stdout = File.Create(stdoutPath);
-        using var stderr = File.Create(stderrPath);
+        using var log = File.Create(logPath);
         return WaitForProcessWithDrainedStreams(
             process,
             process.StandardOutput.BaseStream,
             process.StandardError.BaseStream,
-            stdout,
-            stderr);
+            log);
     }
 
     private static int WaitForProcessWithDrainedStreams(
         Process process,
         Stream stdoutSource,
         Stream stderrSource,
-        Stream stdoutTarget,
-        Stream stderrTarget)
+        Stream logTarget)
     {
+        var gate = new object();
         if (WaitForJavaStdioSynchronously)
         {
-            var stdoutDrain = Task.Run(() => CopyStreamSynchronously(stdoutSource, stdoutTarget));
-            var stderrDrain = Task.Run(() => CopyStreamSynchronously(stderrSource, stderrTarget));
+            var stdoutDrain = Task.Run(() => CopyStreamSynchronously(stdoutSource, logTarget, gate));
+            var stderrDrain = Task.Run(() => CopyStreamSynchronously(stderrSource, logTarget, gate));
             process.WaitForExit();
             // Task.GetAwaiter().GetResult() is the .NET equivalent of Thread.Join on each drain thread.
             stdoutDrain.GetAwaiter().GetResult();
@@ -690,8 +696,8 @@ internal static class Program
         }
 
 #pragma warning disable CS0162 // Unreachable when WaitForJavaStdioSynchronously is true (default).
-        var stdoutRelay = stdoutSource.CopyToAsync(stdoutTarget);
-        var stderrRelay = stderrSource.CopyToAsync(stderrTarget);
+        var stdoutRelay = Task.Run(() => CopyStreamSynchronously(stdoutSource, logTarget, gate));
+        var stderrRelay = Task.Run(() => CopyStreamSynchronously(stderrSource, logTarget, gate));
         process.WaitForExit();
         stdoutRelay.GetAwaiter().GetResult();
         stderrRelay.GetAwaiter().GetResult();
@@ -699,21 +705,23 @@ internal static class Program
 #pragma warning restore CS0162
     }
 
-    private static void CopyStreamSynchronously(Stream source, Stream target)
+    private static void CopyStreamSynchronously(Stream source, Stream target, object gate)
     {
-        source.CopyTo(target);
-        target.Flush();
-    }
-
-    private sealed class LauncherLogPaths
-    {
-        public required string StdoutPath { get; init; }
-        public required string StderrPath { get; init; }
+        var buffer = new byte[8192];
+        int read;
+        while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            lock (gate)
+            {
+                target.Write(buffer, 0, read);
+                target.Flush();
+            }
+        }
     }
 
     private const string ChildPidPlaceholder = "__CHILD_PID__";
 
-    private static LauncherLogPaths CreateLauncherLogPaths(string launchKind)
+    private static string CreateLauncherLogPath(string launchKind)
     {
         var logDirectory = ResolveLauncherLogDirectory();
         Directory.CreateDirectory(logDirectory);
@@ -721,11 +729,7 @@ internal static class Program
         var pid = Environment.ProcessId;
         var prelaunchSuffix = launchKind == "prelaunch" ? "-prelaunch" : "";
         var streamBase = "itw-javantx-" + stamp + "-" + pid + prelaunchSuffix;
-        return new LauncherLogPaths
-        {
-            StdoutPath = Path.Combine(logDirectory, streamBase + ".log"),
-            StderrPath = Path.Combine(logDirectory, streamBase + ".err.log"),
-        };
+        return Path.Combine(logDirectory, streamBase + ".log");
     }
 
     private static string CreateItwLogStamp()
@@ -783,25 +787,22 @@ internal static class Program
         IReadOnlyList<string> command,
         string launchKind)
     {
-        var logPaths = CreateLauncherLogPaths(launchKind);
-        var stdoutPath = logPaths.StdoutPath;
-        var stderrPath = logPaths.StderrPath;
+        var logPath = CreateLauncherLogPath(launchKind);
 
         var jvm = DescribeJvm(javaExecutable);
         WriteLaunchRecord(
-            stdoutPath,
+            logPath,
             launchKind,
             ChildPidPlaceholder,
             javaExecutable,
             command,
-            stdoutPath,
-            stderrPath,
+            logPath,
             jvm.Vendor,
             jvm.Version);
 
         var childPid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? NativeMethods.SpawnProcessWithFileStdio(javaExecutable, command, stdoutPath, stderrPath)
-            : SpawnProcessWithFileStdioManaged(javaExecutable, command, stdoutPath, stderrPath);
+            ? NativeMethods.SpawnProcessWithFileStdio(javaExecutable, command, logPath)
+            : SpawnProcessWithFileStdioManaged(javaExecutable, command, logPath);
 
         if (childPid <= 0)
         {
@@ -809,7 +810,7 @@ internal static class Program
                 "Unable to start detached Java process for " + launchKind + ": " + javaExecutable);
         }
 
-        PatchLaunchRecordChildPid(stdoutPath, childPid);
+        PatchLaunchRecordChildPid(logPath, childPid);
         return 0;
     }
 
@@ -817,25 +818,22 @@ internal static class Program
         string probeExecutable,
         IReadOnlyList<string> command)
     {
-        var logPaths = CreateLauncherLogPaths("prelaunch");
-        var stdoutPath = logPaths.StdoutPath;
-        var stderrPath = logPaths.StderrPath;
+        var logPath = CreateLauncherLogPath("prelaunch");
 
         var jvm = DescribeJvm(probeExecutable);
         WriteLaunchRecord(
-            stdoutPath,
+            logPath,
             "prelaunch",
             ChildPidPlaceholder,
             probeExecutable,
             command,
-            stdoutPath,
-            stderrPath,
+            logPath,
             jvm.Vendor,
             jvm.Version);
 
         var childPid = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
-            ? NativeMethods.SpawnProcessWithFileStdio(probeExecutable, command, stdoutPath, stderrPath)
-            : SpawnProcessWithFileStdioManaged(probeExecutable, command, stdoutPath, stderrPath);
+            ? NativeMethods.SpawnProcessWithFileStdio(probeExecutable, command, logPath)
+            : SpawnProcessWithFileStdioManaged(probeExecutable, command, logPath);
 
         if (childPid <= 0)
         {
@@ -843,20 +841,20 @@ internal static class Program
                 "Unable to start detached Java prelaunch probe: " + probeExecutable);
         }
 
-        PatchLaunchRecordChildPid(stdoutPath, childPid);
+        PatchLaunchRecordChildPid(logPath, childPid);
 
-        return ReadFirstStdoutLineFromLog(stdoutPath, childPid, PrelaunchProbeTimeoutMs);
+        return ReadFirstStdoutLineFromLog(logPath, childPid, PrelaunchProbeTimeoutMs);
     }
 
-    private static string ReadFirstStdoutLineFromLog(string stdoutPath, int childPid, int timeoutMs)
+    private static string ReadFirstStdoutLineFromLog(string logPath, int childPid, int timeoutMs)
     {
         var deadline = Environment.TickCount64 + timeoutMs;
         var pastHandoff = false;
         while (Environment.TickCount64 < deadline)
         {
-            if (File.Exists(stdoutPath))
+            if (File.Exists(logPath))
             {
-                var text = File.ReadAllText(stdoutPath);
+                var text = File.ReadAllText(logPath);
                 foreach (var line in text.Split('\n', '\r'))
                 {
                     var trimmed = line.Trim();
@@ -898,24 +896,18 @@ internal static class Program
     private static int SpawnProcessWithFileStdioManaged(
         string executable,
         IReadOnlyList<string> command,
-        string stdoutPath,
-        string stderrPath)
+        string logPath)
     {
-        Directory.CreateDirectory(Path.GetDirectoryName(stdoutPath) ?? ".");
-        Directory.CreateDirectory(Path.GetDirectoryName(stderrPath) ?? ".");
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath) ?? ".");
 
-        var stdoutTarget = new FileStream(
-            stdoutPath,
+        var logTarget = new FileStream(
+            logPath,
             FileMode.OpenOrCreate,
             FileAccess.Write,
             FileShare.ReadWrite);
-        stdoutTarget.Seek(0, SeekOrigin.End);
-        var stderrTarget = new FileStream(
-            stderrPath,
-            FileMode.OpenOrCreate,
-            FileAccess.Write,
-            FileShare.ReadWrite);
-        stderrTarget.Seek(0, SeekOrigin.End);
+        logTarget.Seek(0, SeekOrigin.End);
+        var gate = new object();
+        var remainingPumps = 2;
 
         var startInfo = new ProcessStartInfo
         {
@@ -935,38 +927,44 @@ internal static class Program
             ?? throw new InvalidOperationException("Unable to start process: " + executable);
         process.StandardInput.Close();
 
-        _ = Task.Run(() => PumpStreamToFile(process.StandardOutput.BaseStream, stdoutTarget));
-        _ = Task.Run(() => PumpStreamToFile(process.StandardError.BaseStream, stderrTarget));
-        return process.Id;
-    }
-
-    private static void PumpStreamToFile(Stream source, Stream target)
-    {
-        try
-        {
-            var buffer = new byte[8192];
-            int read;
-            while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
-            {
-                target.Write(buffer, 0, read);
-                target.Flush();
-            }
-        }
-        catch
-        {
-            // Detached launcher must not fail if the child closes streams early.
-        }
-        finally
+        void Pump(Stream source)
         {
             try
             {
-                target.Flush();
-                target.Dispose();
+                var buffer = new byte[8192];
+                int read;
+                while ((read = source.Read(buffer, 0, buffer.Length)) > 0)
+                {
+                    lock (gate)
+                    {
+                        logTarget.Write(buffer, 0, read);
+                        logTarget.Flush();
+                    }
+                }
             }
             catch
             {
+                // Detached launcher must not fail if the child closes streams early.
+            }
+            finally
+            {
+                if (Interlocked.Decrement(ref remainingPumps) == 0)
+                {
+                    try
+                    {
+                        logTarget.Flush();
+                        logTarget.Dispose();
+                    }
+                    catch
+                    {
+                    }
+                }
             }
         }
+
+        _ = Task.Run(() => Pump(process.StandardOutput.BaseStream));
+        _ = Task.Run(() => Pump(process.StandardError.BaseStream));
+        return process.Id;
     }
 
     private readonly struct JvmDescription
@@ -1026,13 +1024,12 @@ internal static class Program
     }
 
     private static void WriteLaunchRecord(
-        string stdoutPath,
+        string logPath,
         string launchKind,
         object childPid,
         string javaExecutable,
         IReadOnlyList<string> command,
-        string stdoutRedirectPath,
-        string stderrRedirectPath,
+        string combinedRedirectPath,
         string jvmVendor,
         string jvmVersion)
     {
@@ -1051,10 +1048,8 @@ internal static class Program
         builder.AppendLine(".NET runtime: " + RuntimeInformation.FrameworkDescription);
         builder.AppendLine(".NET version: " + Environment.Version);
         builder.AppendLine("Standard Input stream: NUL device (no pipe from parent; child cannot block parent on stdin)");
-        builder.AppendLine("Standard Output stream written to: " + Path.GetFullPath(stdoutRedirectPath)
-            + " (file redirect; parent exited; child writes directly; no pipe buffer stall risk)");
-        builder.AppendLine("Standard Error stream written to: " + Path.GetFullPath(stderrRedirectPath)
-            + " (file redirect; parent exited; child writes directly; no pipe buffer stall risk)");
+        builder.AppendLine("Standard Output and Standard Error written to: " + Path.GetFullPath(combinedRedirectPath)
+            + " (combined file redirect; parent exited; child writes directly; no pipe buffer stall risk)");
         builder.AppendLine("Working directory: " + Environment.CurrentDirectory);
         builder.AppendLine("OS: " + RuntimeInformation.OSDescription);
         builder.AppendLine("Architecture: " + RuntimeInformation.OSArchitecture);
@@ -1062,19 +1057,19 @@ internal static class Program
         builder.AppendLine(javaExecutable + " " + string.Join(' ', command));
         builder.AppendLine("Handoff complete: parent launcher exiting without waiting for child process.");
         builder.AppendLine();
-        File.WriteAllText(stdoutPath, builder.ToString());
+        File.WriteAllText(logPath, builder.ToString());
     }
 
-    private static void PatchLaunchRecordChildPid(string stdoutPath, int childPid)
+    private static void PatchLaunchRecordChildPid(string logPath, int childPid)
     {
-        var text = File.ReadAllText(stdoutPath);
+        var text = File.ReadAllText(logPath);
         var patched = text.Replace(
             "Child process ID (handed to): " + ChildPidPlaceholder,
             "Child process ID (handed to): " + childPid,
             StringComparison.Ordinal);
         if (!string.Equals(text, patched, StringComparison.Ordinal))
         {
-            File.WriteAllText(stdoutPath, patched);
+            File.WriteAllText(logPath, patched);
         }
     }
 
@@ -1807,47 +1802,26 @@ internal static class Program
         public static int SpawnProcessWithFileStdio(
             string executable,
             IReadOnlyList<string> command,
-            string stdoutPath,
-            string stderrPath)
+            string logPath)
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(stdoutPath) ?? ".");
-            Directory.CreateDirectory(Path.GetDirectoryName(stderrPath) ?? ".");
+            Directory.CreateDirectory(Path.GetDirectoryName(logPath) ?? ".");
 
-            var stdoutHandle = CreateFileW(
-                stdoutPath,
+            // One file handle for both stdout and stderr (combined log; interleaving OK).
+            var logHandle = CreateFileW(
+                logPath,
                 GenericWrite,
                 FileShareRead | FileShareWrite,
                 IntPtr.Zero,
                 OpenAlways,
                 FileAttributeNormal,
                 IntPtr.Zero);
-            var stderrHandle = CreateFileW(
-                stderrPath,
-                GenericWrite,
-                FileShareRead | FileShareWrite,
-                IntPtr.Zero,
-                OpenAlways,
-                FileAttributeNormal,
-                IntPtr.Zero);
-            if (stdoutHandle == InvalidHandleValue || stdoutHandle == IntPtr.Zero
-                || stderrHandle == InvalidHandleValue || stderrHandle == IntPtr.Zero)
+            if (logHandle == InvalidHandleValue || logHandle == IntPtr.Zero)
             {
-                if (stdoutHandle != InvalidHandleValue && stdoutHandle != IntPtr.Zero)
-                {
-                    CloseHandle(stdoutHandle);
-                }
-
-                if (stderrHandle != InvalidHandleValue && stderrHandle != IntPtr.Zero)
-                {
-                    CloseHandle(stderrHandle);
-                }
-
                 throw new InvalidOperationException(
-                    "Unable to open log files for detached launch: " + Marshal.GetLastWin32Error());
+                    "Unable to open log file for detached launch: " + Marshal.GetLastWin32Error());
             }
 
-            _ = SetFilePointer(stdoutHandle, 0, IntPtr.Zero, FileEnd);
-            _ = SetFilePointer(stderrHandle, 0, IntPtr.Zero, FileEnd);
+            _ = SetFilePointer(logHandle, 0, IntPtr.Zero, FileEnd);
 
             var nullHandle = CreateFileW(
                 "NUL",
@@ -1859,8 +1833,7 @@ internal static class Program
                 IntPtr.Zero);
             if (nullHandle == InvalidHandleValue || nullHandle == IntPtr.Zero)
             {
-                CloseHandle(stdoutHandle);
-                CloseHandle(stderrHandle);
+                CloseHandle(logHandle);
                 throw new InvalidOperationException(
                     "Unable to open NUL device for detached launch: " + Marshal.GetLastWin32Error());
             }
@@ -1879,8 +1852,8 @@ internal static class Program
                     cb = (uint)Marshal.SizeOf<StartupInfoW>(),
                     dwFlags = StartfUsestdhandles,
                     hStdInput = nullHandle,
-                    hStdOutput = stdoutHandle,
-                    hStdError = stderrHandle,
+                    hStdOutput = logHandle,
+                    hStdError = logHandle,
                 };
 
                 if (!CreateProcessW(
@@ -1906,8 +1879,7 @@ internal static class Program
             }
             finally
             {
-                CloseHandle(stdoutHandle);
-                CloseHandle(stderrHandle);
+                CloseHandle(logHandle);
                 CloseHandle(nullHandle);
             }
         }

@@ -235,8 +235,17 @@ public class JNLPFile {
      */
     protected JNLPFile(URL location, Version version, ParserSettings settings, UpdatePolicy policy, URL forceCodebase) throws IOException, ParseException {
         this.parserSettings = settings;
-        try (InputStream input = openURL(location, version, policy)) {
-            parse(input, location, forceCodebase);
+        String parseCacheKey = JnlpFileParseCache.keyFor(location);
+        JNLPFile cachedTemplate = parseCacheKey != null ? JnlpFileParseCache.get(parseCacheKey) : null;
+        if (cachedTemplate != null) {
+            adoptParsedStateFrom(cachedTemplate);
+        } else {
+            try (InputStream input = openURL(location, version, policy)) {
+                parse(input, location, forceCodebase);
+            }
+            if (parseCacheKey != null) {
+                JnlpFileParseCache.put(parseCacheKey, createPristineParseSnapshot());
+            }
         }
 
         //Downloads the original jnlp file into the cache if possible
@@ -857,6 +866,45 @@ public class JNLPFile {
         }
 
         return false;
+    }
+
+    /**
+     * Snapshot of parse-derived state for {@link JnlpFileParseCache}. The
+     * returned instance is never handed to callers; they get a fresh adopt.
+     */
+    private JNLPFile createPristineParseSnapshot() {
+        JNLPFile snapshot = new JNLPFile();
+        snapshot.parserSettings = this.parserSettings;
+        snapshot.adoptParsedStateFrom(this);
+        snapshot.fileLocation = this.fileLocation;
+        return snapshot;
+    }
+
+    /**
+     * Copy parse-derived fields from {@code source}, rebinding parent-linked
+     * descriptors to {@code this}. Does not copy {@link #uniqueKey},
+     * {@link #missingSignedJNLP}, or manifest loader state.
+     */
+    private void adoptParsedStateFrom(JNLPFile source) {
+        this.specVersion = source.specVersion;
+        this.fileVersion = source.fileVersion;
+        this.codeBase = source.codeBase;
+        this.sourceLocation = source.sourceLocation;
+        this.info = source.info == null ? null : new ArrayList<>(source.info);
+        this.update = source.update;
+        this.launchType = source.launchType;
+        this.component = source.component;
+        this.containsSpecialProperties = source.containsSpecialProperties;
+        if (source.resources == null) {
+            this.resources = null;
+        } else {
+            this.resources = new ArrayList<>(source.resources.size());
+            for (ResourcesDesc resourcesDesc : source.resources) {
+                this.resources.add(resourcesDesc.copyFor(this));
+            }
+        }
+        this.sharedResources = new ResourcesDesc(this, null, null, null);
+        this.security = source.security == null ? null : source.security.copyFor(this);
     }
 
     /**

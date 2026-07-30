@@ -47,8 +47,8 @@ public final class JavawsRelaunchHandoff {
         if (command == null || command.isEmpty()) {
             throw new IllegalArgumentException("relaunch command is empty");
         }
-        LogPaths logs = createLogPaths();
-        Files.createDirectories(logs.stdout.getParentFile().toPath());
+        File logFile = createLogFile();
+        Files.createDirectories(logFile.getParentFile().toPath());
 
         String executable = command.get(0);
         List<String> args = command.size() == 1
@@ -56,21 +56,21 @@ public final class JavawsRelaunchHandoff {
                 : new ArrayList<>(command.subList(1, command.size()));
 
         String childJavaHome = environmentSource == null ? null : environmentSource.environment().get("JAVA_HOME");
-        writeHandoffRecord(logs, CHILD_PID_PLACEHOLDER, executable, command, childJavaHome);
+        writeHandoffRecord(logFile, CHILD_PID_PLACEHOLDER, executable, command, childJavaHome);
 
         ProcessBuilder pb = new ProcessBuilder(command);
         if (environmentSource != null && environmentSource.environment() != null) {
             pb.environment().clear();
             pb.environment().putAll(environmentSource.environment());
         }
-        applyDetachedStdio(pb, logs);
+        applyDetachedStdio(pb, logFile);
 
         Process child = pb.start();
         long childPid = child.pid();
-        patchChildPid(logs.stdout, childPid);
-        appendHandoffComplete(logs.stdout, childPid);
+        patchChildPid(logFile, childPid);
+        appendHandoffComplete(logFile, childPid);
 
-        String summary = buildExitSummary(executable, args, childPid, logs);
+        String summary = buildExitSummary(executable, args, childPid, logFile);
         OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, summary);
         OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
                 "JDK relaunch handoff complete: parent exiting without waiting for child process.");
@@ -78,33 +78,34 @@ public final class JavawsRelaunchHandoff {
         JNLPRuntime.exit(0);
     }
 
-    static void applyDetachedStdio(ProcessBuilder pb, LogPaths logs) {
+    static void applyDetachedStdio(ProcessBuilder pb, File logFile) {
         // Never inheritIO() or use pipes here: on Windows a parent exit with live
         // console/pipe handles can stall the child (full STDOUT/STDERR buffer freeze).
+        // Merge stderr into stdout and append both to one file; interleaving is fine.
         File nullDevice = nullDevice();
+        pb.redirectErrorStream(true);
         pb.redirectInput(ProcessBuilder.Redirect.from(nullDevice));
-        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logs.stdout));
-        pb.redirectError(ProcessBuilder.Redirect.appendTo(logs.stderr));
+        pb.redirectOutput(ProcessBuilder.Redirect.appendTo(logFile));
     }
 
     static File nullDevice() {
         return JNLPRuntime.isWindows() ? new File("NUL") : new File("/dev/null");
     }
 
-    static LogPaths createLogPaths() {
+    static File createLogFile() {
         File logDir = new File(PathsAndFiles.LOG_DIR.getFullPath());
         String stamp = FileLog.getStamp();
         long pid = JnlpRunningProcessSupport.currentPid();
         String base = "itw-javantx-" + stamp + "-" + pid + "-relaunch";
-        return new LogPaths(new File(logDir, base + ".log"), new File(logDir, base + ".err.log"));
+        return new File(logDir, base + ".log");
     }
 
-    static void writeHandoffRecord(LogPaths logs, String childPidToken, String executable, List<String> command)
+    static void writeHandoffRecord(File logFile, String childPidToken, String executable, List<String> command)
             throws IOException {
-        writeHandoffRecord(logs, childPidToken, executable, command, null);
+        writeHandoffRecord(logFile, childPidToken, executable, command, null);
     }
 
-    static void writeHandoffRecord(LogPaths logs, String childPidToken, String executable, List<String> command,
+    static void writeHandoffRecord(File logFile, String childPidToken, String executable, List<String> command,
             String childJavaHome) throws IOException {
         StringBuilder builder = new StringBuilder();
         builder.append("IcedTea-Web JDK relaunch handoff record").append('\n');
@@ -125,13 +126,9 @@ public final class JavawsRelaunchHandoff {
         builder.append("Standard Input stream: ")
                 .append(nullDevice().getPath())
                 .append(" (no pipe from parent; child cannot block parent on stdin)").append('\n');
-        builder.append("Standard Output stream written to: ")
-                .append(logs.stdout.getAbsolutePath())
-                .append(" (file redirect; parent exited; child writes directly; no pipe buffer stall risk)")
-                .append('\n');
-        builder.append("Standard Error stream written to: ")
-                .append(logs.stderr.getAbsolutePath())
-                .append(" (file redirect; parent exited; child writes directly; no pipe buffer stall risk)")
+        builder.append("Standard Output and Standard Error written to: ")
+                .append(logFile.getAbsolutePath())
+                .append(" (combined file redirect; parent exited; child writes directly; no pipe buffer stall risk)")
                 .append('\n');
         builder.append("Working directory: ").append(System.getProperty("user.dir", "")).append('\n');
         builder.append("OS: ").append(System.getProperty("os.name", "")).append(' ')
@@ -139,24 +136,24 @@ public final class JavawsRelaunchHandoff {
         builder.append("Command:").append('\n');
         builder.append(joinCommand(command)).append('\n');
         builder.append('\n');
-        Files.write(logs.stdout.toPath(), builder.toString().getBytes(StandardCharsets.UTF_8));
+        Files.write(logFile.toPath(), builder.toString().getBytes(StandardCharsets.UTF_8));
     }
 
-    static void patchChildPid(File stdoutLog, long childPid) throws IOException {
-        String text = new String(Files.readAllBytes(stdoutLog.toPath()), StandardCharsets.UTF_8);
+    static void patchChildPid(File logFile, long childPid) throws IOException {
+        String text = new String(Files.readAllBytes(logFile.toPath()), StandardCharsets.UTF_8);
         String patched = text.replace(
                 "Child process ID (handed to): " + CHILD_PID_PLACEHOLDER,
                 "Child process ID (handed to): " + childPid);
         if (!patched.equals(text)) {
-            Files.write(stdoutLog.toPath(), patched.getBytes(StandardCharsets.UTF_8));
+            Files.write(logFile.toPath(), patched.getBytes(StandardCharsets.UTF_8));
         }
     }
 
-    static void appendHandoffComplete(File stdoutLog, long childPid) throws IOException {
+    static void appendHandoffComplete(File logFile, long childPid) throws IOException {
         String line = "Handoff complete: parent launcher exiting without waiting for child process "
                 + childPid + ".\n";
         try (Writer writer = new OutputStreamWriter(
-                Files.newOutputStream(stdoutLog.toPath(),
+                Files.newOutputStream(logFile.toPath(),
                         java.nio.file.StandardOpenOption.WRITE,
                         java.nio.file.StandardOpenOption.APPEND),
                 StandardCharsets.UTF_8)) {
@@ -164,13 +161,12 @@ public final class JavawsRelaunchHandoff {
         }
     }
 
-    private static String buildExitSummary(String executable, List<String> args, long childPid, LogPaths logs) {
+    private static String buildExitSummary(String executable, List<String> args, long childPid, File logFile) {
         return "JDK relaunch handoff: parent pid=" + JnlpRunningProcessSupport.currentPid()
                 + " (" + System.getProperty("java.vendor") + " " + System.getProperty("java.version") + ")"
                 + " -> child pid=" + childPid
                 + " executable=" + executable
-                + " stdout=" + logs.stdout.getAbsolutePath()
-                + " stderr=" + logs.stderr.getAbsolutePath()
+                + " log=" + logFile.getAbsolutePath()
                 + " args=" + args;
     }
 
@@ -217,13 +213,4 @@ public final class JavawsRelaunchHandoff {
         return defaultValue;
     }
 
-    static final class LogPaths {
-        final File stdout;
-        final File stderr;
-
-        LogPaths(File stdout, File stderr) {
-            this.stdout = stdout;
-            this.stderr = stderr;
-        }
-    }
 }

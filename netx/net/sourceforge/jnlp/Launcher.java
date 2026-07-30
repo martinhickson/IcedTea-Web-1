@@ -452,30 +452,28 @@ public class Launcher {
 
     private void launchExternal(List<String> vmArgs, List<String> javawsArgs, String javaHome) throws LaunchException {
         try {
-
-            List<String> commands = new LinkedList<>();
-
-            String pathToWebstartBinary = ItwLauncherPaths.resolveJavawsBin();
-            if (pathToWebstartBinary == null) {
-                throw launchError(new LaunchException(null, null, R("LSFatal"), R("LCExternalLaunch"),
-                        R("LNetxJarMissing"), R("LNetxJarMissingInfo")));
-            }
-            commands.add(pathToWebstartBinary);
             List<String> vmArgsWithCompat = new ArrayList<>(vmArgs);
             JavaVersionUtils.removeLegacyJavaXmlBindAddModules(vmArgsWithCompat, javaHome);
             JavaVersionUtils.addSecurityManagerCompatibilityArgs(vmArgsWithCompat, javaHome);
             // deployment.jvm.ip.type wins over any user -Djava.net.preferIPv* in java-vm-args
             JvmArgumentPolicy.applyConfiguredIpStack(vmArgsWithCompat);
-            // use -Jargument format to pass arguments to the JVM through the launcher
-            for (String arg : vmArgsWithCompat) {
-                commands.add("-J" + arg);
+            List<String> commands;
+            try {
+                commands = ItwLauncherPaths.buildExternalLaunchCommand(vmArgsWithCompat, javawsArgs, javaHome);
+            } catch (IllegalStateException missingLauncher) {
+                throw launchError(new LaunchException(null, missingLauncher, R("LSFatal"), R("LCExternalLaunch"),
+                        R("LNetxJarMissing"), R("LNetxJarMissingInfo")));
             }
-            commands.addAll(javawsArgs);
 
             ProcessBuilder pb = new ProcessBuilder(commands);
             pb.environment().put("ICEDTEA_WEB_SPLASH", "none");
             if (javaHome != null && !javaHome.trim().isEmpty()) {
                 pb.environment().put("JAVA_HOME", javaHome);
+            }
+            if (ItwLauncherPaths.isNativeLauncherProcess()) {
+                pb.environment().put(ItwLauncherPaths.ENV_NATIVE_LAUNCHER, "1");
+            } else {
+                pb.environment().remove(ItwLauncherPaths.ENV_NATIVE_LAUNCHER);
             }
             propagateRelaunchEnvironment(pb);
 

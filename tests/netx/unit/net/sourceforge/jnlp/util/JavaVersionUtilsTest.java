@@ -75,6 +75,26 @@ class JavaVersionUtilsTest {
     }
 
     @Test
+    void addModularJdkCompatibilityArgsIncludesSunAwtExport() {
+        List<String> vmArgs = new ArrayList<>();
+        // null javaHome → use running JVM (test suite is JDK 11+)
+        JavaVersionUtils.addModularJdkCompatibilityArgs(vmArgs, null);
+        assertTrue(vmArgs.contains("--add-exports"));
+        assertTrue(vmArgs.contains("java.desktop/sun.awt=ALL-UNNAMED"));
+        assertTrue(vmArgs.contains("--add-opens"));
+        assertTrue(vmArgs.contains("java.base/java.lang=ALL-UNNAMED"));
+    }
+
+    @Test
+    void addModularJdkCompatibilityArgsDoesNotDuplicate() {
+        List<String> vmArgs = new ArrayList<>();
+        JavaVersionUtils.addModularJdkCompatibilityArgs(vmArgs, null);
+        int sizeAfterFirst = vmArgs.size();
+        JavaVersionUtils.addModularJdkCompatibilityArgs(vmArgs, null);
+        assertEquals(sizeAfterFirst, vmArgs.size());
+    }
+
+    @Test
     void removeLegacyJavaXmlBindAddModulesNoOpOnJdk8() {
         List<String> vmArgs = new ArrayList<>();
         vmArgs.add("--add-modules=java.xml.bind");

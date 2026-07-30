@@ -154,9 +154,10 @@ public final class JnlpRunningProcessSupport {
         int selfPid = currentPid();
 
         collectFromLockFiles(byPid, selfPid);
-        if (byPid.isEmpty() && CacheUtil.isCacheLockedByOtherInstance()) {
-            collectFromProcessListing(byPid, selfPid);
-        }
+        // Always merge an OS process scan. Relying only on netx_running_details /
+        // cache locks misses live javaws children after JDK relaunch handoff when
+        // the details registry write failed or produced no per-app lock files.
+        collectFromProcessListing(byPid, selfPid);
 
         List<RunningProcess> filtered = new ArrayList<>();
         for (RunningProcess process : byPid.values()) {

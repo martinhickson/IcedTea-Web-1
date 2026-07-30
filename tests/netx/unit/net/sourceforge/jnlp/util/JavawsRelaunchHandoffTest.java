@@ -31,13 +31,11 @@ public class JavawsRelaunchHandoffTest extends NoStdOutErrTest {
     @Test
     public void handoffRecordDocumentsParentChildAndSafeStdio() throws Exception {
         File dir = Files.createTempDirectory("itw-relaunch-handoff").toFile();
-        File stdout = new File(dir, "handoff.log");
-        File stderr = new File(dir, "handoff.err.log");
-        JavawsRelaunchHandoff.LogPaths logs = new JavawsRelaunchHandoff.LogPaths(stdout, stderr);
+        File logFile = new File(dir, "handoff.log");
         List<String> command = Arrays.asList("javaws", "-Xnofork", "C:\\app with spaces\\app.jnlp");
 
-        JavawsRelaunchHandoff.writeHandoffRecord(logs, "<pending>", "javaws", command);
-        String text = new String(Files.readAllBytes(stdout.toPath()), StandardCharsets.UTF_8);
+        JavawsRelaunchHandoff.writeHandoffRecord(logFile, "<pending>", "javaws", command);
+        String text = new String(Files.readAllBytes(logFile.toPath()), StandardCharsets.UTF_8);
 
         assertTrue(text.contains("IcedTea-Web JDK relaunch handoff record"));
         assertTrue(text.contains("Handoff step: " + JavawsRelaunchHandoff.HANDOFF_STEP));
@@ -47,34 +45,31 @@ public class JavawsRelaunchHandoffTest extends NoStdOutErrTest {
         assertTrue(text.contains("Child process ID (handed to): <pending>"));
         assertTrue(text.contains("Child executable: javaws"));
         assertTrue(text.contains("no pipe buffer stall risk"));
+        assertTrue(text.contains("Standard Output and Standard Error written to:"));
         assertTrue(text.contains("NUL") || text.contains("/dev/null"));
-        assertTrue(text.contains(stdout.getAbsolutePath()));
-        assertTrue(text.contains(stderr.getAbsolutePath()));
+        assertTrue(text.contains(logFile.getAbsolutePath()));
 
-        JavawsRelaunchHandoff.patchChildPid(stdout, 4242L);
-        JavawsRelaunchHandoff.appendHandoffComplete(stdout, 4242L);
-        String patched = new String(Files.readAllBytes(stdout.toPath()), StandardCharsets.UTF_8);
+        JavawsRelaunchHandoff.patchChildPid(logFile, 4242L);
+        JavawsRelaunchHandoff.appendHandoffComplete(logFile, 4242L);
+        String patched = new String(Files.readAllBytes(logFile.toPath()), StandardCharsets.UTF_8);
         assertTrue(patched.contains("Child process ID (handed to): 4242"));
         assertFalse(patched.contains("<pending>"));
         assertTrue(patched.contains("Handoff complete: parent launcher exiting without waiting for child process 4242"));
     }
 
     @Test
-    public void detachedStdioUsesNullDeviceAndLogFilesNotInherit() throws Exception {
+    public void detachedStdioUsesNullDeviceAndCombinedLogFileNotInherit() throws Exception {
         File dir = Files.createTempDirectory("itw-relaunch-stdio").toFile();
-        File stdout = new File(dir, "out.log");
-        File stderr = new File(dir, "err.log");
-        assertTrue(stdout.createNewFile());
-        assertTrue(stderr.createNewFile());
+        File logFile = new File(dir, "relaunch.log");
+        assertTrue(logFile.createNewFile());
         ProcessBuilder pb = new ProcessBuilder("java", "-version");
-        JavawsRelaunchHandoff.applyDetachedStdio(pb, new JavawsRelaunchHandoff.LogPaths(stdout, stderr));
+        JavawsRelaunchHandoff.applyDetachedStdio(pb, logFile);
 
+        assertTrue(pb.redirectErrorStream());
         assertEquals(ProcessBuilder.Redirect.Type.READ, pb.redirectInput().type());
         assertEquals(ProcessBuilder.Redirect.Type.APPEND, pb.redirectOutput().type());
-        assertEquals(ProcessBuilder.Redirect.Type.APPEND, pb.redirectError().type());
         assertEquals(JavawsRelaunchHandoff.nullDevice().getPath(), pb.redirectInput().file().getPath());
-        assertEquals(stdout.getAbsolutePath(), pb.redirectOutput().file().getAbsolutePath());
-        assertEquals(stderr.getAbsolutePath(), pb.redirectError().file().getAbsolutePath());
+        assertEquals(logFile.getAbsolutePath(), pb.redirectOutput().file().getAbsolutePath());
     }
 
     private static DeploymentConfiguration configWith(String keepValue) throws Exception {

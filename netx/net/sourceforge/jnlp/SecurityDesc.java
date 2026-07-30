@@ -353,6 +353,16 @@ public class SecurityDesc {
         return requestedPermissionLevel;
     }
 
+    /** Package-visible for {@link JNLPFile} parse-cache copies. */
+    URL getDownloadHost() {
+        return downloadHost;
+    }
+
+    /** Rebuild this security descriptor for a different owning {@link JNLPFile}. */
+    SecurityDesc copyFor(JNLPFile newParent) {
+        return new SecurityDesc(newParent, requestedPermissionLevel, type, downloadHost);
+    }
+
     /**
      * @return a PermissionCollection containing the sandbox permissions
      */

@@ -64,6 +64,16 @@ public class ExtensionDesc {
     }
 
     /**
+     * Shallow copy without a resolved {@link JNLPFile}, for parse-cache checkout.
+     */
+    ExtensionDesc copyUnresolved() {
+        ExtensionDesc copy = new ExtensionDesc(name, version, location);
+        copy.extToPart.putAll(extToPart);
+        copy.eagerExtParts.addAll(eagerExtParts);
+        return copy;
+    }
+
+    /**
      * Adds an extension part to be downloaded when the specified
      * part of the main JNLP file is loaded.  The extension part
      * will be downloaded before the application is launched if the

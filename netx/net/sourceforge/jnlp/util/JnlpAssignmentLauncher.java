@@ -7,12 +7,12 @@ import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
-import net.sourceforge.jnlp.Launcher;
 import net.sourceforge.jnlp.runtime.Boot;
 import net.sourceforge.jnlp.runtime.Translator;
 
 /**
- * Launches a JNLP URL through the external javaws wrapper.
+ * Launches a JNLP URL through the external javaws path appropriate for how
+ * this Control Panel was started (native wrapper vs bare {@code java -cp}).
  */
 public final class JnlpAssignmentLauncher {
 
@@ -72,26 +72,27 @@ public final class JnlpAssignmentLauncher {
         }
     }
 
-    public static List<String> buildLaunchCommand(String javawsBin, String jnlpUrl, String javaHome) {
-        List<String> command = new ArrayList<>();
-        command.add(javawsBin);
+    public static List<String> buildLaunchCommand(String jnlpUrl, String javaHome) {
         List<String> vmArgs = new ArrayList<>();
         JavaVersionUtils.removeLegacyJavaXmlBindAddModules(vmArgs, javaHome);
         JavaVersionUtils.addSecurityManagerCompatibilityArgs(vmArgs, javaHome);
         JvmArgumentPolicy.applyConfiguredIpStack(vmArgs);
-        for (String vmArg : vmArgs) {
-            command.add("-J" + vmArg);
-        }
-        command.add(canonicalizeJnlpUrl(jnlpUrl));
-        return command;
+        List<String> javawsArgs = new ArrayList<>();
+        javawsArgs.add(canonicalizeJnlpUrl(jnlpUrl));
+        return ItwLauncherPaths.buildExternalLaunchCommand(vmArgs, javawsArgs, javaHome);
+    }
+
+    /**
+     * @deprecated use {@link #buildLaunchCommand(String, String)}
+     */
+    @Deprecated
+    public static List<String> buildLaunchCommand(String javawsBin, String jnlpUrl, String javaHome) {
+        return buildLaunchCommand(jnlpUrl, javaHome);
     }
 
     public static Process launch(String jnlpUrl, String javaHome) throws IOException {
-        String javawsBin = resolveJavawsBin();
-        if (javawsBin == null) {
-            throw new IOException("javaws launcher not found");
-        }
-        ProcessBuilder pb = new ProcessBuilder(buildLaunchCommand(javawsBin, jnlpUrl, javaHome));
+        List<String> command = buildLaunchCommandChecked(jnlpUrl, javaHome);
+        ProcessBuilder pb = new ProcessBuilder(command);
         propagateLaunchEnvironment(pb);
         if (javaHome != null && !javaHome.trim().isEmpty()) {
             pb.environment().put("JAVA_HOME", javaHome.trim());
@@ -104,9 +105,13 @@ public final class JnlpAssignmentLauncher {
         String itwVersion = Boot.version != null && !Boot.version.trim().isEmpty()
                 ? Boot.version.trim() : "unknown";
         sb.append(Translator.R("CPJDKAssignmentsLaunchOutputItwVersion")).append(' ').append(itwVersion).append('\n');
-        String javawsBin = resolveJavawsBin();
         sb.append(Translator.R("CPJDKAssignmentsLaunchOutputLauncher")).append(' ');
-        sb.append(javawsBin == null ? Translator.R("CPJDKAssignmentsLaunchNoLauncher") : javawsBin).append('\n');
+        try {
+            sb.append(String.join(" ", buildLaunchCommand(jnlpUrl, javaHome)));
+        } catch (IllegalStateException ex) {
+            sb.append(Translator.R("CPJDKAssignmentsLaunchNoLauncher"));
+        }
+        sb.append('\n');
         if (javaHome != null && !javaHome.trim().isEmpty()) {
             sb.append(Translator.R("CPJDKAssignmentsLaunchOutputJavaHome")).append(' ').append(javaHome.trim()).append('\n');
             sb.append(Translator.R("CPJDKAssignmentsLaunchOutputJvm")).append(' ');
@@ -137,11 +142,7 @@ public final class JnlpAssignmentLauncher {
 
     public static LaunchResult launchWithStreamingOutput(String jnlpUrl, String javaHome, long captureTimeoutMs,
             LaunchOutputConsumer consumer) throws IOException {
-        String javawsBin = resolveJavawsBin();
-        if (javawsBin == null) {
-            throw new IOException("javaws launcher not found");
-        }
-        List<String> command = buildLaunchCommand(javawsBin, jnlpUrl, javaHome);
+        List<String> command = buildLaunchCommandChecked(jnlpUrl, javaHome);
         ProcessBuilder pb = new ProcessBuilder(command);
         propagateLaunchEnvironment(pb);
         if (javaHome != null && !javaHome.trim().isEmpty()) {
@@ -176,6 +177,14 @@ public final class JnlpAssignmentLauncher {
             Thread.currentThread().interrupt();
         }
         return new LaunchResult(command, captured.toString(), exitCode, stillRunning);
+    }
+
+    private static List<String> buildLaunchCommandChecked(String jnlpUrl, String javaHome) throws IOException {
+        try {
+            return buildLaunchCommand(jnlpUrl, javaHome);
+        } catch (IllegalStateException ex) {
+            throw new IOException(ex.getMessage(), ex);
+        }
     }
 
     private static Thread startOutputReader(final Process process, final StringBuilder captured,
@@ -215,6 +224,10 @@ public final class JnlpAssignmentLauncher {
         return ItwLauncherPaths.resolveJavawsBin();
     }
 
+    public static boolean canLaunch() {
+        return ItwLauncherPaths.canLaunchExternally();
+    }
+
     private static void propagateLaunchEnvironment(ProcessBuilder pb) {
         copyEnvIfSet(pb, "DISPLAY");
         copyEnvIfSet(pb, "XDG_CONFIG_HOME");
@@ -223,6 +236,12 @@ public final class JnlpAssignmentLauncher {
         String userHome = System.getProperty("user.home");
         if (userHome != null && !userHome.trim().isEmpty()) {
             pb.environment().put("HOME", userHome.trim());
+        }
+        if (ItwLauncherPaths.isNativeLauncherProcess()) {
+            pb.environment().put(ItwLauncherPaths.ENV_NATIVE_LAUNCHER, "1");
+        } else {
+            // Keep the child in java -cp mode even if a parent shell exported the flag.
+            pb.environment().remove(ItwLauncherPaths.ENV_NATIVE_LAUNCHER);
         }
     }
 

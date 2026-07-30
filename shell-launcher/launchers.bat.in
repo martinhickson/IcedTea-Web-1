@@ -1,6 +1,9 @@
 @echo off
 setLocal EnableDelayedExpansion
 
+rem Marks this JVM tree as started from a native/shell wrapper (not bare java -cp).
+set "ITW_NATIVE_LAUNCHER=1"
+
 rem use JAVAWS_J_OPTIONS to pass java arguments, instead of -J opts for this script. This will be fixed in next releases
 rem use ITW_HOME to set location where ITW can be found. From there all binaries and jars and other resources are found
 rem use JAVA_HOME to set path to JRE

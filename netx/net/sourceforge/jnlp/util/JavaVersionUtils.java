@@ -1,6 +1,8 @@
 package net.sourceforge.jnlp.util;
 
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
@@ -21,6 +23,8 @@ public final class JavaVersionUtils {
     public static final int LEGACY_EE_MODULES_LAST_MAJOR = 16;
 
     private static final String ADD_MODULES_FLAG = "--add-modules";
+    private static final String ADD_EXPORTS_FLAG = "--add-exports";
+    private static final String ADD_OPENS_FLAG = "--add-opens";
     private static final String LEGACY_EE_MODULE_LIST = "java.xml.bind,java.activation";
     private static final String SECURITY_MANAGER_PROPERTY = "java.security.manager";
     private static final String SECURITY_MANAGER_ALLOW = "allow";
@@ -76,6 +80,82 @@ public final class JavaVersionUtils {
             return;
         }
         vmArgs.add("-D" + SECURITY_MANAGER_PROPERTY + "=" + SECURITY_MANAGER_ALLOW);
+    }
+
+    /**
+     * Appends {@code --add-exports}/{@code --add-opens} required for IcedTea-Web on JDK 9+.
+     * Mirrors the .NET / shell wrapper {@code ModularJdkArguments} lists so bare
+     * {@code java -cp} relaunches do not die with {@code IllegalAccessError}.
+     */
+    public static void addModularJdkCompatibilityArgs(List<String> vmArgs, String javaHome) {
+        if (vmArgs == null) {
+            return;
+        }
+        int major = resolveMajorVersion(javaHome);
+        if (major < 9) {
+            return;
+        }
+        List<String> modular = modularJdkArguments();
+        for (int i = 0; i + 1 < modular.size(); i += 2) {
+            String flag = modular.get(i);
+            String value = modular.get(i + 1);
+            if (!containsFlagValuePair(vmArgs, flag, value)) {
+                vmArgs.add(flag);
+                vmArgs.add(value);
+            }
+        }
+    }
+
+    /**
+     * Modular access flags matching {@code ModularJdkArguments} in the .NET launcher.
+     */
+    static List<String> modularJdkArguments() {
+        List<String> args = new ArrayList<>();
+        addExport(args, "java.base/sun.net.www.protocol.jar=ALL-UNNAMED");
+        addOpen(args, "java.base/sun.net.www.protocol.jar=ALL-UNNAMED");
+        addExport(args, "java.base/sun.security.action=ALL-UNNAMED");
+        addExport(args, "java.base/sun.security.provider=ALL-UNNAMED");
+        addExport(args, "java.base/sun.security.util=ALL-UNNAMED");
+        addExport(args, "java.base/sun.security.validator=ALL-UNNAMED");
+        addExport(args, "java.base/sun.security.x509=ALL-UNNAMED");
+        addExport(args, "java.base/jdk.internal.util.jar=ALL-UNNAMED");
+        addOpen(args, "java.base/jdk.internal.util.jar=ALL-UNNAMED");
+        addExport(args, "java.base/sun.net.www.protocol.http=ALL-UNNAMED");
+        addExport(args, "java.desktop/sun.applet=ALL-UNNAMED");
+        addExport(args, "java.desktop/sun.awt=ALL-UNNAMED");
+        addExport(args, "java.desktop/sun.awt.image=ALL-UNNAMED");
+        addExport(args, "java.desktop/sun.swing.table=ALL-UNNAMED");
+        addExport(args, "java.desktop/sun.swing=ALL-UNNAMED");
+        addExport(args, "java.desktop/sun.swing.plaf=ALL-UNNAMED");
+        addExport(args, "java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED");
+        addOpen(args, "java.base/java.lang=ALL-UNNAMED");
+        String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
+        if (os.contains("win")) {
+            addExport(args, "java.desktop/sun.awt.windows=ALL-UNNAMED");
+            addExport(args, "java.desktop/com.sun.java.swing.plaf.windows=ALL-UNNAMED");
+        } else if (os.contains("linux")) {
+            addExport(args, "java.desktop/sun.awt.X11=ALL-UNNAMED");
+        }
+        return args;
+    }
+
+    private static void addExport(List<String> args, String value) {
+        args.add(ADD_EXPORTS_FLAG);
+        args.add(value);
+    }
+
+    private static void addOpen(List<String> args, String value) {
+        args.add(ADD_OPENS_FLAG);
+        args.add(value);
+    }
+
+    private static boolean containsFlagValuePair(List<String> args, String flag, String value) {
+        for (int i = 0; i + 1 < args.size(); i++) {
+            if (flag.equals(args.get(i)) && value.equals(args.get(i + 1))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**

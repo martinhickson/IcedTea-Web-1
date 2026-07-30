@@ -1,29 +1,85 @@
 package net.sourceforge.jnlp.util;
 
 import java.io.File;
+import java.io.UnsupportedEncodingException;
+import java.net.URL;
+import java.net.URLDecoder;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Locale;
 import net.sourceforge.jnlp.Launcher;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.runtime.JavawsUberLauncher;
 
 /**
- * Resolves the javaws launcher executable for external JNLP launches.
+ * Resolves how to launch an external {@code javaws} process.
  * <p>
- * When itweb-settings (or policyeditor) is started via the .NET/native launcher,
- * {@code icedtea-web.bin.location} points at that binary. External launches must
- * use the {@code javaws} sibling in the same {@code bin/} directory.
+ * Native/shell wrappers ({@code javaws}, {@code javawsc}, {@code itweb-settings})
+ * set {@link #ENV_NATIVE_LAUNCHER}{@code =1}. When that is present, external
+ * launches use the {@code javaws} sibling in the same {@code bin/} directory.
+ * When it is absent, this process was started with bare {@code java -cp} (or
+ * equivalent) and external launches must use the same uber-JAR entry point.
  */
 public final class ItwLauncherPaths {
 
     public static final String KEY_BIN_NAME = "icedtea-web.bin.name";
     public static final String ENV_JAVAWS_BIN = "ITW_JAVAWS_BIN";
+    /** Set by .NET and shell wrappers; inherited by the JVM they start. */
+    public static final String ENV_NATIVE_LAUNCHER = "ITW_NATIVE_LAUNCHER";
+    /** Optional override of {@link #ENV_NATIVE_LAUNCHER} for tests / diagnostics. */
+    public static final String PROP_NATIVE_LAUNCHER = "icedtea-web.native.launcher";
 
     private static final String JAVAWS_NAME = "javaws";
     private static final String JAVAWSC_NAME = "javawsc";
+    private static final String JAVAWS_MAIN = JavawsUberLauncher.class.getName();
 
     private ItwLauncherPaths() {
     }
 
+    /**
+     * {@code true} when this JVM was started by a native/shell ITW wrapper.
+     * {@code false} means bare {@code java -cp}/{@code -jar} (or tests).
+     */
+    public static boolean isNativeLauncherProcess() {
+        String prop = System.getProperty(PROP_NATIVE_LAUNCHER);
+        if (prop != null) {
+            return isTruthy(prop);
+        }
+        return isTruthy(System.getenv(ENV_NATIVE_LAUNCHER));
+    }
+
+    public static boolean canLaunchExternally() {
+        try {
+            buildExternalLaunchCommand(new ArrayList<String>(), new ArrayList<String>(), null);
+            return true;
+        } catch (IllegalStateException ex) {
+            return false;
+        }
+    }
+
+    /**
+     * Build a full process command to start javaws externally.
+     *
+     * @param vmArgs JVM arguments without a {@code -J} prefix
+     * @param javawsArgs arguments for Boot/JavawsUberLauncher (e.g. JNLP URL)
+     * @param javaHome optional JDK home for the child; {@code null} uses current {@code java.home}
+     */
+    public static List<String> buildExternalLaunchCommand(List<String> vmArgs, List<String> javawsArgs,
+            String javaHome) {
+        List<String> vm = vmArgs == null ? new ArrayList<String>() : new ArrayList<>(vmArgs);
+        List<String> appArgs = javawsArgs == null ? new ArrayList<String>() : new ArrayList<>(javawsArgs);
+        if (isNativeLauncherProcess()) {
+            return buildNativeWrapperCommand(vm, appArgs, javaHome);
+        }
+        return buildJavaCpCommand(vm, appArgs, javaHome);
+    }
+
     public static String resolveJavawsBin() {
+        if (!isNativeLauncherProcess()) {
+            // Bare java -cp: there is no wrapper binary; callers should use
+            // buildExternalLaunchCommand instead.
+            return null;
+        }
         File fromEnv = asExecutableFile(System.getenv(ENV_JAVAWS_BIN));
         if (fromEnv != null) {
             return fromEnv.getAbsolutePath();
@@ -45,6 +101,15 @@ public final class ItwLauncherPaths {
     static File resolveJavawsFromLauncherLocation(String location) {
         File launcher = asExecutableFile(location);
         if (launcher == null) {
+            // Allow .cmd which may not report canExecute on some JDKs.
+            if (location != null && location.trim().toLowerCase(Locale.ROOT).endsWith(".cmd")) {
+                File cmd = new File(location.trim());
+                if (cmd.isFile()) {
+                    launcher = cmd;
+                }
+            }
+        }
+        if (launcher == null) {
             return null;
         }
         if (isJavawsLauncherFile(launcher)) {
@@ -56,6 +121,125 @@ public final class ItwLauncherPaths {
             return null;
         }
         return findSiblingJavaws(parent);
+    }
+
+    static boolean isJavawsLauncherName(String name) {
+        if (name == null) {
+            return false;
+        }
+        String base = stripExtension(name.trim().toLowerCase(Locale.ROOT));
+        return JAVAWS_NAME.equals(base) || JAVAWSC_NAME.equals(base);
+    }
+
+    static File resolveUberJar() {
+        String location = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
+        File fromProp = asJarFile(location);
+        if (fromProp != null) {
+            return fromProp;
+        }
+        File fromCodeSource = codeSourceJar(ItwLauncherPaths.class);
+        if (fromCodeSource != null) {
+            return fromCodeSource;
+        }
+        fromCodeSource = codeSourceJar(JavawsUberLauncher.class);
+        if (fromCodeSource != null) {
+            return fromCodeSource;
+        }
+        String classPath = System.getProperty("java.class.path");
+        if (classPath != null) {
+            for (String entry : classPath.split(File.pathSeparator)) {
+                File jar = asJarFile(entry);
+                if (jar != null && jar.getName().toLowerCase(Locale.ROOT).contains("icedtea-web")
+                        && jar.getName().toLowerCase(Locale.ROOT).contains("uber")) {
+                    return jar;
+                }
+            }
+            for (String entry : classPath.split(File.pathSeparator)) {
+                File jar = asJarFile(entry);
+                if (jar != null && jar.getName().toLowerCase(Locale.ROOT).contains("icedtea-web")) {
+                    return jar;
+                }
+            }
+        }
+        return null;
+    }
+
+    static File resolveJavaExecutable(String javaHome) {
+        String home = javaHome;
+        if (home == null || home.trim().isEmpty()) {
+            home = System.getProperty("java.home");
+        }
+        if (home == null || home.trim().isEmpty()) {
+            return null;
+        }
+        String name = JNLPRuntime.isWindows() ? "java.exe" : "java";
+        File java = new File(new File(home.trim(), "bin"), name);
+        if (java.isFile()) {
+            return java;
+        }
+        return null;
+    }
+
+    private static List<String> buildNativeWrapperCommand(List<String> vmArgs, List<String> javawsArgs,
+            String javaHome) {
+        String pathToWebstartBinary = resolveJavawsBin();
+        if (pathToWebstartBinary == null) {
+            throw new IllegalStateException("javaws launcher not found next to native ITW wrapper");
+        }
+        List<String> commands = new ArrayList<>();
+        commands.add(pathToWebstartBinary);
+        for (String arg : vmArgs) {
+            if (arg != null && !arg.isEmpty()) {
+                commands.add("-J" + arg);
+            }
+        }
+        commands.addAll(javawsArgs);
+        return commands;
+    }
+
+    private static List<String> buildJavaCpCommand(List<String> vmArgs, List<String> javawsArgs,
+            String javaHome) {
+        File java = resolveJavaExecutable(javaHome);
+        File uberJar = resolveUberJar();
+        if (java == null) {
+            throw new IllegalStateException("java executable not found for external launch");
+        }
+        if (uberJar == null) {
+            throw new IllegalStateException("icedtea-web uber JAR not found for java -cp launch");
+        }
+        List<String> commands = new ArrayList<>();
+        commands.add(java.getAbsolutePath());
+        // Match .NET/shell wrappers: heap floor + modular access before caller VM args.
+        if (!containsXmsArg(vmArgs)) {
+            commands.add("-Xms8m");
+        }
+        List<String> modularVmArgs = new ArrayList<>();
+        JavaVersionUtils.addModularJdkCompatibilityArgs(modularVmArgs, javaHome);
+        commands.addAll(modularVmArgs);
+        for (String arg : vmArgs) {
+            if (arg != null && !arg.isEmpty()) {
+                commands.add(arg);
+            }
+        }
+        commands.add("-D" + KEY_BIN_NAME + "=" + JAVAWS_NAME);
+        commands.add("-D" + Launcher.KEY_JAVAWS_LOCATION + "=" + uberJar.getAbsolutePath());
+        commands.add("-cp");
+        commands.add(uberJar.getAbsolutePath());
+        commands.add(JAVAWS_MAIN);
+        commands.addAll(javawsArgs);
+        return commands;
+    }
+
+    private static boolean containsXmsArg(List<String> vmArgs) {
+        if (vmArgs == null) {
+            return false;
+        }
+        for (String arg : vmArgs) {
+            if (arg != null && arg.startsWith("-Xms")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -75,14 +259,6 @@ public final class ItwLauncherPaths {
             return cmd;
         }
         return null;
-    }
-
-    static boolean isJavawsLauncherName(String name) {
-        if (name == null) {
-            return false;
-        }
-        String base = stripExtension(name.trim().toLowerCase(Locale.ROOT));
-        return JAVAWS_NAME.equals(base) || JAVAWSC_NAME.equals(base);
     }
 
     private static boolean isJavawsLauncherFile(File file) {
@@ -121,9 +297,13 @@ public final class ItwLauncherPaths {
                 continue;
             }
             for (String name : names) {
-                File candidate = asExecutableFile(new File(dir.trim(), name).getPath());
-                if (candidate != null) {
+                File candidate = new File(dir.trim(), name);
+                if (name.endsWith(".cmd") && candidate.isFile()) {
                     return candidate;
+                }
+                File executable = asExecutableFile(candidate.getPath());
+                if (executable != null) {
+                    return executable;
                 }
             }
         }
@@ -141,10 +321,80 @@ public final class ItwLauncherPaths {
         return null;
     }
 
+    private static File asJarFile(String path) {
+        if (path == null || path.trim().isEmpty()) {
+            return null;
+        }
+        File file = new File(path.trim());
+        if (file.isFile() && file.getName().toLowerCase(Locale.ROOT).endsWith(".jar")) {
+            return file;
+        }
+        return null;
+    }
+
+    private static File codeSourceJar(Class<?> type) {
+        try {
+            URL location = type.getProtectionDomain().getCodeSource().getLocation();
+            if (location == null) {
+                return null;
+            }
+            File file = urlToFile(location);
+            return asJarFile(file == null ? null : file.getAbsolutePath());
+        } catch (Exception ex) {
+            return null;
+        }
+    }
+
+    private static File urlToFile(URL url) {
+        if (url == null) {
+            return null;
+        }
+        try {
+            if ("file".equalsIgnoreCase(url.getProtocol())) {
+                return new File(url.toURI());
+            }
+        } catch (Exception ignored) {
+            // Fall through to path decode.
+        }
+        String path = decodeCodeSourcePath(url.getPath());
+        return path == null ? null : new File(path);
+    }
+
+    static String decodeCodeSourcePath(String path) {
+        if (path == null) {
+            return null;
+        }
+        String decoded;
+        try {
+            decoded = URLDecoder.decode(path, "UTF-8");
+        } catch (IllegalArgumentException | UnsupportedEncodingException e) {
+            decoded = path;
+        }
+        if (File.separatorChar == '\\'
+                && decoded.length() >= 3
+                && decoded.charAt(0) == '/'
+                && Character.isLetter(decoded.charAt(1))
+                && decoded.charAt(2) == ':') {
+            decoded = decoded.substring(1);
+        }
+        return decoded;
+    }
+
     private static String stripExtension(String name) {
-        if (name.endsWith(".exe")) {
+        if (name.endsWith(".exe") || name.endsWith(".cmd")) {
             return name.substring(0, name.length() - 4);
         }
         return name;
+    }
+
+    private static boolean isTruthy(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        return "1".equals(trimmed)
+                || "true".equalsIgnoreCase(trimmed)
+                || "yes".equalsIgnoreCase(trimmed)
+                || "on".equalsIgnoreCase(trimmed);
     }
 }

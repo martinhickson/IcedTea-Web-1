@@ -167,6 +167,13 @@ public class CertificatePane extends JPanel {
         JLabel certificateTypeLabel = new JLabel(R("CVCertificateType"));
 
         certificateTypeCombo = new JComboBox<>(certificateTypes);
+        // Default to Trusted Certificates (CERTS), not Root CA.
+        for (int i = 0; i < certificateTypes.length; i++) {
+            if (certificateTypes[i].getType() == KeyStores.Type.CERTS) {
+                certificateTypeCombo.setSelectedIndex(i);
+                break;
+            }
+        }
         certificateTypeCombo.addActionListener(new CertificateTypeListener());
 
         certificateTypePanel.add(certificateTypeLabel, BorderLayout.LINE_START);

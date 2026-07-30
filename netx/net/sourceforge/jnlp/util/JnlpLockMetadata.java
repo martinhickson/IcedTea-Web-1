@@ -309,17 +309,29 @@ public final class JnlpLockMetadata {
 
     public static void writeProcessEntries(File lockFile, String header, List<ProcessEntry> entries) throws IOException {
         try (BufferedWriter writer = new BufferedWriter(new FileWriter(lockFile, false))) {
-            if (header != null && !header.isEmpty()) {
-                for (String line : header.split("\\R")) {
-                    writer.write(line);
-                    writer.newLine();
-                }
+            writeProcessEntries(writer, header, entries);
+        }
+    }
+
+    /**
+     * Serialize process entries to an already-open writer. Used when the target
+     * file is held under an exclusive {@link java.nio.channels.FileLock} and must
+     * not be reopened (Windows rejects a second {@link FileWriter} in that case).
+     */
+    public static void writeProcessEntries(BufferedWriter writer, String header, List<ProcessEntry> entries)
+            throws IOException {
+        if (header != null && !header.isEmpty()) {
+            for (String line : header.split("\\R")) {
+                writer.write(line);
+                writer.newLine();
             }
+        }
+        if (entries != null) {
             for (ProcessEntry entry : entries) {
                 writeEntryFields(writer, entry);
             }
-            writer.flush();
         }
+        writer.flush();
     }
 
     private static void apply(JnlpLockMetadata metadata, String key, String value) {

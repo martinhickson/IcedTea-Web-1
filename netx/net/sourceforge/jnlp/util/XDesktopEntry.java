@@ -40,9 +40,13 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.Set;
+import net.sourceforge.jnlp.InformationDesc;
+import net.sourceforge.jnlp.JARDesc;
 import javax.imageio.ImageIO;
 
 import net.sourceforge.jnlp.IconDesc;
@@ -588,25 +592,193 @@ public class XDesktopEntry implements GenericDesktopEntry {
             return u.toString();
         }
     }
+
+    /**
+     * Parent-directory walk for remote codebases (http/https). Includes {@code ""}
+     * so the site root {@code /favicon.ico} is tried.
+     */
     static List<String> possibleFavIconLocations(String path) {
+        return possibleFavIconLocations(path, null);
+    }
+
+    /**
+     * Parent-directory walk from {@code path} upward.
+     * When {@code highestPath} is non-null, never walks above that directory
+     * (inclusive). When null, preserves legacy remote behavior including site root.
+     */
+    static List<String> possibleFavIconLocations(String path, String highestPath) {
+        path = normalizeDirectoryPath(path);
+        if (highestPath != null) {
+            highestPath = normalizeDirectoryPath(highestPath);
+        }
+        List<String> r = new ArrayList<>();
+        while (true) {
+            r.add(path);
+            if (highestPath != null && pathsEqual(path, highestPath)) {
+                break;
+            }
+            int last = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
+            if (last < 0) {
+                break;
+            }
+            String parent = path.substring(0, last);
+            if (parent.isEmpty()) {
+                break;
+            }
+            if (highestPath != null && !isAtOrBelow(parent, highestPath)) {
+                break;
+            }
+            path = parent;
+            if (highestPath == null && !(path.contains("/") || path.contains("\\"))) {
+                break;
+            }
+        }
+        if (highestPath == null && !r.contains("")) {
+            r.add("");
+        }
+        return r;
+    }
+
+    /**
+     * For {@code file:} JNLPs: codebase / JNLP / each referenced resource directory,
+     * walking parents only up to the longest common directory of those roots.
+     */
+    static List<String> fileFavIconLocations(JNLPFile file) {
+        LinkedHashSet<String> roots = new LinkedHashSet<>();
+        addFileDirectoryRoot(roots, file.getNotNullProbalbeCodeBase());
+        addFileDirectoryRoot(roots, file.getFileLocation());
+        addFileDirectoryRoot(roots, file.getSourceLocation());
+        try {
+            for (JARDesc jar : file.getResources().getJARs()) {
+                addFileDirectoryRoot(roots, jar.getLocation());
+            }
+        } catch (Exception ex) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+        }
+        try {
+            InformationDesc info = file.getInformation();
+            if (info != null) {
+                for (Object kind : new Object[] { IconDesc.DEFAULT, IconDesc.SHORTCUT, IconDesc.SPLASH }) {
+                    for (IconDesc icon : info.getIcons(kind)) {
+                        addFileDirectoryRoot(roots, icon.getLocation());
+                    }
+                }
+            }
+        } catch (Exception ex) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+        }
+
+        String start = directoryPathOfUrl(file.getNotNullProbalbeCodeBase());
+        if (roots.isEmpty()) {
+            if (start == null) {
+                return Collections.emptyList();
+            }
+            return possibleFavIconLocations(start, start);
+        }
+        if (start == null) {
+            start = roots.iterator().next();
+        }
+        String floor = longestCommonDirectoryPrefix(new ArrayList<>(roots));
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        result.addAll(possibleFavIconLocations(start, floor));
+        // Include each individual file root (e.g. sibling lib/) even if off the walk path.
+        result.addAll(roots);
+        return new ArrayList<>(result);
+    }
+
+    static String longestCommonDirectoryPrefix(List<String> directories) {
+        if (directories == null || directories.isEmpty()) {
+            return null;
+        }
+        String prefix = normalizeDirectoryPath(directories.get(0));
+        for (int i = 1; i < directories.size(); i++) {
+            prefix = commonDirectoryPrefix(prefix, normalizeDirectoryPath(directories.get(i)));
+            if (prefix.isEmpty()) {
+                return prefix;
+            }
+        }
+        return prefix;
+    }
+
+    static String normalizeDirectoryPath(String path) {
+        if (path == null) {
+            return "";
+        }
         while (path.endsWith("/") || path.endsWith("\\")) {
             path = path.substring(0, path.length() - 1);
+        }
+        if (path.isEmpty()) {
+            return "";
         }
         if (!path.startsWith("/")) {
             path = "/" + path;
         }
-        List<String> r = new ArrayList<>();
-        do {
-            r.add(path);
-            int last = Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/"));
-            if (last >= 0) {
-                path = path.substring(0, last);
+        return path;
+    }
+
+    private static String commonDirectoryPrefix(String a, String b) {
+        String[] as = splitPathSegments(a);
+        String[] bs = splitPathSegments(b);
+        int n = Math.min(as.length, bs.length);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < n; i++) {
+            // Case-insensitive so Windows drive letters / folders still match.
+            if (!as[i].equalsIgnoreCase(bs[i])) {
+                break;
             }
-        } while (path.contains("/") || path.contains("\\"));
-        if (!r.contains("")) {
-            r.add("");
+            sb.append('/').append(as[i]);
         }
-        return r;
+        return sb.length() == 0 ? "" : sb.toString();
+    }
+
+    private static String[] splitPathSegments(String path) {
+        path = normalizeDirectoryPath(path);
+        if (path.isEmpty() || path.equals("/")) {
+            return new String[0];
+        }
+        String trimmed = path.startsWith("/") ? path.substring(1) : path;
+        return trimmed.split("[/\\\\]+");
+    }
+
+    private static boolean pathsEqual(String a, String b) {
+        return normalizeDirectoryPath(a).equalsIgnoreCase(normalizeDirectoryPath(b));
+    }
+
+    private static boolean isAtOrBelow(String path, String floor) {
+        String p = normalizeDirectoryPath(path);
+        String f = normalizeDirectoryPath(floor);
+        if (pathsEqual(p, f)) {
+            return true;
+        }
+        return p.regionMatches(true, 0, f, 0, f.length())
+                && (p.length() == f.length()
+                    || p.charAt(f.length()) == '/'
+                    || p.charAt(f.length()) == '\\');
+    }
+
+    private static void addFileDirectoryRoot(Set<String> roots, URL url) {
+        String dir = directoryPathOfUrl(url);
+        if (dir != null && !dir.isEmpty()) {
+            roots.add(dir);
+        }
+    }
+
+    static String directoryPathOfUrl(URL url) {
+        if (url == null || !"file".equalsIgnoreCase(url.getProtocol())) {
+            return null;
+        }
+        String path = url.getPath();
+        if (path == null || path.isEmpty() || path.equals("/")) {
+            return null;
+        }
+        if (path.endsWith("/") || path.endsWith("\\")) {
+            return normalizeDirectoryPath(path);
+        }
+        int last = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'));
+        if (last <= 0) {
+            return null;
+        }
+        return normalizeDirectoryPath(path.substring(0, last));
     }
     
     private static URL favUrl(String delimiter, String path, JNLPFile file) throws MalformedURLException {
@@ -619,7 +791,12 @@ public class XDesktopEntry implements GenericDesktopEntry {
 
     private static URL getFavIconUrl(JNLPFile file) {
         try {
-            for (String path : possibleFavIconLocations(file.getNotNullProbalbeCodeBase().getPath())) {
+            URL codebase = file.getNotNullProbalbeCodeBase();
+            boolean fileCodebase = codebase != null && "file".equalsIgnoreCase(codebase.getProtocol());
+            List<String> locations = fileCodebase
+                    ? fileFavIconLocations(file)
+                    : possibleFavIconLocations(codebase.getPath());
+            for (String path : locations) {
                 URL favico = favUrl("/", path, file);
                 //JNLPFile.openURL(favico, null, UpdatePolicy.ALWAYS);
                 //this MAY throw npe, if url (specified in jnlp) points to 404
@@ -629,13 +806,14 @@ public class XDesktopEntry implements GenericDesktopEntry {
                     return urlLocation;
                 }
             }
-            //the icon is much more likely to be found behind / then behinf \/ 
-            //So rather duplicating the code here, then wait double time if the icon will be at the start of the path
-            for (String path : possibleFavIconLocations(file.getNotNullProbalbeCodeBase().getPath())) {
-                URL favico = favUrl("\\", path, file);
-                URL urlLocation = CacheUtil.getCachedResourceURL(favico, null, UpdatePolicy.SESSION);
-                if (urlLocation != null) {
-                    return urlLocation;
+            // Backslash form is only useful for some remote Windows-style URLs.
+            if (!fileCodebase) {
+                for (String path : locations) {
+                    URL favico = favUrl("\\", path, file);
+                    URL urlLocation = CacheUtil.getCachedResourceURL(favico, null, UpdatePolicy.SESSION);
+                    if (urlLocation != null) {
+                        return urlLocation;
+                    }
                 }
             }
         } catch (Exception ex) {

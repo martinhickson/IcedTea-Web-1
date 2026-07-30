@@ -254,4 +254,38 @@ public class ResourcesDesc {
         resources.add(resource);
     }
 
+    /**
+     * Copy this resources section for a different owning {@link JNLPFile}.
+     * Child descriptors that are immutable after parse are shared; parent-linked
+     * and mutable ones ({@link JREDesc} nested resources, {@link ExtensionDesc})
+     * are rebound or shallow-copied.
+     */
+    ResourcesDesc copyFor(JNLPFile newParent) {
+        ResourcesDesc copy = new ResourcesDesc(newParent, locales, os, arch);
+        for (Object resource : resources) {
+            if (resource instanceof JREDesc) {
+                copy.addResource(copyJreDesc((JREDesc) resource, newParent));
+            } else if (resource instanceof ExtensionDesc) {
+                copy.addResource(((ExtensionDesc) resource).copyUnresolved());
+            } else {
+                copy.addResource(resource);
+            }
+        }
+        return copy;
+    }
+
+    private static JREDesc copyJreDesc(JREDesc jre, JNLPFile newParent) {
+        List<ResourcesDesc> nested = new ArrayList<>();
+        for (ResourcesDesc nestedResources : jre.getResourcesDesc()) {
+            nested.add(nestedResources.copyFor(newParent));
+        }
+        try {
+            return new JREDesc(jre.getVersion(), jre.getLocation(), jre.getVMArgs(),
+                    jre.getInitialHeapSize(), jre.getMaximumHeapSize(), nested);
+        } catch (ParseException e) {
+            // Heap sizes were already validated when the template was parsed.
+            throw new IllegalStateException(e);
+        }
+    }
+
 }
