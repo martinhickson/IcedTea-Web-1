@@ -95,10 +95,16 @@ jobs:
         with:
           java-version: '11'
           distribution: 'corretto'
+          cache: maven
 
+      # Cold runners + shared GHA egress get HTTP 429 from repo.maven.apache.org.
+      # Use the GCS Central mirror and a fully-qualified plugin GAV (avoids prefix metadata lookup).
       - name: Update Maven versions
+        env:
+          MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml
         run: |
-          mvn -P maven-distribution versions:set \
+          mvn -B -s "${MAVEN_SETTINGS}" -P maven-distribution \
+            org.codehaus.mojo:versions-maven-plugin:2.17.0:set \
             -DnewVersion="${RELEASE_VERSION}" \
             -DprocessAllModules \
             -DgenerateBackupPoms=false
@@ -357,6 +363,8 @@ jobs:
         shell: pwsh
 
       - name: Build distribution
+        env:
+          MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml
         run: |
           $selfContained = if ("${{ github.event_name }}" -eq "workflow_dispatch") {
             "${{ inputs.dotnet-self-contained }}"
@@ -364,6 +372,8 @@ jobs:
             "true"
           }
           $mvnArgs = @(
+            "-B",
+            "-s", $env:MAVEN_SETTINGS,
             "-P", "maven-distribution",
             "-pl", "icedtea-web-distribution",
             "-am",
@@ -380,8 +390,12 @@ jobs:
         shell: pwsh
 
       - name: Build signed headless JNLP app
+        env:
+          MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml
         run: |
           $mvnArgs = @(
+            "-B",
+            "-s", $env:MAVEN_SETTINGS,
             "-pl", "icedtea-web-integration",
             "process-test-classes",
             "-DskipTests",
