@@ -234,8 +234,6 @@ function Test-HandoffLogs {
             "Handoff status: SUCCESS",
             "Parent process ID (handing off):",
             "Child process ID (handed to):",
-            "Standard Output stream written to:",
-            "Standard Error stream written to:",
             "no pipe buffer stall risk",
             "Handoff complete: parent launcher exiting"
         )
@@ -243,6 +241,13 @@ function Test-HandoffLogs {
             if (-not (Select-String -InputObject ($record -join "`n") -Pattern ([regex]::Escape($pattern)) -Quiet)) {
                 throw "Handoff log missing required field '$pattern' in $($launchLog.FullName)"
             }
+        }
+        # Combined redirect (current) or separate stdout/stderr lines (legacy).
+        $text = $record -join "`n"
+        $hasCombined = $text -match "Standard Output and Standard Error written to:"
+        $hasSeparate = ($text -match "Standard Output stream written to:") -and ($text -match "Standard Error stream written to:")
+        if (-not ($hasCombined -or $hasSeparate)) {
+            throw "Handoff log missing stdio redirect fields in $($launchLog.FullName)"
         }
 
         $parentPid = [int](Select-String -Path $launchLog.FullName -Pattern "^Parent process ID \(handing off\): (\d+)$" |
