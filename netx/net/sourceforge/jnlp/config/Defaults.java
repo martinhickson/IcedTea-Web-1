@@ -550,6 +550,11 @@ public class Defaults {
                         DeploymentConfiguration.KEY_KEEP_JAVAWS_RELAUNCH_PROCESS,
                         BasicValueValidators.getBooleanValidator(),
                         "false"
+                },
+                {
+                        DeploymentConfiguration.KEY_WINDOWS_GRANT_FOREGROUND,
+                        BasicValueValidators.getBooleanValidator(),
+                        "true"
                 }
         };
 

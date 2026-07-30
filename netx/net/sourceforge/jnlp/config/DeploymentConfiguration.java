@@ -312,6 +312,12 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_KEEP_JAVAWS_RELAUNCH_PROCESS = "deployment.keepJavawsRelaunchProcess";
     /**
+     * Windows .NET launcher only. When {@code true} (default), after spawning a child JVM the
+     * launcher calls {@code AllowSetForegroundWindow} so detached Java UI can come to the
+     * foreground instead of staying behind other windows after handoff.
+     */
+    public static final String KEY_WINDOWS_GRANT_FOREGROUND = "deployment.windows.grantForeground";
+    /**
      * remote configuration properties
      */
     public static final String KEY_SYSTEM_CONFIG = "deployment.system.config";

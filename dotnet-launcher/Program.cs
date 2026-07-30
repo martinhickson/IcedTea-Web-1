@@ -23,6 +23,7 @@ internal static class Program
 
     private const string KeepJavawsProcessProperty = "deployment.keepJavawsProcess";
     private const string KeepJavaPrelaunchProcessProperty = "deployment.keepjavaPrelaunchProcess";
+    private const string WindowsGrantForegroundProperty = "deployment.windows.grantForeground";
     private const string UserLogDirProperty = "deployment.user.logdir";
     private const string JvmIpTypeProperty = "deployment.jvm.ip.type";
     private const string PreferIpv4StackProperty = "java.net.preferIPv4Stack";
@@ -769,6 +770,13 @@ internal static class Program
     private static bool ShouldKeepJavaPrelaunchProcess() =>
         ReadDeploymentBooleanProperty(KeepJavaPrelaunchProcessProperty, defaultValue: false);
 
+    /// <summary>
+    /// Default true: grant Windows foreground permission to child JVMs after handoff.
+    /// Set deployment.windows.grantForeground=false to disable.
+    /// </summary>
+    private static bool ShouldGrantForegroundToChild() =>
+        ReadDeploymentBooleanProperty(WindowsGrantForegroundProperty, defaultValue: true);
+
     private static bool ReadDeploymentBooleanProperty(string key, bool defaultValue)
     {
         var raw = ReadDeploymentProperty(key);
@@ -925,6 +933,10 @@ internal static class Program
 
         var process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Unable to start process: " + executable);
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            NativeMethods.TryGrantForegroundToChild(process.Id);
+        }
         process.StandardInput.Close();
 
         void Pump(Stream source)
@@ -1478,6 +1490,36 @@ internal static class Program
         [DllImport("user32.dll")]
         public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
 
+        /// <summary>
+        /// Enables the specified process to call SetForegroundWindow. The caller
+        /// must already be allowed to set the foreground window (e.g. user-launched
+        /// javaws, or a parent that granted us rights). Used so detached Java UI
+        /// is not stuck behind other windows after launcher handoff.
+        /// </summary>
+        [DllImport("user32.dll")]
+        public static extern bool AllowSetForegroundWindow(int dwProcessId);
+
+        public const int AsfwAny = -1;
+
+        public static void TryGrantForegroundToChild(int childPid)
+        {
+            if (childPid <= 0 || !ShouldGrantForegroundToChild())
+            {
+                return;
+            }
+
+            try
+            {
+                _ = AllowSetForegroundWindow(childPid);
+                // Also allow a further hop (this process exits; child may spawn UI).
+                _ = AllowSetForegroundWindow(AsfwAny);
+            }
+            catch
+            {
+                // Best-effort only; launch must continue.
+            }
+        }
+
         [DllImport("kernel32.dll", SetLastError = true)]
         public static extern IntPtr GetStdHandle(int nStdHandle);
 
@@ -1873,6 +1915,7 @@ internal static class Program
                 }
 
                 var childPid = (int)processInfo.dwProcessId;
+                TryGrantForegroundToChild(childPid);
                 CloseHandle(processInfo.hThread);
                 CloseHandle(processInfo.hProcess);
                 return childPid;
@@ -1936,6 +1979,7 @@ internal static class Program
 
                 try
                 {
+                    TryGrantForegroundToChild((int)processInfo.dwProcessId);
                     CloseHandle(processInfo.hThread);
                     _ = WaitForSingleObject(processInfo.hProcess, Infinite);
                     GetExitCodeProcess(processInfo.hProcess, out var exitCode);

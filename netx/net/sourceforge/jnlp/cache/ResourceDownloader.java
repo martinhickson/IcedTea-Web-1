@@ -49,6 +49,14 @@ public class ResourceDownloader implements Runnable {
 
     private static final long[] RETRY_DELAYS = {2000L, 3000L, 5000L, 8000L};
     private static final int RETRY_COUNT = 5;
+    /**
+     * Do not advertise {@code gzip}: setting Accept-Encoding disables
+     * {@link URLConnection}'s transparent decompress, and WildFly then returns
+     * gzip jar bodies. Those fail {@link CacheUtil#isValidJarFile} when written
+     * into a versioned {@code .jar} cache slot (before {@code uncompressGzip}),
+     * causing redownload loops. Keep pack200-gzip for packed resources only.
+     */
+    private static final String ACCEPT_ENCODING = "pack200-gzip";
     private static final Set<String> LOGGED_MISSING_FAVICONS = new HashSet<>();
     private final Resource resource;
     private final Object lock;
@@ -264,7 +272,7 @@ public class ResourceDownloader implements Runnable {
         try {
             resource.setDownloadLocation(location.URL);
             URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(location.URL); // this won't change so should be okay not-synchronized
-            connection.addRequestProperty("Accept-Encoding", "pack200-gzip, gzip");
+            connection.addRequestProperty("Accept-Encoding", ACCEPT_ENCODING);
 
             File localFile = null;
             if (resource.getRequestVersion() == resource.getDownloadVersion()) {
@@ -437,7 +445,7 @@ public class ResourceDownloader implements Runnable {
                 URL url = urls.get(i);
                 try {
                     Map<String, String> requestProperties = new HashMap<>();
-                    requestProperties.put("Accept-Encoding", "pack200-gzip, gzip");
+                    requestProperties.put("Accept-Encoding", ACCEPT_ENCODING);
 
                     UrlRequestResult response = getUrlResponseCodeWithRedirectonResult(url, requestProperties, requestMethod);
                     if (response.result == 511) {
@@ -534,7 +542,7 @@ public class ResourceDownloader implements Runnable {
 
     private URLConnection getDownloadConnection(URL location) throws IOException {
         URLConnection con = ConnectionFactory.getConnectionFactory().openConnection(location);
-        con.addRequestProperty("Accept-Encoding", "pack200-gzip, gzip");
+        con.addRequestProperty("Accept-Encoding", ACCEPT_ENCODING);
         con.connect();
         return con;
     }
