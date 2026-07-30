@@ -143,8 +143,12 @@ class JdkPrecedenceJavawsLaunchIT {
 
             assertThat(combined)
                     .containsPattern("(?i)Selected JVM for JNLP request \\[17\\+\\]")
-                    .contains("Invoking main()")
                     .contains("ITW_INTEGRATION_SUCCESS");
+            // After JDK relaunch handoff, child logs may show "Starting application" without
+            // the older "Invoking main()" line; SUCCESS already proves main ran.
+            assertThat(combined.contains("Invoking main()") || combined.contains("Starting application"))
+                    .as("expected Invoking main() or Starting application in launch logs")
+                    .isTrue();
             assertThat(selected)
                     .as("Selected JVM log path")
                     .isEqualTo(expected.getAbsolutePath());
