@@ -335,6 +335,15 @@ public class OutputController {
         log(new JavaMessage(new Header(level, false), s));
     }
 
+    public boolean isDebugEnabled() {
+        try {
+            return JNLPRuntime.isDebug();
+        } catch (Throwable t) {
+            // Throwable caught to handle initialisation circular dependency.
+            return false;
+        }
+    }
+
     synchronized void log(MessageWithHeader l){
         messageQue.add(l);
         this.notifyAll();
