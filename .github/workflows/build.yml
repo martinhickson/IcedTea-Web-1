@@ -49,6 +49,8 @@ jobs:
           gmp-devel java-1.8.0-openjdk-devel libcurl-devel make mpfr-devel perl unzip which zip
           curl -L -o tagsoup.jar "https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar"
           sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
+          curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
+          sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
           curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
           sha256sum rhino.zip | awk '$1!="c94c6de3a29b3acbc4eee732e688f75a5d94bd02c9878be4ceb4d3cd220f3866"{exit 1}'
           unzip -j rhino.zip "*/js.jar"
@@ -91,6 +93,7 @@ jobs:
           export JAVA_HOME="$(dirname "${JRE_PATH}")"
           export TAGSOUP="${PWD}/tagsoup.jar"
           export RHINO="${PWD}/js.jar"
+          export PACK="${PWD}/pack.jar"
           export ACLOCAL_PATH="/usr/local/share/aclocal"
           export PATH="/usr/local/bin:${PATH}"
           export WORKSPACE="${PWD}"
@@ -99,7 +102,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Incoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}"
+          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}"
           
@@ -159,6 +162,8 @@ jobs:
           gmp-devel java-1.8.0-openjdk-devel libcurl-devel make mpfr-devel perl unzip which zip
           curl -L -o tagsoup.jar "https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar"
           sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
+          curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
+          sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
           curl -L -o mslinks.jar "https://repo1.maven.org/maven2/com/github/vatbub/mslinks/1.0.5/mslinks-1.0.5.jar"
           sha256sum mslinks.jar | awk '$1!="e14d756f81b310b75baeb5baf219d25592b6a8635eb215c4059f17493b0cea5c"{exit 1}'
           curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
@@ -199,7 +204,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Incoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --enable-bats-on-linux --enable-shell-launchers --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-rhino="${WORKSPACE}/js.jar" --with-mslinks="${WORKSPACE}/mslinks.jar" --with-tagsoup="${WORKSPACE}/tagsoup.jar" --with-jdk-home="${JAVA_HOME}"
+          ./configure --disable-native-plugin --enable-bats-on-linux --enable-shell-launchers --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${WORKSPACE}/pack.jar" --with-rhino="${WORKSPACE}/js.jar" --with-mslinks="${WORKSPACE}/mslinks.jar" --with-tagsoup="${WORKSPACE}/tagsoup.jar" --with-jdk-home="${JAVA_HOME}"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}/dest"
           
@@ -260,6 +265,8 @@ jobs:
           brew install --cask corretto@8
           curl -L -o tagsoup.jar "https://repo1.maven.org/maven2/org/ccil/cowan/tagsoup/tagsoup/1.2.1/tagsoup-1.2.1.jar"
           sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
+          curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
+          sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
           curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
           sha256sum rhino.zip | awk '$1!="c94c6de3a29b3acbc4eee732e688f75a5d94bd02c9878be4ceb4d3cd220f3866"{exit 1}'
           unzip -j rhino.zip "*/js.jar"
@@ -273,6 +280,7 @@ jobs:
           export JAVA_HOME=$(/usr/libexec/java_home -v 1.8)
           export TAGSOUP="${PWD}/tagsoup.jar"
           export RHINO="${PWD}/js.jar"
+          export PACK="${PWD}/pack.jar"
           export ACLOCAL_PATH="/usr/local/share/aclocal"
           export WORKSPACE="${PWD}"
           pkg-config --version
@@ -280,7 +288,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Invoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-jre-home="${JAVA_HOME}/jre"
+          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-jre-home="${JAVA_HOME}/jre"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}"
           
@@ -391,6 +399,13 @@ jobs:
           $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\wixgen.jar' | Select-Object -ExpandProperty Hash)
           If ($checksum -ne "57E68A91C46A2F4B1B41A3F93793E331D62D6D151DDC222FA4D3EC9CE876F967") {
             Write-Host "Checksums did not match!"
+            exit 1
+          }
+          # Retrieve Pack200 jar
+          Invoke-WebRequest -UseBasicParsing 'https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar' -OutFile 'C:\cygwin64\usr\share\java\pack.jar'
+          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\pack.jar' | Select-Object -ExpandProperty Hash)
+          If ($checksum -ne "13CEC5CB108C2BCC1AA22845F53DCA94D9D3CF148C73EE98457CDA50B0642728") {
+            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
             exit 1
           }
           # Retrieve Rhino
