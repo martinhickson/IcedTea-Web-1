@@ -39,7 +39,7 @@ jobs:
     runs-on: ubuntu-latest
     container: centos:7
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           path: icedtea-web
 
@@ -114,7 +114,7 @@ jobs:
             sha256sum "$zip" > "$zip.sha256.txt"
           done
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: icedtea-web_build_x86-64_linux
           path: |
@@ -149,7 +149,7 @@ jobs:
     runs-on: ubuntu-latest
     container: centos:7
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           path: icedtea-web
 
@@ -216,7 +216,7 @@ jobs:
             sha256sum "$zip_rename" > "$zip_rename.sha256.txt"
           done
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: icedtea-web_build_x86-64_portable
           path: |
@@ -250,7 +250,7 @@ jobs:
     name: macOS
     runs-on: macos-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           path: icedtea-web
 
@@ -292,7 +292,7 @@ jobs:
             sha256sum "$zip" > "$zip.sha256.txt"
           done
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: icedtea-web_build_x86-64_macos
           path: |
@@ -328,7 +328,7 @@ jobs:
     steps:
       - name: Restore cygwin packages from cache
         id: cygwin
-        uses: actions/cache@v2
+        uses: actions/cache@v4
         with:
           path: C:\cygwin_packages
           key: cygwin-packages-${{ runner.os }}-v1
@@ -361,7 +361,7 @@ jobs:
         shell: bash
         run: mkdir $HOME && git config --system core.autocrlf false && git config --system --add safe.directory '*'
 
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           set-safe-directory: false
 
@@ -420,7 +420,7 @@ jobs:
         run: bash .github/workflows/windows_build.sh
         shell: cmd
 
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: icedtea-web_build_x86-64_win
           path: |
