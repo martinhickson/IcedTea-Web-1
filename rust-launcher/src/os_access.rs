@@ -395,8 +395,8 @@ pub mod win {
     const HKEY_LOCAL_MACHINE: *mut c_void = 0x80000002 as *mut c_void;
 
     // function declarations
-
-    extern "system" {
+    #[link(name = "Advapi32")]
+    unsafe extern "system" {
         pub fn AttachConsole(dwProcessId: c_ulong) -> c_int;
         
         fn MultiByteToWideChar(

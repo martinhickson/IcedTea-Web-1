@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 export WORKSPACE="${PWD}"
 export RUSTFLAGS="-C target-feature=+crt-static"
 export ICEDTEAWEB_INSTALL="$(cygpath -u "${WORKSPACE}/icedtea-web-image")"
