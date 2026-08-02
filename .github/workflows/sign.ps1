@@ -17,7 +17,7 @@ function Resolve-SignCliExe {
     if (Get-Command sign -ErrorAction SilentlyContinue) {
         return (Get-Command sign -ErrorAction Stop).Source
     }
-    throw "Microsoft Sign CLI ('sign') is not available on PATH. Install with: dotnet tool install --global --prerelease sign"
+    throw "Microsoft Sign CLI ('sign') is not available on PATH. The GitHub Actions Windows job installs it before Codesign."
 }
 
 function Resolve-TimestampUrl {

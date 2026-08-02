@@ -8,7 +8,21 @@ export WIXGEN="$(cygpath -u "C:/cygwin64/usr/share/java/wixgen.jar")"
 export PACK_JAR="$(cygpath -u "C:/cygwin64/usr/share/java/pack.jar")"
 export BYTEBUDDY_JAR="$(cygpath -u "C:/cygwin64/usr/share/java/byte-buddy.jar")"
 export BYTEBUDDY_AGENT_JAR="$(cygpath -u "C:/cygwin64/usr/share/java/byte-buddy-agent.jar")"
-export PATH="${PATH}:/cygdrive/c/rust/bin:${WIXPATH}"
+# Prefer rustup cargo bin; keep legacy C:\rust\bin (junction created by install-toolchain.ps1).
+CARGO_BIN=""
+if [ -n "${USERPROFILE:-}" ] && [ -d "${USERPROFILE}/.cargo/bin" ]; then
+	CARGO_BIN="$(cygpath -u "${USERPROFILE}/.cargo/bin")"
+elif [ -n "${HOME:-}" ] && [ -d "${HOME}/.cargo/bin" ]; then
+	CARGO_BIN="$(cygpath -u "${HOME}/.cargo/bin")"
+fi
+export PATH="${PATH}:${CARGO_BIN}:/cygdrive/c/rust/bin:${WIXPATH}"
+if ! command -v cargo >/dev/null 2>&1; then
+	echo "ERROR: cargo not found on PATH (expected rustup under ~/.cargo/bin or C:\\rust\\bin)." >&2
+	echo "PATH=${PATH}" >&2
+	exit 1
+fi
+echo "Using $(command -v cargo) ($(cargo --version))"
+echo "Using $(command -v rustc) ($(rustc --version))"
 export JVM_HOME_SHORT="$(cygpath -d "${JAVA_HOME}")"
 export JVMPATH="$(cygpath -u ${JVM_HOME_SHORT})"
 echo "Configure IcedTea-Web"
