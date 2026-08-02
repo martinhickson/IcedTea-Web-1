@@ -6,3 +6,4 @@ authors = ["https://icedtea.classpath.org/wiki/IcedTea-Web"]
 [dependencies]
 [target.'cfg(windows)'.dependencies]
 dunce = "1.0.4"
+winapi = { version = "0.3.9", features = ["winreg"] }
