@@ -442,15 +442,6 @@ jobs:
           }
           7z.exe x rhino1_6R7.zip
           Move-Item -Path rhino1_6R7\js.jar -Destination C:\cygwin64\usr\share\java
-          # Retrieve AzureSignTool
-          New-Item -Path C:\AzureSignTool -Type Directory
-          Invoke-WebRequest -UseBasicParsing 'https://github.com/vcsjones/AzureSignTool/releases/download/1.0.1/AzureSignTool.zip' -OutFile 'AzureSignTool.zip'
-          $checksum = (Get-FileHash -Algorithm SHA256 'AzureSignTool.zip' | Select-Object -ExpandProperty Hash) 
-          If ($checksum -ne "4178B8E5DC6423E75DA2184C3B0D78167A0A59B82A20842884B780B1E815BA89") {
-            Write-Host "Checksums did not match!"
-            exit 1
-          }
-          Expand-Archive -LiteralPath 'AzureSignTool.zip' -DestinationPath 'C:\AzureSignTool'
 
       - name: Enable 8dot3 shortnames
         run: |
@@ -483,16 +474,25 @@ jobs:
             icedtea-web-*.win.bin.*
             win-installer.build/icedtea-web-*.msi*
 
-      - name: Codesign
-        run: bash .github/workflows/windows_sign.sh
+      - name: Install Microsoft Sign CLI
+        if: github.event.inputs.release == 'True'
+        run: |
+          dotnet tool install --global --prerelease sign
+          "$env:USERPROFILE\.dotnet\tools" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        shell: pwsh
+
+      - name: Codesign Windows artifacts
         if: github.event.inputs.release == 'True'
         env:
-          description_url: 'https://adoptopenjdk.net'
-          key_vault_url: 'https://adoptopenjdk-codesign.vault.azure.net'
-          key_vault_certificate: 'LondonJavaCommunity'
-          key_vault_client_id: ${{ secrets.key_vault_client_id }}
-          key_vault_client_secret: ${{ secrets.key_vault_client_secret }}
-        shell: cmd
+          KEYVAULT_URL: ${{ secrets.KEYVAULT_URL }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          JNLP_JCA_SIGN_ALIAS: ${{ secrets.JNLP_JCA_SIGN_ALIAS }}
+          JNLP_JCA_TSA_URL: ${{ secrets.JNLP_JCA_TSA_URL }}
+        run: |
+          & .github/workflows/sign.ps1 -Phase All
+        shell: pwsh
 
       - name: Upload binary
         uses: actions/upload-release-asset@v1.0.1
