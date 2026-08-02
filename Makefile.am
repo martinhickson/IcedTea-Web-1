@@ -469,14 +469,10 @@ if HAVE_TAGSOUP
 	filteredName=`basename $(TAGSOUP_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(TAGSOUP_JAR) $(WIN_RUN_DEPS)/$$filteredName
 endif
-#if HAVE_COMMONSCOMPRESS
-	filteredName=`basename $(COMMONSCOMPRESS_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
-	cp -v $(COMMONSCOMPRESS_JAR) $(WIN_RUN_DEPS)/$$filteredName
-#endif
-#if HAVE_PACK
-	filteredName=`basename $(PACK_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
-	cp -v $(PACK_JAR) $(WIN_RUN_DEPS)/$$filteredName
-#endif
+if HAVE_PACK
+	filteredName=`basename "$(PACK_JAR)" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`; \
+	cp -v "$(PACK_JAR)" "$(WIN_RUN_DEPS)/$$filteredName";
+endif
 if HAVE_MSLINKS
 	filteredName=`basename $(MSLINKS_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(MSLINKS_JAR) $(WIN_RUN_DEPS)/$$filteredName
@@ -495,14 +491,10 @@ if HAVE_TAGSOUP
 	filteredName=`basename $(TAGSOUP_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(TAGSOUP_JAR) $(LINUX_BIN_DIST_DEPS)/$$filteredName
 endif
-#if HAVE_COMMONS_COMPRESS
-	filteredName=`basename $(COMMONSCOMPRESS_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
-	cp -v $(COMMONSCOMPRESS_JAR) $(LINUX_BIN_DIST_DEPS)/$$filteredName
-#endif
-#if HAVE_PACK
+if HAVE_PACK
 	filteredName=`basename $(PACK_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(PACK_JAR) $(LINUX_BIN_DIST_DEPS)/$$filteredName
-#endif
+endif
 	cp $(NETX_DIR)/lib/src.zip $(DESTDIR)$(prefix)/netx.src.zip
 if ENABLE_PLUGINJAR
 	cp $(TOP_BUILD_DIR)/liveconnect/lib/src.zip $(DESTDIR)$(prefix)/plugin.src.zip
@@ -524,14 +516,10 @@ if HAVE_TAGSOUP
 	filteredName=`basename $(TAGSOUP_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(TAGSOUP_JAR) $(MACOS_BIN_DIST_DEPS)/$$filteredName
 endif
-#if HAVE_COMMONSCOMPRESS
-	filteredName=`basename $(COMMONSCOMPRESS_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
-	cp -v $(COMMONSCOMPRESS_JAR) $(MACOS_BIN_DIST_DEPS)/$$filteredName
-#endif
-#if HAVE_PACK
+if HAVE_PACK
 	filteredName=`basename $(PACK_JAR) | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"` ; \
 	cp -v $(PACK_JAR) $(MACOS_BIN_DIST_DEPS)/$$filteredName
-#endif
+endif
 	cp $(NETX_DIR)/lib/src.zip $(DESTDIR)$(prefix)/netx.src.zip
 if ENABLE_PLUGINJAR
 	cp $(TOP_BUILD_DIR)/liveconnect/lib/src.zip $(DESTDIR)$(prefix)/plugin.src.zip
