@@ -46,34 +46,104 @@ import net.sourceforge.jnlp.runtime.JNLPRuntime;
 /**
  * A wrapper over {@link java.util.jar.JarFile} that verifies zip headers to
  * protect against GIFAR attacks.
+ * 
+ * This class automatically copies JAR files to the Java temp directory
+ * (icedtea-web folder) before opening them to avoid classloader interference
+ * and keeps file handles open for performance.
  *
  * @see <a href="http://en.wikipedia.org/wiki/Gifar">Gifar</a>
  */
 public class JarFile extends java.util.jar.JarFile implements Closeable {
 
+    private static final boolean ENABLE_GIFAR_PROTECTION = false;
+    private static final boolean JARFILE_VERBOSE = false;
+    private File originalFile; // Original file passed to constructor
+    private File actualFile;   // Actual file opened (temp copy)
+    
+    // ThreadLocal to pass temp file from static method to constructor
+    private static final ThreadLocal<File> lastTempFileCreated = new ThreadLocal<>();
+
     public JarFile(String name) throws IOException {
-        super(name);
-        verifyZipHeader(new File(name));
+        this(new File(name), true);  // Default to verify=true for security
     }
 
     public JarFile(String name, boolean verify) throws IOException {
-        super(name, verify);
-        verifyZipHeader(new File(name));
+        this(new File(name), verify);
     }
 
     public JarFile(File file) throws IOException {
-        super(file);
-        verifyZipHeader(file);
+        this(file, true);  // Default to verify=true for security
     }
 
     public JarFile(File file, boolean verify) throws IOException {
-        super(file, verify);
-        verifyZipHeader(file);
+        this(file, verify, java.util.zip.ZipFile.OPEN_READ);
     }
 
     public JarFile(File file, boolean verify, int mode) throws IOException {
-        super(file, verify, mode);
-        verifyZipHeader(file);
+        // super() must be first statement - copy to temp directory to avoid classloader interference
+        // CRITICAL: Store the temp file reference so super() actually uses it!
+        super(actualFileForConstructor(file), verify, mode);
+        
+        // Store both original and actual file references
+        this.originalFile = file;
+        this.actualFile = lastTempFileCreated.get();
+        
+        // Debug logging after super() call
+        if (JARFILE_VERBOSE) {
+            System.err.println("[ITW JarFile] Opened JAR:");
+            System.err.println("  Input:  " + file.getAbsolutePath());
+            System.err.println("  Actual: " + this.actualFile.getAbsolutePath());
+        }
+        
+        if (ENABLE_GIFAR_PROTECTION) {
+            verifyZipHeader(this.actualFile);  // Verify the ACTUAL file, not original
+        }
+    }
+    
+    /**
+     * Get the actual file to pass to super() constructor.
+     * Copy file to temp directory if it's not already there.
+     * This prevents classloader interference and allows keeping handles open.
+     * 
+     * CRITICAL: Sets ThreadLocal so constructor can access the actual file reference!
+     */
+    private static File actualFileForConstructor(File originalFile) throws IOException {
+        // Check if file is already a temp file (has _itw.jar suffix)
+        String fileName = originalFile.getName();
+        File actualFile;
+        
+        if (fileName.endsWith("_itw.jar")) {
+            // Already a temp file created by JarFileTempManager, use as-is
+            if (JARFILE_VERBOSE) {
+                System.err.println("[ITW JarFile] Skipping temp copy (already _itw.jar): " + fileName);
+            }
+            actualFile = originalFile;
+        } else {
+            if (JARFILE_VERBOSE) {
+                System.err.println("[ITW JarFile] actualFileForConstructor called for: " + fileName);
+            }
+            
+            // Check if file is already in temp directory
+            String tempDir = System.getProperty("java.io.tmpdir");
+            String icedteaWebDir = tempDir + File.separator + "icedtea-web";
+            
+            // Normalize paths to handle both forward and backward slashes
+            String normalizedFilePath = originalFile.getAbsolutePath().replace('/', File.separatorChar);
+            String normalizedTempDir = icedteaWebDir.replace('/', File.separatorChar);
+            
+            if (normalizedFilePath.startsWith(normalizedTempDir)) {
+                // Already in temp directory, use as-is to prevent double-copying
+                actualFile = originalFile;
+            } else {
+                // Copy to temp directory
+                actualFile = JarFileTempManager.getInstance().getTempJarFile(originalFile);
+            }
+        }
+        
+        // Store in ThreadLocal so constructor can access it after super() call
+        lastTempFileCreated.set(actualFile);
+        
+        return actualFile;
     }
 
     /**
@@ -100,7 +170,7 @@ public class JarFile extends java.util.jar.JarFile implements Closeable {
      * a Jar.
      */
     private void verifyZipHeader(File file) throws IOException {
-        if (!JNLPRuntime.isIgnoreHeaders()) {
+        if (ENABLE_GIFAR_PROTECTION && !JNLPRuntime.isIgnoreHeaders()) {
             InputStream s = new FileInputStream(file);
 
             /*

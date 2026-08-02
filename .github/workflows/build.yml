@@ -51,6 +51,10 @@ jobs:
           sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
           curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
           sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
+          curl -L -o byte-buddy.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar"
+          sha256sum byte-buddy.jar | awk '$1!="30e6e0446437a67db37e2b7f7d33f50787ddfd970359319dfd05469daa2dcbce"{exit 1}'
+          curl -L -o byte-buddy-agent.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar"
+          sha256sum byte-buddy-agent.jar | awk '$1!="67993a89d47ca58ff868802a4448ddd150e5fe4e5a5645ded990d7b4d557a6b9"{exit 1}'
           curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
           sha256sum rhino.zip | awk '$1!="c94c6de3a29b3acbc4eee732e688f75a5d94bd02c9878be4ceb4d3cd220f3866"{exit 1}'
           unzip -j rhino.zip "*/js.jar"
@@ -102,7 +106,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Incoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}"
+          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-bytebuddy="${WORKSPACE}/byte-buddy.jar" --with-bytebuddy-agent="${WORKSPACE}/byte-buddy-agent.jar"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}"
           
@@ -164,6 +168,10 @@ jobs:
           sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
           curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
           sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
+          curl -L -o byte-buddy.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar"
+          sha256sum byte-buddy.jar | awk '$1!="30e6e0446437a67db37e2b7f7d33f50787ddfd970359319dfd05469daa2dcbce"{exit 1}'
+          curl -L -o byte-buddy-agent.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar"
+          sha256sum byte-buddy-agent.jar | awk '$1!="67993a89d47ca58ff868802a4448ddd150e5fe4e5a5645ded990d7b4d557a6b9"{exit 1}'
           curl -L -o mslinks.jar "https://repo1.maven.org/maven2/com/github/vatbub/mslinks/1.0.5/mslinks-1.0.5.jar"
           sha256sum mslinks.jar | awk '$1!="e14d756f81b310b75baeb5baf219d25592b6a8635eb215c4059f17493b0cea5c"{exit 1}'
           curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
@@ -204,7 +212,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Incoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --enable-bats-on-linux --enable-shell-launchers --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${WORKSPACE}/pack.jar" --with-rhino="${WORKSPACE}/js.jar" --with-mslinks="${WORKSPACE}/mslinks.jar" --with-tagsoup="${WORKSPACE}/tagsoup.jar" --with-jdk-home="${JAVA_HOME}"
+          ./configure --disable-native-plugin --enable-bats-on-linux --enable-shell-launchers --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${WORKSPACE}/pack.jar" --with-rhino="${WORKSPACE}/js.jar" --with-mslinks="${WORKSPACE}/mslinks.jar" --with-tagsoup="${WORKSPACE}/tagsoup.jar" --with-jdk-home="${JAVA_HOME}" --with-bytebuddy="${WORKSPACE}/byte-buddy.jar" --with-bytebuddy-agent="${WORKSPACE}/byte-buddy-agent.jar"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}/dest"
           
@@ -267,6 +275,10 @@ jobs:
           sha256sum tagsoup.jar | awk '$1!="ac97f7b4b1d8e9337edfa0e34044f8d0efe7223f6ad8f3a85d54cc1018ea2e04"{exit 1}'
           curl -L -o pack.jar "https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar"
           sha256sum pack.jar | awk '$1!="13cec5cb108c2bcc1aa22845f53dca94d9d3cf148c73ee98457cda50b0642728"{exit 1}'
+          curl -L -o byte-buddy.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar"
+          sha256sum byte-buddy.jar | awk '$1!="30e6e0446437a67db37e2b7f7d33f50787ddfd970359319dfd05469daa2dcbce"{exit 1}'
+          curl -L -o byte-buddy-agent.jar "https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar"
+          sha256sum byte-buddy-agent.jar | awk '$1!="67993a89d47ca58ff868802a4448ddd150e5fe4e5a5645ded990d7b4d557a6b9"{exit 1}'
           curl -L -o rhino.zip "https://ftp.mozilla.org/pub/mozilla.org/js/rhino1_6R7.zip"
           sha256sum rhino.zip | awk '$1!="c94c6de3a29b3acbc4eee732e688f75a5d94bd02c9878be4ceb4d3cd220f3866"{exit 1}'
           unzip -j rhino.zip "*/js.jar"
@@ -288,7 +300,7 @@ jobs:
           echo "Invoking autogen.sh"
           ./autogen.sh
           echo "Invoking IcedTea-Web configure"
-          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-jre-home="${JAVA_HOME}/jre"
+          ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-itw-libs=BUNDLED --with-pack="${PACK}" --with-rhino="${RHINO}" --with-tagsoup="${TAGSOUP}" --with-jdk-home="${JAVA_HOME}" --with-jre-home="${JAVA_HOME}/jre" --with-bytebuddy="${WORKSPACE}/byte-buddy.jar" --with-bytebuddy-agent="${WORKSPACE}/byte-buddy-agent.jar"
           echo "Build IcedTea-Web"
           make DESTDIR="${WORKSPACE}"
           
@@ -405,6 +417,19 @@ jobs:
           Invoke-WebRequest -UseBasicParsing 'https://github.com/martinhickson/pack200/releases/download/pack200-11.0.2/pack200-11.0.2.jar' -OutFile 'C:\cygwin64\usr\share\java\pack.jar'
           $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\pack.jar' | Select-Object -ExpandProperty Hash)
           If ($checksum -ne "13CEC5CB108C2BCC1AA22845F53DCA94D9D3CF148C73EE98457CDA50B0642728") {
+            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
+            exit 1
+          }
+          # Retrieve ByteBuddy jars
+          Invoke-WebRequest -UseBasicParsing 'https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy/1.14.10/byte-buddy-1.14.10.jar' -OutFile 'C:\cygwin64\usr\share\java\byte-buddy.jar'
+          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\byte-buddy.jar' | Select-Object -ExpandProperty Hash)
+          If ($checksum -ne "30E6E0446437A67DB37E2B7F7D33F50787DDFD970359319DFD05469DAA2DCBCE") {
+            Write-Host "Checksums did not match! The calculated checksum is: $checksum"
+            exit 1
+          }
+          Invoke-WebRequest -UseBasicParsing 'https://repo1.maven.org/maven2/net/bytebuddy/byte-buddy-agent/1.14.10/byte-buddy-agent-1.14.10.jar' -OutFile 'C:\cygwin64\usr\share\java\byte-buddy-agent.jar'
+          $checksum = (Get-FileHash -Algorithm SHA256 'C:\cygwin64\usr\share\java\byte-buddy-agent.jar' | Select-Object -ExpandProperty Hash)
+          If ($checksum -ne "67993A89D47CA58FF868802A4448DDD150E5FE4E5A5645DED990D7B4D557A6B9") {
             Write-Host "Checksums did not match! The calculated checksum is: $checksum"
             exit 1
           }

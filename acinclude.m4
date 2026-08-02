@@ -513,12 +513,15 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_PACK],
     for dir in /usr/share/java /usr/local/share/java ; do
       if test -f $dir/pack.jar; then
         PACK_JAR=$dir/pack.jar
+        AC_MSG_NOTICE([Found pack.jar at $PACK_JAR]) 
 	    break
       fi
     done
   fi
   AM_COND_IF([WINDOWS], [
+    AC_MSG_NOTICE([Running cygpath on PACK_JAR: cygpath -m ${PACK_JAR}])
     PACK_JAR=$(cygpath -m ${PACK_JAR})
+    AC_MSG_NOTICE([PACK_JAR after cygpath: $PACK_JAR])
   ])
   AC_MSG_RESULT(${PACK_JAR})
   if test -z "${PACK_JAR}"; then
@@ -529,40 +532,6 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_PACK],
   fi
   AC_SUBST(PACK_JAR)
   AM_CONDITIONAL([HAVE_PACK], [test x$PACK_JAR != xno -a x$PACK_JAR != x ])
-])
-
-AC_DEFUN_ONCE([IT_CHECK_FOR_COMMONSCOMPRESS],
-[
-  AC_MSG_CHECKING([for commonscompress])
-  AC_ARG_WITH([commonscompress],
-             [AS_HELP_STRING([--with-commonscompress],
-                             [commonscompress.jar])],
-             [
-                COMMONSCOMPRESS_JAR=${withval}
-             ],
-             [
-                COMMONSCOMPRESS=
-             ])
-  if test -z "${COMMONSCOMPRESS_JAR}"; then
-    for dir in /usr/share/java /usr/local/share/java ; do
-      if test -f $dir/commonscompress.jar; then
-        COMMONSCOMPRESS_JAR=$dir/commonscompress.jar
-	    break
-      fi
-    done
-  fi
-  AM_COND_IF([WINDOWS], [
-    COMMONSCOMPRESS_JAR=$(cygpath -m ${COMMONSCOMPRESS_JAR})
-  ])
-  AC_MSG_RESULT(${COMMONSCOMPRESS_JAR})
-  if test -z "${COMMONSCOMPRESS_JAR}"; then
-    AC_MSG_RESULT(***************************************************************)
-    AC_MSG_RESULT(*  Warning you are building without Apache Commons Compress   *)
-    AC_MSG_RESULT(*  Compilation will fail                                      *)
-    AC_MSG_RESULT(***************************************************************)
-  fi
-  AC_SUBST(COMMONSCOMPRESS_JAR)
-  AM_CONDITIONAL([HAVE_COMMONSCOMPRESS], [test x$COMMONSCOMPRESS_JAR != xno -a x$COMMONSCOMPRESS_JAR != x ])
 ])
 
 AC_DEFUN_ONCE([IT_CHECK_FOR_MSLINKS],
@@ -599,6 +568,96 @@ AC_DEFUN_ONCE([IT_CHECK_FOR_MSLINKS],
   ])
   AC_SUBST(MSLINKS_JAR)
   AM_CONDITIONAL([HAVE_MSLINKS], [test x$MSLINKS_JAR != xno -a x$MSLINKS_JAR != x ])
+])
+
+AC_DEFUN_ONCE([IT_CHECK_FOR_BYTEBUDDY],
+[
+  AC_MSG_CHECKING([for ByteBuddy])
+  AC_ARG_WITH([bytebuddy],
+             [AS_HELP_STRING([--with-bytebuddy],
+                             [byte-buddy.jar])],
+             [
+                BYTEBUDDY_JAR=${withval}
+             ],
+             [
+                BYTEBUDDY_JAR=
+             ])
+  AC_ARG_WITH([bytebuddy-agent],
+             [AS_HELP_STRING([--with-bytebuddy-agent],
+                             [byte-buddy-agent.jar])],
+             [
+                BYTEBUDDY_AGENT_JAR=${withval}
+             ],
+             [
+                BYTEBUDDY_AGENT_JAR=
+             ])
+  
+  dnl Search for ByteBuddy JAR
+  if test -z "${BYTEBUDDY_JAR}"; then
+    for dir in /usr/share/java /usr/local/share/java ~/.m2/repository/net/bytebuddy/byte-buddy/1.14.10 ; do
+      if test -f $dir/byte-buddy.jar; then
+        BYTEBUDDY_JAR=$dir/byte-buddy.jar
+        AC_MSG_NOTICE([Found byte-buddy.jar at $BYTEBUDDY_JAR])
+        break
+      fi
+      if test -f $dir/byte-buddy-1.14.10.jar; then
+        BYTEBUDDY_JAR=$dir/byte-buddy-1.14.10.jar
+        AC_MSG_NOTICE([Found byte-buddy-1.14.10.jar at $BYTEBUDDY_JAR])
+        break
+      fi
+    done
+  fi
+  
+  dnl Search for ByteBuddy Agent JAR
+  if test -z "${BYTEBUDDY_AGENT_JAR}"; then
+    for dir in /usr/share/java /usr/local/share/java ~/.m2/repository/net/bytebuddy/byte-buddy-agent/1.14.10 ; do
+      if test -f $dir/byte-buddy-agent.jar; then
+        BYTEBUDDY_AGENT_JAR=$dir/byte-buddy-agent.jar
+        AC_MSG_NOTICE([Found byte-buddy-agent.jar at $BYTEBUDDY_AGENT_JAR])
+        break
+      fi
+      if test -f $dir/byte-buddy-agent-1.14.10.jar; then
+        BYTEBUDDY_AGENT_JAR=$dir/byte-buddy-agent-1.14.10.jar
+        AC_MSG_NOTICE([Found byte-buddy-agent-1.14.10.jar at $BYTEBUDDY_AGENT_JAR])
+        break
+      fi
+    done
+  fi
+  
+  dnl Handle Windows paths
+  AM_COND_IF([WINDOWS], [
+    if test -n "${BYTEBUDDY_JAR}"; then
+      AC_MSG_NOTICE([Running cygpath on BYTEBUDDY_JAR: cygpath -m ${BYTEBUDDY_JAR}])
+      BYTEBUDDY_JAR=$(cygpath -m ${BYTEBUDDY_JAR})
+      AC_MSG_NOTICE([BYTEBUDDY_JAR after cygpath: $BYTEBUDDY_JAR])
+    fi
+    if test -n "${BYTEBUDDY_AGENT_JAR}"; then
+      AC_MSG_NOTICE([Running cygpath on BYTEBUDDY_AGENT_JAR: cygpath -m ${BYTEBUDDY_AGENT_JAR}])
+      BYTEBUDDY_AGENT_JAR=$(cygpath -m ${BYTEBUDDY_AGENT_JAR})
+      AC_MSG_NOTICE([BYTEBUDDY_AGENT_JAR after cygpath: $BYTEBUDDY_AGENT_JAR])
+    fi
+  ])
+  
+  dnl Check if both JARs were found
+  if test -n "${BYTEBUDDY_JAR}" -a -n "${BYTEBUDDY_AGENT_JAR}"; then
+    AC_MSG_RESULT([found both byte-buddy.jar and byte-buddy-agent.jar])
+    AC_MSG_NOTICE([ByteBuddy runtime protection will be ENABLED by default])
+    AC_MSG_NOTICE([This prevents 'zip file closed' errors automatically])
+  else
+    AC_MSG_RESULT([not found])
+    AC_MSG_RESULT(**************************************************************************)
+    AC_MSG_RESULT(*  ByteBuddy JARs not found - runtime JarFile protection will be limited)
+    AC_MSG_RESULT(*  ITW will still work, but may experience 'zip file closed' errors)
+    AC_MSG_RESULT(*  To enable full protection, provide:)
+    AC_MSG_RESULT(*    --with-bytebuddy=/path/to/byte-buddy-1.14.10.jar)
+    AC_MSG_RESULT(*    --with-bytebuddy-agent=/path/to/byte-buddy-agent-1.14.10.jar)
+    AC_MSG_RESULT(*  Or install to: /usr/share/java/byte-buddy*.jar)
+    AC_MSG_RESULT(**************************************************************************)
+  fi
+  
+  AC_SUBST(BYTEBUDDY_JAR)
+  AC_SUBST(BYTEBUDDY_AGENT_JAR)
+  AM_CONDITIONAL([HAVE_BYTEBUDDY], [test -n "$BYTEBUDDY_JAR" -a -n "$BYTEBUDDY_AGENT_JAR" -a x$BYTEBUDDY_JAR != xno -a x$BYTEBUDDY_AGENT_JAR != xno ])
 ])
 
 dnl Generic macro to check for a Java class

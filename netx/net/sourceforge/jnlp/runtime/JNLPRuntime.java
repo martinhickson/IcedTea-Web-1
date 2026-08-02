@@ -28,6 +28,9 @@ import java.io.IOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
 import java.net.Authenticator;
+import java.net.CookieHandler;
+import java.net.CookieManager;
+import java.net.CookiePolicy;
 import java.net.InetAddress;
 import java.net.ProxySelector;
 import java.net.URL;
@@ -218,6 +221,10 @@ public class JNLPRuntime {
     public static void initialize(boolean isApplication) throws IllegalStateException {
         checkInitialized();
 
+        // Install JarFile.close protection as early as possible.
+        // This is critical to prevent "zip file closed" errors during classloading.
+        JarFileCloseProtection.install();
+
         try {
             UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
         } catch (Exception e) {
@@ -293,6 +300,9 @@ public class JNLPRuntime {
         proxySelector.initialize();
         ProxySelector.setDefault(proxySelector);
 
+        // Configure cookie handling for JNLP/WebStart
+        initializeCookieHandler();
+
         // Restrict access to netx classes
         Security.setProperty("package.access", 
                              Security.getProperty("package.access")+",net.sourceforge.jnlp");
@@ -301,6 +311,37 @@ public class JNLPRuntime {
 
         initialized = true;
 
+    }
+
+    /**
+     * Initialize cookie handling for JNLP/WebStart applications.
+     * This enables session cookies (like JSESSIONID) to work properly
+     * for authenticated JNLP and JAR downloads.
+     * <p>
+     * The CookieManager is configured to:
+     * - Accept cookies from the original server only (not third-party)
+     * - Store cookies in memory (lost on JVM restart)
+     * - Share cookies across all download threads (required for session continuity)
+     * - Automatically handle Cookie and Set-Cookie headers
+     * </p>
+     */
+    private static void initializeCookieHandler() {
+        try {
+            // Create a CookieManager with default cookie store and policy
+            CookieManager cookieManager = new CookieManager();
+            
+            // Set cookie policy to accept cookies from original server only
+            // This prevents third-party cookie tracking while allowing session cookies
+            cookieManager.setCookiePolicy(CookiePolicy.ACCEPT_ORIGINAL_SERVER);
+            
+            // Set as default cookie handler for all URLConnections in this JVM
+            CookieHandler.setDefault(cookieManager);
+        } catch (Exception e) {
+            // Log error but don't fail initialization - cookies are nice to have but not critical
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL, 
+                "Failed to initialize cookie handler: " + e.getMessage());
+            OutputController.getLogger().log(e);
+        }
     }
 
     public static void reloadPolicy() {

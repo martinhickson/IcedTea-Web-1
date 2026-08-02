@@ -35,6 +35,8 @@ set "RHINO_JAR=@RHINO_JAR@"
 set "PACK_JAR=@PACK_JAR@"
 set "COMMONSCOMPRESS_JAR=@COMMONSCOMPRESS_JAR@"
 set "MSLINKS_JAR=@MSLINKS_JAR@"
+set "BYTEBUDDY_JAR=@BYTEBUDDY_JAR@"
+set "BYTEBUDDY_AGENT_JAR=@BYTEBUDDY_AGENT_JAR@"
 
 
 rem resolve folder of this script:
@@ -94,7 +96,7 @@ if not "%ITW_HOME%" == "" (
   set "NETX_JAR=%ITW_HOME%/share/icedtea-web/javaws.jar"
   set "PLUGIN_JAR=%ITW_HOME%/share/icedtea-web/plugin.jar"
   set "JSOBJECT_JAR=%ITW_HOME%/share/icedtea-web/jsobject.jar"
-  set "LAUNCHER_BOOTCLASSPATH=-Xbootclasspath/a:!NETX_JAR!;!PLUGIN_JAR!;!JSOBJECT_JAR!;%ITW_HOME%/win-deps-runtime/commonscompress.jar;%ITW_HOME%/win-deps-runtime/pack.jar;%ITW_HOME%/win-deps-runtime/tagsoup.jar;%ITW_HOME%/win-deps-runtime/js.jar;%ITW_HOME%/win-deps-runtime/mslinks.jar"
+  set "LAUNCHER_BOOTCLASSPATH=-Xbootclasspath/a:!NETX_JAR!;!PLUGIN_JAR!;!JSOBJECT_JAR!;%ITW_HOME%/win-deps-runtime/commonscompress.jar;%ITW_HOME%/win-deps-runtime/pack.jar;%ITW_HOME%/win-deps-runtime/tagsoup.jar;%ITW_HOME%/win-deps-runtime/js.jar;%ITW_HOME%/win-deps-runtime/mslinks.jar;%ITW_HOME%/win-deps-runtime/bytebuddy.jar;%ITW_HOME%/win-deps-runtime/bytebuddyagent.jar"
 )
 
 

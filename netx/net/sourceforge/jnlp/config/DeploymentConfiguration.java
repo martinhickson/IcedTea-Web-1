@@ -193,6 +193,7 @@ public final class DeploymentConfiguration {
     public static final String KEY_ENABLE_LEGACY_LOGBASEDFILELOG = "deployment.log.file.legacylog";
     public static final String KEY_ENABLE_LOGGING_TOSTREAMS = "deployment.log.stdstreams";
     public static final String KEY_ENABLE_LOGGING_TOSYSTEMLOG = "deployment.log.system";
+    public static final String KEY_DEBUG_JARFILE_CLOSE = "deployment.debug.jarfile.close";
     
     /*
      * manifest check
