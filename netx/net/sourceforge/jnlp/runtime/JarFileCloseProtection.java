@@ -19,14 +19,13 @@
  */
 package net.sourceforge.jnlp.runtime;
 
-import net.bytebuddy.asm.Advice;
+import net.bytebuddy.agent.ByteBuddyAgent;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.io.IOException;
 import java.util.HashSet;
 import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarFile;
 import java.util.zip.ZipFile;
 
@@ -132,10 +131,12 @@ public class JarFileCloseProtection {
     private static Mode currentMode = Mode.PREVENT_ALL;
     
     /**
-     * JarFiles that should never be closed.
-     * Used in PREVENT_PROTECTED mode.
+     * JarFiles that should never be closed (PREVENT_PROTECTED mode).
+     * Stored in {@link BootstrapZipFileCloseAdvice} for bootstrap-visible advice.
      */
-    private static final Set<String> protectedJarFiles = ConcurrentHashMap.newKeySet();
+    private static Set<String> protectedJarFiles() {
+        return BootstrapZipFileCloseAdvice.protectedJarPaths;
+    }
     
     /**
      * Track if ByteBuddy is available and installed.
@@ -232,13 +233,13 @@ public class JarFileCloseProtection {
         }
         
         try {
-            // Check if ByteBuddy is available
             Class.forName("net.bytebuddy.ByteBuddy");
             Class.forName("net.bytebuddy.agent.ByteBuddyAgent");
-            
-            // Install agent and redefine JarFile.close()
-            installByteBuddyInterceptor();
-            
+
+            ByteBuddyAgent.install();
+            BootstrapAdviceSupport.adviseBootstrapMethod(
+                    ZipFile.class, BootstrapZipFileCloseAdvice.class, "close");
+
             byteBuddyInstalled = true;
             if (JARFILE_CLOSE_PROTECTION_VERBOSE) {
                 LOGGER.log(OutputController.Level.MESSAGE_ALL,
@@ -259,146 +260,14 @@ public class JarFileCloseProtection {
             
         } catch (Exception e) {
             LOGGER.log(OutputController.Level.WARNING_ALL,
-                "[ITW] Failed to install ByteBuddy interceptor: " + e.getMessage());
+                "[ITW] Failed to install ByteBuddy interceptor: " + e);
             if (DEBUG) {
                 LOGGER.log(e);
             }
             return false;
         }
     }
-    
-    /**
-     * Install ByteBuddy interceptor using reflection to avoid compile-time dependency.
-     */
-    @SuppressWarnings("unchecked")
-    private static void installByteBuddyInterceptor() throws Exception {
-        // This uses reflection to avoid compile-time dependency on ByteBuddy
-        // Equivalent to:
-        //   ByteBuddyAgent.install();
-        //   new ByteBuddy()
-        //       .redefine(ZipFile.class)
-        //       .visit(Advice.to(CloseAdvice.class).on(ElementMatchers.named("close")))
-        //       .make()
-        //       .load(ZipFile.class.getClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
-        
-        Class<?> agentClass = Class.forName("net.bytebuddy.agent.ByteBuddyAgent");
-        agentClass.getMethod("install").invoke(null);
-        
-        Class<?> byteBuddyClass = Class.forName("net.bytebuddy.ByteBuddy");
-        Object byteBuddy = byteBuddyClass.getDeclaredConstructor().newInstance();
-        
-        Class<?> matchersClass = Class.forName("net.bytebuddy.matcher.ElementMatchers");
-        Object nameMatcher = matchersClass.getMethod("named", String.class).invoke(null, "close");
 
-        Class<?> adviceClass = Class.forName("net.bytebuddy.asm.Advice");
-        Object advice = adviceClass.getMethod("to", Class.class)
-            .invoke(null, CloseAdvice.class);
-        Object adviceOn = advice.getClass().getMethod("on",
-            Class.forName("net.bytebuddy.matcher.ElementMatcher"))
-            .invoke(advice, nameMatcher);
-
-        // builder.redefine(ZipFile.class)
-        Object builder = byteBuddyClass.getMethod("redefine", Class.class)
-            .invoke(byteBuddy, ZipFile.class);
-        
-        // builder.visit(Advice.to(CloseAdvice.class).on(named("close")))
-        builder = builder.getClass().getMethod("visit",
-            Class.forName("net.bytebuddy.asm.AsmVisitorWrapper"))
-            .invoke(builder, adviceOn);
-        
-        // builder.make()
-        Object dynamicType = builder.getClass().getMethod("make").invoke(builder);
-        
-        // dynamicType.load(...)
-        Class<?> strategyClass = Class.forName("net.bytebuddy.dynamic.loading.ClassReloadingStrategy");
-        Object strategy = strategyClass.getMethod("fromInstalledAgent").invoke(null);
-        
-        dynamicType.getClass().getMethod("load", ClassLoader.class,
-            Class.forName("net.bytebuddy.dynamic.loading.ClassLoadingStrategy"))
-            .invoke(dynamicType, ZipFile.class.getClassLoader(), strategy);
-    }
-    
-    /**
-     * ByteBuddy advice for ZipFile.close().
-     * This class is used by ByteBuddy via Advice.
-     */
-    public static class CloseAdvice {
-        
-        /**
-         * Intercept ZipFile.close() and decide whether to allow it.
-         * 
-         * @param zipFile The ZipFile/JarFile being closed
-         * @return true to skip the original close() (prevent close)
-         */
-        @Advice.OnMethodEnter(skipOn = Advice.OnNonDefaultValue.class)
-        public static boolean intercept(@Advice.This ZipFile zipFile) {
-            String jarPath = zipFile.getName();
-            
-            // Decide whether to allow close based on mode
-            boolean allowClose = shouldAllowClose(jarPath, zipFile);
-            
-            // Log if debug enabled
-            if (shouldLogClose()) {
-                logCloseAttempt(jarPath, allowClose);
-            }
-
-            // Return true to skip original close(), false to allow it
-            return !allowClose;
-        }
-        
-        /**
-         * Determine if close() should be allowed based on current mode.
-         */
-        public static boolean shouldLogClose() {
-            return DEBUG || currentMode == Mode.LOG_ONLY;
-        }
-
-        public static boolean shouldAllowClose(String jarPath, ZipFile zipFile) {
-            if (!(zipFile instanceof JarFile)) {
-                return true; // Only protect JarFile instances
-            }
-            switch (currentMode) {
-                case PREVENT_ALL:
-                    return false;  // Block ALL closes
-                    
-                case PREVENT_PROTECTED:
-                    return !protectedJarFiles.contains(jarPath);  // Block only protected
-                    
-                case LOG_ONLY:
-                case DISABLED:
-                default:
-                    return true;  // Allow all closes
-            }
-        }
-        
-        /**
-         * Log the close attempt with stack trace.
-         */
-        public static void logCloseAttempt(String jarPath, boolean allowed) {
-            StackTraceElement[] stack = Thread.currentThread().getStackTrace();
-            
-            StringBuilder sb = new StringBuilder();
-            sb.append("\n╔════════════════════════════════════════════════════════════\n");
-            sb.append("║ JarFile.close() ").append(allowed ? "ALLOWED" : "PREVENTED").append("\n");
-            sb.append("╠════════════════════════════════════════════════════════════\n");
-            sb.append("║ File:   ").append(jarPath).append("\n");
-            sb.append("║ Thread: ").append(Thread.currentThread().getName()).append("\n");
-            sb.append("║ Mode:   ").append(currentMode).append("\n");
-            sb.append("╠════════════════════════════════════════════════════════════\n");
-            sb.append("║ STACK TRACE:\n");
-            for (int i = 0; i < Math.min(stack.length, 15); i++) {
-                sb.append("║   ").append(stack[i]).append("\n");
-            }
-            sb.append("╚════════════════════════════════════════════════════════════\n");
-            
-            LOGGER.log(OutputController.Level.MESSAGE_ALL, sb.toString());
-            
-            if (!allowed) {
-                System.err.println("[ITW] ✓ Prevented JarFile.close() on: " + jarPath);
-            }
-        }
-    }
-    
     /**
      * Mark a JarFile as protected (should never be closed).
      * Used in PREVENT_PROTECTED mode.
@@ -407,7 +276,7 @@ public class JarFileCloseProtection {
      */
     public static void protectJarFile(JarFile jarFile) {
         if (jarFile != null) {
-            protectedJarFiles.add(jarFile.getName());
+            protectedJarFiles().add(jarFile.getName());
             if (DEBUG) {
                 LOGGER.log(OutputController.Level.MESSAGE_DEBUG,
                     "[ITW] Protected JarFile from closing: " + jarFile.getName());
@@ -423,7 +292,7 @@ public class JarFileCloseProtection {
      */
     public static void protectJarFile(String jarPath) {
         if (jarPath != null) {
-            protectedJarFiles.add(jarPath);
+            protectedJarFiles().add(jarPath);
             if (DEBUG) {
                 LOGGER.log(OutputController.Level.MESSAGE_DEBUG,
                     "[ITW] Protected JarFile from closing: " + jarPath);
@@ -438,7 +307,7 @@ public class JarFileCloseProtection {
      */
     public static void unprotectJarFile(JarFile jarFile) {
         if (jarFile != null) {
-            protectedJarFiles.remove(jarFile.getName());
+            protectedJarFiles().remove(jarFile.getName());
         }
     }
     
@@ -449,7 +318,7 @@ public class JarFileCloseProtection {
      */
     public static void unprotectJarFile(String jarPath) {
         if (jarPath != null) {
-            protectedJarFiles.remove(jarPath);
+            protectedJarFiles().remove(jarPath);
         }
     }
     
@@ -488,16 +357,16 @@ public class JarFileCloseProtection {
      * @return The count of protected JarFiles
      */
     public static int getProtectedCount() {
-        return protectedJarFiles.size();
+        return protectedJarFiles().size();
     }
-    
+
     /**
      * Get all protected JarFile paths.
-     * 
+     *
      * @return A copy of the protected JarFile paths
      */
     public static Set<String> getProtectedJarFiles() {
-        return new HashSet<>(protectedJarFiles);
+        return new HashSet<>(protectedJarFiles());
     }
 }
 
