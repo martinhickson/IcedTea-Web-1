@@ -23,6 +23,11 @@ PACK_JAR=@PACK_JAR@
 COMMONSCOMPRESS_JAR=@COMMONSCOMPRESS_JAR@
 BYTEBUDDY_JAR=@BYTEBUDDY_JAR@
 BYTEBUDDY_AGENT_JAR=@BYTEBUDDY_AGENT_JAR@
+# Instrumentation for JarFile close protection (JRE-safe; no attach.dll self-attach)
+JAVAAGENT_ARG=""
+if [ "x$BYTEBUDDY_AGENT_JAR" != "x" ] && [ -f "$BYTEBUDDY_AGENT_JAR" ] ; then
+  JAVAAGENT_ARG="-javaagent:$BYTEBUDDY_AGENT_JAR"
+fi
 # windows only:
 #MSLINKS_JAR=@MSLINKS_JAR@
 
@@ -87,6 +92,9 @@ if [ "x$ITW_LIBS" == "xBUNDLED" -o ! "x$ITW_HOME" = "x" ] ; then
   if [ "x$BYTEBUDDY_AGENT_JAR" != "x" ] ; then
     BYTEBUDDY_AGENT_JAR_NAME=`basename "$BYTEBUDDY_AGENT_JAR" | sed "s/[^a-zA-Z]//g" | sed "s/jar$$/.jar/"`
     LAUNCHER_BOOTCLASSPATH="$LAUNCHER_BOOTCLASSPATH:$ITW_HOME/linux-deps-runtime/$BYTEBUDDY_AGENT_JAR_NAME"
+    if [ -f "$ITW_HOME/linux-deps-runtime/$BYTEBUDDY_AGENT_JAR_NAME" ] ; then
+      JAVAAGENT_ARG="-javaagent:$ITW_HOME/linux-deps-runtime/$BYTEBUDDY_AGENT_JAR_NAME"
+    fi
   fi
   echo "warning, using portable itw from $ITW_HOME: $LAUNCHER_BOOTCLASSPATH $BINARY_LOCATION $SPLASH_LOCATION"
 fi
@@ -157,6 +165,10 @@ if [ "$SPLASH" = "true" ] ; then
   COMMAND[k]="-splash:${SPLASH_LOCATION}"
   k=$((k+1))
 fi;
+if [ "x$JAVAAGENT_ARG" != "x" ] ; then
+  COMMAND[k]="${JAVAAGENT_ARG}"
+  k=$((k+1))
+fi
 COMMAND[k]="${LAUNCHER_BOOTCLASSPATH}"
 k=$((k+1))
 COMMAND[k]="${LAUNCHER_FLAGS}"

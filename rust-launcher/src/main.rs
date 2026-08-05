@@ -167,6 +167,17 @@ fn compose_arguments(java_dir: &std::path::PathBuf, original_args: &std::vec::Ve
             _none => {}
         }
     }
+    // ByteBuddy JarFile close protection: Instrumentation via -javaagent (JRE-safe;
+    // do not use ByteBuddyAgent.install() / attach.dll).
+    match jars_helper::get_bytebuddy_javaagent(os) {
+        Some(javaagent) => {
+            info2 = String::new();
+            write!(&mut info2, "itw-rust-debug: using {}", javaagent).expect("unwrap failed");
+            os.log(&info2);
+            all_args.push(javaagent);
+        }
+        None => {}
+    }
     all_args.push(bootcp);
     all_args.push(String::from("-classpath"));
     all_args.push(cp);

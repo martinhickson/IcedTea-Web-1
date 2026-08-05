@@ -24,6 +24,7 @@ import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.io.IOException;
+import java.lang.instrument.Instrumentation;
 import java.util.HashSet;
 import java.util.Set;
 import java.util.jar.JarFile;
@@ -49,21 +50,28 @@ import java.util.zip.ZipFile;
  * 
  * ═══════════════════════════════════════════════════════════════════════════
  * 
- * This class uses ByteBuddy (if available) to intercept ALL JarFile.close() 
+ * This class uses ByteBuddy (if available) to intercept ALL JarFile.close()
  * calls at runtime and:
  * 1. Log them (if debug enabled)
  * 2. Prevent them (ENABLED BY DEFAULT)
  * 3. Track which JarFiles should never be closed
- * 
+ *
+ * Instrumentation must come from {@code -javaagent:.../byte-buddy-agent.jar}
+ * (launchers add this). Self-attach via {@code ByteBuddyAgent.install()} is
+ * not used — that needs JDK {@code attach.dll} and fails on a plain JRE.
+ * If the agent is missing while protection is enabled, startup fails fast
+ * ({@link IllegalStateException}); there is no silent unprotected mode.
+ * Opt out only with {@code -Ditw.jarfile.close.mode=DISABLED}.
+ *
  * DISABLING (NOT RECOMMENDED):
- * 
+ *
  *   javaws -Ditw.jarfile.close.mode=DISABLED app.jnlp
- * 
+ *
  * Only disable if you:
  * - Are testing a fix
  * - Need to diagnose close() behavior
  * - Have explicitly fixed all close() calls in your code
- * 
+ *
  * MODES:
  * 
  * - PREVENT_ALL: Block ALL close() calls (DEFAULT - most reliable)
@@ -161,18 +169,14 @@ public class JarFileCloseProtection {
             currentMode = Mode.PREVENT_ALL;
         }
         
-        // Auto-install if protection is not explicitly disabled
-        // This ensures protection is active by default if ByteBuddy is available
+        // Auto-install unless explicitly disabled. Missing -javaagent fails fast.
         if (currentMode != Mode.DISABLED) {
             install();
-            
-            if (byteBuddyInstalled) {
-                if (JARFILE_CLOSE_PROTECTION_VERBOSE) {
-                    LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                        "[ITW] ✓ JarFile close protection ENABLED by default (mode=" + currentMode + ")");
-                    LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                        "[ITW]   This prevents 'zip file closed' errors. To disable: -Ditw.jarfile.close.mode=DISABLED");
-                }
+            if (JARFILE_CLOSE_PROTECTION_VERBOSE) {
+                LOGGER.log(OutputController.Level.MESSAGE_ALL,
+                    "[ITW] ✓ JarFile close protection ENABLED by default (mode=" + currentMode + ")");
+                LOGGER.log(OutputController.Level.MESSAGE_ALL,
+                    "[ITW]   This prevents 'zip file closed' errors. To disable: -Ditw.jarfile.close.mode=DISABLED");
             }
         } else {
             LOGGER.log(OutputController.Level.WARNING_ALL,
@@ -212,60 +216,76 @@ public class JarFileCloseProtection {
     }
     
     /**
-     * Install ByteBuddy interception if available.
-     * 
-     * This method attempts to use ByteBuddy to intercept ALL JarFile.close() calls.
-     * If ByteBuddy is not available, falls back to manual protection only.
-     * 
-     * @return true if ByteBuddy was installed successfully, false otherwise
+     * Install ByteBuddy interception. Required unless mode is {@link Mode#DISABLED}.
+     *
+     * Uses {@link ByteBuddyAgent#getInstrumentation()} from a launcher-supplied
+     * {@code -javaagent}. Does not call {@code ByteBuddyAgent.install()} (self-attach),
+     * which requires JDK {@code attach.dll} and does not work on a JRE-only runtime.
+     *
+     * @throws IllegalStateException if protection is enabled but ByteBuddy / {@code -javaagent} is missing
      */
-    public static synchronized boolean install() {
+    public static synchronized void install() {
         if (byteBuddyAttempted) {
-            return byteBuddyInstalled;
+            if (!byteBuddyInstalled && currentMode != Mode.DISABLED) {
+                throw new IllegalStateException(
+                    "JarFile close protection previously failed; restart with -javaagent:byte-buddy-agent.jar");
+            }
+            return;
         }
-        
+
         byteBuddyAttempted = true;
-        
+
         if (currentMode == Mode.DISABLED) {
             LOGGER.log(OutputController.Level.MESSAGE_ALL,
                 "[ITW] JarFile close protection DISABLED (mode=DISABLED)");
-            return false;
+            return;
         }
-        
+
         try {
             Class.forName("net.bytebuddy.ByteBuddy");
             Class.forName("net.bytebuddy.agent.ByteBuddyAgent");
 
-            ByteBuddyAgent.install();
+            Instrumentation instrumentation = ByteBuddyAgent.getInstrumentation();
+            if (instrumentation == null) {
+                throw new IllegalStateException("ByteBuddy Instrumentation is null");
+            }
+
             BootstrapAdviceSupport.adviseBootstrapMethod(
                     ZipFile.class, BootstrapZipFileCloseAdvice.class, "close");
 
             byteBuddyInstalled = true;
             if (JARFILE_CLOSE_PROTECTION_VERBOSE) {
                 LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                    "[ITW] ✓ JarFile close protection INSTALLED via ByteBuddy (mode=" + currentMode + ")");
+                    "[ITW] ✓ JarFile close protection INSTALLED via ByteBuddy javaagent (mode=" + currentMode + ")");
                 LOGGER.log(OutputController.Level.MESSAGE_ALL,
                     "[ITW]   All JarFile.close() calls will be " +
                     (currentMode == Mode.LOG_ONLY ? "logged" : "intercepted"));
             }
-            
-            return true;
-            
+
         } catch (ClassNotFoundException e) {
-            LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                "[ITW] ByteBuddy not available, using manual protection only");
-            LOGGER.log(OutputController.Level.MESSAGE_ALL,
-                "[ITW] To enable full protection, add ByteBuddy to classpath");
-            return false;
-            
+            failFast(
+                "JarFile close protection requires ByteBuddy on the classpath "
+                    + "and -javaagent pointing at byte-buddy-agent.jar",
+                e);
+
+        } catch (IllegalStateException e) {
+            // Typical when -javaagent was omitted: getInstrumentation() has nothing installed.
+            failFast(
+                "JarFile close protection requires -javaagent pointing at byte-buddy-agent.jar "
+                    + "(self-attach / attach.dll is not used; works on JRE). Cause: " + e.getMessage(),
+                e);
+
         } catch (Exception e) {
-            LOGGER.log(OutputController.Level.WARNING_ALL,
-                "[ITW] Failed to install ByteBuddy interceptor: " + e);
-            if (DEBUG) {
-                LOGGER.log(e);
-            }
-            return false;
+            failFast("Failed to install JarFile close protection: " + e, e);
         }
+    }
+
+    private static void failFast(String message, Throwable cause) {
+        LOGGER.log(OutputController.Level.ERROR_ALL, "[ITW] " + message);
+        if (cause != null) {
+            LOGGER.log(cause);
+        }
+        throw new IllegalStateException(message, cause);
     }
 
     /**

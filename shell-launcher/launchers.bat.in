@@ -37,6 +37,11 @@ set "COMMONSCOMPRESS_JAR=@COMMONSCOMPRESS_JAR@"
 set "MSLINKS_JAR=@MSLINKS_JAR@"
 set "BYTEBUDDY_JAR=@BYTEBUDDY_JAR@"
 set "BYTEBUDDY_AGENT_JAR=@BYTEBUDDY_AGENT_JAR@"
+rem Instrumentation for JarFile close protection (JRE-safe; no attach.dll self-attach)
+set "JAVAAGENT_ARG="
+if not "%BYTEBUDDY_AGENT_JAR%" == "" if exist "%BYTEBUDDY_AGENT_JAR%" (
+  set "JAVAAGENT_ARG=-javaagent:%BYTEBUDDY_AGENT_JAR%"
+)
 
 
 rem resolve folder of this script:
@@ -97,6 +102,9 @@ if not "%ITW_HOME%" == "" (
   set "PLUGIN_JAR=%ITW_HOME%/share/icedtea-web/plugin.jar"
   set "JSOBJECT_JAR=%ITW_HOME%/share/icedtea-web/jsobject.jar"
   set "LAUNCHER_BOOTCLASSPATH=-Xbootclasspath/a:!NETX_JAR!;!PLUGIN_JAR!;!JSOBJECT_JAR!;%ITW_HOME%/win-deps-runtime/commonscompress.jar;%ITW_HOME%/win-deps-runtime/pack.jar;%ITW_HOME%/win-deps-runtime/tagsoup.jar;%ITW_HOME%/win-deps-runtime/js.jar;%ITW_HOME%/win-deps-runtime/mslinks.jar;%ITW_HOME%/win-deps-runtime/bytebuddy.jar;%ITW_HOME%/win-deps-runtime/bytebuddyagent.jar"
+  if exist "%ITW_HOME%\win-deps-runtime\bytebuddyagent.jar" (
+    set "JAVAAGENT_ARG=-javaagent:%ITW_HOME%/win-deps-runtime/bytebuddyagent.jar"
+  )
 )
 
 
@@ -182,7 +190,7 @@ if "%SPLASH%" == "true" (
   set "SPLASH="
 )
 
-"%JAVA%" %SPLASH% "%LAUNCHER_BOOTCLASSPATH%" %LAUNCHER_FLAGS% %MODULAR_ARGS% %JAVAWS_J_OPTIONS% %JAVA_ARGS% -classpath "%CP%" "-Dicedtea-web.bin.name=%PROGRAM_NAME%" "-Dicedtea-web.bin.location=%BINARY_LOCATION%" "%CLASSNAME%" %ARGS%
+"%JAVA%" %SPLASH% %JAVAAGENT_ARG% "%LAUNCHER_BOOTCLASSPATH%" %LAUNCHER_FLAGS% %MODULAR_ARGS% %JAVAWS_J_OPTIONS% %JAVA_ARGS% -classpath "%CP%" "-Dicedtea-web.bin.name=%PROGRAM_NAME%" "-Dicedtea-web.bin.location=%BINARY_LOCATION%" "%CLASSNAME%" %ARGS%
 
 SET "errno=%ERRORLEVEL%"
 

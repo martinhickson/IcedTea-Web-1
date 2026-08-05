@@ -258,6 +258,28 @@ pub fn get_bootclasspath(jre_path: &std::path::PathBuf, os: &dyn os_access::Os) 
     result
 }
 
+/// Resolve `-javaagent:` for byte-buddy-agent so JarFileCloseProtection can use
+/// Instrumentation without JDK self-attach (`attach.dll`).
+pub fn get_bytebuddy_javaagent(os: &dyn os_access::Os) -> Option<String> {
+    match hardcoded_paths::get_bytebuddy_agent() {
+        Some(hardcoded) => {
+            let path = resolve_jar(hardcoded, os);
+            if dirs_paths_helper::is_file(&path) {
+                let mut arg = String::from("-javaagent:");
+                arg.push_str(&dirs_paths_helper::path_to_string(&path));
+                Some(arg)
+            } else {
+                os.log("itw-rust-debug: byte-buddy-agent jar missing; -javaagent omitted");
+                None
+            }
+        }
+        None => {
+            os.log("itw-rust-debug: BYTEBUDDY_AGENT_JAR not set at build time; -javaagent omitted");
+            None
+        }
+    }
+}
+
 /*tests*/
 #[cfg(test)]
 mod tests {
