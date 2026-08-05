@@ -1066,7 +1066,7 @@ launcher.build/$(javaws) launcher.build/$(itweb_settings) launcher.build/$(polic
 	    export BIN_LOCATION=$(bindir)/$(policyeditor) ; \
 	    export PROGRAM_NAME=$(policyeditor) ; \
 	  fi ; \
-	  $(CARGO) install cargo-audit ; \
+	  $(CARGO) install cargo-audit --version 0.22.1 --locked ; \
 	  $(CARGO) audit ; \
 	  $(CARGO) test ; \
 	  r=$$? ; \

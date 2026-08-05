@@ -23,11 +23,19 @@ if ! command -v cargo >/dev/null 2>&1; then
 fi
 echo "Using $(command -v cargo) ($(cargo --version))"
 echo "Using $(command -v rustc) ($(rustc --version))"
+rustc -Vv | sed -n 's/^host: /rustc host: /p' || true
+if [ -n "${RUSTUP_TOOLCHAIN:-}" ]; then
+	echo "RUSTUP_TOOLCHAIN=${RUSTUP_TOOLCHAIN}"
+fi
 export JVM_HOME_SHORT="$(cygpath -d "${JAVA_HOME}")"
 export JVMPATH="$(cygpath -u ${JVM_HOME_SHORT})"
 echo "Configure IcedTea-Web"
 ./autogen.sh
 ./configure --disable-native-plugin --prefix="${ICEDTEAWEB_INSTALL}" --with-wix=${WIXPATH} --with-wixgen=${WIXGEN} --with-itw-libs=BUNDLED --with-pack="${PACK_JAR}" --with-jdk-home="${JVMPATH}" --with-bytebuddy="${BYTEBUDDY_JAR}" --with-bytebuddy-agent="${BYTEBUDDY_AGENT_JAR}"
+# rustc 1.85 cannot install latest cargo-audit (needs 1.88+); pin a compatible release.
+if [ -f Makefile ]; then
+	sed -i 's|$(CARGO) install cargo-audit ;|$(CARGO) install cargo-audit --version 0.22.1 --locked ;|g' Makefile
+fi
 echo "Build IcedTea-Web"
 make
 echo "Create IcedTea-Web Distribution"

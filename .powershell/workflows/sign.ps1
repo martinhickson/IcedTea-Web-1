@@ -472,7 +472,13 @@ function Invoke-CygwinBashScript {
     # Login shell so Cygwin PATH/tools are available; cd to source tree then run driver script.
     # Keep Windows USERPROFILE form; windows_build.sh runs cygpath on it for cargo.
     $userProfile = $env:USERPROFILE.Replace("'", "'\''")
-    $command = "cd '$workCyg' && export JAVA_HOME='$javaCyg' && export USERPROFILE='$userProfile' && bash '$scriptCyg'"
+    $rustupToolchainExport = ''
+    if (-not [string]::IsNullOrWhiteSpace($env:RUSTUP_TOOLCHAIN)) {
+        $rt = $env:RUSTUP_TOOLCHAIN.Replace("'", "'\''")
+        $rustupToolchainExport = " && export RUSTUP_TOOLCHAIN='$rt'"
+        Write-Detail "RUSTUP_TOOLCHAIN: $env:RUSTUP_TOOLCHAIN"
+    }
+    $command = "cd '$workCyg' && export JAVA_HOME='$javaCyg' && export USERPROFILE='$userProfile'$rustupToolchainExport && bash '$scriptCyg'"
     Write-Detail "Cygwin workdir: $workCyg"
     Write-Detail "Build script:   $scriptCyg"
     Write-Detail "JAVA_HOME:      $env:JAVA_HOME"
@@ -609,6 +615,13 @@ function Run-HostSignWorkflow {
         if ($signingEnabled -and -not (Get-Command sign -ErrorAction SilentlyContinue)) {
             throw "Microsoft Sign CLI ('sign') is not available. Run install-toolchain.ps1 -InstallTools."
         }
+        if (Get-Command rustup -ErrorAction SilentlyContinue) {
+            $activeRust = (& rustup show active-toolchain 2>$null | Select-Object -First 1)
+            if ($activeRust -match 'windows-gnu') {
+                $env:RUSTUP_TOOLCHAIN = ($activeRust -split '\s+')[0]
+                Write-Detail ("SkipToolchain RUSTUP_TOOLCHAIN: {0}" -f $env:RUSTUP_TOOLCHAIN)
+            }
+        }
     } else {
         if (-not (Test-Path -LiteralPath $toolchainScript)) {
             throw "install-toolchain.ps1 not found: $toolchainScript"
@@ -617,7 +630,25 @@ function Run-HostSignWorkflow {
         if ($LASTEXITCODE -ne 0) {
             throw "install-toolchain.ps1 failed with exit code $LASTEXITCODE."
         }
+        # install-toolchain.ps1 runs in a child process; re-apply JAVA_HOME into this session.
+        if (-not [string]::IsNullOrWhiteSpace($envMap['JAVA_HOME'])) {
+            $env:JAVA_HOME = $envMap['JAVA_HOME'].Trim()
+        } else {
+            $bellsoft = Join-Path $env:USERPROFILE 'bellsoft-jdk\jdk8u462'
+            if (Test-Path -LiteralPath (Join-Path $bellsoft 'bin\javac.exe')) {
+                $env:JAVA_HOME = $bellsoft
+            }
+        }
         Update-DotNetToolsPath
+        Write-Detail ("Post-toolchain JAVA_HOME: {0}" -f $env:JAVA_HOME)
+        # install-toolchain may select windows-gnu when MSVC is absent; mirror into this process.
+        if (Get-Command rustup -ErrorAction SilentlyContinue) {
+            $activeRust = (& rustup show active-toolchain 2>$null | Select-Object -First 1)
+            if ($activeRust -match 'windows-gnu') {
+                $env:RUSTUP_TOOLCHAIN = ($activeRust -split '\s+')[0]
+                Write-Detail ("Post-toolchain RUSTUP_TOOLCHAIN: {0}" -f $env:RUSTUP_TOOLCHAIN)
+            }
+        }
     }
 
     if ($signingEnabled -and -not (Get-Command sign -ErrorAction SilentlyContinue)) {

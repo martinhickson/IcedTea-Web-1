@@ -203,6 +203,19 @@ function Install-CygwinIfMissing {
     Write-Detail ("Cygwin ready: {0}" -f $bash)
 }
 
+function Get-JavaVersionOutput {
+    param([Parameter(Mandatory = $true)][string]$JavaExe)
+
+    # java -version writes to stderr; with $ErrorActionPreference=Stop that becomes terminating.
+    $prevEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        return (& $JavaExe -version 2>&1 | ForEach-Object { "$_" })
+    } finally {
+        $ErrorActionPreference = $prevEap
+    }
+}
+
 function Get-JdkMajorFromJavaExe {
     param([Parameter(Mandatory = $true)][string]$JavaExe)
 
@@ -210,7 +223,7 @@ function Get-JdkMajorFromJavaExe {
         return $null
     }
 
-    $output = & $JavaExe -version 2>&1 | Out-String
+    $output = (Get-JavaVersionOutput -JavaExe $JavaExe) | Out-String
     if ($output -match 'version "1\.(\d+)') {
         return [int]$Matches[1]
     }
@@ -270,7 +283,8 @@ function Install-BellSoftJdkIfMissing {
     if ($existing) {
         Set-JdkEnvironment -JdkHome $existing
         Write-Detail ("JDK $RequiredJdkMajor already available: $existing")
-        Write-Detail ((& (Join-Path $existing 'bin\java.exe') -version 2>&1 | Select-Object -First 1) -join ' ')
+        $verLine = @(Get-JavaVersionOutput -JavaExe (Join-Path $existing 'bin\java.exe') | Select-Object -First 1) -join ' '
+        Write-Detail $verLine
         return
     }
 
@@ -300,7 +314,8 @@ function Install-BellSoftJdkIfMissing {
 
     Set-JdkEnvironment -JdkHome $resolved
     Write-Detail ("JAVA_HOME=$resolved")
-    Write-Detail ((& (Join-Path $resolved 'bin\java.exe') -version 2>&1 | Select-Object -First 1) -join ' ')
+    $verLine = @(Get-JavaVersionOutput -JavaExe (Join-Path $resolved 'bin\java.exe') | Select-Object -First 1) -join ' '
+    Write-Detail $verLine
 }
 
 function Test-CommandAvailable {
@@ -396,6 +411,28 @@ function Test-RustupAvailable {
     return Test-CommandAvailable rustup
 }
 
+function Test-MsvcLinkerAvailable {
+    $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio\Installer\vswhere.exe'
+    if (-not (Test-Path -LiteralPath $vswhere)) {
+        return $false
+    }
+    $installPath = & $vswhere -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null |
+        Select-Object -First 1
+    return -not [string]::IsNullOrWhiteSpace($installPath)
+}
+
+function Resolve-RustToolchainId {
+    # Bare pins like "1.85.1" resolve via rustup default-host (MSVC on Windows).
+    # Signing hosts without VS Build Tools need the gnu toolchain + mingw.
+    if ($RustToolchain -match '-(windows-msvc|windows-gnu|unknown-linux-|apple-darwin)') {
+        return $RustToolchain
+    }
+    if ($env:OS -match 'Windows' -and -not (Test-MsvcLinkerAvailable)) {
+        return ('{0}-x86_64-pc-windows-gnu' -f $RustToolchain)
+    }
+    return $RustToolchain
+}
+
 function Test-PinnedRustInstalled {
     Update-SessionPath
     if (-not (Test-CommandAvailable rustc) -or -not (Test-CommandAvailable cargo)) {
@@ -405,8 +442,9 @@ function Test-PinnedRustInstalled {
         # cargo/rustc present without rustup (e.g. standalone); accept for build.
         return $true
     }
+    $wanted = Resolve-RustToolchainId
     $active = (& rustup show active-toolchain 2>$null | Select-Object -First 1)
-    return ($active -match [regex]::Escape($RustToolchain))
+    return ($active -match [regex]::Escape($wanted))
 }
 
 function Get-WixToolsetBinPath {
@@ -706,7 +744,8 @@ function Ensure-LegacyRustPathJunction {
 }
 
 function Install-RustIfMissing {
-    Write-Detail ("Rust toolchain pin: {0} (matches Linux CI)" -f $RustToolchain)
+    $toolchainId = Resolve-RustToolchainId
+    Write-Detail ("Rust toolchain pin: {0} (resolved: {1})" -f $RustToolchain, $toolchainId)
 
     if (-not (Test-RustupAvailable)) {
         Install-ChocoPackageIfMissing `
@@ -722,15 +761,21 @@ function Install-RustIfMissing {
         throw 'rustup is not available after install.'
     }
 
-    Write-Detail "Installing/selecting rustup toolchain $RustToolchain..."
-    & rustup toolchain install $RustToolchain
-    if ($LASTEXITCODE -ne 0) {
-        throw "rustup toolchain install $RustToolchain failed with exit code $LASTEXITCODE."
+    if ($toolchainId -match 'x86_64-pc-windows-gnu') {
+        Write-Detail 'No MSVC linker detected; using windows-gnu rustup host/toolchain.'
+        & rustup set default-host x86_64-pc-windows-gnu
     }
-    & rustup default $RustToolchain
+
+    Write-Detail "Installing/selecting rustup toolchain $toolchainId..."
+    & rustup toolchain install $toolchainId
     if ($LASTEXITCODE -ne 0) {
-        throw "rustup default $RustToolchain failed with exit code $LASTEXITCODE."
+        throw "rustup toolchain install $toolchainId failed with exit code $LASTEXITCODE."
     }
+    & rustup default $toolchainId
+    if ($LASTEXITCODE -ne 0) {
+        throw "rustup default $toolchainId failed with exit code $LASTEXITCODE."
+    }
+    $env:RUSTUP_TOOLCHAIN = $toolchainId
 
     Update-SessionPath
     Ensure-LegacyRustPathJunction
@@ -741,6 +786,7 @@ function Install-RustIfMissing {
     }
     Write-Detail ("rustc {0}" -f (& rustc --version))
     Write-Detail ("cargo {0}" -f (& cargo --version))
+    Write-Detail ("rustc host: {0}" -f ((& rustc -Vv) | Select-String '^host:').ToString())
 }
 
 function Get-ToolchainStatus {
