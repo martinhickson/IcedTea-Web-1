@@ -18,3 +18,6 @@ artifact-no-dependencies/target
 .powershell/workflows/**/.signing-temp/
 .powershell/workflows/.source/
 .powershell/workflows/sign.env
+/icedtea-web-integration/target/
+/icedtea-web/target/
+/itw-assertj-it/target/

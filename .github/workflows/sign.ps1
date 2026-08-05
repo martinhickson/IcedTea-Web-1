@@ -205,6 +205,70 @@ function Expand-WindowsZipToTemp {
     }
 }
 
+function Get-IcedTeaWebImageRoot {
+    # Classic Windows build installs into ./icedtea-web-image; WiX packs that tree.
+    $candidate = Join-Path (Get-Location) 'icedtea-web-image'
+    $javaws = Join-Path $candidate 'bin\javaws.exe'
+    if (Test-Path -LiteralPath $javaws) {
+        return (Resolve-Path -LiteralPath $candidate).Path
+    }
+    return $null
+}
+
+function Resolve-CygwinBashExe {
+    $candidates = @(
+        'C:\cygwin64\bin\bash.exe'
+        'C:\cygwin\bin\bash.exe'
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path -LiteralPath $c) {
+            return (Resolve-Path -LiteralPath $c).Path
+        }
+    }
+    $cmd = Get-Command bash.exe -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd.Source
+    }
+    throw 'Cygwin bash.exe not found (needed to rebuild win-installer after signing launchers).'
+}
+
+function ConvertTo-CygwinPath {
+    param([Parameter(Mandatory = $true)][string]$WindowsPath)
+
+    $bash = Resolve-CygwinBashExe
+    $converted = & $bash -lc ("cygpath -u '{0}'" -f ($WindowsPath.Replace("'", "'\''")))
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($converted)) {
+        throw "cygpath failed for: $WindowsPath"
+    }
+    return $converted.Trim()
+}
+
+function Invoke-RebuildWindowsMsiFromSignedImage {
+    # win-installer depends on win-only-image (make install), which would overwrite signed
+    # launchers. Assume win-only-image is already current and only re-run WiX packaging.
+    $imageRoot = Get-IcedTeaWebImageRoot
+    if (-not $imageRoot) {
+        throw 'icedtea-web-image not found; cannot rebuild MSI from signed launchers.'
+    }
+    Assert-DistributionLaunchersSigned -DistRoot $imageRoot
+
+    $bash = Resolve-CygwinBashExe
+    $workCyg = ConvertTo-CygwinPath -WindowsPath (Get-Location).Path
+    Write-Host "Rebuilding MSI from signed image: $imageRoot"
+    Write-Host "make --assume-old=win-only-image win-installer (Cygwin)"
+
+    & $bash -lc "cd '$workCyg' && make --assume-old=win-only-image win-installer"
+    if ($LASTEXITCODE -ne 0) {
+        throw "make win-installer failed with exit code $LASTEXITCODE after signing launchers."
+    }
+
+    # Defensive: ensure install/wiX path did not replace signed EXEs.
+    Assert-DistributionLaunchersSigned -DistRoot $imageRoot
+
+    $msiPath = Get-WindowsMsiPath
+    Write-Host "Rebuilt unsigned MSI (launchers signed inside): $msiPath"
+}
+
 function Invoke-StageUnsignedArtifacts {
     $releaseDir = Get-ReleaseDirectory
     $zipPath = Get-WindowsZipPath
@@ -225,20 +289,31 @@ function Invoke-StageUnsignedArtifacts {
 
 function Invoke-SignDistributionExesAndZip {
     $zipPath = Get-WindowsZipPath
-    $expanded = Expand-WindowsZipToTemp -ZipPath $zipPath
-    $distRoot = $expanded.DistRoot
+    $descriptionUrl = if ([string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY)) {
+        'https://github.com/martinhickson/IcedTea-Web-1'
+    } else {
+        "https://github.com/$env:GITHUB_REPOSITORY"
+    }
+
+    # Prefer the live icedtea-web-image tree (what WiX packs). Signing only a temp unzip
+    # left the MSI built from unsigned launchers.
+    $imageRoot = Get-IcedTeaWebImageRoot
+    $expanded = $null
+    if ($imageRoot) {
+        $distRoot = $imageRoot
+        Write-Host "Signing launchers in icedtea-web-image (WiX source tree)"
+    } else {
+        Write-Host "icedtea-web-image missing; signing launchers inside expanded ZIP (fallback)"
+        $expanded = Expand-WindowsZipToTemp -ZipPath $zipPath
+        $distRoot = $expanded.DistRoot
+    }
+
     $exeFiles = @(Get-IcedTeaWebSignableExes -DistRoot $distRoot)
 
     Write-Host "Distribution tree:   $distRoot"
     Write-Host "Distribution ZIP:    $zipPath"
     Write-Host "Timestamp URL:       $($env:JNLP_JCA_TSA_URL)"
     Write-Host "Signing $($exeFiles.Count) launcher EXE(s) in place under bin\"
-
-    $descriptionUrl = if ([string]::IsNullOrWhiteSpace($env:GITHUB_REPOSITORY)) {
-        'https://github.com/martinhickson/IcedTea-Web-1'
-    } else {
-        "https://github.com/$env:GITHUB_REPOSITORY"
-    }
 
     Invoke-SignCliKeyVault `
         -TargetFiles @($exeFiles | ForEach-Object { $_.FullName }) `
@@ -257,7 +332,9 @@ function Invoke-SignDistributionExesAndZip {
     Copy-Item -LiteralPath $zipPath -Destination $releaseZip -Force
     Write-ReleaseArtifactChecksum -Path $releaseZip
 
-    Remove-Item -LiteralPath $expanded.WorkRoot -Recurse -Force -ErrorAction SilentlyContinue
+    if ($expanded) {
+        Remove-Item -LiteralPath $expanded.WorkRoot -Recurse -Force -ErrorAction SilentlyContinue
+    }
 }
 
 function Invoke-SignMsiArtifacts {
@@ -311,7 +388,11 @@ switch ($Phase) {
     'Distribution' { Invoke-SignDistributionExesAndZip }
     'Msi' { Invoke-SignMsiArtifacts }
     'All' {
+        # 1) Sign launchers in icedtea-web-image + rebuild zip
+        # 2) Rebuild MSI from that signed image (do not pack pre-sign MSI)
+        # 3) Sign the MSI
         Invoke-SignDistributionExesAndZip
+        Invoke-RebuildWindowsMsiFromSignedImage
         Invoke-SignMsiArtifacts
     }
 }
