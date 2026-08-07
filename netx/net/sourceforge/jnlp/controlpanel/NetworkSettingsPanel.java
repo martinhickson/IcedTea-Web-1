@@ -113,7 +113,8 @@ public class NetworkSettingsPanel extends JPanel implements ActionListener, Sett
                 new JLabel("<html>" + Translator.R("NSDescription0") + "</html>"),
                 new JLabel("<html>" + Translator.R("NSDescription1") + "</html>"),
                 new JLabel("<html>" + Translator.R("NSDescription2") + "</html>"),
-                new JLabel("<html>" + Translator.R("NSDescription3") + "</html>") };
+                new JLabel("<html>" + Translator.R("NSDescription3") + "</html>"),
+                new JLabel("<html>" + Translator.R("NSDescription4") + "</html>") };
 
         this.description = new JPanel(new CardLayout());
         for (int i = 0; i < description.length; i++)
@@ -187,7 +188,12 @@ public class NetworkSettingsPanel extends JPanel implements ActionListener, Sett
         useBrowserSettings.setActionCommand("3");
         useBrowserSettings.addActionListener(this);
 
+        JRadioButton useSystemSettings = new JRadioButton(Translator.R("NSSystemProxy"), config.getProperty(properties[0]).equals("4"));
+        useSystemSettings.setActionCommand("4");
+        useSystemSettings.addActionListener(this);
+
         ButtonGroup modeSelect = new ButtonGroup();
+        modeSelect.add(useSystemSettings);
         modeSelect.add(useBrowserSettings);
         modeSelect.add(useProxyServer);
         modeSelect.add(useAutoProxyConfigScript);
@@ -215,15 +221,17 @@ public class NetworkSettingsPanel extends JPanel implements ActionListener, Sett
         c.gridy = 2;
         settingPanel.add(directConnection, c);
         c.gridy = 3;
-        settingPanel.add(useBrowserSettings, c);
+        settingPanel.add(useSystemSettings, c);
         c.gridy = 4;
-        settingPanel.add(useProxyServer, c);
+        settingPanel.add(useBrowserSettings, c);
         c.gridy = 5;
+        settingPanel.add(useProxyServer, c);
+        c.gridy = 6;
         settingPanel.add(proxyServerPanel, c);
         proxyPanels.add(proxyServerPanel);
-        c.gridy = 6;
-        settingPanel.add(useAutoProxyConfigScript, c);
         c.gridy = 7;
+        settingPanel.add(useAutoProxyConfigScript, c);
+        c.gridy = 8;
         settingPanel.add(proxyAutoPanel, c);
         proxyPanels.add(proxyAutoPanel);
 
@@ -284,6 +292,11 @@ public class NetworkSettingsPanel extends JPanel implements ActionListener, Sett
                 enablePanel(proxyPanels.get(1), true);
                 break;
             case "3":
+            case "4":
+                for (JPanel panel : proxyPanels)
+                    enablePanel(panel, false);
+                break;
+            default:
                 for (JPanel panel : proxyPanels)
                     enablePanel(panel, false);
                 break;

@@ -31,6 +31,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -50,6 +51,8 @@ public abstract class JNLPProxySelector extends ProxySelector {
     public static final int PROXY_TYPE_MANUAL = 1;
     public static final int PROXY_TYPE_AUTO = 2;
     public static final int PROXY_TYPE_BROWSER = 3;
+    /** Windows Internet Settings / OS proxy (OpenWebStart default; config value 4). */
+    public static final int PROXY_TYPE_SYSTEM = 4;
 
     /** The default port to use as a fallback. Currently squid's default port */
     public static final int FALLBACK_PROXY_PORT = 3128;
@@ -141,6 +144,11 @@ public abstract class JNLPProxySelector extends ProxySelector {
         proxySocks4Port = getPort(config, DeploymentConfiguration.KEY_PROXY_SOCKS4_PORT);
 
         overrideHosts = config.getProperty(DeploymentConfiguration.KEY_PROXY_OVERRIDE_HOSTS);
+
+        // After deployment.properties: overlay WinINET / env (OWS type=4 parity).
+        if (proxyType == PROXY_TYPE_SYSTEM) {
+            applySystemProxySettings();
+        }
     }
 
     /**
@@ -211,6 +219,9 @@ public abstract class JNLPProxySelector extends ProxySelector {
                     break;
                 case PROXY_TYPE_BROWSER:
                     proxies.addAll(getFromBrowser(uri));
+                    break;
+                case PROXY_TYPE_SYSTEM:
+                    proxies.addAll(getFromSystem(uri));
                     break;
                 case PROXY_TYPE_UNKNOWN:
                     // fall through
@@ -404,6 +415,154 @@ public abstract class JNLPProxySelector extends ProxySelector {
      * @return a list of proxies
      */
     protected abstract List<Proxy> getFromBrowser(URI uri);
+
+    /**
+     * Apply OS proxy settings for {@link #PROXY_TYPE_SYSTEM}.
+     * On Windows, matches OpenWebStart: prefer {@code AutoConfigURL} (PAC), else
+     * WinINET manual {@code ProxyServer}.
+     */
+    private void applySystemProxySettings() {
+        if (WindowsInternetSettings.isWindows()) {
+            try {
+                WindowsInternetSettings.Snapshot snap = WindowsInternetSettings.read();
+                if (snap.autoConfigUrl != null) {
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                            "System proxy: using AutoConfigURL PAC " + snap.autoConfigUrl);
+                    try {
+                        autoConfigUrl = new URL(snap.autoConfigUrl);
+                        pacEvaluator = PacEvaluatorFactory.getPacEvaluator(autoConfigUrl);
+                    } catch (MalformedURLException e) {
+                        OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+                    }
+                    applyProxyOverride(snap.proxyOverride);
+                    return;
+                }
+                if (snap.proxyEnabled && snap.proxyServer != null) {
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                            "System proxy: using ProxyServer " + snap.proxyServer);
+                    applyWinInetProxyServer(snap.proxyServer);
+                    applyProxyOverride(snap.proxyOverride);
+                    return;
+                }
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                        "System proxy: no AutoConfigURL / ProxyEnable on Windows; using DIRECT");
+            } catch (Exception e) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "System proxy: failed to read Windows Internet Settings: " + e.getMessage());
+                OutputController.getLogger().log(e);
+            }
+            return;
+        }
+        applyUnixEnvProxies();
+    }
+
+    private void applyWinInetProxyServer(String proxyServer) {
+        Map<String, String> byScheme = WindowsInternetSettings.parseProxyServerMap(proxyServer);
+        boolean singleEntry = !proxyServer.contains("=");
+        sameProxy = singleEntry;
+
+        WindowsInternetSettings.HostPort http = WindowsInternetSettings.splitHostPort(
+                byScheme.get("http"), FALLBACK_PROXY_PORT);
+        if (http != null) {
+            proxyHttpHost = http.host;
+            proxyHttpPort = http.port;
+        }
+        WindowsInternetSettings.HostPort https = WindowsInternetSettings.splitHostPort(
+                byScheme.get("https"), FALLBACK_PROXY_PORT);
+        if (https != null) {
+            proxyHttpsHost = https.host;
+            proxyHttpsPort = https.port;
+        } else if (sameProxy && http != null) {
+            proxyHttpsHost = http.host;
+            proxyHttpsPort = http.port;
+        }
+        WindowsInternetSettings.HostPort ftp = WindowsInternetSettings.splitHostPort(
+                byScheme.get("ftp"), FALLBACK_PROXY_PORT);
+        if (ftp != null) {
+            proxyFtpHost = ftp.host;
+            proxyFtpPort = ftp.port;
+        }
+        WindowsInternetSettings.HostPort socks = WindowsInternetSettings.splitHostPort(
+                byScheme.get("socks"), FALLBACK_PROXY_PORT);
+        if (socks != null) {
+            proxySocks4Host = socks.host;
+            proxySocks4Port = socks.port;
+        }
+    }
+
+    private void applyProxyOverride(String proxyOverride) {
+        if (proxyOverride == null) {
+            return;
+        }
+        if (bypassList == null) {
+            bypassList = new ArrayList<>();
+        }
+        for (String token : proxyOverride.split(";")) {
+            String host = token.trim();
+            if (host.isEmpty()) {
+                continue;
+            }
+            if ("<local>".equalsIgnoreCase(host)) {
+                bypassLocal = true;
+                continue;
+            }
+            if (!bypassList.contains(host)) {
+                bypassList.add(host);
+            }
+        }
+    }
+
+    private void applyUnixEnvProxies() {
+        String https = firstEnv("https_proxy", "HTTPS_PROXY");
+        String http = firstEnv("http_proxy", "HTTP_PROXY");
+        String chosen = https != null ? https : http;
+        if (chosen == null) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                    "System proxy: no http(s)_proxy env; using DIRECT");
+            return;
+        }
+        try {
+            URL u = chosen.contains("://") ? new URL(chosen) : new URL("http://" + chosen);
+            proxyHttpHost = u.getHost();
+            proxyHttpPort = u.getPort() > 0 ? u.getPort() : FALLBACK_PROXY_PORT;
+            proxyHttpsHost = proxyHttpHost;
+            proxyHttpsPort = proxyHttpPort;
+            sameProxy = true;
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                    "System proxy: using env proxy " + proxyHttpHost + ":" + proxyHttpPort);
+        } catch (MalformedURLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+        String noProxy = firstEnv("no_proxy", "NO_PROXY");
+        if (noProxy != null) {
+            applyProxyOverride(noProxy.replace(',', ';'));
+        }
+    }
+
+    private static String firstEnv(String a, String b) {
+        String v = System.getenv(a);
+        if (v != null && !v.trim().isEmpty()) {
+            return v.trim();
+        }
+        v = System.getenv(b);
+        if (v != null && !v.trim().isEmpty()) {
+            return v.trim();
+        }
+        return null;
+    }
+
+    /**
+     * System proxy selection: PAC from AutoConfigURL, else manual hosts filled from OS/env.
+     */
+    private List<Proxy> getFromSystem(URI uri) {
+        if (autoConfigUrl != null && pacEvaluator != null) {
+            return getFromPAC(uri);
+        }
+        if (proxyHttpHost != null || proxyHttpsHost != null || proxyFtpHost != null || proxySocks4Host != null) {
+            return getFromConfiguration(uri);
+        }
+        return Collections.singletonList(Proxy.NO_PROXY);
+    }
 
     /**
      * Converts a proxy string from a browser into a List of Proxy objects

@@ -243,8 +243,8 @@ public class Defaults {
                 /* networking */
                 {
                         DeploymentConfiguration.KEY_PROXY_TYPE,
-                        BasicValueValidators.getRangedIntegerValidator(JNLPProxySelector.PROXY_TYPE_UNKNOWN, JNLPProxySelector.PROXY_TYPE_BROWSER),
-                        String.valueOf(JNLPProxySelector.PROXY_TYPE_BROWSER)
+                        BasicValueValidators.getRangedIntegerValidator(JNLPProxySelector.PROXY_TYPE_UNKNOWN, JNLPProxySelector.PROXY_TYPE_SYSTEM),
+                        String.valueOf(JNLPProxySelector.PROXY_TYPE_SYSTEM)
                 },
                 {
                         DeploymentConfiguration.KEY_PROXY_SAME,
@@ -502,8 +502,9 @@ public class Defaults {
                 },
                 {
                         DeploymentConfiguration.KEY_BACKGROUND_THREADS_COUNT,
-                        BasicValueValidators.getRangedIntegerValidator(1, 16),
-                        String.valueOf(3)
+                        // Align with OWS/ITW-alpha deployment.cache.parallelDownloadCount (default 6, max 24).
+                        BasicValueValidators.getRangedIntegerValidator(1, 24),
+                        String.valueOf(6)
                 },
                 {
                         DeploymentConfiguration.KEY_MAX_URLS_DOWNLOAD_INDICATOR,
