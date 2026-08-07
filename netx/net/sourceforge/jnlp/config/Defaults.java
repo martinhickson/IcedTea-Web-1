@@ -502,7 +502,7 @@ public class Defaults {
                 },
                 {
                         DeploymentConfiguration.KEY_BACKGROUND_THREADS_COUNT,
-                        // Align with OWS/ITW-alpha deployment.cache.parallelDownloadCount (default 6, max 24).
+                        // Default 6 download threads; allowed range 1–24.
                         BasicValueValidators.getRangedIntegerValidator(1, 24),
                         String.valueOf(6)
                 },

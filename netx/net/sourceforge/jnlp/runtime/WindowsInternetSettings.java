@@ -20,8 +20,8 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * Reads WinINET proxy settings from the Windows registry (same source OpenWebStart
- * uses for {@code deployment.proxy.type=4} / system proxy).
+ * Reads WinINET proxy settings from the Windows registry for system proxy
+ * ({@code deployment.proxy.type=4}).
  *
  * <p>Key: {@code HKCU\Software\Microsoft\Windows\CurrentVersion\Internet Settings}
  * — {@code AutoConfigURL}, {@code ProxyEnable}, {@code ProxyServer}, {@code ProxyOverride}.

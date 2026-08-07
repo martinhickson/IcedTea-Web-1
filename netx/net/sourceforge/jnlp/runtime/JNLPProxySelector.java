@@ -51,7 +51,7 @@ public abstract class JNLPProxySelector extends ProxySelector {
     public static final int PROXY_TYPE_MANUAL = 1;
     public static final int PROXY_TYPE_AUTO = 2;
     public static final int PROXY_TYPE_BROWSER = 3;
-    /** Windows Internet Settings / OS proxy (OpenWebStart default; config value 4). */
+    /** Windows Internet Settings / OS proxy (config value 4). */
     public static final int PROXY_TYPE_SYSTEM = 4;
 
     /** The default port to use as a fallback. Currently squid's default port */
@@ -145,7 +145,7 @@ public abstract class JNLPProxySelector extends ProxySelector {
 
         overrideHosts = config.getProperty(DeploymentConfiguration.KEY_PROXY_OVERRIDE_HOSTS);
 
-        // After deployment.properties: overlay WinINET / env (OWS type=4 parity).
+        // After deployment.properties: overlay WinINET / env for system proxy.
         if (proxyType == PROXY_TYPE_SYSTEM) {
             applySystemProxySettings();
         }
@@ -418,8 +418,7 @@ public abstract class JNLPProxySelector extends ProxySelector {
 
     /**
      * Apply OS proxy settings for {@link #PROXY_TYPE_SYSTEM}.
-     * On Windows, matches OpenWebStart: prefer {@code AutoConfigURL} (PAC), else
-     * WinINET manual {@code ProxyServer}.
+     * On Windows, prefer {@code AutoConfigURL} (PAC), else WinINET manual {@code ProxyServer}.
      */
     private void applySystemProxySettings() {
         if (WindowsInternetSettings.isWindows()) {
