@@ -42,7 +42,7 @@ class JnlpAssignmentLauncherOutputIT {
     @Test
     void resolveJavawsBinFindsSiblingWhenBinLocationIsItwebSettings() throws Exception {
         java.io.File bin = java.nio.file.Files.createTempDirectory("itw-it-bin").toFile();
-        java.io.File settings = new java.io.File(bin, "itweb-settings");
+        java.io.File settings = new java.io.File(bin, "icedtea-web-settings");
         java.io.File javaws = new java.io.File(bin, "javaws");
         java.nio.file.Files.write(settings.toPath(), "#!/bin/sh\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         java.nio.file.Files.write(javaws.toPath(), "#!/bin/sh\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));

@@ -328,17 +328,17 @@ public class ServerAccess {
     
     /**
      *
-     * @return - file pointing to itweb-settings deducted from passed inside
+     * @return - file pointing to icedtea-web-settings deducted from passed inside
      * javaws binary location (JAVAWS_BUILD_BIN)
      */
     public File getItwebSettingsFile() {
-        String itwebSettings = "itweb-settings";
+        String itwebSettings = "icedtea-web-settings";
         return getFileInJavawsDir(itwebSettings);
     }
     
         /**
      *
-     * @return - file pointing to itweb-settings deducted from passed inside
+     * @return - file pointing to icedtea-web-settings deducted from passed inside
      * javaws binary location (JAVAWS_BUILD_BIN)
      */
     public File getIPolicyEditorFile() {

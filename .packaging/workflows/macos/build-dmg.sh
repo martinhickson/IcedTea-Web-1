@@ -51,10 +51,10 @@ APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 exec "$APP_DIR/Resources/opt/icedtea-web/bin/javaws" "$@"
 EOF
 
-cat > "$APP_ROOT/MacOS/itweb-settings" <<'EOF'
+cat > "$APP_ROOT/MacOS/icedtea-web-settings" <<'EOF'
 #!/usr/bin/env bash
 APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-exec "$APP_DIR/Resources/opt/icedtea-web/bin/itweb-settings" "$@"
+exec "$APP_DIR/Resources/opt/icedtea-web/bin/icedtea-web-settings" "$@"
 EOF
 
 cat > "$APP_ROOT/MacOS/javawsc" <<'EOF'
@@ -69,7 +69,7 @@ APP_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 exec "$APP_DIR/Resources/opt/icedtea-web/bin/policyeditor" "$@"
 EOF
 
-chmod +x "$APP_ROOT/MacOS/javaws" "$APP_ROOT/MacOS/itweb-settings" "$APP_ROOT/MacOS/javawsc" "$APP_ROOT/MacOS/policyeditor"
+chmod +x "$APP_ROOT/MacOS/javaws" "$APP_ROOT/MacOS/icedtea-web-settings" "$APP_ROOT/MacOS/javawsc" "$APP_ROOT/MacOS/policyeditor"
 
 ICON_PLIST=""
 if [[ -f "$APP_ROOT/Resources/icedtea-web.icns" ]]; then

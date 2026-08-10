@@ -66,7 +66,7 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.swing.SwingUtils;
 
 /**
- * Implements a Policy Settings panel for the itweb-settings control panel.
+ * Implements a Policy Settings panel for the icedtea-web-settings control panel.
  * This gives the user information about custom user-level JNLP Policy files,
  * as well as offering a way to launch a policy file editor with the correct
  * file path to the user's personal policy file location presupplied.

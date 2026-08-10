@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Smoke test the IcedTea-Web control panel from a built Linux distribution tree.
-# Launches itweb-settings under xvfb and fails if JVM panel construction throws.
+# Launches icedtea-web-settings under xvfb and fails if JVM panel construction throws.
 
 set -euo pipefail
 
@@ -32,17 +32,17 @@ prepare_distribution() {
       echo "ITW_SETTINGS_BIN is set but not executable: $SETTINGS_BIN" >&2
       exit 1
     fi
-    echo "Using itweb-settings from ITW_SETTINGS_BIN: $SETTINGS_BIN"
+    echo "Using icedtea-web-settings from ITW_SETTINGS_BIN: $SETTINGS_BIN"
     return
   fi
 
   if [ -n "$DIST_DIR" ]; then
-    SETTINGS_BIN="$DIST_DIR/bin/itweb-settings"
+    SETTINGS_BIN="$DIST_DIR/bin/icedtea-web-settings"
     if [ ! -x "$SETTINGS_BIN" ]; then
-      echo "ITW_DOTNET_DIST_DIR is set but bin/itweb-settings is not executable: $SETTINGS_BIN" >&2
+      echo "ITW_DOTNET_DIST_DIR is set but bin/icedtea-web-settings is not executable: $SETTINGS_BIN" >&2
       exit 1
     fi
-    echo "Using itweb-settings from ITW_DOTNET_DIST_DIR: $SETTINGS_BIN"
+    echo "Using icedtea-web-settings from ITW_DOTNET_DIST_DIR: $SETTINGS_BIN"
     return
   fi
 
@@ -63,7 +63,7 @@ EOF
   echo "Extracting Linux distribution artifact: $DIST_ZIP"
   unzip -q "$DIST_ZIP" -d "$unpack_dir"
   DIST_DIR="$(find "$unpack_dir" -mindepth 1 -maxdepth 1 -type d | head -n 1)"
-  SETTINGS_BIN="$DIST_DIR/bin/itweb-settings"
+  SETTINGS_BIN="$DIST_DIR/bin/icedtea-web-settings"
   if [ -f "$SETTINGS_BIN" ]; then
     chmod +x "$SETTINGS_BIN"
   fi
@@ -72,10 +72,10 @@ EOF
     chmod -R ugo+rx "$DIST_DIR/runtime/corretto"/*/bin 2>/dev/null || true
   fi
   if [ ! -x "$SETTINGS_BIN" ]; then
-    echo "Extracted artifact does not contain executable bin/itweb-settings: $SETTINGS_BIN" >&2
+    echo "Extracted artifact does not contain executable bin/icedtea-web-settings: $SETTINGS_BIN" >&2
     exit 1
   fi
-  echo "Using itweb-settings from distribution artifact: $SETTINGS_BIN"
+  echo "Using icedtea-web-settings from distribution artifact: $SETTINGS_BIN"
 }
 
 write_blocking_launcher_config() {

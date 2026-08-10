@@ -268,7 +268,7 @@
                     <copy todir="${itw.distribution.root}/bin">
                       <fileset dir="${project.build.directory}/dotnet-publish"/>
                     </copy>
-                    <copy file="${itw.distribution.root}/bin/javaws.exe" tofile="${itw.distribution.root}/bin/itweb-settings.exe"/>
+                    <copy file="${itw.distribution.root}/bin/javaws.exe" tofile="${itw.distribution.root}/bin/icedtea-web-settings.exe"/>
                     <copy file="${itw.distribution.root}/bin/javaws.exe" tofile="${itw.distribution.root}/bin/policyeditor.exe"/>
                     <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>
                     <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
@@ -329,14 +329,14 @@
                     <copy todir="${itw.distribution.root}/bin">
                       <fileset dir="${project.build.directory}/dotnet-publish"/>
                     </copy>
-                    <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/itweb-settings"/>
+                    <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/icedtea-web-settings"/>
                     <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/policyeditor"/>
                     <chmod file="${itw.distribution.root}/bin/javaws" perm="ugo+rx"/>
                     <chmod file="${itw.distribution.root}/bin/javawsc" perm="ugo+rx"/>
-                    <chmod file="${itw.distribution.root}/bin/itweb-settings" perm="ugo+rx"/>
+                    <chmod file="${itw.distribution.root}/bin/icedtea-web-settings" perm="ugo+rx"/>
                     <chmod file="${itw.distribution.root}/bin/policyeditor" perm="ugo+rx"/>
                     <copy file="${itw.launcher.icon.png}" tofile="${itw.distribution.root}/share/pixmaps/javaws.png"/>
-                    <copy file="${itw.launcher.icon.png}" tofile="${itw.distribution.root}/share/pixmaps/itweb-settings.png"/>
+                    <copy file="${itw.launcher.icon.png}" tofile="${itw.distribution.root}/share/pixmaps/icedtea-web-settings.png"/>
                     <copy file="${itw.launcher.icon.png}" tofile="${itw.distribution.root}/share/pixmaps/policyeditor.png"/>
                     <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>
                     <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
@@ -407,11 +407,11 @@
                     <copy todir="${itw.distribution.root}/bin">
                       <fileset dir="${project.build.directory}/dotnet-publish"/>
                     </copy>
-                    <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/itweb-settings"/>
+                    <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/icedtea-web-settings"/>
                     <copy file="${itw.distribution.root}/bin/javaws" tofile="${itw.distribution.root}/bin/policyeditor"/>
                     <chmod file="${itw.distribution.root}/bin/javaws" perm="ugo+rx"/>
                     <chmod file="${itw.distribution.root}/bin/javawsc" perm="ugo+rx"/>
-                    <chmod file="${itw.distribution.root}/bin/itweb-settings" perm="ugo+rx"/>
+                    <chmod file="${itw.distribution.root}/bin/icedtea-web-settings" perm="ugo+rx"/>
                     <chmod file="${itw.distribution.root}/bin/policyeditor" perm="ugo+rx"/>
                     <copy file="${itw.launcher.icon.png}" tofile="${itw.distribution.root}/share/icons/icedtea-web.png"/>
                     <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>

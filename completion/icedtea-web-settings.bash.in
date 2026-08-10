@@ -1,4 +1,4 @@
-_itwebsettings()
+_icedteawebsettings()
 {
     local cur prev opts base
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -10,4 +10,4 @@ _itwebsettings()
     COMPREPLY=($(compgen -W "${opts}" -- ${cur}))
     return 0
 }
-complete -F _itwebsettings itweb-settings
+complete -F _icedteawebsettings icedtea-web-settings

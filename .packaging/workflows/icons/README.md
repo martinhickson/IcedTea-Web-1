@@ -4,7 +4,7 @@ Official product icon (tea leaves), sourced from `win-installer/icon.ico`.
 
 | File | Use |
 |------|-----|
-| `icedtea-web.png` | Linux pixmaps / desktop entries (256 px); copied as `javaws.png`, `itweb-settings.png`, `policyeditor.png` |
+| `icedtea-web.png` | Linux pixmaps / desktop entries (256 px); copied as `javaws.png`, `icedtea-web-settings.png`, `policyeditor.png` |
 | `icedtea-web-{16,32,48,64,128,256}.png` | macOS `.icns` generation |
 | `icedtea-web.icns` | macOS `.app` bundle (built on macOS via `.packaging/workflows/macos/prepare-macos-icon.sh`) |
 

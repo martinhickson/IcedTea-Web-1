@@ -1,7 +1,7 @@
 # IcedTea-Web AssertJ Swing integration tests
 
 Standalone Maven module (not part of the main reactor) that drives the
-`itweb-settings` control panel with [AssertJ Swing](https://github.com/assertj/assertj-swing).
+`icedtea-web-settings` control panel with [AssertJ Swing](https://github.com/assertj/assertj-swing).
 
 ## Prerequisites
 

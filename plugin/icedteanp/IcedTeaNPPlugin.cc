@@ -229,7 +229,7 @@ static void appletviewer_monitor(GPid pid, gint status, gpointer data);
 void plugin_send_initialization_message(char* instance, gulong handle,
                                                int width, int height,
                                                char* url);
-/* Returns JVM options set in itw-settings */
+/* Returns JVM options set in icedtea-web-settings */
 std::vector<std::string*>* get_jvm_args();
 
 // Global instance counter.
@@ -1707,7 +1707,7 @@ plugin_start_appletviewer (ITNPPluginData* data)
 }
 
 /*
- * Returns JVM options set in itw-settings
+ * Returns JVM options set in icedtea-web-settings
  */
 std::vector<std::string*>*
 get_jvm_args()

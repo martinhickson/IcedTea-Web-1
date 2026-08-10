@@ -34,20 +34,20 @@ endif
 MODULARJDK_ARGS_FILE=itw-modularjdk.args
 
 if WINDOWS_OR_INCLUDE_BATS
-	WIN_LAUNCHERS=launcher.build/$(javaws).bat launcher.build/$(itweb_settings).bat  launcher.build/$(policyeditor).bat
+	WIN_LAUNCHERS=launcher.build/$(javaws).bat launcher.build/$(icedtea_web_settings).bat  launcher.build/$(policyeditor).bat
 else
 	WIN_LAUNCHERS=
 endif
 
 if ENABLE_SHELL_LAUNCHERS
-	SHELL_LAUNCHERS=$(WIN_LAUNCHERS) launcher.build/$(MODULARJDK_ARGS_FILE) launcher.build/$(javaws).sh launcher.build/$(itweb_settings).sh launcher.build/$(policyeditor).sh
+	SHELL_LAUNCHERS=$(WIN_LAUNCHERS) launcher.build/$(MODULARJDK_ARGS_FILE) launcher.build/$(javaws).sh launcher.build/$(icedtea_web_settings).sh launcher.build/$(policyeditor).sh
 else
 	SHELL_LAUNCHERS=
 endif
 
 
 if ENABLE_NATIVE_LAUNCHERS
-	NATIVE_LAUNCHERS=launcher.build/$(MODULARJDK_ARGS_FILE) launcher.build/$(javaws) launcher.build/$(itweb_settings) launcher.build/$(policyeditor)
+	NATIVE_LAUNCHERS=launcher.build/$(MODULARJDK_ARGS_FILE) launcher.build/$(javaws) launcher.build/$(icedtea_web_settings) launcher.build/$(policyeditor)
 	DESKTOP_SUFFIX=
 else
 	NATIVE_LAUNCHERS=
@@ -58,12 +58,12 @@ endif
 # in unsupported case (no rust, and enforced shell launchers), it will become javaws.sh.
 # similar case is for other two binaries. 
 JAVAWS=$(javaws)$(DESKTOP_SUFFIX)
-ITWEB_SETTINGS=$(itweb_settings)$(DESKTOP_SUFFIX)
+ICEDTEA_WEB_SETTINGS=$(icedtea_web_settings)$(DESKTOP_SUFFIX)
 POLICYEDITOR=$(policyeditor)$(DESKTOP_SUFFIX)
 
 LAUNCHERS=$(NATIVE_LAUNCHERS) $(SHELL_LAUNCHERS)
-DESKTOP_FILES=javaws.desktop itweb-settings.desktop policyeditor.desktop
-DESKTOP_IN_FILES=javaws.desktop.in itweb-settings.desktop.in policyeditor.desktop.in
+DESKTOP_FILES=javaws.desktop icedtea-web-settings.desktop policyeditor.desktop
+DESKTOP_IN_FILES=javaws.desktop.in icedtea-web-settings.desktop.in policyeditor.desktop.in
 
 export WIN_INSTALLER_DIR = $(TOP_BUILD_DIR)/win-installer.build
 export WIN_INSTALLER_SRC_DIR = $(TOP_SRC_DIR)/win-installer
@@ -341,7 +341,7 @@ export EXPORTED_PACK200=$(SYSTEM_JDK_DIR)/bin/pack200
 
 # binary names
 javaws:= $(shell echo javaws | sed '@program_transform_name@')
-itweb_settings:= $(shell echo itweb-settings | sed '@program_transform_name@')
+icedtea_web_settings:= $(shell echo icedtea-web-settings | sed '@program_transform_name@')
 policyeditor:= $(shell echo policyeditor | sed '@program_transform_name@')
 
 if WINDOWS_OR_INCLUDE_BATS
@@ -410,20 +410,20 @@ endif
 	cp launcher.build/$(MODULARJDK_ARGS_FILE) $(MODULARJDK_ARGS_LOCATION)
 if ENABLE_NATIVE_LAUNCHERS
 	${INSTALL_PROGRAM} launcher.build/$(javaws) $(DESTDIR)$(bindir)
-	${INSTALL_PROGRAM} launcher.build/$(itweb_settings) $(DESTDIR)$(bindir)
+	${INSTALL_PROGRAM} launcher.build/$(icedtea_web_settings) $(DESTDIR)$(bindir)
 	${INSTALL_PROGRAM} launcher.build/$(policyeditor) $(DESTDIR)$(bindir)
 endif
 if ENABLE_SHELL_LAUNCHERS
 	${INSTALL_PROGRAM} launcher.build/$(javaws).sh $(DESTDIR)$(bindir)
-	${INSTALL_PROGRAM} launcher.build/$(itweb_settings).sh $(DESTDIR)$(bindir)
+	${INSTALL_PROGRAM} launcher.build/$(icedtea_web_settings).sh $(DESTDIR)$(bindir)
 	${INSTALL_PROGRAM} launcher.build/$(policyeditor).sh $(DESTDIR)$(bindir)
 if WINDOWS_OR_INCLUDE_BATS
 	${INSTALL_PROGRAM} launcher.build/$(javaws).bat $(DESTDIR)$(bindir)
-	${INSTALL_PROGRAM} launcher.build/$(itweb_settings).bat $(DESTDIR)$(bindir)
+	${INSTALL_PROGRAM} launcher.build/$(icedtea_web_settings).bat $(DESTDIR)$(bindir)
 	${INSTALL_PROGRAM} launcher.build/$(policyeditor).bat $(DESTDIR)$(bindir)
 endif
 endif
-	${INSTALL_DATA} $(TOP_BUILD_DIR)/completion/itweb-settings.bash $(BASH_CMPL_DEST_DIR)/
+	${INSTALL_DATA} $(TOP_BUILD_DIR)/completion/icedtea-web-settings.bash $(BASH_CMPL_DEST_DIR)/
 	${INSTALL_DATA} $(TOP_BUILD_DIR)/completion/javaws.bash $(BASH_CMPL_DEST_DIR)/
 	${INSTALL_DATA} $(TOP_BUILD_DIR)/completion/policyeditor.bash $(BASH_CMPL_DEST_DIR)/
 
@@ -608,7 +608,7 @@ remove-empty-linux-only-dirs:
 # all generated manpages must be removed one by one
 # shell (only shell!) launchers must go away
 uninstall-linux-only:
-	KNOWN_MANS="icedtea-web.1  icedtea-web-plugin.1  itweb-settings.1  javaws.1  policyeditor.1" ; \
+	KNOWN_MANS="icedtea-web.1  icedtea-web-plugin.1  icedtea-web-settings.1  javaws.1  policyeditor.1" ; \
 	KNOWN_DIRS="man1 de/man1 pl/man1 cs/man1" ; \
 	for file in $$KNOWN_MANS ; do \
 	  for dir in $$KNOWN_DIRS ; do \
@@ -617,9 +617,9 @@ uninstall-linux-only:
 	done
 	rm -f $(DESTDIR)$(libdir)/$(BUILT_PLUGIN_LIBRARY)
 	rm -f $(DESTDIR)$(bindir)/$(javaws).sh
-	rm -f $(DESTDIR)$(bindir)/$(itweb_settings).sh
+	rm -f $(DESTDIR)$(bindir)/$(icedtea_web_settings).sh
 	rm -f $(DESTDIR)$(bindir)/$(policyeditor).sh
-	rm -f $(BASH_CMPL_DEST_DIR)/itweb-settings.bash
+	rm -f $(BASH_CMPL_DEST_DIR)/icedtea-web-settings.bash
 	rm -f $(BASH_CMPL_DEST_DIR)/javaws.bash
 	rm -f $(BASH_CMPL_DEST_DIR)/policyeditor.bash
 
@@ -634,7 +634,7 @@ if WINDOWS_OR_INCLUDE_BATS
 	rm -rf $(WIN_ALL_DEPS)
 	rm -rf $(WIN_RUN_DEPS)
 	rm -f $(DESTDIR)$(bindir)/$(javaws).bat
-	rm -f $(DESTDIR)$(bindir)/$(itweb_settings).bat
+	rm -f $(DESTDIR)$(bindir)/$(icedtea_web_settings).bat
 	rm -f $(DESTDIR)$(bindir)/$(policyeditor).bat
 endif
 
@@ -899,11 +899,11 @@ check-metadata: $(TOP_BUILD_DIR)/metadata
 # appstreamcli  validate $(TOP_BUILD_DIR)/metadata/*.appdata.xml  $(TOP_BUILD_DIR)/metadata/*.metainfo.xml
 	
 
-$(TOP_BUILD_DIR)/completion/itweb-settings.bash: $(TOP_SRC_DIR)/completion/itweb-settings.bash.in stamps/netx.stamp
+$(TOP_BUILD_DIR)/completion/icedtea-web-settings.bash: $(TOP_SRC_DIR)/completion/icedtea-web-settings.bash.in stamps/netx.stamp
 	OPTIONS_COMMAND="$(SYSTEM_JRE_DIR)/bin/java -cp $(NETX_DIR) net.sourceforge.jnlp.OptionsDefinitions" ;  \
-	OPTIONS=`$$OPTIONS_COMMAND itweb-settings`; \
+	OPTIONS=`$$OPTIONS_COMMAND icedtea-web-settings`; \
 	echo $$OPTIONS ; \
-	cat $(TOP_SRC_DIR)/completion/itweb-settings.bash.in | \
+	cat $(TOP_SRC_DIR)/completion/icedtea-web-settings.bash.in | \
 	sed "s/@OPTIONS@/$${OPTIONS}/" > $@ ;
 
 $(TOP_BUILD_DIR)/completion/javaws.bash: $(TOP_SRC_DIR)/completion/javaws.bash.in stamps/netx.stamp
@@ -988,7 +988,7 @@ stamps/netx.stamp: netx-source-files.txt stamps/netx-html-gen.stamp
 	mkdir -p stamps
 	touch $@
 
-stamps/netx-dist.stamp: stamps/netx.stamp $(TOP_BUILD_DIR)/netx.manifest stamps/generate-docs.stamp $(TOP_BUILD_DIR)/completion/itweb-settings.bash $(TOP_BUILD_DIR)/completion/javaws.bash $(TOP_BUILD_DIR)/completion/policyeditor.bash $(TOP_BUILD_DIR)/metadata
+stamps/netx-dist.stamp: stamps/netx.stamp $(TOP_BUILD_DIR)/netx.manifest stamps/generate-docs.stamp $(TOP_BUILD_DIR)/completion/icedtea-web-settings.bash $(TOP_BUILD_DIR)/completion/javaws.bash $(TOP_BUILD_DIR)/completion/policyeditor.bash $(TOP_BUILD_DIR)/metadata
 	(cd $(NETX_DIR) ; \
 	 mkdir -p lib ; \
 	 $(SYSTEM_JDK_DIR)/bin/jar cfm lib/classes.jar \
@@ -1010,7 +1010,7 @@ clean-netx:
 
 clean-desktop-files:
 	rm -f javaws.desktop
-	rm -f itweb-settings.desktop
+	rm -f icedtea-web-settings.desktop
 	rm -f policyeditor.desktop
 
 
@@ -1024,7 +1024,7 @@ if ENABLE_NATIVE_LAUNCHERS
 # todo, handling of suffixes
 # there is curently harecoded sh, so it can somehow basically work
 # see the DESKTOP_SUFFIX for final tuning
-launcher.build/$(javaws) launcher.build/$(itweb_settings) launcher.build/$(policyeditor): rust-launcher/src/main.rs rust-launcher/Cargo.toml
+launcher.build/$(javaws) launcher.build/$(icedtea_web_settings) launcher.build/$(policyeditor): rust-launcher/src/main.rs rust-launcher/Cargo.toml
 	filename=`basename $@` ; \
 	type=$${filename%.*} ; \
 	export ITW_TMP_REPLACEMENT=$(TESTS_DIR)/rust_tests_tmp/$$type ; \
@@ -1056,10 +1056,10 @@ launcher.build/$(javaws) launcher.build/$(itweb_settings) launcher.build/$(polic
 	    export BIN_LOCATION=$(bindir)/$(javaws) ; \
 	    export PROGRAM_NAME=$(javaws) ; \
 	  fi ; \
-	  if [ $$filename = $(itweb_settings) ] ; then \
+	  if [ $$filename = $(icedtea_web_settings) ] ; then \
 	    export MAIN_CLASS=net.sourceforge.jnlp.controlpanel.CommandLine ; \
-	    export BIN_LOCATION=$(bindir)/$(itweb_settings) ; \
-	    export PROGRAM_NAME=$(itweb_settings) ; \
+	    export BIN_LOCATION=$(bindir)/$(icedtea_web_settings) ; \
+	    export PROGRAM_NAME=$(icedtea_web_settings) ; \
 	  fi ; \
 	  if [ $$filename = $(policyeditor) ] ; then \
 	    export MAIN_CLASS=net.sourceforge.jnlp.security.policyeditor.PolicyEditor ; \
@@ -1135,11 +1135,11 @@ launcher.build/$(javaws).sh: shell-launcher/launchers.sh.in
 	PROGRAM_NAME=$(javaws) ;\
 	$(edit_launcher_script) < $< > $@
 
-launcher.build/$(itweb_settings).sh: shell-launcher/launchers.sh.in
+launcher.build/$(icedtea_web_settings).sh: shell-launcher/launchers.sh.in
 	mkdir -p launcher.build
 	MAIN_CLASS=net.sourceforge.jnlp.controlpanel.CommandLine ;\
-	BIN_LOCATION=$(bindir)/$(itweb_settings).sh ;\
-	PROGRAM_NAME=$(itweb_settings) ;\
+	BIN_LOCATION=$(bindir)/$(icedtea_web_settings).sh ;\
+	PROGRAM_NAME=$(icedtea_web_settings) ;\
 	$(edit_launcher_script) < $< > $@
 
 launcher.build/$(policyeditor).sh: shell-launcher/launchers.sh.in
@@ -1159,11 +1159,11 @@ launcher.build/$(javaws).bat: shell-launcher/launchers.bat.in
 	$(edit_launcher_script) $(fix_CRLF) < $< > $@
 
 # TODO get rid of this copypaste
-launcher.build/$(itweb_settings).bat: shell-launcher/launchers.bat.in
+launcher.build/$(icedtea_web_settings).bat: shell-launcher/launchers.bat.in
 	mkdir -p launcher.build
 	MAIN_CLASS=net.sourceforge.jnlp.controlpanel.CommandLine ;\
-	BIN_LOCATION=$(bindir)/$(itweb_settings) ;\
-	PROGRAM_NAME=$(itweb_settings) ;\
+	BIN_LOCATION=$(bindir)/$(icedtea_web_settings) ;\
+	PROGRAM_NAME=$(icedtea_web_settings) ;\
 	$(edit_launcher_script) $(fix_CRLF) < $< > $@
 
 # TODO get rid of this copypaste
@@ -1180,19 +1180,19 @@ clean-launchers:
 	rm -f launcher.build/$(MODULARJDK_ARGS_FILE)
 if ENABLE_NATIVE_LAUNCHERS
 	rm -f launcher.build/$(javaws)
-	rm -f launcher.build/$(itweb_settings)
+	rm -f launcher.build/$(icedtea_web_settings)
 	rm -f launcher.build/$(policyeditor)
 	rm -rf launcher.in*
 	rm -rf $(TESTS_DIR)/rust_tests_tmp
 endif
 if ENABLE_SHELL_LAUNCHERS
 	rm -f launcher.build/$(javaws).sh
-	rm -f launcher.build/$(itweb_settings).sh
+	rm -f launcher.build/$(icedtea_web_settings).sh
 	rm -f launcher.build/$(policyeditor).sh
 endif
 if WINDOWS_OR_INCLUDE_BATS
 	rm -f launcher.build/$(javaws).bat
-	rm -f launcher.build/$(itweb_settings).bat
+	rm -f launcher.build/$(icedtea_web_settings).bat
 	rm -f launcher.build/$(policyeditor).bat
 endif
 	if [ -e launcher.build ] ; then \
@@ -1202,9 +1202,9 @@ endif
 javaws.desktop: javaws.desktop.in
 	sed "s#PATH_TO_JAVAWS#$(bindir)/$(JAVAWS)#" < $(srcdir)/javaws.desktop.in > javaws.desktop
 
-itweb-settings.desktop: $(srcdir)/itweb-settings.desktop.in
-	sed "s#PATH_TO_ITWEB_SETTINGS#$(bindir)/$(ITWEB_SETTINGS)#" \
-	  < $(srcdir)/itweb-settings.desktop.in > itweb-settings.desktop
+icedtea-web-settings.desktop: $(srcdir)/icedtea-web-settings.desktop.in
+	sed "s#PATH_TO_ICEDTEA_WEB_SETTINGS#$(bindir)/$(ICEDTEA_WEB_SETTINGS)#" \
+	  < $(srcdir)/icedtea-web-settings.desktop.in > icedtea-web-settings.desktop
 
 policyeditor.desktop: $(srcdir)/policyeditor.desktop.in
 	sed "s#PATH_TO_POLICYEDITOR#$(bindir)/$(POLICYEDITOR)#" \
@@ -1262,7 +1262,7 @@ clean-generated-docs:
 	rm -f stamps/generate-docs.stamp
 
 clean-icedteaweb-completion:
-	rm -f $(TOP_BUILD_DIR)/completion/itweb-settings.bash
+	rm -f $(TOP_BUILD_DIR)/completion/icedtea-web-settings.bash
 	rm -f $(TOP_BUILD_DIR)/completion/javaws.bash
 	rm -f $(TOP_BUILD_DIR)/completion/policyeditor.bash
 

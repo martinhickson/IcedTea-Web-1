@@ -10,7 +10,7 @@
   <packaging>jar</packaging>
 
   <name>IcedTea-Web AssertJ Swing integration tests</name>
-  <description>Standalone GUI integration tests for itweb-settings (not part of the main reactor)</description>
+  <description>Standalone GUI integration tests for icedtea-web-settings (not part of the main reactor)</description>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>

@@ -161,7 +161,7 @@ jobs:
             Available as platform-native installers and archives for straightforward deployment in desktop and enterprise environments.
 
           * **Desktop administration tools**
-            Registers IcedTea-Web Control Panel and Policy Editor in the application menu on Linux (Freedesktop/KDE/GNOME) and Windows (Start Menu), with themed icons for discoverable configuration and policy editing.
+            Registers icedtea-web-settings (Control Panel) and policyeditor in the application menu on Linux (Freedesktop/KDE/GNOME) and Windows (Start Menu), with themed icons for discoverable configuration and policy editing.
 
           * **Application runtime visibility**
             The control panel Running Apps tab presents live heap and resident memory utilization inline for each active JNLP session, refreshing automatically when the tab is opened and immediately after heap trim actions so administrators can observe memory reclamation without auxiliary dialogs.
@@ -387,6 +387,23 @@ jobs:
             "-Ditw.corretto.url=${{ matrix.corretto-url }}"
           )
           & mvn @mvnArgs
+        shell: pwsh
+
+      - name: Verify distribution launchers
+        run: |
+          $dist = Get-ChildItem "icedtea-web-distribution/target/dist" -Directory | Select-Object -First 1
+          if ($null -eq $dist) {
+            throw "Distribution directory not found"
+          }
+          $suffix = if ($env:OS -eq 'Windows_NT') { '.exe' } else { '' }
+          $required = @('javaws', 'javawsc', 'icedtea-web-settings', 'policyeditor')
+          foreach ($name in $required) {
+            $path = Join-Path $dist.FullName ("bin\" + $name + $suffix)
+            if (-not (Test-Path -LiteralPath $path)) {
+              throw "Missing distribution launcher: $path"
+            }
+          }
+          Write-Host "Verified distribution launchers: $($required -join ', ')"
         shell: pwsh
 
       - name: Build signed headless JNLP app

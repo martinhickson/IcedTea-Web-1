@@ -528,8 +528,8 @@ internal static class Program
             return configuredMain;
         }
 
-        if (launcherName.Equals("itweb-settings", StringComparison.OrdinalIgnoreCase)
-            || launcherName.Equals("itweb_settings", StringComparison.OrdinalIgnoreCase))
+        if (launcherName.Equals("icedtea-web-settings", StringComparison.OrdinalIgnoreCase)
+            || launcherName.Equals("icedtea_web_settings", StringComparison.OrdinalIgnoreCase))
         {
             return SettingsMainClass;
         }

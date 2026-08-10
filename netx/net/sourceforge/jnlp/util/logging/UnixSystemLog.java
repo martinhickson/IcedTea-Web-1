@@ -50,7 +50,7 @@ public class UnixSystemLog implements SingleStreamLogger{
     
     @Override
     public void log(String message) {
-        final String s = "IcedTea-Web java error - for more info see itweb-settings debug options or console. See " + TextsProvider.ITW_BUGS + " for help.\nIcedTea-Web java error manual log: \n" + message;
+        final String s = "IcedTea-Web java error - for more info see icedtea-web-settings debug options or console. See " + TextsProvider.ITW_BUGS + " for help.\nIcedTea-Web java error manual log: \n" + message;
         try {
             String[] ss = s.split("\\n"); //exceptions have many lines
             for (String m : ss) {

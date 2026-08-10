@@ -6,10 +6,10 @@
 |--------|-----------|------|
 | `javaws.exe` | WinExe (GUI) | Explorer double-click, JNLP, desktop — no console flash |
 | `javawsc.exe` | Exe (console) | cmd/bash CLI — `-version`, `-help`, scripts; **cmd waits** on this binary |
-| `itweb-settings.exe` | WinExe (GUI) | Copy of `javaws.exe`; `CommandLine` / `ControlPanel` main class (chosen from binary name) |
+| `icedtea-web-settings.exe` | WinExe (GUI) | Copy of `javaws.exe`; `CommandLine` / `ControlPanel` main class (chosen from binary name) |
 | `policyeditor.exe` | WinExe (GUI) | Copy of `javaws.exe`; `PolicyEditor` main class (chosen from binary name) |
 
-Pattern mirrors `java.exe` / `javaw.exe`: GUI vs console entry points. `itweb-settings` and `policyeditor` are not separate builds — Maven and `publish-dotnet-launchers.ps1` copy `javaws` to each alias.
+Pattern mirrors `java.exe` / `javaw.exe`: GUI vs console entry points. `icedtea-web-settings` and `policyeditor` are not separate builds — Maven and `publish-dotnet-launchers.ps1` copy `javaws` to each alias.
 
 ## javaws.exe (GUI)
 
@@ -51,7 +51,7 @@ Local dev shortcut (Windows): `scripts/publish-dotnet-launchers.ps1`
 | Platform | Asset | Where it lands |
 |----------|-------|----------------|
 | Windows | `win-installer/icon.ico` embedded in PE | `ApplicationIcon` in `Directory.Build.props` (win RID only) + local publish script |
-| Linux | `.packaging/workflows/icons/icedtea-web.png` | `share/pixmaps/` in dist (`javaws`, `itweb-settings`, `policyeditor`); DEB/RPM install `/usr/share/pixmaps/` + `Icon=` in `.desktop` files |
+| Linux | `.packaging/workflows/icons/icedtea-web.png` | `share/pixmaps/` in dist (`javaws`, `icedtea-web-settings`, `policyeditor`); DEB/RPM install `/usr/share/pixmaps/` + `Icon=` in `.desktop` files |
 | macOS | `.packaging/workflows/icons/*.png` → `icedtea-web.icns` via `prepare-macos-icon.sh` | `.app` `Resources/icedtea-web.icns` + `CFBundleIconFile` in DMG build |
 
 `javawsc` is published on all platforms (merged into `dotnet-publish` before assembly). Linux packages symlink `/usr/bin/javawsc`; macOS DMG includes `bin/javawsc` and a `MacOS/javawsc` wrapper script. Legacy repo-root `javaws.ico` / `javaws.png` (Duke mascot) is not used.

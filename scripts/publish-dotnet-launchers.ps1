@@ -28,7 +28,7 @@ function Clear-LauncherSharedBuild {
 }
 
 function Stop-LauncherProcesses {
-    Get-Process -Name "javaws", "javawsc", "itweb-settings", "policyeditor" -ErrorAction SilentlyContinue |
+    Get-Process -Name "javaws", "javawsc", "icedtea-web-settings", "policyeditor" -ErrorAction SilentlyContinue |
         Stop-Process -Force -ErrorAction SilentlyContinue
     Start-Sleep -Milliseconds 500
 }
@@ -43,7 +43,7 @@ function Sync-PublishedTree {
     }
     New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
     # Copy launchers first so a locked runtime DLL cannot leave stale exes behind.
-    foreach ($name in @("javaws.exe", "javawsc.exe", "itweb-settings.exe", "policyeditor.exe")) {
+    foreach ($name in @("javaws.exe", "javawsc.exe", "icedtea-web-settings.exe", "policyeditor.exe")) {
         $src = Join-Path $SourceDir $name
         if (Test-Path $src) {
             Copy-Item -Path $src -Destination (Join-Path $TargetDir $name) -Force
@@ -60,8 +60,8 @@ Clear-LauncherSharedBuild
 
 Copy-Item -Path (Join-Path $consolePublish "javawsc*") -Destination $guiPublish -Force
 
-# Maven copies javaws -> itweb-settings (same launcher; main class chosen from binary name).
-Copy-Item -Path (Join-Path $guiPublish "javaws.exe") -Destination (Join-Path $guiPublish "itweb-settings.exe") -Force
+# Maven copies javaws -> icedtea-web-settings (same launcher; main class chosen from binary name).
+Copy-Item -Path (Join-Path $guiPublish "javaws.exe") -Destination (Join-Path $guiPublish "icedtea-web-settings.exe") -Force
 Copy-Item -Path (Join-Path $guiPublish "javaws.exe") -Destination (Join-Path $guiPublish "policyeditor.exe") -Force
 
 Stop-LauncherProcesses
@@ -82,5 +82,5 @@ if (Test-Path $testRunBin) {
 Write-Host "  javaws:  $($publishedJavaws.Length) bytes, $($publishedJavaws.LastWriteTime)"
 Get-ChildItem $binDir -Filter "javaws.exe"
 Get-ChildItem $binDir -Filter "javawsc.exe"
-Get-ChildItem $binDir -Filter "itweb-settings.exe"
+Get-ChildItem $binDir -Filter "icedtea-web-settings.exe"
 Get-ChildItem $binDir -Filter "policyeditor.exe"

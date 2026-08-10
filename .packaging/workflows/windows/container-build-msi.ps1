@@ -44,7 +44,7 @@ if ($SafeVersion -notmatch "^\d+\.\d+\.\d+(\.\d+)?$") {
     $SafeVersion = "1.0.1.0"
 }
 
-foreach ($required in @("javaws.exe", "javawsc.exe", "itweb-settings.exe", "policyeditor.exe")) {
+foreach ($required in @("javaws.exe", "javawsc.exe", "icedtea-web-settings.exe", "policyeditor.exe")) {
     if (-not (Test-Path (Join-Path $DistDir "bin\$required") -PathType Leaf)) {
         throw "Distribution does not contain bin\$required`: $DistDir"
     }
@@ -68,7 +68,7 @@ function Test-RequireSignedDistributionLaunchers {
 
 if (Test-RequireSignedDistributionLaunchers) {
     $unsigned = @()
-    foreach ($required in @("javaws.exe", "javawsc.exe", "itweb-settings.exe", "policyeditor.exe")) {
+    foreach ($required in @("javaws.exe", "javawsc.exe", "icedtea-web-settings.exe", "policyeditor.exe")) {
         $launcherPath = Join-Path $DistDir "bin\$required"
         $signature = Get-AuthenticodeSignature -LiteralPath $launcherPath
         if ($signature.Status -ne 'Valid') {
@@ -183,7 +183,7 @@ foreach ($file in $files) {
     if ($normalizedRelativeFile -ieq "bin\javaws.exe") {
         [void]$componentsXml.AppendLine("      <Shortcut Id=`"JavawsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Java Web Start`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")
     }
-    if ($normalizedRelativeFile -ieq "bin\itweb-settings.exe") {
+    if ($normalizedRelativeFile -ieq "bin\icedtea-web-settings.exe") {
         [void]$componentsXml.AppendLine("      <Shortcut Id=`"SettingsStartMenuShortcut`" Directory=`"ProgramMenuFolder`" Name=`"IcedTea-Web Control Panel`" Target=`"[#$fileId]`" WorkingDirectory=`"INSTALLFOLDER`" Icon=`"$launcherIconId`" IconIndex=`"0`" />")
     }
     if ($normalizedRelativeFile -ieq "bin\policyeditor.exe") {

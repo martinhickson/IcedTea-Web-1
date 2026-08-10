@@ -59,16 +59,16 @@ create_payload_root() {
   rm -rf "$payload_root"
   mkdir -p "$payload_root$INSTALL_ROOT" "$payload_root/usr/bin" "$payload_root/usr/share/applications" "$payload_root/usr/share/pixmaps"
   cp -a "$DIST_DIR/." "$payload_root$INSTALL_ROOT/"
-  chmod +x "$payload_root$INSTALL_ROOT/bin/javaws" "$payload_root$INSTALL_ROOT/bin/javawsc" "$payload_root$INSTALL_ROOT/bin/itweb-settings" "$payload_root$INSTALL_ROOT/bin/policyeditor"
+  chmod +x "$payload_root$INSTALL_ROOT/bin/javaws" "$payload_root$INSTALL_ROOT/bin/javawsc" "$payload_root$INSTALL_ROOT/bin/icedtea-web-settings" "$payload_root$INSTALL_ROOT/bin/policyeditor"
   ln -s "$INSTALL_ROOT/bin/javaws" "$payload_root/usr/bin/javaws"
   ln -s "$INSTALL_ROOT/bin/javawsc" "$payload_root/usr/bin/javawsc"
-  ln -s "$INSTALL_ROOT/bin/itweb-settings" "$payload_root/usr/bin/itweb-settings"
+  ln -s "$INSTALL_ROOT/bin/icedtea-web-settings" "$payload_root/usr/bin/icedtea-web-settings"
   ln -s "$INSTALL_ROOT/bin/policyeditor" "$payload_root/usr/bin/policyeditor"
   cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/javaws.png"
-  cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/itweb-settings.png"
+  cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/icedtea-web-settings.png"
   cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/policyeditor.png"
   install_hicolor_icons "$payload_root" javaws
-  install_hicolor_icons "$payload_root" itweb-settings
+  install_hicolor_icons "$payload_root" icedtea-web-settings
   install_hicolor_icons "$payload_root" policyeditor
 
   cat > "$payload_root/usr/share/applications/icedtea-web-javaws.desktop" <<EOF
@@ -96,9 +96,9 @@ Comment=Configure IcedTea-Web (javaws and plugin)
 Comment[de]=Konfiguriert IcedTea-Web (javaws und Plug-in)
 Comment[pl]=Konfiguruj IcedTea-Web (javaws i wtyczkę)
 Comment[cs]=Konfigurace aplikace IcedTea-Web (javaws a zásuvný modul)
-Exec=$INSTALL_ROOT/bin/itweb-settings
-TryExec=$INSTALL_ROOT/bin/itweb-settings
-Icon=itweb-settings
+Exec=$INSTALL_ROOT/bin/icedtea-web-settings
+TryExec=$INSTALL_ROOT/bin/icedtea-web-settings
+Icon=icedtea-web-settings
 Terminal=false
 Categories=Settings;Utility;
 Keywords=IcedTea;IcedTea-Web;java;javaws;web;start;webstart;jnlp;settings;control panel;
@@ -200,13 +200,13 @@ cp -a . %{buildroot}/
 $INSTALL_ROOT
 /usr/bin/javaws
 /usr/bin/javawsc
-/usr/bin/itweb-settings
+/usr/bin/icedtea-web-settings
 /usr/bin/policyeditor
 /usr/share/applications/icedtea-web-javaws.desktop
 /usr/share/applications/icedtea-web-settings.desktop
 /usr/share/applications/icedtea-web-policyeditor.desktop
 /usr/share/pixmaps/javaws.png
-/usr/share/pixmaps/itweb-settings.png
+/usr/share/pixmaps/icedtea-web-settings.png
 /usr/share/pixmaps/policyeditor.png
 /usr/share/icons/hicolor
 EOF

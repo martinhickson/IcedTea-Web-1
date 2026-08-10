@@ -200,7 +200,7 @@ public final class JnlpRunningProcessSupport {
             return appTitle == null || appTitle.trim().isEmpty();
         }
         String lower = commandLine.toLowerCase(Locale.ROOT);
-        return lower.contains("icedtea-web.bin.name=itweb-settings")
+        return lower.contains("icedtea-web.bin.name=icedtea-web-settings")
                 || lower.contains("icedtea-web.bin.name=policyeditor")
                 || (lower.contains("icedtea-web-uber")
                 && !lower.contains(".jnlp")
@@ -707,8 +707,8 @@ public final class JnlpRunningProcessSupport {
         return lower.contains("controlpanel.commandline")
                 || lower.contains("controlpanel.controlpanel")
                 || lower.contains("policyeditor.policyeditor")
-                || lower.contains("itweb-settings")
-                || lower.contains("icedtea-web.bin.name=itweb-settings")
+                || lower.contains("icedtea-web-settings")
+                || lower.contains("icedtea-web.bin.name=icedtea-web-settings")
                 || lower.contains("icedtea-web.bin.name=policyeditor");
     }
 }

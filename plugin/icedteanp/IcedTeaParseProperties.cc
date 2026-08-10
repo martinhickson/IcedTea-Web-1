@@ -256,7 +256,7 @@ bool find_property(string filename, string property, string& dest){
 	}
 
 
-/* this is reimplementation of itw-settings operations
+/* this is reimplementation of icedtea-web-settings operations
    first check in user's settings, if found, return
    then check in global file (see the magic of find_system_config_file)*/
 bool  read_deploy_property_value(string property, string& dest){

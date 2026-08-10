@@ -9,7 +9,7 @@
 ​    <library>netx.jar</library>
 ​    <library>plugin.jar</library>
 ​    <binary>javaws</binary>
-​    <binary>itweb-settings</binary>
+​    <binary>icedtea-web-settings</binary>
 ​    <binary>policyeditor</binary>
 ​  </provides>
 -->
@@ -21,7 +21,7 @@ Originally based on NetX,but now bringing many improvements compared to propriet
 </p><p>
 Powerful debug console, internal appletviewer, safe run-in-sandbox option, extendable "remember me" options and custom policy editor.
 </p><p>
-It have also  possibility to turn all security off and just enjoy legacy web (on your own risk). All via simple itweb-settings gui.
+It have also  possibility to turn all security off and just enjoy legacy web (on your own risk). All via simple icedtea-web-settings gui.
 </p>
    </description>
   <url type="homepage">http://icedtea.classpath.org/wiki/IcedTea-Web</url>

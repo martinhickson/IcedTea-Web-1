@@ -338,7 +338,7 @@ public class XDesktopEntry implements GenericDesktopEntry {
      * Install this XDesktopEntry into the user's menu.
      */
     private void installMenuLauncher(AccessWarningPaneComplexReturn.ShortcutResult info, boolean isSigned) {
-        //TODO add itweb-settings tab which alows to remove inidividual items/icons
+        //TODO add icedtea-web-settings tab which alows to remove inidividual items/icons
         try {
             File f = getLinuxMenuIconFile();
             try (OutputStreamWriter writer = new OutputStreamWriter(new FileOutputStream(f),

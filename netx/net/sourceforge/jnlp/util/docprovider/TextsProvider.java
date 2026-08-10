@@ -241,7 +241,7 @@ public abstract class TextsProvider {
     public static final String ITW_REPO = "http://icedtea.classpath.org/hg/icedtea-web";
 
     public static final String JAVAWS = "javaws";
-    public static final String ITWEB_SETTINGS = "itweb-settings";
+    public static final String ITWEB_SETTINGS = "icedtea-web-settings";
     public static final String ITW = "icedtea-web";
     public static final String ITW_PLUGIN = "icedtea-web-plugin";
     public static final String POLICY_EDITOR = "policyeditor";

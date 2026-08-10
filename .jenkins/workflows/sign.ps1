@@ -123,7 +123,7 @@ function Get-IcedTeaWebSignableExes {
     $launcherNames = @(
         'javaws.exe',
         'javawsc.exe',
-        'itweb-settings.exe',
+        'icedtea-web-settings.exe',
         'policyeditor.exe'
     )
 
@@ -154,7 +154,7 @@ function Get-IcedTeaWebLauncherNames {
     return @(
         'javaws.exe',
         'javawsc.exe',
-        'itweb-settings.exe',
+        'icedtea-web-settings.exe',
         'policyeditor.exe'
     )
 }

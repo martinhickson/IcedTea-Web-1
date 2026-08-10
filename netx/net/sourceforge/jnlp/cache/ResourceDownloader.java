@@ -50,13 +50,12 @@ public class ResourceDownloader implements Runnable {
     private static final long[] RETRY_DELAYS = {2000L, 3000L, 5000L, 8000L};
     private static final int RETRY_COUNT = 5;
     /**
-     * Do not advertise {@code gzip}: setting Accept-Encoding disables
-     * {@link URLConnection}'s transparent decompress, and WildFly then returns
-     * gzip jar bodies. Those fail {@link CacheUtil#isValidJarFile} when written
-     * into a versioned {@code .jar} cache slot (before {@code uncompressGzip}),
-     * causing redownload loops. Keep pack200-gzip for packed resources only.
+     * Advertise both pack200-gzip and gzip content-encodings for HTTP content
+     * negotiation. gzip is accepted so that servers may return compressed jar
+     * bodies; the {@code uncompressGzip} cache path handles decompression
+     * before jar validation.
      */
-    private static final String ACCEPT_ENCODING = "pack200-gzip";
+    private static final String ACCEPT_ENCODING = "pack200-gzip, gzip";
     private static final Set<String> LOGGED_MISSING_FAVICONS = new HashSet<>();
     private final Resource resource;
     private final Object lock;

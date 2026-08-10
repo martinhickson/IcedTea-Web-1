@@ -15,7 +15,7 @@ usage() {
   cat <<EOF
 Usage: $(basename "$0") [OPTIONS]
 
-Open itweb-settings interactively using an isolated config under:
+Open icedtea-web-settings interactively using an isolated config under:
   $ITW_TEST_HOME
 
 Seeds JDK assignments with file:// URLs for runnable itw-assertj-it sample apps
