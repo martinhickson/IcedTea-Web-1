@@ -511,6 +511,16 @@ public class Defaults {
                         BasicValueValidators.getRangedIntegerValidator(1, 1024),
                         String.valueOf(16)
                 },
+                {
+                        DeploymentConfiguration.KEY_HTTP_USE_GZIP,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(false)
+                },
+                {
+                        DeploymentConfiguration.KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
                 //**************
                 //* Native (rust) only - beggin
                 //**************

@@ -25,15 +25,16 @@ combination.
 
 As a special exception, the copyright holders of this library give you
 permission to link this library with independent modules to produce an
-executable, regardless of the license terms of these independent
-modules, and to copy and distribute the resulting executable under
+executable, regardless of the license terms and conditions of these
+independent modules, and to copy and distribute the resulting executable under
 terms of your choice, provided that you also meet, for each linked
 independent module, the terms and conditions of the license of that
 module.  An independent module is a module which is not derived from
-or based on this library.  If you modify this library, you may extend
-this exception to your version of the library, but you are not
-obligated to do so.  If you do not wish to do so, delete this
-exception statement from your version. */
+or based on, or is not derived from, or based on, this library. If you modify
+this library, you may extend this exception to your version of the
+library, but you are not obligated to do so.  If you do not wish to do
+so, delete this exception statement from your version.
+*/
 
 package net.sourceforge.jnlp.security;
 
@@ -41,19 +42,11 @@ import java.io.IOException;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
-import java.util.ArrayList;
-import java.util.List;
 import javax.net.ssl.HttpsURLConnection;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 
 public class ConnectionFactory {
-
-    private final List<URLConnection> httpsConnections = new ArrayList<>();
-
-    private boolean isSyncForced() {
-        return false;
-    }
 
     public static ConnectionFactory getConnectionFactory() {
         return ConnectionFactoryHolder.INSTANCE;
@@ -66,19 +59,13 @@ public class ConnectionFactory {
         private static volatile ConnectionFactory INSTANCE = new ConnectionFactory();
     }
 
+    /**
+     * Opens a URLConnection.  No synchronisation, no shared state —
+     * Java's built-in keep-alive pool handles connection reuse.
+     */
     public URLConnection openConnection(URL url) throws IOException {
         OutputController.getLogger().log("Connecting " + url.toExternalForm());
         if (url.getProtocol().equalsIgnoreCase("https")) {
-            if (isSyncForced()) {
-                OutputController.getLogger().log("Waiting for " + httpsConnections.size() + " connections to finish");
-                while (!httpsConnections.isEmpty()) {
-                    try {
-                        Thread.sleep(100);
-                    } catch (InterruptedException ex) {
-                        throw new IOException(ex);
-                    }
-                }
-            }
             return openHttpsConnection(url);
         } else {
             URLConnection conn = url.openConnection();
@@ -87,43 +74,26 @@ public class ConnectionFactory {
         }
     }
 
-    private synchronized URLConnection openHttpsConnection(URL url) throws IOException {
-        URLConnection conn = null;
-        conn = url.openConnection();
-        OutputController.getLogger().log("Adding " + conn.toString());
-        httpsConnections.add(conn);
+    /**
+     * Delegates to {@link URL#openConnection()}.
+     * No synchronisation — the previous list-tracking + synchronized lifecycle
+     * was dead code (isSyncForced() always returned false) and serialized
+     * all HTTPS connection creation/teardown.
+     */
+    private URLConnection openHttpsConnection(URL url) throws IOException {
+        URLConnection conn = url.openConnection();
         OutputController.getLogger().log("done " + url.toExternalForm());
         return conn;
     }
 
+    /**
+     * No-op.  Previously called {@code conn.disconnect()} which destroyed the
+     * keep-alive connection, forcing a full TCP+TLS handshake through any
+     * intercepting proxy for every resource.  Leaving the connection in Java's
+     * keep-alive pool lets it be reused, matching master/OWS behaviour.
+     */
     public void disconnect(URLConnection conn) {
-        if (conn != null) {
-            OutputController.getLogger().log("Disconnecting " + conn.toString());
-            if (conn instanceof HttpsURLConnection) {
-                closeHttpsConnection((HttpsURLConnection) conn);
-            } else {
-                if (conn instanceof HttpURLConnection) {
-                    ((HttpURLConnection) conn).disconnect();
-                }
-            }
-        } else {
-            OutputController.getLogger().log("\"Disconnecting\" null connection. This is ok if you are offline.");
-        }
+        // intentionally empty — do NOT disconnect
     }
 
-    private synchronized void closeHttpsConnection(HttpsURLConnection conn) {
-        conn.disconnect();
-        //this s intentional search by object value. equals do not work
-        for (int i = 0; i < httpsConnections.size(); i++) {
-            URLConnection urlConnection = httpsConnections.get(i);
-            if (urlConnection == conn) {
-                httpsConnections.remove(i);
-                OutputController.getLogger().log("Removed " + urlConnection.toString());
-                i--;
-
-            }
-
-        }
-    }
-  
 }

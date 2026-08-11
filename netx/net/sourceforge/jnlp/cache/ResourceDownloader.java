@@ -37,6 +37,7 @@ import net.sourceforge.jnlp.OptionsDefinitions;
 import net.sourceforge.jnlp.Version;
 import net.sourceforge.jnlp.runtime.Boot;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.security.ConnectionFactory;
 import net.sourceforge.jnlp.security.SecurityDialogs;
 import net.sourceforge.jnlp.security.dialogs.InetSecurity511Panel;
@@ -50,12 +51,17 @@ public class ResourceDownloader implements Runnable {
     private static final long[] RETRY_DELAYS = {2000L, 3000L, 5000L, 8000L};
     private static final int RETRY_COUNT = 5;
     /**
-     * Advertise both pack200-gzip and gzip content-encodings for HTTP content
-     * negotiation. gzip is accepted so that servers may return compressed jar
-     * bodies; the {@code uncompressGzip} cache path handles decompression
-     * before jar validation.
+     * Advertise pack200-gzip content-encoding for HTTP content negotiation.
+     * gzip is only added when {@code deployment.http.useGZip} is true (default false).
      */
-    private static final String ACCEPT_ENCODING = "pack200-gzip, gzip";
+    private static final String PACK200_GZIP_ENCODING = "pack200-gzip";
+
+    private static String getAcceptEncoding() {
+        if (Boolean.valueOf(JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_HTTP_USE_GZIP))) {
+            return PACK200_GZIP_ENCODING + ", gzip";
+        }
+        return PACK200_GZIP_ENCODING;
+    }
     private static final Set<String> LOGGED_MISSING_FAVICONS = new HashSet<>();
     private final Resource resource;
     private final Object lock;
@@ -168,6 +174,16 @@ public class ResourceDownloader implements Runnable {
         return version >= 14;
     }
 
+    /**
+     * Whether to skip the HEAD cache-validation probe when a resource is not
+     * in cache.  Controlled by {@code deployment.http.skipHeadIfNotCached}
+     * (default true).
+     */
+    private static boolean isSkipHeadIfNotCached() {
+        return Boolean.valueOf(JNLPRuntime.getConfiguration().getProperty(
+                DeploymentConfiguration.KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED));
+    }
+
     static int getUrlResponseCode(URL url, Map<String, String> requestProperties, ResourceTracker.RequestMethods requestMethod) throws IOException {
         return getUrlResponseCodeWithRedirectonResult(url, requestProperties, requestMethod).result;
     }
@@ -270,8 +286,25 @@ public class ResourceDownloader implements Runnable {
         entry.lock();
         try {
             resource.setDownloadLocation(location.URL);
+
+            // When the resource is not in cache and skipHeadIfNotCached is enabled
+            // (default), bypass the HEAD cache-validation probe. The server round-trip
+            // through an intercepting proxy is expensive; if there is nothing to
+            // validate we can go straight to the download phase.
+            if (isSkipHeadIfNotCached() && !entry.isCached()) {
+                resource.setSize(location.length != null ? location.length : -1);
+                synchronized (resource) {
+                    resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(PREDOWNLOAD));
+                }
+                synchronized (lock) {
+                    lock.notifyAll(); // wake up wait's to check for completion
+                }
+                resource.fireDownloadEvent(); // fire CONNECTED
+                return;
+            }
+
             URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(location.URL); // this won't change so should be okay not-synchronized
-            connection.addRequestProperty("Accept-Encoding", ACCEPT_ENCODING);
+            connection.addRequestProperty("Accept-Encoding", getAcceptEncoding());
 
             File localFile = null;
             if (resource.getRequestVersion() == resource.getDownloadVersion()) {
@@ -444,7 +477,7 @@ public class ResourceDownloader implements Runnable {
                 URL url = urls.get(i);
                 try {
                     Map<String, String> requestProperties = new HashMap<>();
-                    requestProperties.put("Accept-Encoding", ACCEPT_ENCODING);
+                    requestProperties.put("Accept-Encoding", getAcceptEncoding());
 
                     UrlRequestResult response = getUrlResponseCodeWithRedirectonResult(url, requestProperties, requestMethod);
                     if (response.result == 511) {
@@ -541,7 +574,7 @@ public class ResourceDownloader implements Runnable {
 
     private URLConnection getDownloadConnection(URL location) throws IOException {
         URLConnection con = ConnectionFactory.getConnectionFactory().openConnection(location);
-        con.addRequestProperty("Accept-Encoding", ACCEPT_ENCODING);
+        con.addRequestProperty("Accept-Encoding", getAcceptEncoding());
         con.connect();
         return con;
     }

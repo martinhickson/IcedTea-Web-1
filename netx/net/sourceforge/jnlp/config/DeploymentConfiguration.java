@@ -333,6 +333,11 @@ public final class DeploymentConfiguration {
     public static final String KEY_BACKGROUND_THREADS_COUNT = "deployment.background.threads.count";
     public static final String KEY_MAX_URLS_DOWNLOAD_INDICATOR = "deployment.max.urls.download.indicator";
 
+    /** Boolean. If true, "gzip" is added to Accept-Encoding so servers may return compressed jar bodies. */
+    public static final String KEY_HTTP_USE_GZIP = "deployment.http.useGZip";
+    /** Boolean. If true, skip the HEAD cache-validation request when the resource is not in cache. */
+    public static final String KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED = "deployment.http.skipHeadIfNotCached";
+
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     
     private ConfigurationException loadingException = null;
