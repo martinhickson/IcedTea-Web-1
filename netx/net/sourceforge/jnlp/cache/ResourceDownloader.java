@@ -216,6 +216,12 @@ public class ResourceDownloader implements Runnable {
     static UrlRequestResult getUrlResponseCodeWithRedirectonResult(URL url, Map<String, String> requestProperties, ResourceTracker.RequestMethods requestMethod) throws IOException {
         UrlRequestResult result = new UrlRequestResult();
         URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(url);
+        // Prevent intermediary caches (corporate proxies, CDNs) from serving
+        // stale responses. setUseCaches(false) causes the JVM to send
+        // "Cache-Control: no-cache" and "Pragma: no-cache" headers, matching
+        // OWS behaviour. Without this, cached 304/200 responses can cause
+        // phantom resource existence or stale jar downloads.
+        connection.setUseCaches(false);
 
         for (Map.Entry<String, String> property : requestProperties.entrySet()) {
             connection.addRequestProperty(property.getKey(), property.getValue());
@@ -344,7 +350,8 @@ public class ResourceDownloader implements Runnable {
                 return;
             }
 
-            URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(location.URL); // this won't change so should be okay not-synchronized
+            URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(location.URL);
+            connection.setUseCaches(false);
             connection.addRequestProperty("Accept-Encoding", getAcceptEncoding());
 
             File localFile = null;
@@ -647,6 +654,7 @@ public class ResourceDownloader implements Runnable {
 
     private URLConnection getDownloadConnection(URL location) throws IOException {
         URLConnection con = ConnectionFactory.getConnectionFactory().openConnection(location);
+        con.setUseCaches(false);
         con.addRequestProperty("Accept-Encoding", getAcceptEncoding());
         con.connect();
         return con;
