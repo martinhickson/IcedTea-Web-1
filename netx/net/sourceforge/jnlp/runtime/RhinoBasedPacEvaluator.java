@@ -76,7 +76,7 @@ public class RhinoBasedPacEvaluator implements PacEvaluator {
      * @param pacUrl the url of the PAC file to use
      */
     public RhinoBasedPacEvaluator(URL pacUrl) {
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Using the Rhino based PAC evaluator for url " + pacUrl);
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Using the Rhino based PAC evaluator for url " + pacUrl);
         pacHelperFunctionContents = getHelperFunctionContents();
         this.pacUrl = pacUrl;
         pacContents = getPacContents(pacUrl);

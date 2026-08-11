@@ -422,6 +422,24 @@ public class Defaults {
                         BasicValueValidators.getRangedIntegerValidator(0, 10000),
                         String.valueOf(500)
                 },
+                /* HTTP connect timeout (ms) — bounds the stall on a non-responding server/DPI */
+                {
+                        DeploymentConfiguration.KEY_HTTPCONNECTION_CONNECT_TIMEOUT,
+                        BasicValueValidators.getRangedIntegerValidator(0, 300000),
+                        String.valueOf(30000)
+                },
+                /* HTTP read timeout (ms) — bounds the stall mid-transfer */
+                {
+                        DeploymentConfiguration.KEY_HTTPCONNECTION_READ_TIMEOUT,
+                        BasicValueValidators.getRangedIntegerValidator(0, 300000),
+                        String.valueOf(30000)
+                },
+                /* TLS cipher suite preference (CSV; empty = AES-NI auto-detect) */
+                {
+                        DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_SUITES,
+                        null,
+                        null
+                },
                 {
                         DeploymentConfiguration.IGNORE_HEADLESS_CHECK,
                         BasicValueValidators.getBooleanValidator(),

@@ -262,7 +262,7 @@ public class JNLPFile {
                          ((int)(Math.random()*Integer.MAX_VALUE)) + "-" +
                          location;
 
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "UNIQUEKEY=" + this.uniqueKey);
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "UNIQUEKEY=" + this.uniqueKey);
     }
 
     /**
@@ -281,7 +281,7 @@ public class JNLPFile {
         this(location, version, settings, policy);
         this.uniqueKey = uniqueKey;
 
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "UNIQUEKEY (override) =" + this.uniqueKey);
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "UNIQUEKEY (override) =" + this.uniqueKey);
     }
 
     /**
@@ -1125,7 +1125,7 @@ public class JNLPFile {
          */
         public String getMainClass(){
             if (loader == null) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Jars not ready to provide main class");
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Jars not ready to provide main class");
                 return null;
             }
             return loader.getMainClass();
@@ -1243,7 +1243,7 @@ public class JNLPFile {
          */
         public String getAttribute(Attributes.Name name) {
             if (loader == null) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Jars not ready to provide attribute " + name);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Jars not ready to provide attribute " + name);
                 return null;
             }
             return loader.checkForAttributeInJars(Arrays.asList(getResources().getJARs()), name);

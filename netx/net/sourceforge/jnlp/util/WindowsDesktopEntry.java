@@ -78,7 +78,7 @@ public class WindowsDesktopEntry implements GenericDesktopEntry {
             pathSuffix = file.getInformation().getShortcut().getMenu().getSubMenu();
         }
         catch (NullPointerException npe) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, npe);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, npe);
             pathSuffix = null;
         }        
         if (pathSuffix == null) {
@@ -131,7 +131,7 @@ public class WindowsDesktopEntry implements GenericDesktopEntry {
                 }
             }
             if (fAdd) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Adding sCut to list = " + sItem);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Adding sCut to list = " + sItem);
                 String scInfo = file.getFileLocation().toString() + ",";
                 scInfo += path + "\r\n";
                 Files.write(CacheLRUWrapper.getInstance().getWindowsShortcutList().toPath(), scInfo.getBytes(), StandardOpenOption.APPEND);

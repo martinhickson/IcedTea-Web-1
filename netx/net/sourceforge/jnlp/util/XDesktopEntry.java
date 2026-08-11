@@ -391,7 +391,7 @@ public class XDesktopEntry implements GenericDesktopEntry {
 
             String[] execString = new String[] { "xdg-desktop-icon", "install", "--novendor",
                     shortcutFile.getCanonicalPath() };
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Execing: " + Arrays.toString(execString));
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Execing: " + Arrays.toString(execString));
             ProcessBuilder pb = new ProcessBuilder(execString);
             pb.inheritIO();
             Process installer = pb.start();
@@ -499,7 +499,7 @@ public class XDesktopEntry implements GenericDesktopEntry {
                 Files.copy(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
             }
             this.iconLocation = target.getAbsolutePath();
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Cached desktop shortcut icon: " + target + " ,  With source from: " + origLocation);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Cached desktop shortcut icon: " + target + " ,  With source from: " + origLocation);
         }
     }
     
@@ -653,7 +653,7 @@ public class XDesktopEntry implements GenericDesktopEntry {
                 addFileDirectoryRoot(roots, jar.getLocation());
             }
         } catch (Exception ex) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, ex);
         }
         try {
             InformationDesc info = file.getInformation();
@@ -665,7 +665,7 @@ public class XDesktopEntry implements GenericDesktopEntry {
                 }
             }
         } catch (Exception ex) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, ex);
         }
 
         String start = directoryPathOfUrl(file.getNotNullProbalbeCodeBase());
@@ -818,7 +818,7 @@ public class XDesktopEntry implements GenericDesktopEntry {
             }
         } catch (Exception ex) {
             if (JNLPRuntime.isDebug()) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, ex);
             }
         }
         return null;

@@ -542,7 +542,7 @@ public final class FileUtils {
      *         outside the base
      */
     public static void recursiveDelete(File file, File base) throws IOException {
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Deleting: " + file);
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Deleting: " + file);
 
         if (!(file.getCanonicalPath().startsWith(base.getCanonicalPath()))) {
             throw new IOException("Trying to delete a file outside Netx's basedir: "

@@ -285,6 +285,10 @@ public final class DeploymentConfiguration {
     public static final String LEGACY_WIN32_URL__HANDLER="rundll32 url.dll,FileProtocolHandler ";
     
     public static final String KEY_UPDATE_TIMEOUT = "deployment.javaws.update.timeout";
+    public static final String KEY_HTTPCONNECTION_CONNECT_TIMEOUT = "deployment.http.connection.connectTimeout";
+    public static final String KEY_HTTPCONNECTION_READ_TIMEOUT = "deployment.http.connection.readTimeout";
+    public static final String KEY_TLS_CLIENT_CIPHER_SUITES = "deployment.tls.client.cipherSuites";
+    public static final String KEY_ITW_DOWNLOAD_JVM = "deployment.itw.download.jvm";
     
     public static final String IGNORE_HEADLESS_CHECK = "deployment.headless.ignore";
 

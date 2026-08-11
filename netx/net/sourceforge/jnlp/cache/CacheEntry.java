@@ -218,7 +218,7 @@ public class CacheEntry {
         // ("11 Could not locate requested version"). That must never count as cached,
         // especially when lastModified is 0 (isCurrent would otherwise stick forever).
         if (CacheUtil.isJarResourceUrl(location) && !CacheUtil.isValidJarFile(fileToCheck)) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
                     "isCached: rejecting non-jar payload at " + fileToCheck
                             + " preview=" + CacheUtil.previewFileHead(fileToCheck, 80));
             return false;

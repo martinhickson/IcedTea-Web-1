@@ -141,11 +141,11 @@ public class TimedHashMap<K, V> implements Map<K, V> {
 
             // Item exists. If it has not expired, renew its access time and return it
             if (age <= timeout) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Returning entry " + actualMap.get(key) + " from cache for " + key);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Returning entry " + actualMap.get(key) + " from cache for " + key);
                 timedEntry.updateTimestamp();
                 return timedEntry.value;
             } else {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Cached entry for " + key + " has expired (age=" + (age * 1e-9) + " seconds)");
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Cached entry for " + key + " has expired (age=" + (age * 1e-9) + " seconds)");
             }
         }
 

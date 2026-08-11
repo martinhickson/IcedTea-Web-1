@@ -43,6 +43,8 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLConnection;
 import javax.net.ssl.HttpsURLConnection;
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 
@@ -53,15 +55,31 @@ public class ConnectionFactory {
     }
 
     private static class ConnectionFactoryHolder {
-
-        //https://en.wikipedia.org/wiki/Double-checked_locking#Usage_in_Java
-        //https://en.wikipedia.org/wiki/Initialization_on_demand_holder_idiom
         private static volatile ConnectionFactory INSTANCE = new ConnectionFactory();
     }
 
+    private int getConnectTimeout() {
+        try {
+            return Integer.parseInt(JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_HTTPCONNECTION_CONNECT_TIMEOUT));
+        } catch (Exception e) {
+            return 30000;
+        }
+    }
+
+    private int getReadTimeout() {
+        try {
+            return Integer.parseInt(JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_HTTPCONNECTION_READ_TIMEOUT));
+        } catch (Exception e) {
+            return 30000;
+        }
+    }
+
     /**
-     * Opens a URLConnection.  No synchronisation, no shared state —
-     * Java's built-in keep-alive pool handles connection reuse.
+     * Opens a URLConnection with configured connect/read timeouts.
+     * No synchronisation, no shared state — Java's built-in keep-alive
+     * pool handles connection reuse.
      */
     public URLConnection openConnection(URL url) throws IOException {
         OutputController.getLogger().log("Connecting " + url.toExternalForm());
@@ -69,31 +87,32 @@ public class ConnectionFactory {
             return openHttpsConnection(url);
         } else {
             URLConnection conn = url.openConnection();
+            applyTimeouts(conn);
             OutputController.getLogger().log("done " + url.toExternalForm());
             return conn;
         }
     }
 
-    /**
-     * Delegates to {@link URL#openConnection()}.
-     * No synchronisation — the previous list-tracking + synchronized lifecycle
-     * was dead code (isSyncForced() always returned false) and serialized
-     * all HTTPS connection creation/teardown.
-     */
     private URLConnection openHttpsConnection(URL url) throws IOException {
-        URLConnection conn = url.openConnection();
+        HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
+        applyTimeouts(conn);
+        conn.setSSLSocketFactory(new ItwSslSocketFactory());
         OutputController.getLogger().log("done " + url.toExternalForm());
         return conn;
     }
 
-    /**
-     * No-op.  Previously called {@code conn.disconnect()} which destroyed the
-     * keep-alive connection, forcing a full TCP+TLS handshake through any
-     * intercepting proxy for every resource.  Leaving the connection in Java's
-     * keep-alive pool lets it be reused, matching master/OWS behaviour.
-     */
+    private void applyTimeouts(URLConnection conn) {
+        int connectTimeout = getConnectTimeout();
+        int readTimeout = getReadTimeout();
+        conn.setConnectTimeout(connectTimeout);
+        conn.setReadTimeout(readTimeout);
+        if (conn instanceof HttpURLConnection) {
+            ((HttpURLConnection) conn).setInstanceFollowRedirects(true);
+        }
+    }
+
     public void disconnect(URLConnection conn) {
-        // intentionally empty — do NOT disconnect
+        // intentionally empty — do NOT disconnect (preserve keep-alive)
     }
 
 }

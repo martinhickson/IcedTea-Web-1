@@ -163,7 +163,7 @@ public class CertInformation {
      */
     public void setNumJarEntriesSigned(String jarName, int signedEntriesCount) {
         if (signedJars.containsKey(jarName)) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "WARNING: A jar that has already been "
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "WARNING: A jar that has already been "
                         + "verified is being yet again verified: " + jarName);
         } else {
             signedJars.put(jarName, signedEntriesCount);

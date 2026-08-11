@@ -94,13 +94,13 @@ public class JNLPSplashScreen extends JDialog {
                 try {
                     splashImage = ImageIO.read(resourceTracker.getCacheFile(splashImageUrl));
                     if (splashImage == null) {
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Error loading splash image: " + url);
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Error loading splash image: " + url);
                     }
                 } catch (IOException e) {
-                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Error loading splash image: " + url);
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Error loading splash image: " + url);
                     splashImage = null;
                 } catch (IllegalArgumentException argumentException) {
-                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Error loading splash image: " + url);
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Error loading splash image: " + url);
                     splashImage = null;
                 }
             }

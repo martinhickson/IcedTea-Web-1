@@ -232,7 +232,7 @@ public class BasicExceptionDialog {
                         try {
                             CachePane.visualCleanCache(parent);
                         } catch (Exception ex) {
-                            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+                            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, ex);
                         }
                     }
                 });

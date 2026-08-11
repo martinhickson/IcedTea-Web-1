@@ -123,13 +123,13 @@ public class StreamUtils {
             try {
                 p.waitFor();
             } catch (InterruptedException e) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, e);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, e);
             }
             try {
                 p.exitValue();
                 pTerminated = true;
             } catch (IllegalThreadStateException e) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, e);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, e);
             }
         }
     }

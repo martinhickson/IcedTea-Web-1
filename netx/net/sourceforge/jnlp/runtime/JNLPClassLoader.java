@@ -1078,9 +1078,9 @@ public class JNLPClassLoader extends URLClassLoader {
                     String jeName = je.getName().toUpperCase();
 
                     if (jeName.equals(TEMPLATE) || jeName.equals(APPLICATION)) {
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Creating Jar InputStream from JarEntry");
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Creating Jar InputStream from JarEntry");
                         InputStream inStream = jarFile.getInputStream(je);
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Creating File InputStream from lauching JNLP file");
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Creating File InputStream from lauching JNLP file");
                         JNLPFile jnlp = this.getJNLPFile();
                         File jn;
                         // If the file is on the local file system, use original path, otherwise find cached file
@@ -1093,10 +1093,10 @@ public class JNLPClassLoader extends URLClassLoader {
                         InputStream jnlpStream = new FileInputStream(jn);
                         JNLPMatcher matcher;
                         if (jeName.equals(APPLICATION)) { // If signed application was found
-                            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "APPLICATION.JNLP has been located within signed JAR. Starting verfication...");
+                            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "APPLICATION.JNLP has been located within signed JAR. Starting verfication...");
                             matcher = new JNLPMatcher(inStream, jnlpStream, false, jnlp.getParserSettings());
                         } else { // Otherwise template was found
-                            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "APPLICATION_TEMPLATE.JNLP has been located within signed JAR. Starting verfication...");
+                            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "APPLICATION_TEMPLATE.JNLP has been located within signed JAR. Starting verfication...");
                             matcher = new JNLPMatcher(inStream, jnlpStream, true, jnlp.getParserSettings());
                         }
                         // If signed JNLP file does not matches launching JNLP file, throw JNLPMatcherException
@@ -1105,7 +1105,7 @@ public class JNLPClassLoader extends URLClassLoader {
                         }
 
                         this.isSignedJNLP = true;
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Signed Application Verification Successful");
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Signed Application Verification Successful");
 
                         break;
                     }
@@ -1136,7 +1136,7 @@ public class JNLPClassLoader extends URLClassLoader {
              * skip the check for a signed JNLP file
              */
         }
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Ending check for signed JNLP file...");
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Ending check for signed JNLP file...");
     }
 
     /**
@@ -1446,7 +1446,7 @@ public class JNLPClassLoader extends URLClassLoader {
                             CachedJarFileCallback.getInstance().addMapping(jar.getLocation(), jar.getLocation());
                         }
 
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Activate jar: " + location);
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Activate jar: " + location);
                     } catch (Exception ex) {
                         OutputController.getLogger().log(ex);
                     }
@@ -2257,7 +2257,7 @@ public class JNLPClassLoader extends URLClassLoader {
                 tracker.removeResource(eachJar.getLocation());
             } catch (Exception e) {
                 OutputController.getLogger().log(e);
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Failed to remove resource from tracker, continuing..");
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Failed to remove resource from tracker, continuing..");
             }
             File cachedFile = CacheUtil.getCacheFile(eachJar.getLocation(), null);
             String directoryUrl = CacheUtil.getCacheParentDirectory(cachedFile.getAbsolutePath());

@@ -80,7 +80,7 @@ public final class NetxRunningDetailsRegistry {
         try {
             updateRegistry(new JnlpLockMetadata.ProcessEntry(processId, null), false);
         } catch (IOException ex) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, ex);
         }
     }
 

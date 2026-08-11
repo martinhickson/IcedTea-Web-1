@@ -492,7 +492,7 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
             r = 0;
             String versionLine = JvmProbeSupport.syntheticVersionOutput(probedMajor);
             processErrorStream = versionLine.toLowerCase();
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, versionLine);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, versionLine);
         }
         if (r == null) {
             validationResult += "<span color=\"red\">" + Translator.R("CPJVMnotLaunched") + "</span>";

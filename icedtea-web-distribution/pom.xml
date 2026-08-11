@@ -243,6 +243,15 @@
         <itw.launcher.extension>.exe</itw.launcher.extension>
         <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip</itw.corretto.url>
         <itw.corretto.archive>${project.build.directory}/downloads/corretto-windows-jdk.zip</itw.corretto.archive>
+        <!-- Temurin JREs for multi-JDK support (Appendix D) -->
+        <itw.temurin11.url>https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin11.url>
+        <itw.temurin11.archive>${project.build.directory}/downloads/temurin-11-jre.zip</itw.temurin11.archive>
+        <itw.temurin17.url>https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin17.url>
+        <itw.temurin17.archive>${project.build.directory}/downloads/temurin-17-jre.zip</itw.temurin17.archive>
+        <itw.temurin21.url>https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin21.url>
+        <itw.temurin21.archive>${project.build.directory}/downloads/temurin-21-jre.zip</itw.temurin21.archive>
+        <itw.temurin25.url>https://api.adoptium.net/v3/binary/latest/25/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin25.url>
+        <itw.temurin25.archive>${project.build.directory}/downloads/temurin-25-jre.zip</itw.temurin25.archive>
       </properties>
       <build>
         <plugins>
@@ -273,20 +282,36 @@
                     <copy file="${project.build.directory}/staging/bin/byte-buddy-agent.jar" todir="${itw.distribution.root}/bin"/>
                     <copy file="${project.build.directory}/staging/lib/icedtea-web-uber.jar" todir="${itw.distribution.root}/lib"/>
 
+                    <mkdir dir="${itw.distribution.root}/runtime/temurin-11"/>
+                    <mkdir dir="${itw.distribution.root}/runtime/temurin-17"/>
+                    <mkdir dir="${itw.distribution.root}/runtime/temurin-21"/>
+                    <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
+                    <mkdir dir="${project.build.directory}/downloads"/>
+
                     <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
+                    <get src="${itw.temurin11.url}" dest="${itw.temurin11.archive}" skipexisting="true"/>
+                    <get src="${itw.temurin17.url}" dest="${itw.temurin17.archive}" skipexisting="true"/>
+                    <get src="${itw.temurin21.url}" dest="${itw.temurin21.archive}" skipexisting="true"/>
+                    <get src="${itw.temurin25.url}" dest="${itw.temurin25.archive}" skipexisting="true"/>
 
                     <delete file="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
                     <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">
                       <zipfileset dir="${project.build.directory}/dist">
                         <exclude name="**/bin/*"/>
                         <exclude name="**/runtime/corretto/**/bin/*"/>
+                        <exclude name="**/runtime/temurin-*/**/bin/*"/>
                       </zipfileset>
                       <zipfileset dir="${project.build.directory}/dist" filemode="755">
                         <include name="**/bin/*"/>
                         <include name="**/runtime/corretto/**/bin/*"/>
+                        <include name="**/runtime/temurin-*/**/bin/*"/>
                       </zipfileset>
                     </zip>
                     <unzip src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto"/>
+                    <unzip src="${itw.temurin11.archive}" dest="${itw.distribution.root}/runtime/temurin-11"/>
+                    <unzip src="${itw.temurin17.archive}" dest="${itw.distribution.root}/runtime/temurin-17"/>
+                    <unzip src="${itw.temurin21.archive}" dest="${itw.distribution.root}/runtime/temurin-21"/>
+                    <unzip src="${itw.temurin25.archive}" dest="${itw.distribution.root}/runtime/temurin-25"/>
                   </target>
                 </configuration>
               </execution>

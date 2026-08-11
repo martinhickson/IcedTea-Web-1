@@ -210,9 +210,9 @@ public final class RunningJnlpProcessesDialog extends JDialog {
 
         JPanel actions = new JPanel(new FlowLayout(FlowLayout.TRAILING, 4, 0));
         JButton stopButton = new JButton(Translator.R("CacheStop"));
-        stopButton.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), false));
+        stopButton.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), process.getProcessStart(), false));
         JButton forceStopButton = new JButton(Translator.R("CacheForceStop"));
-        forceStopButton.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), true));
+        forceStopButton.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), process.getProcessStart(), true));
         actions.add(stopButton);
         actions.add(forceStopButton);
         row.add(actions, BorderLayout.EAST);

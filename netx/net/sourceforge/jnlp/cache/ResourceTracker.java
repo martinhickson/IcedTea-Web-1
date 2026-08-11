@@ -104,6 +104,9 @@ public class ResourceTracker {
     private final List<Resource> resources = new ArrayList<>();
     private final HashMap<String, Resource> resourcesMap = new HashMap<>();
 
+    /** metrics group from the last wait() call, for post-download stats logging */
+    private net.sourceforge.jnlp.cache.download.JarGroupState lastMetricsGroup;
+
     /** download listeners for this tracker */
     private final List<DownloadListener> listeners = new ArrayList<>();
 
@@ -358,7 +361,7 @@ public class ResourceTracker {
                 }
 
                 if (pass == 0 && requeueUnusableTerminal(resource)) {
-                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
                             "Cache file missing/unusable for " + location
                                     + " after terminal download state; retrying download once");
                     continue;
@@ -682,6 +685,18 @@ public class ResourceTracker {
     private boolean wait(Resource[] resources, long timeout) throws InterruptedException {
         long startTime = System.currentTimeMillis();
 
+        // Create JarGroupState + assign JarSlots for metrics tracking
+        java.util.List<URL> urls = new java.util.ArrayList<>();
+        for (Resource r : resources) {
+            urls.add(r.getLocation());
+        }
+        net.sourceforge.jnlp.cache.download.JarGroupState metricsGroup =
+                net.sourceforge.jnlp.cache.download.JarGroupState.forJars(urls);
+        for (int i = 0; i < resources.length; i++) {
+            resources[i].setJarSlot(metricsGroup.slot(i));
+        }
+        this.lastMetricsGroup = metricsGroup;
+
         // start them downloading / connecting in background
         for (Resource resource : resources) {
             startResource(resource);
@@ -711,7 +726,7 @@ public class ResourceTracker {
                             // CONNECTING/DOWNLOADING). Here status is already ERROR/DOWNLOADED.
                             if (!resource.isUnusableTerminalRetried()
                                     && resource.consumeUnusableTerminalRetry()) {
-                                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
                                         "Resource " + resource.getLocation()
                                                 + " finished without usable cache file; retrying once");
                                 resource.prepareRedownloadAfterUnusableTerminal();
@@ -725,6 +740,7 @@ public class ResourceTracker {
                     }
                 }
                 if (finished) {
+                    logDownloadStats();
                     return true;
                 }
 
@@ -751,6 +767,22 @@ public class ResourceTracker {
                     lock.notifyAll();
                 }
             }
+        }
+    }
+
+    private void logDownloadStats() {
+        if (lastMetricsGroup == null) return;
+        try {
+            net.sourceforge.jnlp.cache.download.GroupStats stats = lastMetricsGroup.stats();
+            net.sourceforge.jnlp.util.logging.OutputController.getLogger()
+                    .log(net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_ALL,
+                            "Download stats: " + stats.summaryLine());
+            for (String line : stats.jarLines()) {
+                net.sourceforge.jnlp.util.logging.OutputController.getLogger()
+                        .log(net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_DEBUG, line);
+            }
+        } catch (Exception e) {
+            // stats are diagnostic — never fail the launch on a stats error
         }
     }
 

@@ -86,7 +86,7 @@ public class XPrintService implements PrintService {
                     return true;
                 } catch (PrinterException pe) {
                     OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "Could not print: " + pe);
-                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, pe);
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, pe);
                     return false;
                 }
             }
@@ -105,7 +105,7 @@ public class XPrintService implements PrintService {
                     return true;
                 } catch (PrinterException pe) {
                     OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "Could not print: " + pe);
-                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, pe);
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, pe);
                     return false;
                 }
 

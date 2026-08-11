@@ -25,6 +25,7 @@ import java.util.Set;
 
 import net.sourceforge.jnlp.DownloadOptions;
 import net.sourceforge.jnlp.Version;
+import net.sourceforge.jnlp.cache.download.JarSlot;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.UrlUtils;
 import net.sourceforge.jnlp.util.WeakList;
@@ -91,6 +92,9 @@ public class Resource {
 
     /** total size of the resource, or -1 if unknown */
     private volatile long size = -1;
+
+    /** lock-free slot for timing/metrics/settle (set when a JarGroupState is created for the group) */
+    private volatile JarSlot jarSlot;
 
     /** the status of the resource */
     private final EnumSet<Status> status = EnumSet.noneOf(Status.class);
@@ -263,6 +267,14 @@ public class Resource {
      */
     public void setSize(long size) {
         this.size = size;
+    }
+
+    public JarSlot getJarSlot() {
+        return jarSlot;
+    }
+
+    public void setJarSlot(JarSlot jarSlot) {
+        this.jarSlot = jarSlot;
     }
 
     /**

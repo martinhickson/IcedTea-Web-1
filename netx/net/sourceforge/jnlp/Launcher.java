@@ -672,7 +672,7 @@ public class Launcher {
 
         for (Thread thread : threads) {
             if (thread != null) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Setting " + classLoader + " as the classloader for thread " + thread.getName());
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Setting " + classLoader + " as the classloader for thread " + thread.getName());
                 thread.setContextClassLoader(classLoader);
             }
         }

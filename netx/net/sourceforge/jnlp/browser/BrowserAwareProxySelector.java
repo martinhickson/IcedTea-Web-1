@@ -215,7 +215,7 @@ public class BrowserAwareProxySelector extends JNLPProxySelector {
                 if (optionDescription == null) {
                     optionDescription = "Unknown";
                 }
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,R("RProxyFirefoxOptionNotImplemented", browserProxyType, optionDescription));
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,R("RProxyFirefoxOptionNotImplemented", browserProxyType, optionDescription));
                 proxies.add(Proxy.NO_PROXY);
         }
 

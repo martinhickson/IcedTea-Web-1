@@ -30,6 +30,7 @@ public final class JnlpLockMetadata {
     public static final String KEY_JVM_HOME = "jvmHome";
     public static final String KEY_JVM_VENDOR = "jvmVendor";
     public static final String KEY_JVM_VERSION = "jvmVersion";
+    public static final String KEY_PROCESS_START = "processStart";
 
     public static final int INVALID_PORT = Integer.MIN_VALUE;
 
@@ -42,6 +43,7 @@ public final class JnlpLockMetadata {
         private final String jvmHome;
         private final String jvmVendor;
         private final String jvmVersion;
+        private String processStart;
 
         public ProcessEntry(int processId, String jnlpPath) {
             this(processId, jnlpPath, null, null, null, null, null, null);
@@ -99,6 +101,14 @@ public final class JnlpLockMetadata {
         public String getJvmVersion() {
             return jvmVersion;
         }
+
+        public String getProcessStart() {
+            return processStart;
+        }
+
+        public void setProcessStart(String processStart) {
+            this.processStart = processStart;
+        }
     }
 
     private int processId = -1;
@@ -110,6 +120,7 @@ public final class JnlpLockMetadata {
     private String jvmHome;
     private String jvmVendor;
     private String jvmVersion;
+    private String processStart;
 
     public int getProcessId() {
         return processId;
@@ -145,6 +156,10 @@ public final class JnlpLockMetadata {
 
     public String getJvmVersion() {
         return jvmVersion;
+    }
+
+    public String getProcessStart() {
+        return processStart;
     }
 
     public static JnlpLockMetadata read(File lockFile) {
@@ -236,6 +251,10 @@ public final class JnlpLockMetadata {
             writer.write(KEY_JVM_VERSION + "=" + entry.getJvmVersion().trim());
             writer.newLine();
         }
+        if (entry.getProcessStart() != null && !entry.getProcessStart().trim().isEmpty()) {
+            writer.write(KEY_PROCESS_START + "=" + entry.getProcessStart().trim());
+            writer.newLine();
+        }
     }
 
     public static List<ProcessEntry> readAllProcessEntries(File lockFile) {
@@ -252,6 +271,7 @@ public final class JnlpLockMetadata {
             String pendingJvmHome = null;
             String pendingJvmVendor = null;
             String pendingJvmVersion = null;
+            String pendingProcessStart = null;
             String line;
             while ((line = reader.readLine()) != null) {
                 line = line.trim();
@@ -266,8 +286,10 @@ public final class JnlpLockMetadata {
                 String value = line.substring(equals + 1).trim();
                 if (KEY_PROCESS_ID.equalsIgnoreCase(key)) {
                     if (pendingPid > 0) {
-                        entries.add(new ProcessEntry(pendingPid, pendingJnlpPath, pendingAppTitle, pendingAppVersion,
-                                pendingJarVersion, pendingJvmHome, pendingJvmVendor, pendingJvmVersion));
+                        ProcessEntry entry = new ProcessEntry(pendingPid, pendingJnlpPath, pendingAppTitle, pendingAppVersion,
+                                pendingJarVersion, pendingJvmHome, pendingJvmVendor, pendingJvmVersion);
+                        entry.setProcessStart(pendingProcessStart);
+                        entries.add(entry);
                     }
                     try {
                         pendingPid = Integer.parseInt(value);
@@ -281,6 +303,7 @@ public final class JnlpLockMetadata {
                     pendingJvmHome = null;
                     pendingJvmVendor = null;
                     pendingJvmVersion = null;
+                    pendingProcessStart = null;
                 } else if (KEY_JNLP_PATH.equalsIgnoreCase(key)) {
                     pendingJnlpPath = value;
                 } else if (KEY_APP_TITLE.equalsIgnoreCase(key)) {
@@ -295,11 +318,15 @@ public final class JnlpLockMetadata {
                     pendingJvmVendor = value;
                 } else if (KEY_JVM_VERSION.equalsIgnoreCase(key)) {
                     pendingJvmVersion = value;
+                } else if (KEY_PROCESS_START.equalsIgnoreCase(key)) {
+                    pendingProcessStart = value;
                 }
             }
             if (pendingPid > 0) {
-                entries.add(new ProcessEntry(pendingPid, pendingJnlpPath, pendingAppTitle, pendingAppVersion,
-                        pendingJarVersion, pendingJvmHome, pendingJvmVendor, pendingJvmVersion));
+                ProcessEntry entry = new ProcessEntry(pendingPid, pendingJnlpPath, pendingAppTitle, pendingAppVersion,
+                        pendingJarVersion, pendingJvmHome, pendingJvmVendor, pendingJvmVersion);
+                entry.setProcessStart(pendingProcessStart);
+                entries.add(entry);
             }
         } catch (IOException ex) {
             // Return partial list.
@@ -361,6 +388,8 @@ public final class JnlpLockMetadata {
             metadata.jvmVendor = value;
         } else if (KEY_JVM_VERSION.equalsIgnoreCase(key)) {
             metadata.jvmVersion = value;
+        } else if (KEY_PROCESS_START.equalsIgnoreCase(key)) {
+            metadata.processStart = value;
         }
     }
 
@@ -381,8 +410,15 @@ public final class JnlpLockMetadata {
     public static ProcessEntry entryFromCurrentRuntime(int processId, String jnlpPath,
             String appTitle, String appVersion) {
         JvmDescriptor jvm = JvmDescriptor.describeCurrentRuntime();
-        return new ProcessEntry(processId, jnlpPath, appTitle, appVersion,
+        ProcessEntry entry = new ProcessEntry(processId, jnlpPath, appTitle, appVersion,
                 jvm.getHomePath(), jvm.getFlavour(), jvm.getVersion());
+        try {
+            java.time.Instant start = java.lang.ProcessHandle.current().info().startInstant().orElse(null);
+            if (start != null) {
+                entry.setProcessStart(start.toString());
+            }
+        } catch (Exception ignored) {}
+        return entry;
     }
 
     public static String extractAppTitle(JNLPFile jnlpFile) {

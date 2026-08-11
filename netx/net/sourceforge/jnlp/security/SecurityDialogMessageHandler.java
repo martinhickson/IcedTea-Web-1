@@ -217,14 +217,14 @@ public class SecurityDialogMessageHandler implements Runnable {
                         }
                         RememberDialog.getInstance().setOrUpdateRememberedState(dialog, codebase, new SavedRememberAction(RememberDialog.createAction(remember, message.userResponse), value));
                     } catch (Exception ex) {    
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, ex);
                     }
                 } catch (IOException eex) {
                     OutputController.getLogger().log(eex);
                     keepGoing = false;
                 } catch (IllegalArgumentException eeex){
                     OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, eeex.toString());
-                    OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, eeex);
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, eeex);
                     OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, Translator.R("HDwrongValue"));
                     repeatAll = false;
                 } catch (Exception ex) {

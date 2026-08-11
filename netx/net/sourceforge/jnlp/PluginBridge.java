@@ -214,8 +214,8 @@ public final class PluginBridge extends JNLPFile {
 
             addArchiveEntries(archives);
 
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Jar string: " + archive);
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "jars length: " + archives.length);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Jar string: " + archive);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "jars length: " + archives.length);
         }
 
         if (main.endsWith(".class"))

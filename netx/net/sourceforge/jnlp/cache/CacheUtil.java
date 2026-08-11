@@ -160,7 +160,7 @@ public class CacheUtil {
             return false;
         }
 
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Clearing cache directory: " + cacheDir);
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Clearing cache directory: " + cacheDir);
         synchronized (lruHandler) {
         lruHandler.lock();
         try {
@@ -281,7 +281,7 @@ public class CacheUtil {
 
     public static void removeWindowsShortcuts(String jnlpApp)
             throws IOException {
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Clearing Windows shortcuts");
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Clearing Windows shortcuts");
         if (CacheLRUWrapper.getInstance().getWindowsShortcutList().exists()) {
             List<String> lines = Files.readAllLines(CacheLRUWrapper.getInstance().getWindowsShortcutList().toPath(), Charset.forName("UTF-8"));
             Iterator it = lines.iterator();
@@ -569,7 +569,7 @@ public class CacheUtil {
                         // Skip fully orphaned LRU rows (neither jar nor .info). Keep .info-only
                         // reserved slots so in-progress downloads still write to the same path.
                         if (!candidate.isFile() && !infoFile.isFile()) {
-                            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
                                     "Ignoring orphaned cache path listed in recently_used: " + path);
                             continue;
                         }

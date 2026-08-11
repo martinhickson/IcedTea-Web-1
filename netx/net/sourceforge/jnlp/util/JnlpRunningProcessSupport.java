@@ -9,11 +9,14 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Stream;
 
 import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.config.PathsAndFiles;
@@ -34,6 +37,7 @@ public final class JnlpRunningProcessSupport {
         private final String jvmHome;
         private final String jvmVendor;
         private final String jvmVersion;
+        private String processStart;
 
         public RunningProcess(int pid, String appTitle, String commandLine) {
             this(pid, appTitle, null, commandLine, null, null, null, null);
@@ -85,6 +89,14 @@ public final class JnlpRunningProcessSupport {
 
         public String getJvmVersion() {
             return jvmVersion;
+        }
+
+        public String getProcessStart() {
+            return processStart;
+        }
+
+        public void setProcessStart(String processStart) {
+            this.processStart = processStart;
         }
 
         public String getDisplayName() {
@@ -152,15 +164,16 @@ public final class JnlpRunningProcessSupport {
     public static List<RunningProcess> listRunningJnlpProcesses(String jnlpPathFilter) {
         Map<Integer, RunningProcess> byPid = new LinkedHashMap<>();
         int selfPid = currentPid();
+        Set<Long> selfTree = selfTreePids();
 
         collectFromLockFiles(byPid, selfPid);
-        // Always merge an OS process scan. Relying only on netx_running_details /
-        // cache locks misses live javaws children after JDK relaunch handoff when
-        // the details registry write failed or produced no per-app lock files.
         collectFromProcessListing(byPid, selfPid);
 
         List<RunningProcess> filtered = new ArrayList<>();
         for (RunningProcess process : byPid.values()) {
+            if (selfTree.contains((long) process.getPid())) {
+                continue;
+            }
             if (isInfrastructureProcess(process)) {
                 continue;
             }
@@ -170,6 +183,21 @@ public final class JnlpRunningProcessSupport {
             }
         }
         return filtered;
+    }
+
+    static Set<Long> selfTreePids() {
+        Set<Long> s = new HashSet<>();
+        try {
+            ProcessHandle current = ProcessHandle.current();
+            s.add(current.pid());
+            current.descendants().forEach(h -> s.add(h.pid()));
+            ProcessHandle p = current.parent().orElse(null);
+            while (p != null) {
+                s.add(p.pid());
+                p = p.parent().orElse(null);
+            }
+        } catch (Exception ignored) {}
+        return s;
     }
 
     public static boolean isInfrastructureProcess(RunningProcess process) {
@@ -208,7 +236,14 @@ public final class JnlpRunningProcessSupport {
     }
 
     public static boolean stopProcess(int pid, boolean force) {
+        return stopProcess(pid, null, force);
+    }
+
+    public static boolean stopProcess(int pid, String recordedStart, boolean force) {
         if (pid <= 0) {
+            return false;
+        }
+        if (recordedStart != null && !isSameProcess(pid, recordedStart)) {
             return false;
         }
         List<String> command = new ArrayList<>();
@@ -276,6 +311,10 @@ public final class JnlpRunningProcessSupport {
                 NetxRunningDetailsRegistry.unregisterProcess(pid);
                 continue;
             }
+            if (entry.getProcessStart() != null && !isSameProcess(pid, entry.getProcessStart())) {
+                NetxRunningDetailsRegistry.unregisterProcess(pid);
+                continue;
+            }
             String commandLine = resolveCommandLine(pid);
             if (!isLikelyJnlpProcess(commandLine)) {
                 if (commandLine != null && !commandLine.trim().isEmpty()) {
@@ -312,6 +351,11 @@ public final class JnlpRunningProcessSupport {
             return null;
         }
 
+        if (metadata.getProcessStart() != null && !isSameProcess(pid, metadata.getProcessStart())) {
+            cleanupStaleLockFile(lockFile);
+            return null;
+        }
+
         if (metadata.getPort() != JnlpLockMetadata.INVALID_PORT && isPortFree(metadata.getPort())) {
             cleanupStaleLockFile(lockFile);
             return null;
@@ -330,14 +374,18 @@ public final class JnlpRunningProcessSupport {
     }
 
     private static RunningProcess toRunningProcess(int pid, String commandLine, JnlpLockMetadata metadata) {
-        return toRunningProcess(pid, commandLine, metadata.getJnlpPath(), metadata.getAppTitle(),
+        RunningProcess rp = toRunningProcess(pid, commandLine, metadata.getJnlpPath(), metadata.getAppTitle(),
                 metadata.getAppVersion(), metadata.getJarVersion(),
                 metadata.getJvmHome(), metadata.getJvmVendor(), metadata.getJvmVersion());
+        rp.setProcessStart(metadata.getProcessStart());
+        return rp;
     }
 
     private static RunningProcess toRunningProcess(int pid, String commandLine, JnlpLockMetadata.ProcessEntry entry) {
-        return toRunningProcess(pid, commandLine, entry.getJnlpPath(), entry.getAppTitle(), entry.getAppVersion(),
+        RunningProcess rp = toRunningProcess(pid, commandLine, entry.getJnlpPath(), entry.getAppTitle(), entry.getAppVersion(),
                 entry.getJarVersion(), entry.getJvmHome(), entry.getJvmVendor(), entry.getJvmVersion());
+        rp.setProcessStart(entry.getProcessStart());
+        return rp;
     }
 
     private static RunningProcess toRunningProcess(int pid, String commandLine, String jnlpPath,
@@ -642,6 +690,15 @@ public final class JnlpRunningProcessSupport {
     private static boolean isProcessAlive(int pid) {
         Optional<ProcessHandle> handle = ProcessHandle.of(pid);
         return handle.isPresent() && handle.get().isAlive();
+    }
+
+    static boolean isSameProcess(int pid, String recordedStart) {
+        if (recordedStart == null || recordedStart.trim().isEmpty()) {
+            return false; // unverified — treat as not-same (don't show, don't kill)
+        }
+        Optional<java.time.Instant> currentStart = ProcessHandle.of(pid)
+                .flatMap(h -> h.info().startInstant());
+        return currentStart.isPresent() && currentStart.get().toString().equals(recordedStart.trim());
     }
 
     private static boolean isLockHeldByAnotherProcess(File lockFile) {

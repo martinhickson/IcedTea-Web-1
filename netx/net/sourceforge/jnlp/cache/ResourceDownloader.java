@@ -138,7 +138,7 @@ public class ResourceDownloader implements Runnable {
         if (isFavIconUrl(context)) {
             logFavIconTrace(message);
         } else {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, message);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, message);
         }
     }
 
@@ -146,7 +146,7 @@ public class ResourceDownloader implements Runnable {
         if (isFavIconUrl(context)) {
             logFavIconTrace(ex);
         } else {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, ex);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, ex);
         }
     }
 
@@ -216,12 +216,10 @@ public class ResourceDownloader implements Runnable {
     static UrlRequestResult getUrlResponseCodeWithRedirectonResult(URL url, Map<String, String> requestProperties, ResourceTracker.RequestMethods requestMethod) throws IOException {
         UrlRequestResult result = new UrlRequestResult();
         URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(url);
-        // Prevent intermediary caches (corporate proxies, CDNs) from serving
-        // stale responses. setUseCaches(false) causes the JVM to send
-        // "Cache-Control: no-cache" and "Pragma: no-cache" headers, matching
-        // OWS behaviour. Without this, cached 304/200 responses can cause
-        // phantom resource existence or stale jar downloads.
-        connection.setUseCaches(false);
+        // Do NOT call setUseCaches(false) — it forces "Cache-Control: no-cache"
+        // + "Pragma: no-cache" headers which defeat proxy/CDN caching and cause
+        // DPI special handling. Freshness is handled via conditional requests
+        // (If-Modified-Since) and ITW's own cache layer, not JVM response caching.
 
         for (Map.Entry<String, String> property : requestProperties.entrySet()) {
             connection.addRequestProperty(property.getKey(), property.getValue());
@@ -321,6 +319,7 @@ public class ResourceDownloader implements Runnable {
         } catch (Exception e) {
             OutputController.getLogger().log(e);
             resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
+            settleSlotBad();
             synchronized (lock) {
                 lock.notifyAll(); // wake up wait's to check for completion
             }
@@ -351,7 +350,6 @@ public class ResourceDownloader implements Runnable {
             }
 
             URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(location.URL);
-            connection.setUseCaches(false);
             connection.addRequestProperty("Accept-Encoding", getAcceptEncoding());
 
             File localFile = null;
@@ -383,7 +381,7 @@ public class ResourceDownloader implements Runnable {
                     && CacheUtil.isCurrent(resource.getLocation(), resource.getRequestVersion(), lm, entry, fileForCurrency)
                     && resource.getUpdatePolicy() != UpdatePolicy.FORCE;
             if (current && existingOnDisk != null && !localUsable) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG,
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
                         "Reusing existing cache file " + existingOnDisk + " instead of missing/corrupt " + localFile);
                 localFile = existingOnDisk;
             }
@@ -412,6 +410,7 @@ public class ResourceDownloader implements Runnable {
                         && (!CacheUtil.isJarResourceUrl(resource.getLocation())
                         || CacheUtil.isValidJarFile(localFile))) {
                     resource.changeStatus(EnumSet.of(PREDOWNLOAD, DOWNLOADING), EnumSet.of(DOWNLOADED));
+                    settleSlotGood(true);
                 }
             }
 
@@ -480,6 +479,7 @@ public class ResourceDownloader implements Runnable {
                     resource.setLocalFile(localFile);
                     resource.setSize(size);
                     resource.changeStatus(EnumSet.of(PREDOWNLOAD, DOWNLOADING), EnumSet.of(DOWNLOADED));
+                    settleSlotGood(true);
                 }
             } else {
                 if (isFavIconUrl(resource.getLocation())) {
@@ -488,6 +488,7 @@ public class ResourceDownloader implements Runnable {
                     OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "You are trying to get resource " + resource.getLocation().toExternalForm() + " but it is not in cache and could not be downloaded. Attempting to continue, but you may expect failure");
                 }
                 resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
+                settleSlotBad();
             }
 
             synchronized (lock) {
@@ -634,6 +635,7 @@ public class ResourceDownloader implements Runnable {
             }
 
             resource.changeStatus(EnumSet.of(DOWNLOADING), EnumSet.of(DOWNLOADED));
+            settleSlotGood(false);
             synchronized (lock) {
                 lock.notifyAll(); // wake up wait's to check for completion
             }
@@ -641,6 +643,7 @@ public class ResourceDownloader implements Runnable {
         } catch (Exception ex) {
             logDownloadFailure(downloadFrom, ex);
             resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
+            settleSlotBad();
             synchronized (lock) {
                 lock.notifyAll();
             }
@@ -654,10 +657,27 @@ public class ResourceDownloader implements Runnable {
 
     private URLConnection getDownloadConnection(URL location) throws IOException {
         URLConnection con = ConnectionFactory.getConnectionFactory().openConnection(location);
-        con.setUseCaches(false);
         con.addRequestProperty("Accept-Encoding", getAcceptEncoding());
+        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+        if (slot != null) {
+            slot.onConnect(System.currentTimeMillis());
+        }
         con.connect();
         return con;
+    }
+
+    private void settleSlotGood(boolean fromCache) {
+        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+        if (slot != null) {
+            slot.settleGood(System.currentTimeMillis(), fromCache);
+        }
+    }
+
+    private void settleSlotBad() {
+        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+        if (slot != null) {
+            slot.settleUnusable(System.currentTimeMillis());
+        }
     }
 
     private void downloadPackGzFile(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {
@@ -836,7 +856,7 @@ public class ResourceDownloader implements Runnable {
         } catch (InterruptedException e) {
             //ignore
         }
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Redownloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Redownloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
         connection = getDownloadConnection(connection.getURL());
         // Must write to the cache entry location and unpack pack200 the same as the first attempt.
         // Writing downloadLocation (version-encoded / .pack.gz URL) left ghost cache slots and
@@ -872,10 +892,19 @@ public class ResourceDownloader implements Runnable {
         File localFile = CacheUtil.getCacheFile(downloadLocation, resource.getDownloadVersion());
         byte buf[] = new byte[1024];
         int rlen;
+        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         try (OutputStream out = new BufferedOutputStream(new FileOutputStream(localFile))) {
             while (-1 != (rlen = in.read(buf))) {
                 resource.incrementTransferred(rlen);
+                if (slot != null) {
+                    long now = System.currentTimeMillis();
+                    slot.onFirstByte(now);
+                    slot.addTransferred(rlen);
+                }
                 out.write(buf, 0, rlen);
+            }
+            if (slot != null) {
+                slot.onLastByte(System.currentTimeMillis());
             }
             in.close();
         }
@@ -883,7 +912,7 @@ public class ResourceDownloader implements Runnable {
     }
 
     private void uncompressGzip(URL compressedLocation, URL uncompressedLocation, Version version) throws IOException {
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Extracting gzip: " + compressedLocation + " to " + uncompressedLocation);
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Extracting gzip: " + compressedLocation + " to " + uncompressedLocation);
         byte buf[] = new byte[1024];
         int rlen;
 
@@ -904,7 +933,7 @@ public class ResourceDownloader implements Runnable {
     }
 
     private void uncompressPackGz(URL compressedLocation, URL uncompressedLocation, Version version) throws IOException {
-        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Extracting packgz: " + compressedLocation + " to " + uncompressedLocation);
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Extracting packgz: " + compressedLocation + " to " + uncompressedLocation);
 
         File packed = CacheUtil.getCacheFile(compressedLocation, version);
         File unpacked = CacheUtil.getCacheFile(uncompressedLocation, version);

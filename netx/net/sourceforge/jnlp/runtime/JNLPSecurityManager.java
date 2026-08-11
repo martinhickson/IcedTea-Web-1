@@ -390,7 +390,7 @@ class JNLPSecurityManager extends SecurityManager {
                 }
             }
         } else {
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "Unable to add permission: " + perm + ", classloader not JNLP.");
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Unable to add permission: " + perm + ", classloader not JNLP.");
         }
     }
 
@@ -406,7 +406,7 @@ class JNLPSecurityManager extends SecurityManager {
         if (app != null && window instanceof Window) {
             Window w = (Window) window;
 
-            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "SM: app: " + app.getTitle() + " is adding a window: " + window + " with appContext " + AppContext.getAppContext());
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "SM: app: " + app.getTitle() + " is adding a window: " + window + " with appContext " + AppContext.getAppContext());
 
             weakWindows.add(w); // for mapping window -> app
             weakApplications.add(app);

@@ -184,10 +184,10 @@ public class ServiceUtil {
         @Override
         public Object invoke(Object proxy, final Method method, final Object[] args) throws Throwable {
             if (JNLPRuntime.isDebug()) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "call privileged method: " + method.getName());
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "call privileged method: " + method.getName());
                 if (args != null) {
                     for (Object arg : args) {
-                        OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "           arg: " + arg);
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "           arg: " + arg);
                     }
                 }
             }
@@ -202,7 +202,7 @@ public class ServiceUtil {
             try {
                 Object result = AccessController.doPrivileged(invoker);
 
-                OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, "        result: " + result);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "        result: " + result);
 
                 return result;
             } catch (PrivilegedActionException e) {
