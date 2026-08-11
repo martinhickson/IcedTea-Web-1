@@ -23,10 +23,11 @@ import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import java.util.jar.JarOutputStream;
 import java.util.zip.GZIPInputStream;
@@ -65,6 +66,12 @@ public class ResourceDownloader implements Runnable {
     private static final Set<String> LOGGED_MISSING_FAVICONS = new HashSet<>();
     private final Resource resource;
     private final Object lock;
+    /**
+     * Pre-computed URL candidates (version-encoded, query-param, plain) to
+     * try with GET when skipHeadIfNotCached is active and the cache is empty.
+     * Null means use the normal single-URL download path.
+     */
+    private List<URL> downloadUrlCandidates;
 
     public ResourceDownloader(Resource resource, Object lock) {
         this.resource = resource;
@@ -184,6 +191,15 @@ public class ResourceDownloader implements Runnable {
                 DeploymentConfiguration.KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED));
     }
 
+    /**
+     * Whether the resource's cache entry exists and has a usable file.
+     * Used to decide whether URL probing (HEAD) can be skipped entirely.
+     */
+    private boolean isResourceCached() {
+        CacheEntry entry = new CacheEntry(resource.getLocation(), resource.getRequestVersion());
+        return entry.isCached();
+    }
+
     static int getUrlResponseCode(URL url, Map<String, String> requestProperties, ResourceTracker.RequestMethods requestMethod) throws IOException {
         return getUrlResponseCodeWithRedirectonResult(url, requestProperties, requestMethod).result;
     }
@@ -265,6 +281,31 @@ public class ResourceDownloader implements Runnable {
 
     private void initializeOnlineResource() {
         try {
+            // When skipHeadIfNotCached is enabled (default) and the resource is
+            // not in cache, skip ALL URL probing (HEAD/GET) via findBestUrl
+            // and go straight to download.  Java's HttpURLConnection follows
+            // HTTP redirects automatically, so we do not lose redirect support
+            // by skipping the application-level probe.
+            if (isSkipHeadIfNotCached() && !isResourceCached()) {
+                // Pre-compute URL candidates for GET-based download (no HEAD probe).
+                // Order: __V<version> variant → ?version-id=<version> → plain URL.
+                DownloadOptions options = resource.getDownloadOptions();
+                if (options == null) {
+                    options = new DownloadOptions(false, false);
+                }
+                downloadUrlCandidates = new ResourceUrlCreator(resource, options).getUrls();
+                resource.setDownloadLocation(downloadUrlCandidates.get(0));
+                resource.setSize(-1);
+                synchronized (resource) {
+                    resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(PREDOWNLOAD));
+                }
+                synchronized (lock) {
+                    lock.notifyAll(); // wake up wait's to check for completion
+                }
+                resource.fireDownloadEvent(); // fire CONNECTED
+                return;
+            }
+
             UrlRequestResult finalLocation = findBestUrl(resource);
             if (finalLocation != null) {
                 initializeFromURL(finalLocation);
@@ -525,12 +566,44 @@ public class ResourceDownloader implements Runnable {
     }
 
     private void downloadResource() {
-        URLConnection connection = null;
-        URL downloadFrom = resource.getDownloadLocation(); //Where to download from
         URL downloadTo = resource.getLocation(); //Where to download to
+        URLConnection connection = null;
+        URL downloadFrom = null;
 
         try {
-            connection = getDownloadConnection(downloadFrom);
+            // When skipHeadIfNotCached set up URL candidates during initialize,
+            // try each with a GET. The first successful GET IS the download
+            // (no separate HEAD probe), giving at most one GET per download
+            // on a clean cache.
+            List<URL> tryUrls = downloadUrlCandidates != null
+                    ? downloadUrlCandidates
+                    : Collections.singletonList(resource.getDownloadLocation());
+
+            IOException lastError = null;
+            for (URL candidate : tryUrls) {
+                try {
+                    connection = getDownloadConnection(candidate);
+                    // connect() does not throw for HTTP error codes like 404,
+                    // so we must check the response code explicitly to decide
+                    // whether to fall through to the next URL candidate.
+                    if (connection instanceof HttpURLConnection) {
+                        int responseCode = ((HttpURLConnection) connection).getResponseCode();
+                        if (responseCode >= 400) {
+                            logResourceDebug(downloadTo, "GET returned " + responseCode + " for " + candidate + ", trying next URL candidate");
+                            connection = null;
+                            continue;
+                        }
+                    }
+                    downloadFrom = candidate;
+                    break; // success
+                } catch (IOException e) {
+                    lastError = e;
+                    logResourceDebug(downloadTo, "GET failed for " + candidate + ", trying next URL candidate");
+                }
+            }
+            if (connection == null) {
+                throw lastError != null ? lastError : new IOException("No URL candidates");
+            }
 
             String contentEncoding = connection.getContentEncoding();
 

@@ -53,3 +53,5 @@ target
 /sample-apps/public/**/*
 /sample-apps/package-lock.json
 
+.jenkins/install-sign-job.sh
+.jenkins/lint-workflows.sh
