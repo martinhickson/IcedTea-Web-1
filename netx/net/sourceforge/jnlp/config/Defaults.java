@@ -514,7 +514,7 @@ public class Defaults {
                 {
                         DeploymentConfiguration.KEY_HTTP_USE_GZIP,
                         BasicValueValidators.getBooleanValidator(),
-                        String.valueOf(false)
+                        String.valueOf(true)
                 },
                 {
                         DeploymentConfiguration.KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED,
