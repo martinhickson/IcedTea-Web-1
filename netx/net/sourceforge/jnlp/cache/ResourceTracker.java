@@ -29,6 +29,7 @@ import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.*;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import net.sourceforge.jnlp.DownloadOptions;
 import net.sourceforge.jnlp.Version;
@@ -107,8 +108,8 @@ public class ResourceTracker {
     /** metrics group from the last wait() call, for post-download stats logging */
     private net.sourceforge.jnlp.cache.download.JarGroupState lastMetricsGroup;
 
-    /** download listeners for this tracker */
-    private final List<DownloadListener> listeners = new ArrayList<>();
+    /** download listeners for this tracker (CopyOnWriteArrayList: writes rare, readers lock-free) */
+    private final List<DownloadListener> listeners = new CopyOnWriteArrayList<>();
 
     /** whether to download parts before requested */
     private final boolean prefetch;
@@ -258,10 +259,8 @@ public class ResourceTracker {
      * @param listener the listener to add.
      */
     public void addDownloadListener(DownloadListener listener) {
-        synchronized (listeners) {
-            if (!listeners.contains(listener))
-                listeners.add(listener);
-        }
+        if (!listeners.contains(listener))
+            listeners.add(listener);
     }
 
     /**
@@ -270,9 +269,7 @@ public class ResourceTracker {
      * @param listener the listener to remove.
      */
     public void removeDownloadListener(DownloadListener listener) {
-        synchronized (listeners) {
-            listeners.remove(listener);
-        }
+        listeners.remove(listener);
     }
 
     /**
@@ -284,10 +281,7 @@ public class ResourceTracker {
      * @param resource resource on which event is fired
      */
     protected void fireDownloadEvent(Resource resource) {
-        DownloadListener l[];
-        synchronized (listeners) {
-            l = listeners.toArray(new DownloadListener[0]);
-        }
+        DownloadListener l[] = listeners.toArray(new DownloadListener[0]);
 
         Collection<Resource.Status> status;
         synchronized (resource) {
@@ -765,6 +759,19 @@ public class ResourceTracker {
             if (!requeue.isEmpty()) {
                 synchronized (lock) {
                     lock.notifyAll();
+                }
+            }
+
+            // §4.4 reclaim: force-claim JarSlots parked in RETRY_PENDING and re-enqueue
+            if (lastMetricsGroup != null) {
+                java.util.List<Integer> reclaimed = lastMetricsGroup.reclaimRetryPending();
+                if (!reclaimed.isEmpty()) {
+                    for (Integer idx : reclaimed) {
+                        startResource(lastMetricsGroup.slot(idx).location());
+                    }
+                    synchronized (lock) {
+                        lock.notifyAll();
+                    }
                 }
             }
         }

@@ -77,7 +77,10 @@ public final class JarSlot {
             }
             return false;
         }
-        return casState(JarState.IN_FLIGHT, JarState.RETRY_PENDING);
+        // first unusable: park in RETRY_PENDING (NOT absorbing, NOT counted).
+        // Returns false — the jar is not yet settled; a coordinator must claimRetry().
+        casState(JarState.IN_FLIGHT, JarState.RETRY_PENDING);
+        return false;
     }
 
     public boolean claimRetry() {

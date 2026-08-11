@@ -4,6 +4,9 @@ import java.net.URL;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class JarGroupState {
@@ -14,6 +17,13 @@ public final class JarGroupState {
     final CompletableFuture<Void> done = new CompletableFuture<>();
     volatile long groupStartMillis;
     volatile long groupEndMillis = -1;
+
+    private static final ScheduledExecutorService RECLAIM =
+            new ScheduledThreadPoolExecutor(1, r -> {
+                Thread t = new Thread(r, "itw-jar-reclaim");
+                t.setDaemon(true);
+                return t;
+            });
 
     public static JarGroupState forJars(List<URL> jarUrls) {
         JarGroupState g = new JarGroupState(jarUrls.size());
@@ -62,5 +72,21 @@ public final class JarGroupState {
     public long wallDurationMillis() {
         long end = groupEndMillis > 0 ? groupEndMillis : System.currentTimeMillis();
         return end - groupStartMillis;
+    }
+
+    /**
+     * Force-claim every jar still parked in {@link JarState#RETRY_PENDING}
+     * (the one-shot retry was never claimed by a waiter). Returns the indices
+     * reclaimed; the coordinator must re-enqueue downloads for them. This is the
+     * §4.4 safety net so an orphaned RETRY_PENDING can never strand {@code done}.
+     */
+    public List<Integer> reclaimRetryPending() {
+        List<Integer> reclaimed = new java.util.ArrayList<>();
+        for (int i = 0; i < jars.length; i++) {
+            if (jars[i].state() == JarState.RETRY_PENDING && jars[i].claimRetry()) {
+                reclaimed.add(i);
+            }
+        }
+        return reclaimed;
     }
 }
