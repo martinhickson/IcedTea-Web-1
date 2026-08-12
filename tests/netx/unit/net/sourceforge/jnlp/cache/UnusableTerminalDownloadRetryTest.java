@@ -108,9 +108,7 @@ public class UnusableTerminalDownloadRetryTest extends NoStdOutErrTest {
         // Simulate premature ERROR after addResource (production race), not a spent retry.
         resource.clearUnusableTerminalRetry();
         resource.setLocalFile(null);
-        resource.resetStatus();
-        resource.setStatusFlag(Resource.Status.ERROR);
-        resource.setStatusFlag(Resource.Status.PROCESSING);
+        resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
 
         assertTrue("wait must complete", tracker.waitForResources(new URL[] { url }, 60_000L));
         File local = tracker.getCacheFile(url);

@@ -261,20 +261,43 @@ public class ResourceDownloader implements Runnable {
 
     @Override
     public void run() {
-        // Legacy phase flags retired — the JarSlot machine owns state. Semantics
-        // preserved: run the connect phase, then the download phase, unless the
-        // resource already reached a terminal state (initialize* may complete or
-        // park it as ready-to-download).
-        if (resource.isSet(DOWNLOADED) || resource.isSet(ERROR)) {
-            return;
+        // The download thread drives its own one-shot retry: when an attempt parks
+        // the slot in RETRY_PENDING (terminal-unusable, retry available), it claims
+        // the retry itself and runs a second attempt. RETRY_PENDING therefore never
+        // persists, which lets ResourceTracker.wait() be a pure done.get() barrier
+        // (no polling, no monitor). The slot's retried latch bounds it to one retry.
+        try {
+            if (resource.isSet(DOWNLOADED) || resource.isSet(ERROR)) {
+                return;   // already terminal before we started
+            }
+            doAttempt();
+            if (resource.isTerminal()) {
+                return;
+            }
+            net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+            if (slot != null && slot.claimRetry()) {
+                doAttempt();   // attempt 2
+            }
+        } catch (Throwable t) {
+            // never leave the group hanging: settle bad on any unexpected failure
+            OutputController.getLogger().log(t);
+            settleSlotBad();
         }
+    }
+
+    private void doAttempt() {
         resource.fireDownloadEvent(); // fire CONNECTING
         initializeResource();
-        if (resource.isSet(DOWNLOADED) || resource.isSet(ERROR)) {
-            return;
+        if (resource.isTerminal() || isParkedForRetry()) {
+            return;   // initialize completed it, or parked — retry re-runs the full attempt
         }
         resource.fireDownloadEvent(); // fire CONNECTING
         downloadResource();
+    }
+
+    private boolean isParkedForRetry() {
+        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+        return slot != null && slot.state() == net.sourceforge.jnlp.cache.download.JarState.RETRY_PENDING;
     }
 
     private void initializeResource() {

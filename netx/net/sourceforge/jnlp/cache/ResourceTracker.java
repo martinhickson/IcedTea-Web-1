@@ -704,58 +704,29 @@ public class ResourceTracker {
             startResource(resource);
         }
 
-        // wait for completion — lock-free: poll JarSlot absorbing states, reclaim
-        // parked retries, and block on the group's done future. No synchronized,
-        // no wait(), no notifyAll() anywhere in the download path.
-        while (true) {
-            // 1) reclaim + re-enqueue any JarSlots parked in RETRY_PENDING
-            java.util.List<Integer> reclaimed = metricsGroup.reclaimRetryPending();
-            if (!reclaimed.isEmpty()) {
-                for (Integer idx : reclaimed) {
-                    startResource(metricsGroup.slot(idx).location());
-                }
-            }
-
-            // 2) completion = every jar absorbed (GOOD implies a usable local file;
-            //    settleSlotGood validates the cache-hit path before marking GOOD)
-            boolean finished = true;
-            for (Resource resource : resources) {
-                net.sourceforge.jnlp.cache.download.JarSlot s = resource.getJarSlot();
-                if (s == null) {
-                    finished = false;
-                    break;
-                }
-                net.sourceforge.jnlp.cache.download.JarState st = s.state();
-                if (st == net.sourceforge.jnlp.cache.download.JarState.GOOD
-                        || st == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD) {
-                    continue;
-                }
-                finished = false; // IN_FLIGHT (or RETRY_PENDING before the reclaim above)
-            }
-            if (finished) {
-                logDownloadStats();
-                return true;
-            }
-
-            // 3) block until the group settles or the poll interval elapses (so we can
-            //    reclaim retries). done.get() is future-based, not a monitor.
-            long remaining = timeout > 0 ? timeout - (System.currentTimeMillis() - startTime) : Long.MAX_VALUE;
-            if (remaining <= 0) {
-                return false;
-            }
-            long pollMs = Math.min(remaining, POLL_INTERVAL_MS);
-            try {
-                metricsGroup.done().get(pollMs, java.util.concurrent.TimeUnit.MILLISECONDS);
-            } catch (java.util.concurrent.TimeoutException e) {
-                // poll interval elapsed — loop to reclaim/check again
-            } catch (java.util.concurrent.ExecutionException e) {
-                // done is completed with null — never expected; treat as poll elapsed
-            }
+        // wait for completion — PURE EVENT BARRIER. The download thread drives its
+        // own one-shot retry (see ResourceDownloader.run), so RETRY_PENDING never
+        // persists and every slot reaches an absorbing state on its own. The waiter
+        // only blocks on the group's done future: no polling, no reclaim loop,
+        // no synchronized, no wait(), no notifyAll() anywhere in the download path.
+        long remaining = timeout > 0 ? timeout - (System.currentTimeMillis() - startTime) : Long.MAX_VALUE;
+        if (timeout > 0 && remaining <= 0) {
+            return false;
         }
+        try {
+            if (timeout > 0) {
+                metricsGroup.done().get(remaining, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } else {
+                metricsGroup.done().join();
+            }
+        } catch (java.util.concurrent.TimeoutException e) {
+            return false;
+        } catch (java.util.concurrent.ExecutionException e) {
+            // done completes with null — never expected; treat as completed
+        }
+        logDownloadStats();
+        return true;
     }
-
-    /** how often the wait loop wakes to reclaim parked RETRY_PENDING jars (ms) */
-    private static final long POLL_INTERVAL_MS = 200;
 
     private void logDownloadStats() {
         if (lastMetricsGroup == null) return;
