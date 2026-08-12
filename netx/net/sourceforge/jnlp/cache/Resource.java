@@ -77,16 +77,16 @@ public class Resource {
     private final URL location;
 
     /** the location to use when downloading */
-    private URL downloadLocation;
+    private volatile URL downloadLocation;
 
     /** the local file downloaded to */
-    private File localFile;
+    private volatile File localFile;
 
     /** the requested version */
     private final Version requestVersion;
 
     /** the version downloaded from server */
-    private Version downloadVersion;
+    private volatile Version downloadVersion;
 
     /** amount in bytes transferred */
     private volatile long transferred = 0;
@@ -97,16 +97,13 @@ public class Resource {
     /** lock-free slot for timing/metrics/settle (set when a JarGroupState is created for the group) */
     private volatile JarSlot jarSlot;
 
-    /** the status of the resource — LEGACY MIGRATION: retired. The lock-free
-     *  {@link JarSlot} state machine is the single source of truth (see
-     *  ResourceTracker.wait). The {@link Status} enum and isSet/hasFlags remain
-     *  for API compatibility only, delegating to the JarSlot. */
     /** terminal state for resources with no wait-group slot yet (cache-hit / prefetch):
      *  null = not terminal, GOOD = usable, SETTLED_BAD = failed. Once a JarSlot
      *  exists it is the single source of truth; this is only read pre-slot. */
     private volatile JarState terminalState;
-    /** dedup guard: a download for this resource is enqueued/active (legacy PROCESSING flag) */
-    private volatile boolean enqueued;
+    /** dedup guard: a download for this resource is enqueued/active (legacy PROCESSING flag).
+     *  AtomicBoolean so the claim is a lock-free compareAndSet. */
+    private final java.util.concurrent.atomic.AtomicBoolean enqueued = new java.util.concurrent.atomic.AtomicBoolean(false);
     
     /** Update policy for this resource */
     private final UpdatePolicy updatePolicy;
@@ -119,7 +116,7 @@ public class Resource {
      * local file and re-queued a download. One automatic recovery attempt only —
      * avoids hang loops when the server truly cannot supply the jar.
      */
-    private boolean unusableTerminalRetried;
+    private final java.util.concurrent.atomic.AtomicBoolean unusableTerminalRetried = new java.util.concurrent.atomic.AtomicBoolean(false);
 
     /**
      * Create a resource.
@@ -406,11 +403,16 @@ public class Resource {
     }
 
     public boolean isEnqueued() {
-        return enqueued;
+        return enqueued.get();
     }
 
-    public void setEnqueued(boolean enqueued) {
-        this.enqueued = enqueued;
+    /** Lock-free claim: true if this thread won the right to enqueue a download. */
+    public boolean tryEnqueue() {
+        return enqueued.compareAndSet(false, true);
+    }
+
+    public void clearEnqueued() {
+        enqueued.set(false);
     }
 
     /**
@@ -419,38 +421,26 @@ public class Resource {
      * was already used.
      */
     boolean consumeUnusableTerminalRetry() {
-        synchronized (this) {
-            if (unusableTerminalRetried) {
-                return false;
-            }
-            unusableTerminalRetried = true;
-            return true;
-        }
+        return unusableTerminalRetried.compareAndSet(false, true);
     }
 
     boolean isUnusableTerminalRetried() {
-        synchronized (this) {
-            return unusableTerminalRetried;
-        }
+        return unusableTerminalRetried.get();
     }
 
     /**
      * Allow one automatic recovery again (new tracker / new launch sharing this URL).
      */
     void clearUnusableTerminalRetry() {
-        synchronized (this) {
-            unusableTerminalRetried = false;
-        }
+        unusableTerminalRetried.set(false);
     }
 
     /**
      * Clear status and local file so {@link ResourceTracker} can enqueue a fresh download.
      */
     void prepareRedownloadAfterUnusableTerminal() {
-        synchronized (this) {
-            localFile = null;
-            resetStatus();
-        }
+        localFile = null;
+        resetStatus();
     }
 
     /**

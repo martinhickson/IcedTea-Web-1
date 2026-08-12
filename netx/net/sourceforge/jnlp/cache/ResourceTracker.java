@@ -100,9 +100,10 @@ public class ResourceTracker {
     
       /** notified on initialization or download of a resource */
 
-    /** the resources known about by this resource tracker */
-    private final List<Resource> resources = new ArrayList<>();
-    private final HashMap<String, Resource> resourcesMap = new HashMap<>();
+    /** the resources known about by this resource tracker (lock-free registry) */
+    private final List<Resource> resources = new CopyOnWriteArrayList<>();
+    private final java.util.concurrent.ConcurrentHashMap<String, Resource> resourcesMap =
+            new java.util.concurrent.ConcurrentHashMap<>();
 
     /** metrics group from the last wait() call, for post-download stats logging */
     private net.sourceforge.jnlp.cache.download.JarGroupState lastMetricsGroup;
@@ -151,17 +152,16 @@ public class ResourceTracker {
         }
         Resource resource = Resource.getResource(location, version, updatePolicy);
 
-        synchronized (resources) {
-            if (resources.contains(resource))
-                return;
-            resource.addTracker(this);
-            // Shared Resource instances are keyed by URL only; a prior launch in this JVM
-            // may have spent the one-shot unusable-terminal retry. New tracking must allow
-            // recovery again (ghost cache / premature ERROR → Unknown Main-Class).
-            resource.clearUnusableTerminalRetry();
-            resources.add(resource);
-            resourcesMap.put(location.toString(), resource);
+        // lock-free registry: putIfAbsent dedups by URL; the COW list is written once here
+        if (resourcesMap.putIfAbsent(location.toString(), resource) != null) {
+            return;
         }
+        resource.addTracker(this);
+        // Shared Resource instances are keyed by URL only; a prior launch in this JVM
+        // may have spent the one-shot unusable-terminal retry. New tracking must allow
+        // recovery again (ghost cache / premature ERROR → Unknown Main-Class).
+        resource.clearUnusableTerminalRetry();
+        resources.add(resource);
 
         if (options == null) {
             options = new DownloadOptions(false, false);
@@ -191,17 +191,15 @@ public class ResourceTracker {
      * @throws IllegalResourceDescriptorException if the resource is not being tracked
      */
     public void removeResource(URL location) {
-        synchronized (resources) {
-            Resource resource = getResource(location);
+        Resource resource = getResource(location);
 
-            if (resource != null) {
-                resources.remove(resource);
-                resourcesMap.remove(location.toString());
-                resource.removeTracker(this);
-            }
-
-            // should remove from queue? probably doesn't matter
+        if (resource != null) {
+            resources.remove(resource);
+            resourcesMap.remove(location.toString());
+            resource.removeTracker(this);
         }
+
+        // should remove from queue? probably doesn't matter
     }
 
     /**
@@ -216,9 +214,7 @@ public class ResourceTracker {
             // pretend that they are already downloaded; essentially
             // they will just 'pass through' the tracker as if they were
             // never added (for example, not affecting the total download size).
-            synchronized (resource) {
-                resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
-            }
+            resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
             fireDownloadEvent(resource);
             return true;
         }
@@ -229,12 +225,10 @@ public class ResourceTracker {
             if (entry.isCached() && !updatePolicy.shouldUpdate(entry)) {
                 OutputController.getLogger().log("not updating: " + resource.getLocation());
 
-                synchronized (resource) {
-                    resource.setLocalFile(CacheUtil.getCacheFile(resource.getLocation(), resource.getDownloadVersion()));
-                    resource.setSize(resource.getLocalFile().length());
-                    resource.setTransferred(resource.getLocalFile().length());
-                    resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
-                }
+                resource.setLocalFile(CacheUtil.getCacheFile(resource.getLocation(), resource.getDownloadVersion()));
+                resource.setSize(resource.getLocalFile().length());
+                resource.setTransferred(resource.getLocalFile().length());
+                resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
                 fireDownloadEvent(resource);
                 return true;
             }
@@ -282,10 +276,8 @@ public class ResourceTracker {
     protected void fireDownloadEvent(Resource resource) {
         DownloadListener l[] = listeners.toArray(new DownloadListener[0]);
 
-        Collection<Resource.Status> status;
-        synchronized (resource) {
-            status = resource.getCopyOfStatus();
-        }
+        // getCopyOfStatus reads the JarSlot/terminalState (volatile) — lock-free
+        Collection<Resource.Status> status = resource.getCopyOfStatus();
 
         DownloadEvent event = new DownloadEvent(this, resource);
         for (DownloadListener dl : l) {
@@ -429,18 +421,16 @@ public class ResourceTracker {
      * @return true if a re-download was started
      */
     private boolean requeueUnusableTerminal(Resource resource) {
-        synchronized (resource) {
-            if (hasUsableLocalFile(resource) && resource.isSet(DOWNLOADED)) {
-                return false;
-            }
-            if (!(resource.isSet(ERROR) || resource.isSet(DOWNLOADED))) {
-                return false;
-            }
-            if (!resource.consumeUnusableTerminalRetry()) {
-                return false;
-            }
-            resource.prepareRedownloadAfterUnusableTerminal();
+        if (hasUsableLocalFile(resource) && resource.isSet(DOWNLOADED)) {
+            return false;
         }
+        if (!(resource.isSet(ERROR) || resource.isSet(DOWNLOADED))) {
+            return false;
+        }
+        if (!resource.consumeUnusableTerminalRetry()) {
+            return false;
+        }
+        resource.prepareRedownloadAfterUnusableTerminal();
         startResource(resource);
         return true;
     }
@@ -458,11 +448,9 @@ public class ResourceTracker {
     public boolean waitForResources(URL urls[], long timeout) throws InterruptedException {
         Resource lresources[] = new Resource[urls.length];
 
-        synchronized (lresources) {
-            // keep the lock so getResource doesn't have to aquire it each time
-            for (int i = 0; i < urls.length; i++) {
-                lresources[i] = getResource(urls[i]);
-            }
+        // getResource is lock-free (concurrent registry); no monitor needed
+        for (int i = 0; i < urls.length; i++) {
+            lresources[i] = getResource(urls[i]);
         }
 
         if (lresources.length > 0)
@@ -536,30 +524,23 @@ public class ResourceTracker {
      * @throws IllegalResourceDescriptorException if the resource is not being tracked
      */
     private boolean startResource(Resource resource) {
-        boolean enqueue;
-
-        synchronized (resource) {
-            // DOWNLOADED/ERROR without a usable jar: clear and enqueue a fresh attempt.
-            // Do NOT consume the one-shot retry here — wait/getCacheFile consume it when
-            // they observe another terminal-unusable result after this download finishes.
-            boolean terminalUnusable = (resource.isSet(ERROR) || resource.isSet(DOWNLOADED))
-                    && !hasUsableLocalFile(resource);
-            if (terminalUnusable) {
-                if (resource.isUnusableTerminalRetried()) {
-                    return true;
-                }
-                resource.prepareRedownloadAfterUnusableTerminal();
-            } else if (resource.isSet(ERROR) || resource.isSet(DOWNLOADED)) {
+        // DOWNLOADED/ERROR without a usable jar: clear and enqueue a fresh attempt.
+        // Do NOT consume the one-shot retry here — wait/getCacheFile consume it when
+        // they observe another terminal-unusable result after this download finishes.
+        boolean terminalUnusable = (resource.isSet(ERROR) || resource.isSet(DOWNLOADED))
+                && !hasUsableLocalFile(resource);
+        if (terminalUnusable) {
+            if (resource.isUnusableTerminalRetried()) {
                 return true;
             }
-
-            // Dedup: never enqueue two downloads for the same resource. The legacy
-            // PROCESSING EnumSet flag is retired; a single volatile flag does the job.
-            enqueue = !resource.isEnqueued();
-            if (enqueue) {
-                resource.setEnqueued(true);
-            }
+            resource.prepareRedownloadAfterUnusableTerminal();
+        } else if (resource.isSet(ERROR) || resource.isSet(DOWNLOADED)) {
+            return true;
         }
+
+        // Dedup: never enqueue two downloads for the same resource. Lock-free CAS
+        // on the AtomicBoolean enqueued flag; exactly one thread wins.
+        boolean enqueue = resource.tryEnqueue();
 
         if (enqueue)
             startDownloadThread(resource);
@@ -596,9 +577,7 @@ public class ResourceTracker {
         for (Resource resource : source) {
             boolean selectable;
 
-            synchronized (resource) {
-                selectable = filter.test(resource);
-            }
+            selectable = filter.test(resource);   // reads JarSlot state (atomic)
 
             if (selectable) {
                 result = resource;
@@ -647,17 +626,15 @@ public class ResourceTracker {
      * @throws IllegalResourceDescriptorException if the resource is not being tracked
      */
     private Resource getResource(URL location) {
-        synchronized (resources) {
-            if (null != location) {
-                Resource res = resourcesMap.get(location.toString());
-                if (null != res && UrlUtils.urlEquals(res.getLocation(), location)) {
-                    return res;
-                }
+        if (null != location) {
+            Resource res = resourcesMap.get(location.toString());
+            if (null != res && UrlUtils.urlEquals(res.getLocation(), location)) {
+                return res;
             }
-            for (Resource resource : resources) {
-                if (UrlUtils.urlEquals(resource.getLocation(), location))
-                    return resource;
-            }
+        }
+        for (Resource resource : resources) {
+            if (UrlUtils.urlEquals(resource.getLocation(), location))
+                return resource;
         }
 
         throw new IllegalResourceDescriptorException("Location does not specify a resource being tracked.");

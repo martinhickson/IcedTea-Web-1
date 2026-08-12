@@ -58,7 +58,7 @@ public class ResourceDownloader implements Runnable {
         }
         return PACK200_GZIP_ENCODING;
     }
-    private static final Set<String> LOGGED_MISSING_FAVICONS = new HashSet<>();
+    private static final Set<String> LOGGED_MISSING_FAVICONS = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Resource resource;
     /**
      * Pre-computed URL candidates (version-encoded, query-param, plain) to
@@ -95,11 +95,9 @@ public class ResourceDownloader implements Runnable {
      */
     static void logMissingFavIconInfo(URL url) {
         String key = faviconMissingLogKey(url);
-        synchronized (LOGGED_MISSING_FAVICONS) {
-            if (!LOGGED_MISSING_FAVICONS.add(key)) {
-                logFavIconTrace("Favicon missing (already reported for " + key + "): " + url);
-                return;
-            }
+        if (!LOGGED_MISSING_FAVICONS.add(key)) {
+            logFavIconTrace("Favicon missing (already reported for " + key + "): " + url);
+            return;
         }
         OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
                 "INFO: This application does not have a favourite icon yet"
@@ -409,18 +407,16 @@ public class ResourceDownloader implements Runnable {
                 }
             }
 
-            synchronized (resource) {
-                resource.setLocalFile(localFile);
-                // resource.connection = connection;
-                resource.setSize(size);
+            resource.setLocalFile(localFile);
+            // resource.connection = connection;
+            resource.setSize(size);
 
-                // Never mark DOWNLOADED when the local file is missing — that is what produced
-                // NoSuchFileException in JarCertVerifier with corrupt/partial cache state.
-                if (current && localFile != null && localFile.isFile() && localFile.length() > 0
-                        && (!CacheUtil.isJarResourceUrl(resource.getLocation())
-                        || CacheUtil.isValidJarFile(localFile))) {
-                    settleSlotGood(true);
-                }
+            // Never mark DOWNLOADED when the local file is missing — that is what produced
+            // NoSuchFileException in JarCertVerifier with corrupt/partial cache state.
+            if (current && localFile != null && localFile.isFile() && localFile.length() > 0
+                    && (!CacheUtil.isJarResourceUrl(resource.getLocation())
+                    || CacheUtil.isValidJarFile(localFile))) {
+                settleSlotGood(true);
             }
 
             // update cache entry
@@ -480,11 +476,9 @@ public class ResourceDownloader implements Runnable {
             if (localFile != null && localFile.exists()) {
                 long size = localFile.length();
 
-                synchronized (resource) {
-                    resource.setLocalFile(localFile);
-                    resource.setSize(size);
-                    settleSlotGood(true);
-                }
+                resource.setLocalFile(localFile);
+                resource.setSize(size);
+                settleSlotGood(true);
             } else {
                 if (isFavIconUrl(resource.getLocation())) {
                     logMissingFavIconInfo(resource.getLocation());
@@ -657,7 +651,7 @@ public class ResourceDownloader implements Runnable {
     }
 
     private void settleSlotGood(boolean fromCache) {
-        resource.setEnqueued(false);   // allow a retry/next wait to re-enqueue
+        resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
@@ -674,7 +668,7 @@ public class ResourceDownloader implements Runnable {
     }
 
     private void settleSlotBad() {
-        resource.setEnqueued(false);   // allow a retry/next wait to re-enqueue
+        resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
