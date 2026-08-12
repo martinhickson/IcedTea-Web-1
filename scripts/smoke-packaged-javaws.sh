@@ -91,10 +91,13 @@ cat > "$WORK/app.jnlp" <<'EOF'
 EOF
 
 # --- serve the sample (Groovy server; python is banned) ---
+SERVER_LOG="$WORK/server.log"
 if [ "$IS_WINDOWS" = 1 ]; then
-  (cd "$WORK" && cmd /c "groovy \"$SERVE_SCRIPT\" $PORT \"$WORK\"" >/dev/null 2>&1) &
+  WIN_SCRIPT="$(cygpath -w "$SERVE_SCRIPT")"
+  WIN_WORK="$(cygpath -w "$WORK")"
+  (cd "$WORK" && cmd /c "groovy \"$WIN_SCRIPT\" $PORT \"$WIN_WORK\"" >"$SERVER_LOG" 2>&1) &
 else
-  (cd "$WORK" && "$GROOVY" "$SERVE_SCRIPT" "$PORT" "$WORK" >/dev/null 2>&1) &
+  (cd "$WORK" && "$GROOVY" "$SERVE_SCRIPT" "$PORT" "$WORK" >"$SERVER_LOG" 2>&1) &
 fi
 SRV=$!
 # wait for the server to accept (curl is present on all hosted runners)
@@ -106,7 +109,11 @@ for _ in $(seq 1 20); do
   fi
   sleep 1
 done
-[ "$ready" = 1 ] || fail "Groovy sample server did not come up on port $PORT"
+if [ "$ready" != 1 ]; then
+  echo "SMOKE-FAIL: Groovy sample server did not come up on port $PORT; server log:"
+  cat "$SERVER_LOG" 2>/dev/null || true
+  exit 1
+fi
 
 # --- isolated user config (macOS: ~/Library/Application Support/icedtea-web; linux/windows: XDG) ---
 export HOME="$WORK/home"
