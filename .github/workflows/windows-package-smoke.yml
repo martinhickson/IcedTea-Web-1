@@ -43,6 +43,7 @@ jobs:
             Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\groovy" -Force
             $bin = "$env:RUNNER_TEMP\groovy\groovy-$version\bin"
             echo "$bin" >> $env:GITHUB_PATH
+            $env:PATH = "$bin;$env:PATH"
           }
           groovy --version
         shell: pwsh
