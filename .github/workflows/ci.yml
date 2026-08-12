@@ -23,12 +23,12 @@ jobs:
           - os: ubuntu-latest
             java-version: '11'
             profile: ci
-            pack200-bootstrap: false
+            pack200-bootstrap: true
             bash-executable: bash
           - os: windows-2025
             java-version: '11'
             profile: ci
-            pack200-bootstrap: false
+            pack200-bootstrap: true
             bash-executable: 'C:\Program Files\Git\usr\bin\bash.exe'
           - os: ubuntu-latest
             java-version: '17'

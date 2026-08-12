@@ -136,7 +136,10 @@ mkdir -p "$HOME"
 # which prefers JAVA_HOME — unset it so resolution falls back to the bundled
 # runtime/temurin-21 scan (the default we are asserting).
 URL="http://127.0.0.1:$PORT/app.jnlp"
-run_capped 45 env -u JAVA_HOME "$LAUNCHER" -headless -verbose -Xtrustall -Xnofork -J-Djava.awt.headless=true "$URL"
+run_capped 45 env -u JAVA_HOME "$LAUNCHER" -headless -verbose -Xtrustall -Xnofork \
+  -J-Djava.awt.headless=true \
+  -J-Ddeployment.log=true -J-Ddeployment.log.file=true -J-Ddeployment.log.file.clientapp=true \
+  "$URL"
 
 LOG_BASE="$(find "$HOME" -type d -name log -path "*icedtea-web*" 2>/dev/null | head -1)"
 MAIN_LOG="$(find "$LOG_BASE" -name "*.log" ! -name "*prelaunch*" ! -name "*relaunch*" 2>/dev/null | head -1)"
@@ -157,8 +160,9 @@ esac
 
 # --- 2. app launch evidence ---
 marker_found=0
-# primary: poll the ITW javantx logs (Windows captures child output there; Linux/macOS sometimes too)
-for _ in $(seq 1 60); do
+# primary: poll the ITW javantx logs (file logging on -> app stdout lands there
+# on every platform, independent of the launcher stdout-redirect quirk)
+for _ in $(seq 1 90); do
   if grep -ra "ITW_SMOKE_SUCCESS" "$LOG_BASE" 2>/dev/null | grep -qv "SMOKE-FAIL"; then
     marker_found=1
     break
@@ -184,6 +188,10 @@ fi
   echo "SMOKE-FAIL: app did not print ITW_SMOKE_SUCCESS (handoff=$CHILD_VER)"
   echo "--- log files:"
   find "$LOG_BASE" -type f 2>/dev/null | head -20
+  echo "--- main handoff log full content:"
+  cat "$MAIN_LOG" 2>/dev/null
+  echo "--- prelaunch log full content:"
+  cat "${MAIN_LOG%-relaunch.log}"*prelaunch* 2>/dev/null | head -40
   echo "--- log highlights:"
   grep -raE "Selected JVM|Exception|Fatal|Error|ITW_SMOKE|Starting application|Invoking main|Permission|LaunchException|jdk=" "$LOG_BASE" 2>/dev/null | grep -avE "Handoff|Child |Standard |Working dir|\.NET|Command:|Handoff complete|OS:|Architecture" | head -25
   exit 1
