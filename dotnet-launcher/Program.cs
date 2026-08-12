@@ -155,6 +155,15 @@ internal static class Program
         var runtimeRoot = new DirectoryInfo(Path.Combine(installRoot.FullName, "runtime"));
         if (runtimeRoot.Exists)
         {
+            // Preferred download JVM: runtime\temurin-25\bin\java.exe (Appendix D.5).
+            // Must be preferred explicitly — with multiple bundled JREs a blind
+            // EnumerateFiles scan would pick whichever the filesystem yields first.
+            var preferred = Path.Combine(runtimeRoot.FullName, "temurin-25", "bin", JavaExecutableName());
+            if (File.Exists(preferred))
+            {
+                return preferred;
+            }
+
             var bundledJava = runtimeRoot.EnumerateFiles(JavaExecutableName(), SearchOption.AllDirectories)
                 .FirstOrDefault(file => string.Equals(file.Directory?.Name, "bin", StringComparison.OrdinalIgnoreCase));
             if (bundledJava != null)
@@ -185,7 +194,7 @@ internal static class Program
         }
 
         throw new FileNotFoundException(
-            "Bundled Corretto runtime not found. Expected runtime/**/bin/" + JavaExecutableName()
+            "Bundled Temurin runtime not found. Expected runtime/**/bin/" + JavaExecutableName()
             + " next to the Maven distribution launcher.");
     }
 
