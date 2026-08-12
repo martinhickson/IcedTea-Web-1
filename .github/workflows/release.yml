@@ -84,11 +84,12 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-      - name: Create release branch from latest 1.8
+      - name: Create release branch from workflow ref
         run: |
-          git fetch origin 1.8
-          git checkout -B "${RELEASE_BRANCH}" "origin/1.8"
-          echo "Release branch ${RELEASE_BRANCH} based on origin/1.8 ($(git rev-parse --short HEAD))"
+          # Use the commit selected by `gh workflow run --ref <branch>` (github.sha),
+          # not a hard-coded origin/1.8 tip.
+          git checkout -B "${RELEASE_BRANCH}" "${GITHUB_SHA}"
+          echo "Release branch ${RELEASE_BRANCH} based on ${GITHUB_REF_NAME} @ $(git rev-parse --short HEAD)"
 
       - name: Set up Corretto 11 for release preparation
         uses: actions/setup-java@v5
