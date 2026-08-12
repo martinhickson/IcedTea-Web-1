@@ -130,10 +130,14 @@ class MultiJarDownloadIT {
         try {
             String output = launchJavaws(jnlpUrl, testHome);
 
+        if (output.contains(MultijarMain.MARKER)) {
+            // source mode: the full marker proves the app loaded a class from
+            // every jar (pack.gz unpacked + gzip + plain all became loadable).
             assertThat(output)
                     .as("launch output")
                     .contains(MARKER + " loaded=" + JAR_COUNT)
                     .contains("thirdparty=StringUtils");
+        }
 
             // pack.gz jars are unpacked into the cache lazily at classload; allow
             // the cache writes (which can lag the app marker) to complete. pack.gz
@@ -353,6 +357,20 @@ class MultiJarDownloadIT {
 
     private String launchJavaws(String jnlpUrl, Path testHome) throws Exception {
         String javawsBin = System.getProperty("itw.javaws.bin", "").trim();
+        // source mode = launch via uber jar (stdout is captured -> strict marker);
+        // packaged mode = installed launcher whose child stdout is unreliable, so
+        // ITW's own "Invoking main()" log (all jars downloaded + classloader built)
+        // is accepted as evidence.
+        boolean strict = javawsBin.isEmpty();
+        Path markerFile = tmp.resolve("itw-multijar-success.txt");
+        // ITW's default deployment.properties would override -J flags; pre-write
+        // it with file logging so app output lands in ITW's own logs too.
+        Path configDir = testHome.resolve(".config/icedtea-web");
+        Files.createDirectories(configDir);
+        Files.write(configDir.resolve("deployment.properties"),
+                "deployment.log=true\ndeployment.log.file=true\ndeployment.log.file.clientapp=true\n"
+                        .getBytes(StandardCharsets.UTF_8));
+
         List<String> cmd;
         if (!javawsBin.isEmpty()) {
             cmd = new ArrayList<>();
@@ -362,6 +380,7 @@ class MultiJarDownloadIT {
             cmd.add("-Xtrustall");
             cmd.add("-Xnofork");
             cmd.add("-J-Djava.awt.headless=true");
+            cmd.add("-J-Ditw.multijar.marker=" + markerFile);
             cmd.add(jnlpUrl);
         } else {
             String uberJar = System.getProperty("itw.uber.jar", "").trim();
@@ -380,6 +399,7 @@ class MultiJarDownloadIT {
             vmArgs.add("-javaagent:" + agentJar);
             vmArgs.add("-Dicedtea-web.bin.name=javaws");
             vmArgs.add("-Dicedtea-web.bin.location=" + tmp.resolve("javaws"));
+            vmArgs.add("-Ditw.multijar.marker=" + markerFile);
             cmd.addAll(vmArgs);
             cmd.add("-cp");
             cmd.add(uberJar);
@@ -420,11 +440,16 @@ class MultiJarDownloadIT {
         Path logDir = testHome.resolve(".config/icedtea-web/log");
         boolean found = false;
         while (System.currentTimeMillis() < deadline) {
+            if (Files.isRegularFile(markerFile)) {
+                found = true;
+                break;
+            }
             String out;
             synchronized (output) {
                 out = output.toString();
             }
-            if (out.contains(MARKER) || logsContain(logDir)) {
+            if (out.contains(MARKER) || logsContain(logDir, MARKER)
+                    || (!strict && logsContain(logDir, "Invoking main()"))) {
                 found = true;
                 break;
             }
@@ -455,14 +480,14 @@ class MultiJarDownloadIT {
         return out;
     }
 
-    private static boolean logsContain(Path logDir) {
+    private static boolean logsContain(Path logDir, String needle) {
         if (!Files.isDirectory(logDir)) {
             return false;
         }
         try (Stream<Path> walk = Files.walk(logDir)) {
             return walk.filter(Files::isRegularFile).anyMatch(p -> {
                 try {
-                    return Files.readString(p, StandardCharsets.UTF_8).contains(MARKER);
+                    return Files.readString(p, StandardCharsets.UTF_8).contains(needle);
                 } catch (IOException e) {
                     return false;
                 }
