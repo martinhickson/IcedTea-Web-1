@@ -85,3 +85,4 @@ jobs:
         env:
           SMOKE_PYTHON: python
         run: bash scripts/smoke-packaged-javaws.sh "$ITW_INSTALL_ROOT" 8123 "${{ inputs.expected_download_jvm }}"
+        shell: bash
