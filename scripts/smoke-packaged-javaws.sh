@@ -130,8 +130,13 @@ export XDG_DATA_HOME="$WORK/home/.local/share"
 mkdir -p "$HOME"
 
 # --- 1. launcher run -> handoff record ---
+# -Xnofork keeps the app in the download-JVM process so its stdout lands in the
+# launcher redirect log (this is how the packaged launcher captures app output
+# on Windows). -Xnofork makes the launcher take its "relaunch" resolution path,
+# which prefers JAVA_HOME — unset it so resolution falls back to the bundled
+# runtime/temurin-21 scan (the default we are asserting).
 URL="http://127.0.0.1:$PORT/app.jnlp"
-run_capped 30 "$LAUNCHER" -headless -Xtrustall -J-Djava.awt.headless=true "$URL"
+run_capped 45 env -u JAVA_HOME "$LAUNCHER" -headless -verbose -Xtrustall -Xnofork -J-Djava.awt.headless=true "$URL"
 
 LOG_BASE="$(find "$HOME" -type d -name log -path "*icedtea-web*" 2>/dev/null | head -1)"
 MAIN_LOG="$(find "$LOG_BASE" -name "*.log" ! -name "*prelaunch*" ! -name "*relaunch*" 2>/dev/null | head -1)"
@@ -153,7 +158,7 @@ esac
 # --- 2. app launch evidence ---
 marker_found=0
 # primary: poll the ITW javantx logs (Windows captures child output there; Linux/macOS sometimes too)
-for _ in $(seq 1 30); do
+for _ in $(seq 1 60); do
   if grep -ra "ITW_SMOKE_SUCCESS" "$LOG_BASE" 2>/dev/null | grep -qv "SMOKE-FAIL"; then
     marker_found=1
     break
