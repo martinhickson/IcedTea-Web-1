@@ -132,6 +132,21 @@ public class JNLPRuntime {
     /** whether initialized */
     private static boolean initialized = false;
 
+    /** SSL context wired with ITW's VariableX509TrustManager chain (set in setSSL); used by the HTTP clients. */
+    private static volatile SSLContext ITW_SSL_CONTEXT;
+
+    public static SSLContext getSslContext() {
+        SSLContext c = ITW_SSL_CONTEXT;
+        if (c != null) {
+            return c;
+        }
+        try {
+            return SSLContext.getDefault();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Unable to obtain a default SSL context", e);
+        }
+    }
+
     /** whether netx is in command-line mode (headless) */
     private static boolean headless = false;
     private static boolean headlessChecked = false;
@@ -313,6 +328,7 @@ public class JNLPRuntime {
             TrustManager[] trust = new TrustManager[] { getSSLSocketTrustManager() };
             context.init(kmf.getKeyManagers(), trust, null);
             sslSocketFactory = context.getSocketFactory();
+            ITW_SSL_CONTEXT = context;
 
             HttpsURLConnection.setDefaultSSLSocketFactory(sslSocketFactory);
         } catch (Exception e) {

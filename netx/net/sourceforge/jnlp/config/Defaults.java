@@ -440,6 +440,12 @@ public class Defaults {
                         null,
                         null
                 },
+                /* HTTP client implementation: "apache" (default) or "oracle" (HttpURLConnection) */
+                {
+                        DeploymentConfiguration.KEY_HTTP_CLIENT,
+                        null,
+                        "apache"
+                },
                 {
                         DeploymentConfiguration.IGNORE_HEADLESS_CHECK,
                         BasicValueValidators.getBooleanValidator(),

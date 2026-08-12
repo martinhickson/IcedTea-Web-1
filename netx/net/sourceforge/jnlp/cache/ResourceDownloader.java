@@ -14,7 +14,6 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.net.URLConnection;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
 import java.util.EnumSet;
@@ -211,49 +210,35 @@ public class ResourceDownloader implements Runnable {
      */
     static UrlRequestResult getUrlResponseCodeWithRedirectonResult(URL url, Map<String, String> requestProperties, ResourceTracker.RequestMethods requestMethod) throws IOException {
         UrlRequestResult result = new UrlRequestResult();
-        URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(url);
-        // Do NOT call setUseCaches(false) — it forces "Cache-Control: no-cache"
-        // + "Pragma: no-cache" headers which defeat proxy/CDN caching and can
-        // trigger special handling by proxy/DPI appliances. Freshness is handled
-        // via conditional requests (If-Modified-Since) and ITW's own cache layer,
-        // not JVM response caching.
-
-        for (Map.Entry<String, String> property : requestProperties.entrySet()) {
-            connection.addRequestProperty(property.getKey(), property.getValue());
-        }
-
-        if (connection instanceof HttpURLConnection) {
-            HttpURLConnection httpConnection = (HttpURLConnection) connection;
-            httpConnection.setRequestMethod(requestMethod.toString());
-
-            int responseCode = httpConnection.getResponseCode();
+        // Freshness is handled via conditional requests (If-Modified-Since) and ITW's own
+        // cache layer, not JVM response caching. The HTTP client implementation is chosen
+        // by deployment.http.client (apache default, oracle escape hatch).
+        try (net.sourceforge.jnlp.security.HttpResponse response =
+                     net.sourceforge.jnlp.security.HttpClientProvider.getDefault()
+                             .open(url, requestMethod.toString(), requestProperties, null)) {
+            int responseCode = response.getStatusCode();
 
             /* Fully consuming current request helps with connection re-use
              * See http://docs.oracle.com/javase/1.5.0/docs/guide/net/http-keepalive.html */
-            HttpUtils.consumeAndCloseConnectionSilently(httpConnection, url);
-
             result.result = responseCode;
-        }
 
-        if (!isFavIconUrl(url)) {
-            Map<String, List<String>> header = connection.getHeaderFields();
-            for (Map.Entry<String, List<String>> entry : header.entrySet()) {
-                OutputController.getLogger().log("Key : " + entry.getKey() + " ,Value : " + entry.getValue());
+            if (!isFavIconUrl(url)) {
+                Map<String, List<String>> header = response.getHeaders();
+                for (Map.Entry<String, List<String>> entry : header.entrySet()) {
+                    OutputController.getLogger().log("Key : " + entry.getKey() + " ,Value : " + entry.getValue());
+                }
             }
+            /*
+             * Do this only on 301,302,303(?)307,308>
+             * Now setting value for all, and lets upper stack to handle it
+             */
+            String possibleRedirect = response.getHeader("Location");
+            if (possibleRedirect != null && possibleRedirect.trim().length() > 0) {
+                result.URL = new URL(possibleRedirect);
+            }
+            result.lastModified = response.getLastModified();
+            result.length = response.getContentLength();
         }
-        /*
-         * Do this only on 301,302,303(?)307,308>
-         * Now setting value for all, and lets upper stack to handle it
-         */
-        String possibleRedirect = connection.getHeaderField("Location");
-        if (possibleRedirect != null && possibleRedirect.trim().length() > 0) {
-            result.URL = new URL(possibleRedirect);
-        }
-        ConnectionFactory.getConnectionFactory().disconnect(connection);
-
-        result.lastModified = connection.getLastModified();
-        result.length = connection.getContentLengthLong();
-
         return result;
 
     }
@@ -359,8 +344,11 @@ public class ResourceDownloader implements Runnable {
                 return;
             }
 
-            URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(location.URL);
-            connection.addRequestProperty("Accept-Encoding", getAcceptEncoding());
+            java.util.Map<String, String> headers = new java.util.HashMap<>();
+            headers.put("Accept-Encoding", getAcceptEncoding());
+            net.sourceforge.jnlp.security.HttpResponse response =
+                    net.sourceforge.jnlp.security.HttpClientProvider.getDefault()
+                            .open(location.URL, "GET", headers, null);
 
             File localFile = null;
             if (resource.getRequestVersion() == resource.getDownloadVersion()) {
@@ -370,11 +358,11 @@ public class ResourceDownloader implements Runnable {
             }
             Long size = location.length;
             if (size == null) {
-                size = connection.getContentLengthLong();
+                size = response.getContentLength();
             }
             Long lm = location.lastModified;
             if (lm == null) {
-                lm = connection.getLastModified();
+                lm = response.getLastModified();
             }
             // If the newest LRU slot is a ghost (.info-only) but an older folder still has the
             // jar, reuse that copy when it is still current. Do not point localFile at the old
@@ -460,8 +448,8 @@ public class ResourceDownloader implements Runnable {
             entry.store();
             resource.fireDownloadEvent(); // fire CONNECTED
 
-            // explicitly close the URLConnection.
-            ConnectionFactory.getConnectionFactory().disconnect(connection);
+            // explicitly close the HTTP response.
+            response.close();
         } finally {
             entry.unlock();
         }
@@ -569,7 +557,7 @@ public class ResourceDownloader implements Runnable {
 
     private void downloadResource() {
         URL downloadTo = resource.getLocation(); //Where to download to
-        URLConnection connection = null;
+        net.sourceforge.jnlp.security.HttpResponse response = null;
         URL downloadFrom = null;
 
         try {
@@ -584,17 +572,14 @@ public class ResourceDownloader implements Runnable {
             IOException lastError = null;
             for (URL candidate : tryUrls) {
                 try {
-                    connection = getDownloadConnection(candidate);
-                    // connect() does not throw for HTTP error codes like 404,
-                    // so we must check the response code explicitly to decide
-                    // whether to fall through to the next URL candidate.
-                    if (connection instanceof HttpURLConnection) {
-                        int responseCode = ((HttpURLConnection) connection).getResponseCode();
-                        if (responseCode >= 400) {
-                            logResourceDebug(downloadTo, "GET returned " + responseCode + " for " + candidate + ", trying next URL candidate");
-                            connection = null;
-                            continue;
-                        }
+                    response = getDownloadConnection(candidate);
+                    // HTTP error codes (404 etc.) are not exceptions; check the
+                    // status explicitly to fall through to the next candidate.
+                    if (response.getStatusCode() >= 400) {
+                        logResourceDebug(downloadTo, "GET returned " + response.getStatusCode() + " for " + candidate + ", trying next URL candidate");
+                        response.close();
+                        response = null;
+                        continue;
                     }
                     downloadFrom = candidate;
                     break; // success
@@ -603,11 +588,11 @@ public class ResourceDownloader implements Runnable {
                     logResourceDebug(downloadTo, "GET failed for " + candidate + ", trying next URL candidate");
                 }
             }
-            if (connection == null) {
+            if (response == null) {
                 throw lastError != null ? lastError : new IOException("No URL candidates");
             }
 
-            String contentEncoding = connection.getContentEncoding();
+            String contentEncoding = response.getContentEncoding();
 
             logResourceDebug(downloadTo, "Downloading " + downloadTo + " using "
                     + downloadFrom + " (encoding : " + contentEncoding + ") ");
@@ -617,15 +602,15 @@ public class ResourceDownloader implements Runnable {
             boolean gzip = "gzip".equals(contentEncoding);
 
             // It's important to check packgz first. If a stream is both
-            // pack200 and gz encoded, then con.getContentEncoding() could
+            // pack200 and gz encoded, then the Content-Encoding could
             // return ".gz", so if we check gzip first, we would end up
             // treating a pack200 file as a jar file.
             if (packgz) {
-                downloadPackGzFileDirectly(connection, downloadFrom, downloadTo);
+                downloadPackGzFileDirectly(response, downloadFrom, downloadTo);
             } else if (gzip) {
-                downloadGZipFile(connection, downloadFrom, downloadTo);
+                downloadGZipFile(response, downloadFrom, downloadTo);
             } else {
-                downloadFile(connection, downloadTo, false, null);
+                downloadFile(response, downloadTo, false, null);
             }
             settleSlotGood(false);
             resource.fireDownloadEvent(); // fire DOWNLOADED
@@ -634,21 +619,24 @@ public class ResourceDownloader implements Runnable {
             settleSlotBad();
             resource.fireDownloadEvent(); // fire ERROR
         } finally {
-            if (connection != null) {
-                ConnectionFactory.getConnectionFactory().disconnect(connection);
+            if (response != null) {
+                response.close();
             }
         }
     }
 
-    private URLConnection getDownloadConnection(URL location) throws IOException {
-        URLConnection con = ConnectionFactory.getConnectionFactory().openConnection(location);
-        con.addRequestProperty("Accept-Encoding", getAcceptEncoding());
+    private net.sourceforge.jnlp.security.HttpResponse getDownloadConnection(URL location) throws IOException {
+        java.util.Map<String, String> headers = new java.util.HashMap<>();
+        headers.put("Accept-Encoding", getAcceptEncoding());
+        net.sourceforge.jnlp.cache.download.ConnectionTiming timing = new net.sourceforge.jnlp.cache.download.ConnectionTiming();
+        net.sourceforge.jnlp.security.HttpResponse response =
+                net.sourceforge.jnlp.security.HttpClientProvider.getDefault().open(location, "GET", headers, timing);
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot != null) {
-            slot.onConnect(System.currentTimeMillis());
+            long connected = timing.connectEndMillis > 0 ? timing.connectEndMillis : System.currentTimeMillis();
+            slot.onConnect(connected);
         }
-        con.connect();
-        return con;
+        return response;
     }
 
     private void settleSlotGood(boolean fromCache) {
@@ -678,39 +666,39 @@ public class ResourceDownloader implements Runnable {
         slot.settleUnusable(System.currentTimeMillis());
     }
 
-    private void downloadPackGzFile(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {
+    private void downloadPackGzFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom, URL downloadTo) throws IOException {
         if (downloadFrom.equals(downloadTo)) {
             downloadFrom = new URL(downloadFrom + ".pack.gz");
         }
-        downloadFile(connection, downloadFrom, true, null);
+        downloadFile(response, downloadFrom, true, null);
 
         uncompressPackGz(downloadFrom, downloadTo, resource.getDownloadVersion());
         CacheEntry entry = new CacheEntry(downloadFrom, resource.getDownloadVersion());
-        storeEntryFields(entry, entry.getCacheFile().length(), connection.getLastModified());
+        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified());
         markForDelete(downloadFrom);
     }
 
-    private void downloadPackGzFileDirectly(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {
+    private void downloadPackGzFileDirectly(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom, URL downloadTo) throws IOException {
         if (downloadFrom.equals(downloadTo)) {
             downloadFrom = new URL(downloadFrom + ".pack.gz");
         }
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion(), true);
-        downloadFile(connection, downloadFrom, true, entry);
-        storeEntryFields(entry, entry.getCacheFile().length(), connection.getLastModified());
+        downloadFile(response, downloadFrom, true, entry);
+        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified());
     }
 
-    private void downloadGZipFile(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {
+    private void downloadGZipFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom, URL downloadTo) throws IOException {
         if (downloadFrom.equals(downloadTo))
             downloadFrom = new URL(downloadFrom + ".gz");
-        downloadFile(connection, downloadFrom, false, null);
+        downloadFile(response, downloadFrom, false, null);
 
         uncompressGzip(downloadFrom, downloadTo, resource.getDownloadVersion());
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion());
-        storeEntryFields(entry, entry.getCacheFile().length(), connection.getLastModified());
+        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified());
         markForDelete(downloadFrom);
     }
 
-    private void downloadFile(URLConnection connection, URL downloadLocation, boolean packGZ, CacheEntry entry) throws IOException {
+    private void downloadFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadLocation, boolean packGZ, CacheEntry entry) throws IOException {
         CacheEntry downloadEntry = entry != null ? entry
                 : new CacheEntry(downloadLocation, resource.getDownloadVersion());
         // Always persist to the cache entry location (usually resource.getLocation()).
@@ -722,11 +710,11 @@ public class ResourceDownloader implements Runnable {
                 && (!CacheUtil.isJarResourceUrl(cacheLocation) || CacheUtil.isValidJarFile(existingCached));
         // isCurrent alone is not enough: a stale .info / vanished file must not mark
         // DOWNLOADED with a null localFile (that produced Unknown Main-Class).
-        if (!downloadEntry.isCurrent(connection.getLastModified()) || !existingUsable) {
+        if (!downloadEntry.isCurrent(response.getLastModified()) || !existingUsable) {
             boolean wrote = false;
             File writtenFile = null;
             try {
-                writtenFile = writeDownloadStream(cacheLocation, connection.getInputStream(), packGZ);
+                writtenFile = writeDownloadStream(cacheLocation, response.getBody(), packGZ);
                 wrote = true;
             } catch (IOException ex) {
                 if (isFavIconUrl(downloadLocation)) {
@@ -737,8 +725,8 @@ public class ResourceDownloader implements Runnable {
                 if (ex.getMessage() != null && ex.getMessage().equals(IH)) {
                     OutputController.getLogger().log(ex);
                     OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "'" + IH + "' message detected. Attempting direct socket");
-                    Object[] result = UrlUtils.loadUrlWithInvalidHeaderBytes(connection.getURL());
-                    OutputController.getLogger().log("Header of: " + connection.getURL() + " (" + downloadLocation + ")");
+                    Object[] result = UrlUtils.loadUrlWithInvalidHeaderBytes(response.getFinalUrl());
+                    OutputController.getLogger().log("Header of: " + response.getFinalUrl() + " (" + downloadLocation + ")");
                     String head = (String) result[0];
                     byte[] body = (byte[]) result[1];
                     OutputController.getLogger().log(head);
@@ -759,7 +747,7 @@ public class ResourceDownloader implements Runnable {
                     IOException lastFailure = ex;
                     for (int i = 0; i < retryCount; i++) {
                         try {
-                            writtenFile = retryDownload(connection, downloadLocation, downloadEntry, packGZ, i);
+                            writtenFile = retryDownload(response, downloadLocation, downloadEntry, packGZ, i);
                             wrote = true;
                             break;
                         } catch (IOException ex2) {
@@ -788,8 +776,8 @@ public class ResourceDownloader implements Runnable {
         File storedFile = resource.getLocalFile() != null ? resource.getLocalFile() : downloadEntry.getCacheFile();
         long storedLength = storedFile != null && storedFile.isFile()
                 ? storedFile.length()
-                : connection.getContentLengthLong();
-        storeEntryFields(downloadEntry, storedLength, connection.getLastModified());
+                : response.getContentLength();
+        storeEntryFields(downloadEntry, storedLength, response.getLastModified());
     }
 
     /**
@@ -843,7 +831,7 @@ public class ResourceDownloader implements Runnable {
         return localFile;
     }
 
-    private File retryDownload(URLConnection connection, URL downloadLocation, CacheEntry downloadEntry,
+    private File retryDownload(net.sourceforge.jnlp.security.HttpResponse response, URL downloadLocation, CacheEntry downloadEntry,
             boolean packGZ, int count) throws IOException {
         try {
             int retryDelay = -1;
@@ -860,12 +848,16 @@ public class ResourceDownloader implements Runnable {
             //ignore
         }
         OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Redownloading file: " + downloadLocation + " into: " + downloadEntry.getCacheFile().getCanonicalPath());
-        connection = getDownloadConnection(connection.getURL());
+        net.sourceforge.jnlp.security.HttpResponse retried = getDownloadConnection(response.getFinalUrl());
         // Must write to the cache entry location and unpack pack200 the same as the first attempt.
         // Writing downloadLocation (version-encoded / .pack.gz URL) left ghost cache slots and
         // raw gzip bytes under names like sonata-dao__V....jar while JarCertVerifier opened the
         // missing unversioned sonata-dao.jar (Windows production launch failure).
-        return writeDownloadStream(downloadEntry.getLocation(), connection.getInputStream(), packGZ);
+        try {
+            return writeDownloadStream(downloadEntry.getLocation(), retried.getBody(), packGZ);
+        } finally {
+            retried.close();
+        }
     }
 
     private void storeEntryFields(CacheEntry entry, long contentLength, long lastModified) {
