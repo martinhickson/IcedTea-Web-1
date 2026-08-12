@@ -41,6 +41,13 @@ jobs:
           distribution: corretto
           java-version: '17'
 
+      - name: Set up Groovy (sample HTTP server; python is banned)
+        run: |
+          if ! command -v groovy >/dev/null 2>&1; then
+            brew install groovy
+          fi
+          groovy --version
+
       - name: Download release artifact
         env:
           GH_TOKEN: ${{ github.token }}

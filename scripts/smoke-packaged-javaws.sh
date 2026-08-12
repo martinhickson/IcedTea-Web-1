@@ -34,14 +34,23 @@ if [ ! -x "$DIST/bin/javaws" ] && [ ! -x "$DIST/bin/javaws.exe" ]; then
 fi
 LAUNCHER="$DIST/bin/javaws$([ "$IS_WINDOWS" = 1 ] && echo .exe || true)"
 
-PY="${SMOKE_PYTHON:-}"
-if [ -z "$PY" ]; then
-  PY="$(command -v python3 || command -v python || true)"
+PY=""   # python is banned in this environment; the sample server is Groovy
+GROOVY="${SMOKE_GROOVY:-groovy}"
+groovy_ok=0
+if command -v "$GROOVY" >/dev/null 2>&1; then
+  groovy_ok=1
+elif command -v "${GROOVY}.bat" >/dev/null 2>&1; then
+  groovy_ok=1
+elif [ "$IS_WINDOWS" = 1 ] && cmd /c "groovy --version" >/dev/null 2>&1; then
+  groovy_ok=1
 fi
-if [ -z "$PY" ]; then
-  echo "FATAL: no python3/python available for the sample HTTP server" >&2
+if [ "$groovy_ok" != 1 ]; then
+  echo "FATAL: groovy not found (SMOKE_GROOVY=${GROOVY})" >&2
   exit 1
 fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SERVE_SCRIPT="$SCRIPT_DIR/smoke-http-server.groovy"
+[ -f "$SERVE_SCRIPT" ] || { echo "FATAL: $SERVE_SCRIPT missing" >&2; exit 1; }
 
 WORK="$(mktemp -d)"
 trap 'kill "${SRV:-}" 2>/dev/null || true' EXIT
@@ -81,10 +90,23 @@ cat > "$WORK/app.jnlp" <<'EOF'
 </jnlp>
 EOF
 
-# --- serve the sample ---
-(cd "$WORK" && "$PY" -m http.server "$PORT" >/dev/null 2>&1) &
+# --- serve the sample (Groovy server; python is banned) ---
+if [ "$IS_WINDOWS" = 1 ]; then
+  (cd "$WORK" && cmd /c "groovy \"$SERVE_SCRIPT\" $PORT \"$WORK\"" >/dev/null 2>&1) &
+else
+  (cd "$WORK" && "$GROOVY" "$SERVE_SCRIPT" "$PORT" "$WORK" >/dev/null 2>&1) &
+fi
 SRV=$!
-sleep 1
+# wait for the server to accept (curl is present on all hosted runners)
+ready=0
+for _ in $(seq 1 20); do
+  if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/app.jnlp" 2>/dev/null; then
+    ready=1
+    break
+  fi
+  sleep 1
+done
+[ "$ready" = 1 ] || fail "Groovy sample server did not come up on port $PORT"
 
 # --- isolated user config (macOS: ~/Library/Application Support/icedtea-web; linux/windows: XDG) ---
 export HOME="$WORK/home"

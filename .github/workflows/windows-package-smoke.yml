@@ -33,6 +33,14 @@ jobs:
           distribution: corretto
           java-version: '17'
 
+      - name: Set up Groovy (sample HTTP server; python is banned)
+        run: |
+          if (-not (Get-Command groovy -ErrorAction SilentlyContinue)) {
+            choco install groovy -y --no-progress
+          }
+          groovy --version
+        shell: pwsh
+
       - name: Set up Git Bash
         run: |
           if (-not (Test-Path "C:\Program Files\Git\usr\bin\bash.exe")) {
@@ -82,7 +90,5 @@ jobs:
         shell: pwsh
 
       - name: Smoke-test installed launcher
-        env:
-          SMOKE_PYTHON: python
         run: bash scripts/smoke-packaged-javaws.sh "$ITW_INSTALL_ROOT" 8123 "${{ inputs.expected_download_jvm }}"
         shell: bash
