@@ -21,6 +21,8 @@ import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.StandardCopyOption;
 import java.util.Properties;
 
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
@@ -159,26 +161,64 @@ public class PropertiesFile extends Properties {
 
     /**
      * Saves the properties to the file.
+     * <p>
+     * Writes to a sibling temporary file and then replaces the target so concurrent
+     * readers never observe a truncated or mid-escape {@code Properties} dump.
+     * That matters for cache indexes such as {@code recently_used}, where a torn
+     * write can turn a Windows path {@code \t...} into a literal TAB and mark the
+     * cache corrupt.
      */
     public void store() {
         File file = lockedFile.getFile();
         FileOutputStream s = null;
+        File tempFile = null;
         try {
-            try {
-                file.getParentFile().mkdirs();
-                s = new FileOutputStream(file);
-                store(s, header);
-
-                // fsync()
-                if (Boolean.parseBoolean(JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_ENABLE_CACHE_FSYNC))) {
-                    s.getChannel().force(true);
-                }
-                lastStore = file.lastModified();
-            } finally {
-                if (s != null) s.close();
+            File parent = file.getParentFile();
+            if (parent != null) {
+                parent.mkdirs();
             }
+            tempFile = File.createTempFile(file.getName() + ".", ".tmp", parent);
+            s = new FileOutputStream(tempFile);
+            store(s, header);
+
+            // fsync()
+            if (Boolean.parseBoolean(JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_ENABLE_CACHE_FSYNC))) {
+                s.getChannel().force(true);
+            }
+            s.close();
+            s = null;
+
+            replaceFileAtomically(tempFile, file);
+            tempFile = null;
+            lastStore = file.lastModified();
         } catch (IOException ex) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);
+        } finally {
+            if (s != null) {
+                try {
+                    s.close();
+                } catch (IOException ex) {
+                    OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);
+                }
+            }
+            if (tempFile != null && tempFile.exists() && !tempFile.delete()) {
+                tempFile.deleteOnExit();
+            }
+        }
+    }
+
+    /**
+     * Replaces {@code target} with {@code source} so readers never see a partial write.
+     * Prefers an atomic move; falls back to a non-atomic replace when the filesystem
+     * does not support atomic replace (common on Windows).
+     */
+    private static void replaceFileAtomically(File source, File target) throws IOException {
+        try {
+            Files.move(source.toPath(), target.toPath(),
+                    StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException ex) {
+            // Windows and some network filesystems reject ATOMIC_MOVE when replacing.
+            Files.move(source.toPath(), target.toPath(), StandardCopyOption.REPLACE_EXISTING);
         }
     }
 

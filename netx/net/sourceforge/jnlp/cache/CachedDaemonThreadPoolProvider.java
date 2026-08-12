@@ -87,18 +87,65 @@ public class CachedDaemonThreadPoolProvider {
     }
 
     public static synchronized ExecutorService getThreadPool() {
-        if (null == DAEMON_THREAD_POOL) {
-            final int nThreads = Integer.parseInt(JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_BACKGROUND_THREADS_COUNT));
-            ThreadPoolExecutor pool = new ThreadPoolExecutor(nThreads, nThreads,
-                    60L, TimeUnit.SECONDS,
-                    new LinkedBlockingQueue<Runnable>(),
-                    new DaemonThreadFactory());
-            pool.allowCoreThreadTimeOut(true);
-            DAEMON_THREAD_POOL = pool;
-        }
+        ensureInitialized();
         return DAEMON_THREAD_POOL;
     }
 
-    private static ExecutorService DAEMON_THREAD_POOL = null;
+    /** Enqueue-time hook for {@link AdaptiveBackgroundThreads}. */
+    public static void noteJarDownloadStarting() {
+        ensureInitialized();
+        ADAPTIVE.onJarDownloadStarting();
+    }
+
+    /** After a fresh (non-cache-hit) jar download succeeded. */
+    public static void noteJarDownloadSucceeded() {
+        ensureInitialized();
+        ADAPTIVE.onJarDownloadSucceeded();
+    }
+
+    /** When a pack200-gzip download path is selected. */
+    public static void notePackGzDetected() {
+        ensureInitialized();
+        ADAPTIVE.onPackGzDetected();
+    }
+
+    private static synchronized void ensureInitialized() {
+        if (DAEMON_THREAD_POOL != null) {
+            return;
+        }
+        final int nThreads = Integer.parseInt(JNLPRuntime.getConfiguration()
+                .getProperty(DeploymentConfiguration.KEY_BACKGROUND_THREADS_COUNT));
+        boolean adaptive = true;
+        try {
+            adaptive = Boolean.parseBoolean(JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_BACKGROUND_THREADS_ADAPTIVE));
+        } catch (Exception ignored) {
+            adaptive = true;
+        }
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(nThreads, nThreads,
+                60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<Runnable>(),
+                new DaemonThreadFactory());
+        pool.allowCoreThreadTimeOut(true);
+        DAEMON_THREAD_POOL = pool;
+        ADAPTIVE = new AdaptiveBackgroundThreads(adaptive, nThreads, pool);
+    }
+
+    /** Test seam — resets the singleton pool/adaptive controller. */
+    static synchronized void resetForTests() {
+        if (DAEMON_THREAD_POOL != null) {
+            DAEMON_THREAD_POOL.shutdownNow();
+        }
+        DAEMON_THREAD_POOL = null;
+        ADAPTIVE = null;
+    }
+
+    static AdaptiveBackgroundThreads adaptiveForTests() {
+        ensureInitialized();
+        return ADAPTIVE;
+    }
+
+    private static ThreadPoolExecutor DAEMON_THREAD_POOL = null;
+    private static AdaptiveBackgroundThreads ADAPTIVE = null;
 
 }

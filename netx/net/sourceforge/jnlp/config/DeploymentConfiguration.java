@@ -336,6 +336,13 @@ public final class DeploymentConfiguration {
     public static final String KEY_SMALL_SIZE_OVERRIDE_HEIGHT = "deployment.small.size.override.height";
     public static final String KEY_ENABLE_CACHE_FSYNC = "deployment.enable.cache.fsync";
     public static final String KEY_BACKGROUND_THREADS_COUNT = "deployment.background.threads.count";
+    /**
+     * Boolean. If true (default), temporarily double {@link #KEY_BACKGROUND_THREADS_COUNT}
+     * after the first successful jar download while more jars are still downloading;
+     * if any pack200-gzip download is observed after that doubling, shrink back to the
+     * configured count. At most one double and one half.
+     */
+    public static final String KEY_BACKGROUND_THREADS_ADAPTIVE = "deployment.background.threads.adaptive";
     public static final String KEY_MAX_URLS_DOWNLOAD_INDICATOR = "deployment.max.urls.download.indicator";
 
     /** Boolean. If true, "gzip" is added to Accept-Encoding so servers may return compressed jar bodies. */

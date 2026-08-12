@@ -531,6 +531,11 @@ public class Defaults {
                         String.valueOf(6)
                 },
                 {
+                        DeploymentConfiguration.KEY_BACKGROUND_THREADS_ADAPTIVE,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
+                {
                         DeploymentConfiguration.KEY_MAX_URLS_DOWNLOAD_INDICATOR,
                         BasicValueValidators.getRangedIntegerValidator(1, 1024),
                         String.valueOf(16)

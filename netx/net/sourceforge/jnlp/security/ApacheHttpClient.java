@@ -64,9 +64,16 @@ public final class ApacheHttpClient implements ItwHttpClient {
                 .setDefaultConnectionConfig(connectionConfig)
                 .build();
 
+        // Disable HC5 content-decoding. JNLP servers commonly return
+        // Content-Encoding: pack200-gzip (and sometimes gzip) for jar.pack.gz /
+        // negotiated payloads. HC5 only understands gzip/deflate and throws
+        // "Unsupported Content-Encoding: pack200-gzip", which made ResourceDownloader
+        // log "GET failed" and skip the only working Alta02 artifact. ITW unpacks
+        // pack200-gzip itself in ResourceDownloader.
         this.client = HttpClients.custom()
                 .setConnectionManager(pool)
                 .setDefaultRequestConfig(requestConfig)
+                .disableContentCompression()
                 .build();
     }
 

@@ -40,10 +40,20 @@ package net.sourceforge.jnlp.util;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
 
 import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.Before;
 import org.junit.Test;
@@ -191,5 +201,117 @@ public class PropertiesFileTest {
             propertiesFile.unlock();
         }
         assertTrue(!propertiesFile.isHeldByCurrentThread());
+    }
+
+    /**
+     * Paths with a backslash before {@code t} must round-trip. A torn in-place
+     * {@code Properties.store()} can turn {@code \\t} into a literal TAB and
+     * corrupt cache indexes such as {@code recently_used}.
+     */
+    @Test
+    public void testStorePreservesBackslashBeforeT() throws IOException {
+        String key = "http://127.0.0.1:8080/lib.jar,1";
+        String path = "C:\\work\\cache\\8080\\transaction-api_1.2_spec.jar";
+        try {
+            propertiesFile.lock();
+            propertiesFile.setProperty(key, path);
+            propertiesFile.store();
+        } finally {
+            propertiesFile.unlock();
+        }
+
+        PropertiesFile reloaded = new PropertiesFile(propertiesFile.getStoreFile());
+        try {
+            reloaded.lock();
+            assertEquals(path, reloaded.getProperty(key));
+            assertFalse("path must not contain a literal TAB from a torn escape",
+                    reloaded.getProperty(key).indexOf('\t') >= 0);
+        } finally {
+            reloaded.unlock();
+        }
+    }
+
+    /**
+     * Concurrent loaders must never observe a mid-write properties dump when
+     * store() replaces the target atomically.
+     */
+    @Test
+    public void testConcurrentStoreDoesNotExposePartialFile() throws Exception {
+        final String key = "cache.key";
+        final String valuePrefix = "C:\\cache\\8080\\transaction-";
+        final int writers = 4;
+        final int readers = 8;
+        final int rounds = 40;
+        final ExecutorService pool = Executors.newFixedThreadPool(writers + readers);
+        final CyclicBarrier start = new CyclicBarrier(writers + readers);
+        final CountDownLatch done = new CountDownLatch(writers + readers);
+        final AtomicReference<Throwable> failure = new AtomicReference<>();
+
+        List<Future<?>> futures = new ArrayList<>();
+        for (int w = 0; w < writers; w++) {
+            final int writerId = w;
+            futures.add(pool.submit(() -> {
+                try {
+                    start.await(30, TimeUnit.SECONDS);
+                    for (int i = 0; i < rounds; i++) {
+                        try {
+                            propertiesFile.lock();
+                            propertiesFile.setProperty(key, valuePrefix + writerId + "-" + i + ".jar");
+                            propertiesFile.store();
+                        } finally {
+                            propertiesFile.unlock();
+                        }
+                    }
+                } catch (Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
+                }
+            }));
+        }
+        for (int r = 0; r < readers; r++) {
+            futures.add(pool.submit(() -> {
+                try {
+                    start.await(30, TimeUnit.SECONDS);
+                    PropertiesFile reader = new PropertiesFile(propertiesFile.getStoreFile());
+                    for (int i = 0; i < rounds * 2; i++) {
+                        try {
+                            reader.lock();
+                            reader.load();
+                            String value = reader.getProperty(key);
+                            if (value != null) {
+                                if (value.indexOf('\t') >= 0) {
+                                    fail("reader observed TAB-corrupted path: " + value);
+                                }
+                                if (!value.startsWith(valuePrefix) || !value.endsWith(".jar")) {
+                                    fail("reader observed torn value: " + value);
+                                }
+                            }
+                        } finally {
+                            reader.unlock();
+                        }
+                    }
+                } catch (Throwable t) {
+                    failure.compareAndSet(null, t);
+                } finally {
+                    done.countDown();
+                }
+            }));
+        }
+
+        assertTrue("concurrent store/load timed out", done.await(60, TimeUnit.SECONDS));
+        pool.shutdownNow();
+        if (failure.get() != null) {
+            if (failure.get() instanceof Error) {
+                throw (Error) failure.get();
+            }
+            if (failure.get() instanceof Exception) {
+                throw (Exception) failure.get();
+            }
+            throw new AssertionError(failure.get());
+        }
+        for (Future<?> future : futures) {
+            future.get(1, TimeUnit.SECONDS);
+        }
     }
 }

@@ -606,6 +606,7 @@ public class ResourceDownloader implements Runnable {
             // return ".gz", so if we check gzip first, we would end up
             // treating a pack200 file as a jar file.
             if (packgz) {
+                CachedDaemonThreadPoolProvider.notePackGzDetected();
                 downloadPackGzFileDirectly(response, downloadFrom, downloadTo);
             } else if (gzip) {
                 downloadGZipFile(response, downloadFrom, downloadTo);
@@ -613,6 +614,7 @@ public class ResourceDownloader implements Runnable {
                 downloadFile(response, downloadTo, false, null);
             }
             settleSlotGood(false);
+            CachedDaemonThreadPoolProvider.noteJarDownloadSucceeded();
             resource.fireDownloadEvent(); // fire DOWNLOADED
         } catch (Exception ex) {
             logDownloadFailure(downloadFrom, ex);
@@ -654,6 +656,13 @@ public class ResourceDownloader implements Runnable {
             return;
         }
         slot.settleGood(System.currentTimeMillis(), fromCache);
+        // Persist absorbing outcome on the Resource. wait() builds a fresh JarGroupState
+        // every progress tick (DefaultDownloadIndicator updateRate=150ms) and preSettleSlots
+        // only skips re-download when getTerminalState() is already GOOD. Without this,
+        // cache hits loop forever: isCurrent=true → "Downloading" → new IN_FLIGHT slot.
+        if (slot.state() == net.sourceforge.jnlp.cache.download.JarState.GOOD) {
+            resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
+        }
     }
 
     private void settleSlotBad() {
@@ -663,7 +672,11 @@ public class ResourceDownloader implements Runnable {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
             return;
         }
-        slot.settleUnusable(System.currentTimeMillis());
+        // settleUnusable → RETRY_PENDING (not absorbing) on first failure; SETTLED_BAD after retry.
+        if (slot.settleUnusable(System.currentTimeMillis())
+                || slot.state() == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD) {
+            resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+        }
     }
 
     private void downloadPackGzFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom, URL downloadTo) throws IOException {
@@ -816,17 +829,53 @@ public class ResourceDownloader implements Runnable {
     /**
      * Pack200-gzip decode directly to the cache jar path.
      * Avoids buffering the entire unpacked jar in a {@code ByteArrayOutputStream}.
+     * Wire bytes (pre-gunzip) are counted into {@link Resource#incrementTransferred}
+     * and {@link net.sourceforge.jnlp.cache.download.JarSlot} the same way as
+     * {@link #writeDownloadToFile} — otherwise Download stats stay at thr=-1 / bytes=0
+     * for every pack.gz artifact.
      */
     private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream) throws IOException {
         File localFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
-        try (InputStream in = new GZIPInputStream(new BufferedInputStream(packGzStream));
+        final net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+        InputStream countedWire = new InputStream() {
+            private final InputStream delegate = packGzStream;
+            @Override
+            public int read() throws IOException {
+                int b = delegate.read();
+                if (b >= 0) {
+                    noteWireBytes(1);
+                }
+                return b;
+            }
+            @Override
+            public int read(byte[] b, int off, int len) throws IOException {
+                int n = delegate.read(b, off, len);
+                if (n > 0) {
+                    noteWireBytes(n);
+                }
+                return n;
+            }
+            @Override
+            public void close() throws IOException {
+                delegate.close();
+            }
+            private void noteWireBytes(int n) {
+                resource.incrementTransferred(n);
+                if (slot != null) {
+                    long now = System.currentTimeMillis();
+                    slot.onFirstByte(now);
+                    slot.addTransferred(n);
+                }
+            }
+        };
+        try (InputStream in = new GZIPInputStream(new BufferedInputStream(countedWire));
              OutputStream fileOut = Files.newOutputStream(localFile.toPath(),
                      StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
              JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
             Pack200.newUnpacker().unpack(in, jarOut);
         }
-        if (localFile.isFile() && localFile.length() > 0) {
-            resource.incrementTransferred(localFile.length());
+        if (slot != null) {
+            slot.onLastByte(System.currentTimeMillis());
         }
         return localFile;
     }

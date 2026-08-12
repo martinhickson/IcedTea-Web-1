@@ -568,6 +568,7 @@ public class ResourceTracker {
      * @param resource  resource to be download
      */
     protected void startDownloadThread(Resource resource) {
+        CachedDaemonThreadPoolProvider.noteJarDownloadStarting();
         CachedDaemonThreadPoolProvider.getThreadPool().execute(new ResourceDownloader(resource, null));
     }
 
@@ -659,19 +660,24 @@ public class ResourceTracker {
     private boolean wait(Resource[] resources, long timeout) throws InterruptedException {
         long startTime = System.currentTimeMillis();
 
-        // Create JarGroupState + assign JarSlots for metrics tracking. Pre-settle
-        // fresh slots for resources already in a terminal state (repeat wait()
-        // calls for already-downloaded jars) so the fresh IN_FLIGHT slot does not
-        // hang the loop — matches the old wait() returning immediately for done work.
-        java.util.List<URL> urls = new java.util.ArrayList<>();
-        for (Resource r : resources) {
-            urls.add(r.getLocation());
-        }
-        net.sourceforge.jnlp.cache.download.JarGroupState metricsGroup =
-                net.sourceforge.jnlp.cache.download.JarGroupState.forJars(urls);
+        // Progress UI calls wait() every ~150ms. Reuse the in-flight JarGroupState so
+        // ResourceDownloader keeps writing wire bytes / first-last-byte times onto the
+        // same JarSlots. Creating a fresh group each tick was swapping slots mid-download
+        // (metrics on the old slot, settle on the new empty one) and the final tick then
+        // pre-settled everything as CACHED → Download stats thr=-1 / bytes=0.
+        net.sourceforge.jnlp.cache.download.JarGroupState metricsGroup = lastMetricsGroup;
         java.util.List<Resource> needsRestart = new java.util.ArrayList<>();
-        preSettleSlots(resources, metricsGroup, needsRestart);
-        this.lastMetricsGroup = metricsGroup;
+        if (!canReuseMetricsGroup(resources, metricsGroup)) {
+            java.util.List<URL> urls = new java.util.ArrayList<>();
+            for (Resource r : resources) {
+                urls.add(r.getLocation());
+            }
+            metricsGroup = net.sourceforge.jnlp.cache.download.JarGroupState.forJars(urls);
+            // Pre-settle fresh slots for resources already terminal (repeat wait() after
+            // a completed group) so a new IN_FLIGHT slot does not hang the loop.
+            preSettleSlots(resources, metricsGroup, needsRestart);
+            this.lastMetricsGroup = metricsGroup;
+        }
 
         // start them downloading / connecting in background
         for (Resource resource : resources) {
@@ -702,6 +708,28 @@ public class ResourceTracker {
             // done completes with null — never expected; treat as completed
         }
         logDownloadStats();
+        return true;
+    }
+
+    /**
+     * True when {@code group} is the still-in-flight metrics group for exactly these
+     * resources (same URLs, same JarSlot instances still bound). Used so progress-tick
+     * wait() calls do not replace slots underneath an active download.
+     */
+    static boolean canReuseMetricsGroup(Resource[] resources,
+            net.sourceforge.jnlp.cache.download.JarGroupState group) {
+        if (group == null || group.done().isDone() || group.size() != resources.length) {
+            return false;
+        }
+        for (int i = 0; i < resources.length; i++) {
+            net.sourceforge.jnlp.cache.download.JarSlot slot = group.slot(i);
+            if (slot == null || resources[i].getJarSlot() != slot) {
+                return false;
+            }
+            if (!resources[i].getLocation().equals(slot.location())) {
+                return false;
+            }
+        }
         return true;
     }
 
