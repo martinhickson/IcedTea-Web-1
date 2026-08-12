@@ -56,15 +56,19 @@ WORK="$(mktemp -d)"
 trap 'kill "${SRV:-}" 2>/dev/null || true' EXIT
 
 # Run a command in the background and hard-kill it after `cap` seconds.
+RUN_N=0
 run_capped() {
   local cap="$1"
   shift
-  ( "$@" ) > "$WORK/last-run.out" 2>&1 &
+  RUN_N=$((RUN_N + 1))
+  local out="$WORK/run${RUN_N}.out"
+  ( "$@" ) > "$out" 2>&1 &
   local pid=$!
   ( sleep "$cap"; kill -9 "$pid" 2>/dev/null ) &
   local guard=$!
   wait "$pid" || true
   kill "$guard" 2>/dev/null || true
+  echo "$out"
 }
 
 fail() { echo "SMOKE-FAIL: $*" >&2; exit 1; }
@@ -72,16 +76,21 @@ fail() { echo "SMOKE-FAIL: $*" >&2; exit 1; }
 # --- build + SIGN a tiny all-permissions smoke app ---------------------------
 # Signed with a self-signed cert so the app can request <all-permissions> and
 # write its success marker to a file (stdout capture through the .NET launcher
-# redirect is unreliable across platforms). -Xtrustall accepts the cert.
+# redirect is unreliable across platforms; user.home is not $HOME). -Xtrustall
+# accepts the cert. The marker path is passed explicitly via itw.smoke.marker.
+MARKER="$WORK/itw-smoke-success.txt"
+MARKER_JVM="$MARKER"
+if [ "$IS_WINDOWS" = 1 ]; then
+  MARKER_JVM="$(cygpath -w "$MARKER")"
+fi
 mkdir -p "$WORK/out"
 cat > "$WORK/SmokeMain.java" <<'EOF'
 import java.nio.file.Files;
 import java.nio.file.Paths;
 public class SmokeMain {
   public static void main(String[] a) throws Exception {
-    java.io.File f = new java.io.File(System.getProperty("user.home"), "itw-smoke-success.txt");
-    f.getParentFile().mkdirs();
-    Files.write(f.toPath(), ("ITW_SMOKE_SUCCESS app-launched-on-bundled-jvm\n"
+    String p = System.getProperty("itw.smoke.marker");
+    Files.write(Paths.get(p), ("ITW_SMOKE_SUCCESS app-launched-on-bundled-jvm\n"
         + "java.home=" + System.getProperty("java.home") + "\n").getBytes("UTF-8"));
     System.out.println("ITW_SMOKE_SUCCESS app-launched-on-bundled-jvm");
   }
@@ -123,7 +132,7 @@ fi
 SRV=$!
 # wait for the server to accept (curl is present on all hosted runners)
 ready=0
-for _ in $(seq 1 20); do
+for _ in $(seq 1 40); do
   if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/app.jnlp" 2>/dev/null; then
     ready=1
     break
@@ -143,15 +152,23 @@ export XDG_CACHE_HOME="$WORK/home/.cache"
 export XDG_DATA_HOME="$WORK/home/.local/share"
 mkdir -p "$HOME"
 
+# ITW writes a default deployment.properties on first run that overrides -J
+# system properties; pre-write it with file logging so every launch's output
+# lands in ITW's own logs regardless of the launcher stdout-redirect quirk.
+mkdir -p "$XDG_CONFIG_HOME/icedtea-web"
+printf 'deployment.log=true\ndeployment.log.file=true\ndeployment.log.file.clientapp=true\n' \
+  > "$XDG_CONFIG_HOME/icedtea-web/deployment.properties"
+
 # --- 1. launcher run (default resolution) -> handoff record proves the download
 # JVM is the bundled Temurin 21. Do NOT pass -Xnofork here: -Xnofork makes the
 # launcher take its "relaunch" resolution path (which prefers JAVA_HOME), and we
 # must not unset JAVA_HOME because the app-launch phase below relies on it.
 URL="http://127.0.0.1:$PORT/app.jnlp"
-run_capped 30 "$LAUNCHER" -headless -verbose -Xtrustall -J-Djava.awt.headless=true "$URL"
+RUN1_OUT="$(run_capped 30 "$LAUNCHER" -headless -verbose -Xtrustall -J-Djava.awt.headless=true \
+  "-J-Ditw.smoke.marker=$MARKER_JVM" "$URL")"
 
 LOG_BASE="$(find "$HOME" -type d -name log -path "*icedtea-web*" 2>/dev/null | head -1)"
-MAIN_LOG="$(find "$LOG_BASE" -name "*.log" ! -name "*prelaunch*" ! -name "*relaunch*" 2>/dev/null | head -1)"
+MAIN_LOG="$(grep -l "Child executable:" "$LOG_BASE"/*.log 2>/dev/null | grep -v "prelaunch" | head -1)"
 [ -n "$MAIN_LOG" ] || fail "no launcher handoff log found under $HOME"
 
 CHILD_EXE="$(grep -a "Child executable:" "$MAIN_LOG" | head -1 | sed 's/.*Child executable: *//')"
@@ -168,19 +185,22 @@ case "$CHILD_VER" in
 esac
 
 # --- 2. app launch evidence: relaunch-style (-Xnofork) with normal JAVA_HOME so
-# ITW file logging captures the app marker reliably on every platform.
-run_capped 45 "$LAUNCHER" -headless -verbose -Xtrustall -Xnofork \
+# ITW file logging captures the app marker reliably on every platform. On some
+# platforms the child output lands in the launcher's own stdout (the run_capped
+# capture) rather than the itw-javantx redirect file, so both are polled.
+RUN2_OUT="$(run_capped 45 "$LAUNCHER" -headless -verbose -Xtrustall -Xnofork \
   -J-Djava.awt.headless=true \
+  "-J-Ditw.smoke.marker=$MARKER_JVM" \
   -J-Ddeployment.log=true -J-Ddeployment.log.file=true -J-Ddeployment.log.file.clientapp=true \
-  "$URL"
+  "$URL")"
 marker_found=0
-MARKER_FILE="$HOME/itw-smoke-success.txt"
+MARKER_FILE="$MARKER"
 for _ in $(seq 1 90); do
   if [ -f "$MARKER_FILE" ]; then
     marker_found=1
     break
   fi
-  if grep -ra "ITW_SMOKE_SUCCESS" "$LOG_BASE" 2>/dev/null | grep -qv "SMOKE-FAIL"; then
+  if grep -ra "ITW_SMOKE_SUCCESS" "$LOG_BASE" "$WORK"/run*.out 2>/dev/null | grep -qv "SMOKE-FAIL"; then
     marker_found=1
     break
   fi
@@ -192,11 +212,11 @@ if [ "$marker_found" = 0 ] && [ "$IS_WINDOWS" != 1 ]; then
   # captured in logs on Linux/macOS, and is unquoted so unusable on Windows)
   CMD="$(grep -A1 "^Command:" "$MAIN_LOG" | tail -1 | sed 's/^ *//')"
   if [ -n "$CMD" ]; then
-    run_capped 45 bash -c "$CMD"
-    if grep -aq "ITW_SMOKE_SUCCESS" "$WORK/last-run.out"; then
+    RUN3_OUT="$(run_capped 45 bash -c "$CMD")"
+    if grep -aq "ITW_SMOKE_SUCCESS" "$RUN3_OUT"; then
       marker_found=1
     else
-      echo "child output:"; tail -15 "$WORK/last-run.out"
+      echo "child output:"; tail -15 "$RUN3_OUT"
     fi
   fi
 fi
@@ -204,12 +224,14 @@ fi
 [ "$marker_found" = 1 ] || {
   echo "SMOKE-FAIL: app did not print ITW_SMOKE_SUCCESS (handoff=$CHILD_VER)"
   echo "--- marker file: $(ls -la "$MARKER_FILE" 2>/dev/null || echo missing)"
+  echo "--- launcher run2 stdout (app launch phase):"
+  cat "$RUN2_OUT" 2>/dev/null | head -40
   echo "--- log files:"
   find "$LOG_BASE" -type f 2>/dev/null | head -20
   echo "--- main handoff log full content:"
   cat "$MAIN_LOG" 2>/dev/null
   echo "--- log highlights:"
-  grep -raE "Selected JVM|Exception|Fatal|Error|ITW_SMOKE|Starting application|Invoking main|Permission|LaunchException|jdk=" "$LOG_BASE" 2>/dev/null | grep -avE "Handoff|Child |Standard |Working dir|\.NET|Command:|Handoff complete|OS:|Architecture" | head -25
+  grep -raE "Selected JVM|Exception|Fatal|Error|ITW_SMOKE|Starting application|Invoking main|Permission|LaunchException|jdk=" "$LOG_BASE" "$WORK"/run*.out 2>/dev/null | grep -avE "Handoff|Child |Standard |Working dir|\.NET|Command:|Handoff complete|OS:|Architecture" | head -25
   exit 1
 }
 echo "== app launched on bundled JVM (ITW_SMOKE_SUCCESS found)"
