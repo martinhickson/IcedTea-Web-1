@@ -213,9 +213,10 @@ public class ResourceDownloader implements Runnable {
         UrlRequestResult result = new UrlRequestResult();
         URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(url);
         // Do NOT call setUseCaches(false) — it forces "Cache-Control: no-cache"
-        // + "Pragma: no-cache" headers which defeat proxy/CDN caching and cause
-        // DPI special handling. Freshness is handled via conditional requests
-        // (If-Modified-Since) and ITW's own cache layer, not JVM response caching.
+        // + "Pragma: no-cache" headers which defeat proxy/CDN caching and can
+        // trigger special handling by proxy/DPI appliances. Freshness is handled
+        // via conditional requests (If-Modified-Since) and ITW's own cache layer,
+        // not JVM response caching.
 
         for (Map.Entry<String, String> property : requestProperties.entrySet()) {
             connection.addRequestProperty(property.getKey(), property.getValue());
@@ -660,7 +661,7 @@ public class ResourceDownloader implements Runnable {
         if (fromCache && !ResourceTracker.hasUsableLocalFile(resource)) {
             // ghost cache entry: don't settle GOOD — park for the one-shot retry so
             // the wait path re-enqueues and re-downloads instead of launching from a
-            // phantom file (Unknown Main-Class race).
+            // phantom file.
             slot.settleUnusable(System.currentTimeMillis());
             return;
         }

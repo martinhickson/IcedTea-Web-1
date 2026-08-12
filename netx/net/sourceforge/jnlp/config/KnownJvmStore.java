@@ -160,7 +160,7 @@ public final class KnownJvmStore {
     }
 
     /**
-     * Seeds the bundled Temurin JREs (Appendix D) into the known-JVM list at
+     * Seeds the bundled Temurin JREs into the known-JVM list at
      * first run. The MSI ships four JREs under {@code [installDir]/runtime/temurin-*}
      * (linux/windows: {@code temurin-<ver>/<jdk>/bin/java}; macOS:
      * {@code temurin-<ver>/<jdk>/Contents/Home/bin/java}). They are registered as

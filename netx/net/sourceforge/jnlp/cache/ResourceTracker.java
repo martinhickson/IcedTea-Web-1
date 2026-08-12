@@ -159,7 +159,7 @@ public class ResourceTracker {
         resource.addTracker(this);
         // Shared Resource instances are keyed by URL only; a prior launch in this JVM
         // may have spent the one-shot unusable-terminal retry. New tracking must allow
-        // recovery again (ghost cache / premature ERROR → Unknown Main-Class).
+        // recovery again after a terminal-unusable result.
         resource.clearUnusableTerminalRetry();
         resources.add(resource);
 
@@ -334,7 +334,7 @@ public class ResourceTracker {
         try {
             Resource resource = getResource(location);
             // At most two passes: initial wait, then one recovery re-download when the
-            // terminal state had no usable local jar (ghost cache / premature ERROR).
+            // terminal state had no usable local jar (terminal-unusable result).
             for (int pass = 0; pass < 2; pass++) {
                 if (!(resource.isSet(DOWNLOADED) || resource.isSet(ERROR))) {
                     waitForResource(location, 0);

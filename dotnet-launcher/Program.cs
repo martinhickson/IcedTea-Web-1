@@ -155,7 +155,7 @@ internal static class Program
         var runtimeRoot = new DirectoryInfo(Path.Combine(installRoot.FullName, "runtime"));
         if (runtimeRoot.Exists)
         {
-            // Preferred download JVM: the java under runtime\temurin-25 (Appendix D.5).
+            // Preferred download JVM: the java under runtime\temurin-25 (the default bundled JVM).
             // The Temurin tarball extracts to runtime\temurin-25\<jdk-ver>\bin\java.exe
             // (macOS: ...\Contents\Home\bin\java), so scan within temurin-25 rather than
             // a fixed path — a blind runtime-wide scan would be non-deterministic.

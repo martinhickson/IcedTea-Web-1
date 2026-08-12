@@ -1,0 +1,561 @@
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Serving- HEAD: ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:34861/itw-server5556722555511092818test-file
+run: Getting- HEAD: /itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Serving- HEAD: ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:34861/itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file
+run: Serving- GET: ./itw-server13061684293526412935test-file
+invoke: http://localhost:43093/itw-server13061684293526412935test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file-2.0?version-id=1.0
+run: Serving- GET: ./itw-server13061684293526412935test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:43093/itw-server13061684293526412935test-file-2.0?version-id=1.0
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Serving- HEAD: ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:34861/itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file
+run: Serving- GET: ./itw-server13061684293526412935test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:43093/itw-server13061684293526412935test-file
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file-2.0?version-id=1.0
+run: Serving- GET: ./itw-server13061684293526412935test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:43093/itw-server13061684293526412935test-file-2.0?version-id=1.0
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file-2.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file-2.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file
+run: Serving- GET: ./itw-server13061684293526412935test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:43093/itw-server13061684293526412935test-file
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file-2.0?version-id=1.0
+run: Serving- GET: ./itw-server13061684293526412935test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:43093/itw-server13061684293526412935test-file-2.0?version-id=1.0
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file-2.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file-2.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file
+run: Serving- GET: ./itw-server13061684293526412935test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+invoke: http://localhost:43093/itw-server13061684293526412935test-file
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file-2.0?version-id=1.0
+run: Could not open file ./itw-server13061684293526412935test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file-2.0
+run: Could not open file ./itw-server13061684293526412935test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file
+run: Could not open file ./itw-server5556722555511092818test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server5556722555511092818test-file-2.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file-2.0?version-id=1.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server5556722555511092818test-file-2.0
+run: Could not open file ./itw-server5556722555511092818test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file
+run: Could not open file ./itw-server13061684293526412935test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file
+run: Could not open file ./itw-server13061684293526412935test-file
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file-2.0?version-id=1.0
+run: Could not open file ./itw-server13061684293526412935test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13061684293526412935test-file-2.0
+run: Could not open file ./itw-server13061684293526412935test-file-2.0
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Received HEAD request but not supported
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server1398677502192687727test-file
+run: Serving- GET: ./itw-server1398677502192687727test-file
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server1398677502192687727test-file
+run: Could not open file ./itw-server1398677502192687727test-file
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /version-miss.jar
+run: Serving- GET: ./version-miss.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /version-miss.jar
+run: Serving- GET: ./version-miss.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /version-miss.jar
+run: Serving- GET: ./version-miss.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /version-miss.jar
+run: Serving- GET: ./version-miss.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /version-miss.jar
+run: Serving- GET: ./version-miss.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /version-miss.jar
+run: Serving- GET: ./version-miss.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server9546315286926137606test-file
+run: Serving- HEAD: ./itw-server9546315286926137606test-file
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- HEAD: /itw-server9546315286926137606test-file
+run: Could not open file ./itw-server9546315286926137606test-file
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /notexistingfile
+run: Could not open file ./notexistingfile
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /notexistingfile
+run: Could not open file ./notexistingfile
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13137584678237333782test-file
+run: Serving- GET: ./itw-server13137584678237333782test-file
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /itw-server13137584678237333782test-file
+run: Could not open file ./itw-server13137584678237333782test-file
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /sonata-rda-launcher.jar
+run: Serving- GET: ./sonata-rda-launcher.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /recover-downloaded.jar
+run: Serving- GET: ./recover-downloaded.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:
+run: Getting- GET: /recover-error.jar
+run: Serving- GET: ./recover-error.jar
+run: Received unknown request type Accept-Encoding:
+run: Received unknown request type User-Agent:
+run: Received unknown request type Host:
+run: Received unknown request type Accept:
+run: Received unknown request type Connection:

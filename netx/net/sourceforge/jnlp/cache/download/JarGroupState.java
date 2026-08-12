@@ -78,7 +78,7 @@ public final class JarGroupState {
      * Force-claim every jar still parked in {@link JarState#RETRY_PENDING}
      * (the one-shot retry was never claimed by a waiter). Returns the indices
      * reclaimed; the coordinator must re-enqueue downloads for them. This is the
-     * §4.4 safety net so an orphaned RETRY_PENDING can never strand {@code done}.
+     * safety net so an orphaned RETRY_PENDING can never strand {@code done}.
      */
     public List<Integer> reclaimRetryPending() {
         List<Integer> reclaimed = new java.util.ArrayList<>();
