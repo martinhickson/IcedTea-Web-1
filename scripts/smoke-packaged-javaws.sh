@@ -95,7 +95,14 @@ SERVER_LOG="$WORK/server.log"
 if [ "$IS_WINDOWS" = 1 ]; then
   WIN_SCRIPT="$(cygpath -w "$SERVE_SCRIPT")"
   WIN_WORK="$(cygpath -w "$WORK")"
-  (cd "$WORK" && cmd /c "groovy \"$WIN_SCRIPT\" $PORT \"$WIN_WORK\"" >"$SERVER_LOG" 2>&1) &
+  if [ -n "${SMOKE_GROOVY_JAR:-}" ]; then
+    # Deterministic on Windows: run groovy.ui.GroovyMain via the JDK (avoids
+    # groovy.bat + cmd /c quoting/translation pitfalls).
+    JAR_WIN="$(cygpath -m "$SMOKE_GROOVY_JAR")"
+    (cd "$WORK" && java -cp "$JAR_WIN" groovy.ui.GroovyMain "$WIN_SCRIPT" "$PORT" "$WIN_WORK" >"$SERVER_LOG" 2>&1) &
+  else
+    (cd "$WORK" && cmd /c "groovy \"$WIN_SCRIPT\" $PORT \"$WIN_WORK\"" >"$SERVER_LOG" 2>&1) &
+  fi
 else
   (cd "$WORK" && "$GROOVY" "$SERVE_SCRIPT" "$PORT" "$WORK" >"$SERVER_LOG" 2>&1) &
 fi

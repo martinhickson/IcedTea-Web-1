@@ -44,6 +44,8 @@ jobs:
             $bin = "$env:RUNNER_TEMP\groovy\groovy-$version\bin"
             echo "$bin" >> $env:GITHUB_PATH
             $env:PATH = "$bin;$env:PATH"
+            $jar = Join-Path (Split-Path -Parent $bin) "lib\groovy-$version.jar"
+            echo "SMOKE_GROOVY_JAR=$jar" >> $env:GITHUB_ENV
           }
           groovy --version
         shell: pwsh
