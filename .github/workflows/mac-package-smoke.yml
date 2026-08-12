@@ -1,0 +1,58 @@
+name: macOS Package Smoke Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version to smoke-test (e.g. 3.1.2)'
+        required: true
+        type: string
+      artifact:
+        description: 'macOS artifact to test'
+        required: true
+        default: osx-x64
+        type: choice
+        options:
+          - osx-x64
+          - osx-arm64
+      expected_download_jvm:
+        description: 'Expected bundled download-JVM major (default temurin-21)'
+        required: false
+        default: '21'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  macos-package-smoke:
+    name: Smoke ${{ inputs.artifact }} (${{ inputs.release_version }})
+    runs-on: ${{ inputs.artifact == 'osx-x64' && 'macos-15-intel' || 'macos-15' }}
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up JDK 17 (compile smoke sample)
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: '17'
+
+      - name: Download release artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "icedtea-web-${{ inputs.release_version }}" \
+            --repo "${{ github.repository }}" \
+            --pattern "icedtea-web-${{ inputs.release_version }}-${{ inputs.artifact }}.zip"
+
+      - name: Extract and smoke-test packaged launcher
+        run: |
+          unzip -q "icedtea-web-${{ inputs.release_version }}-${{ inputs.artifact }}.zip" -d dist
+          DIST="$(find dist -mindepth 1 -maxdepth 1 -type d | head -1)"
+          echo "Distribution: $DIST"
+          chmod +x scripts/smoke-packaged-javaws.sh
+          bash scripts/smoke-packaged-javaws.sh "$DIST" 8123 "${{ inputs.expected_download_jvm }}"

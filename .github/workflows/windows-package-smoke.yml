@@ -1,0 +1,87 @@
+name: Windows Package Smoke Test
+
+on:
+  workflow_dispatch:
+    inputs:
+      release_version:
+        description: 'Release version to smoke-test (e.g. 3.1.2)'
+        required: true
+        type: string
+      expected_download_jvm:
+        description: 'Expected bundled download-JVM major (default temurin-21)'
+        required: false
+        default: '21'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  windows-package-smoke:
+    name: Smoke MSI (${{ inputs.release_version }})
+    runs-on: windows-2025
+    timeout-minutes: 40
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Set up JDK 17 (compile smoke sample)
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: '17'
+
+      - name: Set up Git Bash
+        run: |
+          if (-not (Test-Path "C:\Program Files\Git\usr\bin\bash.exe")) {
+            choco install git.install -y --no-progress
+          }
+          echo "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files\Git\bin" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Download release MSI
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "icedtea-web-${{ inputs.release_version }}" `
+            --repo "${{ github.repository }}" `
+            --pattern "icedtea-web-${{ inputs.release_version }}-win-x64.msi"
+        shell: pwsh
+
+      - name: Install MSI silently
+        run: |
+          $msi = (Get-ChildItem -Filter "*.msi" | Select-Object -First 1).FullName
+          if (-not $msi) { throw "No MSI downloaded" }
+          Write-Host "Installing: $msi"
+          $p = Start-Process msiexec -ArgumentList @('/i', "`"$msi`"", '/qn', '/norestart') -Wait -PassThru
+          if ($p.ExitCode -ne 0 -and $p.ExitCode -ne 3010) {
+            throw "msiexec failed with exit code $($p.ExitCode)"
+          }
+          Write-Host "MSI installed (exit $($p.ExitCode))"
+        shell: pwsh
+
+      - name: Locate installed launcher
+        run: |
+          $bases = @(
+            (Join-Path ${env:ProgramFiles(x86)} "IcedTea-Web\WebStart"),
+            (Join-Path ${env:ProgramFiles(x86)} "IcedTeaWeb\WebStart"),
+            (Join-Path $env:ProgramFiles "IcedTea-Web\WebStart"),
+            (Join-Path $env:ProgramFiles "IcedTeaWeb\WebStart")
+          )
+          $root = $bases | Where-Object { Test-Path (Join-Path $_ "bin\javaws.exe") } | Select-Object -First 1
+          if (-not $root) {
+            $exe = Get-ChildItem $env:ProgramFiles, ${env:ProgramFiles(x86)} -Recurse -Depth 4 -Filter "javaws.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+            if ($exe) { $root = (Split-Path -Parent (Split-Path -Parent $exe.DirectoryName)) }
+          }
+          if (-not $root) { throw "Installed javaws.exe not found under Program Files" }
+          Write-Host "Install root: $root"
+          echo "ITW_INSTALL_ROOT=$root" >> $env:GITHUB_ENV
+        shell: pwsh
+
+      - name: Smoke-test installed launcher
+        env:
+          SMOKE_PYTHON: python
+        run: bash scripts/smoke-packaged-javaws.sh "$ITW_INSTALL_ROOT" 8123 "${{ inputs.expected_download_jvm }}"
