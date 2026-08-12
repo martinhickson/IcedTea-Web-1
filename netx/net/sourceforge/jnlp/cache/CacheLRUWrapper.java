@@ -1,5 +1,6 @@
 /* CacheLRUWrapper -- Handle LRU for cache files.
    Copyright (C) 2011 Red Hat, Inc.
+   Copyright (C) 2026 IcedTea-Web contributors
 
 This file is part of IcedTea.
 
@@ -39,185 +40,215 @@ package net.sourceforge.jnlp.cache;
 import static net.sourceforge.jnlp.runtime.Translator.R;
 
 import java.io.File;
-import java.io.IOException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.AbstractMap;
 import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
-import java.util.Set;
-import net.sourceforge.jnlp.config.InfrastructureFileDescriptor;
 
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.config.InfrastructureFileDescriptor;
 import net.sourceforge.jnlp.config.PathsAndFiles;
-import net.sourceforge.jnlp.util.FileUtils;
-import net.sourceforge.jnlp.util.PropertiesFile;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
  * This class helps maintain the ordering of most recently use items across
  * multiple jvm instances.
- * 
  */
 public class CacheLRUWrapper {
-    
-    /*
-     * back-end of how LRU is implemented This file is to keep track of the most
-     * recently used items. The items are to be kept with key = (current time
-     * accessed) followed by folder of item. value = path to file.
-     */
-    
-    private final InfrastructureFileDescriptor recentlyUsedPropertiesFile;
+
+    public static final String DB_CACHE_DIR_NAME = "db";
+
     private final InfrastructureFileDescriptor cacheDir;
+    private final InfrastructureFileDescriptor recentlyUsedPropertiesFile;
+    private final CacheCatalog catalog;
+    private final boolean sqliteMode;
     private final File windowsShortcutList;
-    
+
     public CacheLRUWrapper() {
-        this(PathsAndFiles.getRecentlyUsedFile(), PathsAndFiles.CACHE_DIR);
+        this(isSqliteCatalogEnabled(), null, null);
     }
-    
-        
+
     /**
-     * testing constructor
+     * testing constructor — legacy properties catalog.
+     *
      * @param recentlyUsed file to be used as recently_used file
      * @param cacheDir dir with cache
      */
     CacheLRUWrapper(final InfrastructureFileDescriptor recentlyUsed, final InfrastructureFileDescriptor cacheDir) {
-        recentlyUsedPropertiesFile = recentlyUsed;
-        this.cacheDir = cacheDir;
-        windowsShortcutList = new File(cacheDir.getFile(), "shortcutList.txt");
-        if (!recentlyUsed.getFile().exists()) {
-            try {
-                FileUtils.createParentDir(recentlyUsed.getFile());
-                FileUtils.createRestrictedFile(recentlyUsed.getFile(), true);
-            } catch (IOException e) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        this(false, recentlyUsed, cacheDir);
+    }
+
+    /**
+     * testing constructor with explicit backend selection.
+     */
+    CacheLRUWrapper(boolean useSqlite, final InfrastructureFileDescriptor recentlyUsed,
+            final InfrastructureFileDescriptor cacheDir) {
+        this.sqliteMode = useSqlite;
+        if (useSqlite) {
+            InfrastructureFileDescriptor parent = cacheDir != null ? cacheDir : PathsAndFiles.CACHE_DIR;
+            this.cacheDir = dbDirDescriptor(parent);
+            this.recentlyUsedPropertiesFile = recentlyUsed; // unused in sqlite mode
+            ensureDir(this.cacheDir.getFile());
+            this.catalog = new SqliteCacheCatalog(this.cacheDir.getFile());
+        } else {
+            this.cacheDir = cacheDir != null ? cacheDir : PathsAndFiles.CACHE_DIR;
+            this.recentlyUsedPropertiesFile = recentlyUsed != null ? recentlyUsed : PathsAndFiles.getRecentlyUsedFile();
+            this.catalog = new PropertiesCacheCatalog(this.recentlyUsedPropertiesFile);
+        }
+        // Keep Windows shortcuts at the configured user cache root (parent of db/ when sqlite).
+        InfrastructureFileDescriptor shortcutRoot = useSqlite
+                ? (cacheDir != null ? cacheDir : PathsAndFiles.CACHE_DIR)
+                : this.cacheDir;
+        windowsShortcutList = new File(shortcutRoot.getFile(), "shortcutList.txt");
+    }
+
+    /**
+     * Integration-test factory: sqlite catalog roots at {@code parentCache/db};
+     * legacy uses {@code parentCache/recently_used} under the same parent.
+     */
+    public static CacheLRUWrapper createForTests(boolean useSqlite, File parentCache) {
+        InfrastructureFileDescriptor parent = new InfrastructureFileDescriptor() {
+            @Override
+            public File getFile() {
+                return parentCache;
             }
+
+            @Override
+            public String getFullPath() {
+                return parentCache.getAbsolutePath();
+            }
+        };
+        if (useSqlite) {
+            return new CacheLRUWrapper(true, null, parent);
+        }
+        InfrastructureFileDescriptor recentlyUsed = new InfrastructureFileDescriptor() {
+            @Override
+            public File getFile() {
+                return new File(parentCache, PathsAndFiles.CACHE_INDEX_FILE_NAME);
+            }
+
+            @Override
+            public String getFullPath() {
+                return getFile().getAbsolutePath();
+            }
+        };
+        return new CacheLRUWrapper(false, recentlyUsed, parent);
+    }
+
+    /**
+     * Absolute path to {@code cache_catalog.sqlite} when in sqlite mode; otherwise null.
+     */
+    public File getSqliteCatalogFile() {
+        if (!sqliteMode || !(catalog instanceof SqliteCacheCatalog)) {
+            return null;
+        }
+        return ((SqliteCacheCatalog) catalog).getDbFile();
+    }
+
+    static boolean isSqliteCatalogEnabled() {
+        try {
+            String v = JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_CACHE_CATALOG_SQLITE);
+            if (v == null || v.trim().isEmpty()) {
+                return true;
+            }
+            return Boolean.parseBoolean(v.trim());
+        } catch (Exception e) {
+            return true;
         }
     }
-    
+
+    private static void ensureDir(File dir) {
+        if (dir != null && !dir.exists() && !dir.mkdirs()) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "Unable to create cache directory: " + dir);
+        }
+    }
+
+    static InfrastructureFileDescriptor dbDirDescriptor(final InfrastructureFileDescriptor parentCache) {
+        return new InfrastructureFileDescriptor() {
+            @Override
+            public File getFile() {
+                return new File(parentCache.getFile(), DB_CACHE_DIR_NAME);
+            }
+
+            @Override
+            public String getFullPath() {
+                return getFile().getAbsolutePath();
+            }
+        };
+    }
+
     /**
      * Returns an instance of the policy.
-     * 
+     *
      * @return an instance of the policy
      */
     public static CacheLRUWrapper getInstance() {
-        return  CacheLRUWrapperHolder.INSTANCE;
+        return CacheLRUWrapperHolder.INSTANCE;
     }
 
-    
-    private PropertiesFile cachedRecentlyUsedPropertiesFile = null ;
-    /**
-     * @return the recentlyUsedPropertiesFile
-     */
-    synchronized PropertiesFile getRecentlyUsedPropertiesFile() {
-        if (cachedRecentlyUsedPropertiesFile == null) {
-            //no properties file yet, create it
-            cachedRecentlyUsedPropertiesFile = new PropertiesFile(recentlyUsedPropertiesFile.getFile());
-            return cachedRecentlyUsedPropertiesFile;
-        } 
-        if (recentlyUsedPropertiesFile.getFile().equals(cachedRecentlyUsedPropertiesFile.getStoreFile())){
-            //The underlying InfrastructureFileDescriptor is still pointing to the same file, use current properties file
-            return cachedRecentlyUsedPropertiesFile;
-        } else {
-            //the InfrastructureFileDescriptor was set to different location, move to it
-            if (cachedRecentlyUsedPropertiesFile.tryLock()) {
-                cachedRecentlyUsedPropertiesFile.store();
-                cachedRecentlyUsedPropertiesFile.unlock();
-            }
-            cachedRecentlyUsedPropertiesFile = new PropertiesFile(recentlyUsedPropertiesFile.getFile());
-            return cachedRecentlyUsedPropertiesFile;
-        }
-        
+    private static class CacheLRUWrapperHolder {
+        private static final CacheLRUWrapper INSTANCE = new CacheLRUWrapper();
     }
 
     /**
-     * @return the cacheDir
+     * @return the cacheDir (legacy root or {@code cachedir/db})
      */
     public InfrastructureFileDescriptor getCacheDir() {
         return cacheDir;
     }
 
+    public boolean isSqliteMode() {
+        return sqliteMode;
+    }
+
     public File getWindowsShortcutList() {
         return windowsShortcutList;
     }
-    
+
     /**
-     * @return the recentlyUsedFile
+     * @return the recentlyUsedFile (legacy only; may be null-ish unused in sqlite mode)
      */
     public InfrastructureFileDescriptor getRecentlyUsedFile() {
         return recentlyUsedPropertiesFile;
     }
-    
-   private static class CacheLRUWrapperHolder{
-       private static final CacheLRUWrapper INSTANCE = new CacheLRUWrapper();
-   }
 
-    /**
-     * Update map for keeping track of recently used items.
-     */
     public synchronized void load() {
-        boolean loaded = getRecentlyUsedPropertiesFile().load();
-        /* 
-         * clean up possibly corrupted entries
-         */
-        if (loaded && checkData()) {
+        boolean repaired = catalog.load();
+        if (repaired) {
             OutputController.getLogger().log(new LruCacheException());
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("CFakeCache"));
             store();
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("CFakedCache"));
         }
-    }
-
-    /**
-     * check content of recentlyUsedPropertiesFile and remove invalid/corrupt entries
-     *
-     * @return true, if cache was corrupted and affected entry removed
-     */
-    private boolean checkData () {
-        boolean modified = false;
-        Set<Entry<Object, Object>> q = getRecentlyUsedPropertiesFile().entrySet();
-        for (Iterator<Entry<Object, Object>> it = q.iterator(); it.hasNext();) {
-            Entry<Object, Object> currentEntry = it.next();
-
-            final String key = (String) currentEntry.getKey();
-            final String path = (String) currentEntry.getValue();
-
-            // 1. check key format: "milliseconds,number"
-            try {
-                String sa[] = key.split(",");
-                Long l1 = Long.parseLong(sa[0]);
-                Long l2 = Long.parseLong(sa[1]);
-            } catch (Exception ex) {
-                it.remove();
-                modified = true;
-                continue;
+        if (!sqliteMode) {
+            // Properties backend does not know cache root; drop paths outside it.
+            List<Entry<String, String>> snapshot = new ArrayList<>(catalog.getLRUSortedEntries());
+            boolean modified = false;
+            for (Entry<String, String> e : snapshot) {
+                if (!isPathUnderCacheDir(e.getValue())) {
+                    catalog.removeEntry(e.getKey());
+                    modified = true;
+                }
             }
-
-            // 2. check path is under the cache dir (normalize separators; Windows
-            // paths often mix '/' from XDG_* with '\' from File APIs).
-            if (path == null || !isPathUnderCacheDir(path)) {
-                it.remove();
-                modified = true;
+            if (modified) {
+                OutputController.getLogger().log(new LruCacheException());
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("CFakeCache"));
+                store();
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("CFakedCache"));
             }
         }
-        
-        return modified;
     }
 
     /**
      * True if {@code path} is the cache directory or a file beneath it.
-     * Uses {@link Path} comparison so mixed {@code /} and {@code \} separators
-     * (common when {@code XDG_CACHE_HOME} is Maven-style) are not treated as corrupt.
      */
     static boolean isPathUnderCacheDir(String path, String cacheDirPath) {
         if (path == null || path.isEmpty() || cacheDirPath == null || cacheDirPath.isEmpty()) {
             return false;
         }
-        // Normalize \\ to / so mixed Windows/Maven separators compare correctly on all OSes.
-        // Paths.get treats \\ as a literal character on Unix, which broke startsWith checks in CI.
         final String normalizedPathInput = path.replace('\\', '/');
         final String normalizedRootInput = cacheDirPath.replace('\\', '/');
         try {
@@ -225,7 +256,6 @@ public class CacheLRUWrapper {
             Path candidate = Paths.get(normalizedPathInput).toAbsolutePath().normalize();
             return candidate.startsWith(cache);
         } catch (Exception ex) {
-            // Fall back to separator-normalized substring match.
             String normalizedPath = normalizedPathInput.replace('/', File.separatorChar);
             String normalizedRoot = normalizedRootInput.replace('/', File.separatorChar);
             while (normalizedPath.contains(File.separator + File.separator)) {
@@ -244,147 +274,88 @@ public class CacheLRUWrapper {
         return isPathUnderCacheDir(path, getCacheDir().getFullPath());
     }
 
-    /**
-     * Write file to disk.
-     * @return true if properties were successfully stored, false otherwise
-     */
     public synchronized boolean store() {
-        if (getRecentlyUsedPropertiesFile().isHeldByCurrentThread()) {
-            getRecentlyUsedPropertiesFile().store();
-            return true;
-        }
-        return false;
+        return catalog.store();
     }
 
-    /**
-     * This adds a new entry to file.
-     * 
-     * @param key key we want path to be associated with.
-     * @param path path to cache item.
-     * @return true if we successfully added to map, false otherwise.
-     */
     public synchronized boolean addEntry(String key, String path) {
-        PropertiesFile props = getRecentlyUsedPropertiesFile();
-        if (props.containsKey(key)) {
-            return false;
-        }
-        props.setProperty(key, path);
-        return true;
+        return catalog.addEntry(key, path);
     }
 
-    /**
-     * This removed an entry from our map.
-     * 
-     * @param key key we want to remove.
-     * @return true if we successfully removed key from map, false otherwise.
-     */
     public synchronized boolean removeEntry(String key) {
-        PropertiesFile props = getRecentlyUsedPropertiesFile();
-        if (!props.containsKey(key)) {
-            return false;
-        }
-        props.remove(key);
-        return true;
+        return catalog.removeEntry(key);
     }
 
-    private String getIdForCacheFolder(String folder) {
-        int len = getCacheDir().getFullPath().length();
-        int index = folder.indexOf(File.separatorChar, len + 1);
-        return folder.substring(len + 1, index);
-    }
-
-    /**
-     * This updates the given key to reflect it was recently accessed.
-     * 
-     * @param oldKey Key we wish to update.
-     * @return true if we successfully updated value, false otherwise.
-     */
     public synchronized boolean updateEntry(String oldKey) {
-        PropertiesFile props = getRecentlyUsedPropertiesFile();
-        if (!props.containsKey(oldKey)) {
+        return catalog.updateEntry(oldKey, getCacheDir().getFullPath());
+    }
+
+    public synchronized List<Entry<String, String>> getLRUSortedEntries() {
+        return catalog.getLRUSortedEntries();
+    }
+
+    /**
+     * Newest-first entries matching the URL-shaped path (after folder id).
+     */
+    public synchronized List<Entry<String, String>> findEntriesByUrlPath(String urlPath) {
+        return catalog.findEntriesByUrlPath(urlPath, getCacheDir().getFullPath());
+    }
+
+    public synchronized void lock() {
+        catalog.lock();
+    }
+
+    public synchronized void unlock() {
+        catalog.unlock();
+    }
+
+    /** Package-private for unit tests. */
+    boolean tryLock() {
+        if (catalog instanceof PropertiesCacheCatalog) {
+            return ((PropertiesCacheCatalog) catalog).tryLock();
+        }
+        // SQLite catalog: non-blocking attempt on the JVM lock.
+        return catalog.isHeldByCurrentThread() || tryLockSqlite();
+    }
+
+    private boolean tryLockSqlite() {
+        // ReentrantLock.tryLock via lock()/check — SqliteCacheCatalog exposes isHeld only;
+        // for tests use lock() path exclusively when sqlite.
+        try {
+            lock();
+            return true;
+        } catch (Exception e) {
             return false;
         }
-        String value = props.getProperty(oldKey);
-        String folder = getIdForCacheFolder(value);
-
-        props.remove(oldKey);
-        props.setProperty(Long.toString(System.currentTimeMillis()) + "," + folder, value);
-        return true;
     }
 
-    /**
-     * Return a copy of the keys available.
-     * 
-     * @return List of Strings sorted by ascending order.
-     */
-    @SuppressWarnings({"unchecked", "rawtypes"})
-    //although Properties are pretending to be <object,Object> they are always <String,String>
-    //bug in jdk?
-    public synchronized List<Entry<String, String>> getLRUSortedEntries() {
-        List<Entry<String, String>> entries = new ArrayList<>();
-
-        for (Entry e : getRecentlyUsedPropertiesFile().entrySet()) {
-            entries.add(new AbstractMap.SimpleImmutableEntry(e));
-        }
-
-        // sort by keys in descending order.
-        Collections.sort(entries, new Comparator<Entry<String, String>>() {
-            @Override
-            public int compare(Entry<String, String> e1, Entry<String, String> e2) {
-                Long t1 = Long.parseLong(e1.getKey().split(",")[0]);
-                Long t2 = Long.parseLong(e2.getKey().split(",")[0]);
-
-                int c = t1.compareTo(t2);
-                return c < 0 ? 1 : (c > 0 ? -1 : 0);
-            }
-        });
-        return entries;
+    /** Package-private for unit tests. */
+    boolean isCatalogHeldByCurrentThread() {
+        return catalog.isHeldByCurrentThread();
     }
 
-    /**
-     * Lock the file to have exclusive access.
-     */
-    public synchronized void lock() {
-        getRecentlyUsedPropertiesFile().lock();
-    }
-
-    /**
-     * Unlock the file.
-     */
-    public synchronized void unlock() {
-        getRecentlyUsedPropertiesFile().unlock();
-    }
-
-    /**
-     * Return the value of given key.
-     * 
-     * @param key key of property
-     * @return value of given key, null otherwise.
-     */
     public synchronized String getValue(String key) {
-        return getRecentlyUsedPropertiesFile().getProperty(key);
+        return catalog.getValue(key);
     }
 
     public synchronized boolean containsKey(String key) {
-        return getRecentlyUsedPropertiesFile().containsKey(key);
+        return catalog.containsKey(key);
     }
 
     public synchronized boolean containsValue(String value) {
-        return getRecentlyUsedPropertiesFile().containsValue(value);
+        return catalog.containsValue(value);
     }
 
-    /**
-     * Generate a key given the path to file. May or may not generate the same
-     * key given same path.
-     * 
-     * @param path Path to generate a key with.
-     * @return String representing the a key.
-     */
     public String generateKey(String path) {
-        return System.currentTimeMillis() + "," + getIdForCacheFolder(path);
+        return catalog.generateKey(path, getCacheDir().getFullPath());
     }
 
     void clearLRUSortedEntries() {
-        getRecentlyUsedPropertiesFile().clear();
+        catalog.clear();
+    }
+
+    /** Close catalog resources (SQLite connection). Safe to call more than once. */
+    public void close() {
+        catalog.close();
     }
 }

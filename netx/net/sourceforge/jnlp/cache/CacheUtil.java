@@ -557,26 +557,24 @@ public class CacheUtil {
         CacheLRUWrapper lruHandler = CacheLRUWrapper.getInstance();
         synchronized (lruHandler) {
             File cacheFile = null;
-            List<Entry<String, String>> entries = lruHandler.getLRUSortedEntries();
+            List<Entry<String, String>> entries = lruHandler.findEntriesByUrlPath(urlPath.getPath());
             // Newest first so an intentional makeNewCacheFile reserved slot wins for writes.
             for (Entry<String, String> e : entries) {
                 final String key = e.getKey();
                 final String path = e.getValue();
                 try {
-                    if (pathToURLPath(path).equals(urlPath.getPath())) { // Match found.
-                        File candidate = new File(path);
-                        File infoFile = new File(path + CacheDirectory.INFO_SUFFIX);
-                        // Skip fully orphaned LRU rows (neither jar nor .info). Keep .info-only
-                        // reserved slots so in-progress downloads still write to the same path.
-                        if (!candidate.isFile() && !infoFile.isFile()) {
-                            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
-                                    "Ignoring orphaned cache path listed in recently_used: " + path);
-                            continue;
-                        }
-                        cacheFile = candidate;
-                        lruHandler.updateEntry(key);
-                        break;
+                    File candidate = new File(path);
+                    File infoFile = new File(path + CacheDirectory.INFO_SUFFIX);
+                    // Skip fully orphaned LRU rows (neither jar nor .info). Keep .info-only
+                    // reserved slots so in-progress downloads still write to the same path.
+                    if (!candidate.isFile() && !infoFile.isFile()) {
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                                "Ignoring orphaned cache path listed in recently_used: " + path);
+                        continue;
                     }
+                    cacheFile = candidate;
+                    lruHandler.updateEntry(key);
+                    break;
                 } catch (Exception e2) {
                     //Fuzzy logic to prevent catastrophic startup failure by effectively downloading
                     //the jar again if there is a problem obtaining the cached jar
@@ -608,12 +606,9 @@ public class CacheUtil {
             try {
                 lruHandler.lock();
                 lruHandler.load();
-                for (Entry<String, String> e : lruHandler.getLRUSortedEntries()) {
+                for (Entry<String, String> e : lruHandler.findEntriesByUrlPath(urlPath.getPath())) {
                     final String path = e.getValue();
                     try {
-                        if (!pathToURLPath(path).equals(urlPath.getPath())) {
-                            continue;
-                        }
                         File candidate = new File(path);
                         if (candidate.isFile() && candidate.length() > 0
                                 && (!requireJarMagic || isValidJarFile(candidate))) {
@@ -697,9 +692,18 @@ public class CacheUtil {
     /**
      * Get the path to file minus the cache directory and indexed folder.
      */
-    private static String pathToURLPath(String path) {
-        String cacheDir = CacheLRUWrapper.getInstance().getCacheDir().getFullPath();
-        
+    public static String pathToURLPath(String path) {
+        return pathToURLPath(path, CacheLRUWrapper.getInstance().getCacheDir().getFullPath());
+    }
+
+    /**
+     * Get the path to file minus the cache directory and indexed folder.
+     * This string is the SQLite {@code resource_url} / properties lookup key.
+     *
+     * @param path absolute cache file path
+     * @param cacheDir effective cache root (legacy {@code cachedir} or {@code cachedir/db})
+     */
+    public static String pathToURLPath(String path, String cacheDir) {
         // Normalize paths: convert backslashes to forward slashes for consistent comparison
         // and handle both trailing separator and no trailing separator cases
         String normalizedPath = path.replace('\\', '/');

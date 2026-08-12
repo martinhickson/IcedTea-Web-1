@@ -79,6 +79,11 @@ Each run uses an isolated config home under `target/itw-test-home/` via
 
 The [**Integration Tests**](https://github.com/martinhickson/IcedTea-Web-1/actions/workflows/integration.yml) workflow runs this module in the **autodetect-windows** job. The strict path (`itw.autodetect.it.failure.ignore=false`) passed for release **2.8.3**.
 
+Also covered in that same Windows job:
+
+- `SqliteCacheCatalogDualJvmIT` — two-process insert/count/find against `{cachedir}/db/`, legacy-tree isolation, kill-switch (`createForTests(false, …)`)
+- After a successful JNLP launch, asserts `cache/db/cache_catalog.sqlite` exists and numbered dirs live under `db/`
+
 ## Manual sample host (no javaws)
 
 Undertow is started without `javaws`; a landing-page URL and JNLP link are

@@ -525,6 +525,11 @@ public class Defaults {
                         String.valueOf(false)
                 },
                 {
+                        DeploymentConfiguration.KEY_CACHE_CATALOG_SQLITE,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
+                {
                         DeploymentConfiguration.KEY_BACKGROUND_THREADS_COUNT,
                         // Default 6 download threads; allowed range 1–24.
                         BasicValueValidators.getRangedIntegerValidator(1, 24),

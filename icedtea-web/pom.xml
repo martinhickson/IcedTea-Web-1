@@ -65,6 +65,10 @@
       <version>5.6.4</version>
     </dependency>
     <dependency>
+      <groupId>org.xerial</groupId>
+      <artifactId>sqlite-jdbc</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>
       <version>${junit.version}</version>
@@ -138,7 +142,7 @@
               <rules>
                 <requireJavaVersion>
                   <version>[11,)</version>
-                  <message>Maven must run on Java 11 or newer because the Pack200 compatibility dependency is compiled for Java 11. The Maven build still emits Java 8 bytecode via source/target 1.8.</message>
+                  <message>Maven host JVM must be JDK 11 or later to build. Output bytecode is Java 11 only (source/target 11) so runtime stays JDK 11-compatible — not a newer class-file level.</message>
                 </requireJavaVersion>
                 <requireMavenVersion>
                   <version>[3.6.0,)</version>
@@ -222,6 +226,8 @@
                   <directory>${project.basedir}/../netx</directory>
                   <excludes>
                     <exclude>**/*.java</exclude>
+                    <!-- Split package with java.desktop when compiling as source 11 -->
+                    <exclude>sun/applet/**</exclude>
                   </excludes>
                 </resource>
               </resources>
