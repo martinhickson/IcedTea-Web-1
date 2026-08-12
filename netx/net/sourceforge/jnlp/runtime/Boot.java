@@ -209,6 +209,9 @@ public final class Boot implements PrivilegedAction<Void> {
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.HEADLESS)) {
             JNLPRuntime.setHeadless(true);
         }
+        if (optionParser.hasOption(OptionsDefinitions.OPTIONS.CLI) || isCliModeEnvEnabled()) {
+            JNLPRuntime.setCliMode(true);
+        }
 
         DeploymentConfiguration.move14AndOlderFilesTo15StructureCatched();
 
@@ -532,6 +535,11 @@ public final class Boot implements PrivilegedAction<Void> {
         extra.put("properties", optionParser.getParams(OptionsDefinitions.OPTIONS.PROPERTY));
 
         return ParserSettings.setGlobalParserSettingsFromOptionParser(optionParser);
+    }
+
+    private static boolean isCliModeEnvEnabled() {
+        String value = System.getenv("ITW_CLI_MODE");
+        return value != null && value.trim().equalsIgnoreCase("true");
     }
 
 }

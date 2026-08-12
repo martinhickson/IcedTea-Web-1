@@ -150,6 +150,8 @@ public class JNLPRuntime {
     /** whether netx is in command-line mode (headless) */
     private static boolean headless = false;
     private static boolean headlessChecked = false;
+    /** whether netx answers security Y/N prompts from the CLI with a single key */
+    private static volatile boolean cliMode = false;
 
     /** whether we'll be checking for jar signing */
     private static boolean verify = true;
@@ -610,6 +612,29 @@ public class JNLPRuntime {
     public static void setHeadless(boolean enabled) {
         checkInitialized();
         headless = enabled;
+    }
+
+    /**
+     * @return whether security Y/N prompts are answered from the command line
+     * with a single key (only {@code y}/{@code Y} means yes, anything else no).
+     */
+    public static boolean isCliMode() {
+        return cliMode;
+    }
+
+    /**
+     * Enables CLI-style security prompts. A CLI runtime has no GUI interaction,
+     * so enabling it also switches off all AWT/Swing usage.
+     *
+     * @param enabled true to answer security prompts from the command line
+     * @throws IllegalStateException if the runtime was previously initialized
+     */
+    public static void setCliMode(boolean enabled) {
+        checkInitialized();
+        cliMode = enabled;
+        if (enabled) {
+            headless = true;
+        }
     }
     
     public static void setAllowRedirect(boolean enabled) {

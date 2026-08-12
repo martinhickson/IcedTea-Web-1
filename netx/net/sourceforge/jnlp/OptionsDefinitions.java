@@ -70,6 +70,7 @@ public class OptionsDefinitions {
         NOSEC("-nosecurity", "BONosecurity"),
         NOUPDATE("-noupdate", "BONoupdate"),
         HEADLESS("-headless", "BOHeadless"),
+        CLI("-cli", "BOCli"),
         STRICT("-strict", "BOStrict"),
         XML("-xml", "BOXml"),
         REDIRECT("-allowredirect", "BOredirect"),
@@ -176,6 +177,7 @@ public class OptionsDefinitions {
             OPTIONS.RESET,
             OPTIONS.RESETALL,
             OPTIONS.HEADLESS,
+            OPTIONS.CLI,
             OPTIONS.CHECK,
             OPTIONS.VERBOSE
         });
@@ -217,6 +219,7 @@ public class OptionsDefinitions {
             OPTIONS.NOSEC,
             OPTIONS.NOUPDATE,
             OPTIONS.HEADLESS,
+            OPTIONS.CLI,
             OPTIONS.STRICT,
             OPTIONS.XML,
             OPTIONS.REDIRECT,

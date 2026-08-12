@@ -132,6 +132,8 @@ public class SecurityDialogMessageHandler implements Runnable {
             if (!shouldPromptUser()) {
                 message.userResponse =  dialog.getDefaultNegativeAnswer();
                 unlockMessagesClient(message);
+            } else if (JNLPRuntime.isCliMode()) {
+                processMessageInCli(dialog, message);
             } else if (isHeadless()) {
                 processMessageInHeadless(dialog, message);
             } else {
@@ -153,6 +155,49 @@ public class SecurityDialogMessageHandler implements Runnable {
             return true;
         }
         return false;
+    }
+
+    private void processMessageInCli(final SecurityDialog dialog, final SecurityDialogMessage message) {
+        try {
+            OutputController.getLogger().printOutLn(dialog.getText());
+            OutputController.getLogger().printOutLn("[cli] (Y or y = yes; any other key = No)");
+            boolean yes = readCliYesOrNo();
+            message.userResponse = yes ? dialog.getDefaultPositiveAnswer() : dialog.getDefaultNegativeAnswer();
+            unlockMessagesClient(message);
+        } catch (Exception ex) {
+            OutputController.getLogger().log(ex);
+            message.userResponse = dialog.getDefaultNegativeAnswer();
+            unlockMessagesClient(message);
+        }
+    }
+
+    /**
+     * Reads a single keystroke (no Enter required) and returns true only for
+     * {@code y}/{@code Y}. End-of-stream or any other input answers No.
+     */
+    static boolean readCliYesOrNo() {
+        setCliTerminalRaw(true);
+        try {
+            int b = System.in.read();
+            return b == 'y' || b == 'Y';
+        } catch (Exception e) {
+            return false;
+        } finally {
+            setCliTerminalRaw(false);
+        }
+    }
+
+    /** Best-effort single-keystroke terminal mode (Unix stty); pipes already return per byte. */
+    private static void setCliTerminalRaw(boolean raw) {
+        if (System.console() == null) {
+            return;
+        }
+        try {
+            String arg = raw ? "-icanon min 1 -echo" : "icanon echo";
+            new ProcessBuilder("stty", arg).inheritIO().start().waitFor();
+        } catch (Exception ignored) {
+            // no stty (e.g. Windows console) — single-byte read still works
+        }
     }
 
     private void processMessageInGui(final SecurityDialog dialog, final RememberableDialog found, final SecurityDialogMessage message) {
