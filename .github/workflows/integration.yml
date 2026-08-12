@@ -298,6 +298,41 @@ jobs:
           & mvn @mvnArgs
         shell: pwsh
 
+      # Ant <get> still flakes on Adoptium/GitHub even with retries=5. Prefetch into the
+      # same paths skipexisting=true expects so assemble does not hit the network.
+      - name: Prefetch Temurin JREs for Windows distribution
+        run: |
+          $destDir = "icedtea-web-distribution/target/downloads"
+          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+          $files = @(
+            @{ Name = "temurin-11-jre.zip"; Url = "https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jre/hotspot/normal/eclipse" },
+            @{ Name = "temurin-17-jre.zip"; Url = "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse" },
+            @{ Name = "temurin-21-jre.zip"; Url = "https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse" },
+            @{ Name = "temurin-25-jre.zip"; Url = "https://api.adoptium.net/v3/binary/latest/25/ga/windows/x64/jre/hotspot/normal/eclipse" }
+          )
+          foreach ($f in $files) {
+            $out = Join-Path $destDir $f.Name
+            if ((Test-Path $out) -and ((Get-Item $out).Length -gt 1MB)) {
+              Write-Host "Already present: $($f.Name)"
+              continue
+            }
+            $ok = $false
+            for ($attempt = 1; $attempt -le 10; $attempt++) {
+              try {
+                Write-Host "Download $($f.Name) attempt $attempt"
+                Invoke-WebRequest -Uri $f.Url -OutFile $out -UseBasicParsing
+                if ((Get-Item $out).Length -lt 1MB) { throw "download too small" }
+                $ok = $true
+                break
+              } catch {
+                Write-Warning $_
+                Start-Sleep -Seconds ([Math]::Min(60, 5 * $attempt))
+              }
+            }
+            if (-not $ok) { throw "Failed to prefetch $($f.Name)" }
+          }
+        shell: pwsh
+
       - name: Build Windows distribution (unsigned)
         run: |
           $mvnArgs = @(

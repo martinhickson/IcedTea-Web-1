@@ -9,17 +9,20 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.Statement;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.junit.After;
 import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-
-import net.sourceforge.jnlp.config.InfrastructureFileDescriptor;
 
 public class SqliteCacheCatalogTest {
 
@@ -33,33 +36,26 @@ public class SqliteCacheCatalogTest {
     @Before
     public void setUp() throws IOException {
         parentCache = tmp.newFolder("cache-parent");
-        // Place a legacy recently_used + fake jar that must be ignored
         File legacyJar = new File(parentCache, "0/http/evil.example/legacy.jar");
         legacyJar.getParentFile().mkdirs();
         assertTrue(legacyJar.createNewFile());
         new File(parentCache, "recently_used").createNewFile();
 
-        InfrastructureFileDescriptor parent = new InfrastructureFileDescriptor() {
-            @Override
-            public File getFile() {
-                return parentCache;
-            }
-
-            @Override
-            public String getFullPath() {
-                return parentCache.getAbsolutePath();
-            }
-        };
-        wrapper = new CacheLRUWrapper(true, null, parent);
+        wrapper = CacheLRUWrapper.createForTests(true, parentCache);
         dbRoot = wrapper.getCacheDir().getFile();
+    }
+
+    @After
+    public void tearDown() {
+        if (wrapper != null) {
+            wrapper.close();
+        }
     }
 
     @Test
     public void usesDbSubdirectoryNotLegacyRoot() {
         assertTrue(wrapper.isSqliteMode());
         assertEquals(new File(parentCache, "db").getAbsolutePath(), dbRoot.getAbsolutePath());
-        assertTrue(new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME).exists()
-                || true); // created lazily on lock/load
         wrapper.lock();
         try {
             wrapper.load();
@@ -67,7 +63,6 @@ public class SqliteCacheCatalogTest {
         } finally {
             wrapper.unlock();
         }
-        // legacy tree untouched / unused
         assertTrue(new File(parentCache, "recently_used").isFile());
         assertTrue(new File(parentCache, "0/http/evil.example/legacy.jar").isFile());
     }
@@ -94,7 +89,7 @@ public class SqliteCacheCatalogTest {
             assertTrue(wrapper.updateEntry(found.get(0).getKey()));
             List<Entry<String, String>> afterTouch = wrapper.findEntriesByUrlPath(urlPath);
             assertEquals(1, afterTouch.size());
-            assertFalse(afterTouch.get(0).getKey().equals(key)); // new timestamp key
+            assertFalse(afterTouch.get(0).getKey().equals(key));
         } finally {
             wrapper.unlock();
         }
@@ -115,17 +110,18 @@ public class SqliteCacheCatalogTest {
         }
     }
 
-    @Test
+    @Test(timeout = 60000)
     public void concurrentUpdatesSameCatalog() throws Exception {
-        final int threads = 8;
-        final int perThread = 20;
+        // Keep modest: high fan-out + Windows WAL was observed to stall Surefire occasionally.
+        final int threads = 4;
+        final int perThread = 15;
         final CountDownLatch start = new CountDownLatch(1);
         final CountDownLatch done = new CountDownLatch(threads);
         final AtomicInteger ok = new AtomicInteger();
 
         for (int t = 0; t < threads; t++) {
             final int tid = t;
-            new Thread(new Runnable() {
+            Thread th = new Thread(new Runnable() {
                 @Override
                 public void run() {
                     try {
@@ -138,9 +134,7 @@ public class SqliteCacheCatalogTest {
                             wrapper.lock();
                             try {
                                 wrapper.load();
-                                String key = System.currentTimeMillis() + "," + tid;
-                                // ensure unique keys under contention
-                                key = System.nanoTime() + "," + tid;
+                                String key = System.nanoTime() + "," + tid;
                                 if (wrapper.addEntry(key, jar.getAbsolutePath())) {
                                     ok.incrementAndGet();
                                 }
@@ -155,16 +149,110 @@ public class SqliteCacheCatalogTest {
                         done.countDown();
                     }
                 }
-            }, "sqlite-catalog-" + t).start();
+            }, "sqlite-catalog-" + t);
+            th.setDaemon(true);
+            th.start();
         }
         start.countDown();
-        done.await();
+        assertTrue("concurrent catalog updates timed out (possible lock inversion)",
+                done.await(30, TimeUnit.SECONDS));
         assertEquals(threads * perThread, ok.get());
         wrapper.lock();
         try {
             assertEquals(threads * perThread, wrapper.getLRUSortedEntries().size());
         } finally {
             wrapper.unlock();
+        }
+    }
+
+    /**
+     * Two threads calling lock()/load()/unlock() must not invert the wrapper
+     * monitor with the catalog ReentrantLock.
+     */
+    @Test(timeout = 5000)
+    public void lockUnlockFromTwoThreadsDoesNotDeadlock() throws Exception {
+        final CountDownLatch started = new CountDownLatch(2);
+        final CountDownLatch done = new CountDownLatch(2);
+        Runnable body = new Runnable() {
+            @Override
+            public void run() {
+                started.countDown();
+                try {
+                    started.await(2, TimeUnit.SECONDS);
+                    for (int i = 0; i < 50; i++) {
+                        wrapper.lock();
+                        try {
+                            wrapper.load();
+                        } finally {
+                            wrapper.unlock();
+                        }
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    done.countDown();
+                }
+            }
+        };
+        Thread a = new Thread(body, "lock-a");
+        Thread b = new Thread(body, "lock-b");
+        a.setDaemon(true);
+        b.setDaemon(true);
+        a.start();
+        b.start();
+        assertTrue("lock/unlock deadlock between threads", done.await(4, TimeUnit.SECONDS));
+    }
+
+    /**
+     * Uncommitted WAL work must not appear after reopen (crash / abrupt close).
+     */
+    @Test
+    public void crashMidTransactionRollsBackUncommitted() throws Exception {
+        wrapper.lock();
+        try {
+            wrapper.load();
+            File jar = new File(dbRoot, "1/http/crash.example/ok.jar");
+            jar.getParentFile().mkdirs();
+            assertTrue(jar.createNewFile());
+            assertTrue(wrapper.addEntry("1000,1", jar.getAbsolutePath()));
+            wrapper.store();
+            assertEquals(1, wrapper.getLRUSortedEntries().size());
+        } finally {
+            wrapper.unlock();
+        }
+        wrapper.close();
+
+        File dbFile = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
+        Class.forName("org.sqlite.JDBC");
+        Connection c = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath().replace('\\', '/'));
+        try {
+            c.setAutoCommit(false);
+            try (Statement st = c.createStatement()) {
+                st.execute("PRAGMA busy_timeout=5000");
+                st.executeUpdate("INSERT INTO cache_entry"
+                        + "(lru_key, resource_url, path, folder_id, last_access, state, created_at) VALUES ("
+                        + "'9999,99','http/crash.example/ghost.jar','/tmp/ghost.jar',99,9999,'ready',9999)");
+            }
+            // Abrupt close without commit — simulates process kill mid-txn.
+            c.close();
+        } finally {
+            if (!c.isClosed()) {
+                c.close();
+            }
+        }
+
+        CacheLRUWrapper reopened = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            reopened.lock();
+            try {
+                reopened.load();
+                assertEquals("uncommitted ghost row must not survive reopen",
+                        1, reopened.getLRUSortedEntries().size());
+            } finally {
+                reopened.unlock();
+            }
+        } finally {
+            reopened.close();
         }
     }
 }

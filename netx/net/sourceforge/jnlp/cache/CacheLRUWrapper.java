@@ -301,32 +301,23 @@ public class CacheLRUWrapper {
         return catalog.findEntriesByUrlPath(urlPath, getCacheDir().getFullPath());
     }
 
-    public synchronized void lock() {
+    /**
+     * Acquire the catalog lock. Not {@code synchronized}: a synchronized
+     * {@code lock()} that then holds a {@link java.util.concurrent.locks.ReentrantLock}
+     * after returning deadlocks with another thread in {@code lock()} (monitor vs
+     * ReentrantLock inversion). Callers that need both should take this lock first.
+     */
+    public void lock() {
         catalog.lock();
     }
 
-    public synchronized void unlock() {
+    public void unlock() {
         catalog.unlock();
     }
 
     /** Package-private for unit tests. */
     boolean tryLock() {
-        if (catalog instanceof PropertiesCacheCatalog) {
-            return ((PropertiesCacheCatalog) catalog).tryLock();
-        }
-        // SQLite catalog: non-blocking attempt on the JVM lock.
-        return catalog.isHeldByCurrentThread() || tryLockSqlite();
-    }
-
-    private boolean tryLockSqlite() {
-        // ReentrantLock.tryLock via lock()/check — SqliteCacheCatalog exposes isHeld only;
-        // for tests use lock() path exclusively when sqlite.
-        try {
-            lock();
-            return true;
-        } catch (Exception e) {
-            return false;
-        }
+        return catalog.tryLock();
     }
 
     /** Package-private for unit tests. */

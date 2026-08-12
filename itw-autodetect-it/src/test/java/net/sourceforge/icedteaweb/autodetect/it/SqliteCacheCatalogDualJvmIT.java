@@ -24,11 +24,12 @@ import org.junit.jupiter.api.io.CleanupMode;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * Windows-focused dual-JVM coverage for the SQLite cache catalog under
- * {@code {cachedir}/db/}. Runs in the existing {@code autodetect-windows}
- * Integration Tests job (same module as JDK autodetect).
+ * Dual-JVM coverage for the SQLite cache catalog under {@code {cachedir}/db/}.
+ * Primary CI home: existing {@code autodetect-windows} job; also runs on Linux
+ * when this module is verified there. Unit CI additionally covers dual-JVM via
+ * {@code SqliteCacheCatalogTest}.
  */
-@EnabledOnOs(OS.WINDOWS)
+@EnabledOnOs({OS.WINDOWS, OS.LINUX})
 class SqliteCacheCatalogDualJvmIT {
 
     private static final int PER_WORKER = 80;

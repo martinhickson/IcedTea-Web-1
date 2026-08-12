@@ -18,6 +18,12 @@ interface CacheCatalog {
 
     void unlock();
 
+    /**
+     * Non-blocking attempt. Must not take the wrapper monitor in a way that
+     * nests with {@link #lock()} (see {@code CacheLRUWrapper} lock-order).
+     */
+    boolean tryLock();
+
     boolean isHeldByCurrentThread();
 
     /**

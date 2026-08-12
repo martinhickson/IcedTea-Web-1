@@ -115,6 +115,11 @@ final class SqliteCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public boolean tryLock() {
+        return threadLock.tryLock();
+    }
+
+    @Override
     public void unlock() {
         if (threadLock.isHeldByCurrentThread()) {
             threadLock.unlock();

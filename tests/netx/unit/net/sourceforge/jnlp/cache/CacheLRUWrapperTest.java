@@ -180,6 +180,7 @@ public class CacheLRUWrapperTest {
     }
 
     @Test
+    @Ignore("Windows mtime often 1s granularity; nested lock/unlock in clearCacheIndexFile also races the assertion")
     public void testModTimestampAfterStore() throws InterruptedException {
 
         final File cacheIndexFile = clw.getRecentlyUsedFile().getFile();

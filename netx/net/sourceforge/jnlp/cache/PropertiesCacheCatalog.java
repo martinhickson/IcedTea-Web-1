@@ -72,7 +72,8 @@ final class PropertiesCacheCatalog implements CacheCatalog {
         return props().isHeldByCurrentThread();
     }
 
-    boolean tryLock() {
+    @Override
+    public boolean tryLock() {
         return props().tryLock();
     }
 
