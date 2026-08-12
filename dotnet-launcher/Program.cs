@@ -155,14 +155,17 @@ internal static class Program
         var runtimeRoot = new DirectoryInfo(Path.Combine(installRoot.FullName, "runtime"));
         if (runtimeRoot.Exists)
         {
-            // Preferred download JVM: the java under runtime\temurin-25 (the default bundled JVM).
-            // The Temurin tarball extracts to runtime\temurin-25\<jdk-ver>\bin\java.exe
-            // (macOS: ...\Contents\Home\bin\java), so scan within temurin-25 rather than
+            // Preferred download JVM: the java under runtime\temurin-21. JDK 25 is
+            // bundled but NOT the default — ITW's JarFileCloseProtection depends on
+            // jdk.internal.util.jar which JDK 25 removed, so apps fail to load there.
+            // Temurin 21 gives the modern TLS fingerprint (GREASE, X25519, ChaCha).
+            // The Temurin tarball extracts to runtime\temurin-21\<jdk-ver>\bin\java.exe
+            // (macOS: ...\Contents\Home\bin\java), so scan within temurin-21 rather than
             // a fixed path — a blind runtime-wide scan would be non-deterministic.
-            var t25 = new DirectoryInfo(Path.Combine(runtimeRoot.FullName, "temurin-25"));
-            if (t25.Exists)
+            var t21 = new DirectoryInfo(Path.Combine(runtimeRoot.FullName, "temurin-21"));
+            if (t21.Exists)
             {
-                var preferred = t25.EnumerateFiles(JavaExecutableName(), SearchOption.AllDirectories)
+                var preferred = t21.EnumerateFiles(JavaExecutableName(), SearchOption.AllDirectories)
                     .FirstOrDefault(file => string.Equals(file.Directory?.Name, "bin", StringComparison.OrdinalIgnoreCase));
                 if (preferred != null)
                 {

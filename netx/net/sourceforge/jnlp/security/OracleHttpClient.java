@@ -25,8 +25,10 @@ public final class OracleHttpClient implements ItwHttpClient {
             timing.connectStartMillis = System.currentTimeMillis();
         }
         URLConnection connection = ConnectionFactory.getConnectionFactory().openConnection(url);
-        for (Map.Entry<String, String> h : requestHeaders.entrySet()) {
-            connection.addRequestProperty(h.getKey(), h.getValue());
+        if (requestHeaders != null) {
+            for (Map.Entry<String, String> h : requestHeaders.entrySet()) {
+                connection.addRequestProperty(h.getKey(), h.getValue());
+            }
         }
         if (connection instanceof HttpURLConnection && method != null) {
             ((HttpURLConnection) connection).setRequestMethod(method);

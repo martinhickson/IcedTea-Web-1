@@ -81,6 +81,14 @@ public final class ApacheHttpClient implements ItwHttpClient {
     @Override
     public HttpResponse open(URL url, String method, Map<String, String> requestHeaders, ConnectionTiming timing)
             throws IOException {
+        String scheme = url.getProtocol();
+        if (!"http".equalsIgnoreCase(scheme) && !"https".equalsIgnoreCase(scheme)) {
+            // Apache HttpClient only understands http(s). Non-HTTP schemes
+            // (file:, jar:, ftp:, ...) must fall back to java.net.URLConnection,
+            // which the classic client handled natively (e.g. file: for local
+            // JNLP/jar launches). Without this, "javaws /path/to/app.jnlp" fails.
+            return new OracleHttpClient().open(url, method, requestHeaders, timing);
+        }
         URI uri;
         try {
             uri = url.toURI();

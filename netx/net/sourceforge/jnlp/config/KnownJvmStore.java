@@ -164,10 +164,13 @@ public final class KnownJvmStore {
      * first run. The MSI ships four JREs under {@code [installDir]/runtime/temurin-*}
      * (linux/windows: {@code temurin-<ver>/<jdk>/bin/java}; macOS:
      * {@code temurin-<ver>/<jdk>/Contents/Home/bin/java}). They are registered as
-     * pinned top-priority homes (highest major first) so the JVM manager can
-     * select them for JNLP {@code <j2se>} requirements. No-op when no bundle is
-     * present (e.g. a source/IDE run). The launcher separately resolves the
-     * download JVM (temurin-25); this only feeds the app-JVM selection list.
+     * pinned top-priority homes (preferred order 21 → 17 → 11 → 25) so the JVM
+     * manager selects the app JVM. Temurin 25 is deliberately ranked last: ITW's
+     * JarFileCloseProtection depends on jdk.internal.util.jar which JDK 25
+     * removed, so apps fail to load there — it stays seeded only for JNLP files
+     * that explicitly require a 25+ runtime. No-op when no bundle is present
+     * (e.g. a source/IDE run). The launcher separately resolves the download JVM
+     * (temurin-21); this only feeds the app-JVM selection list.
      *
      * @return true if any bundled home was added (caller should persist)
      */
@@ -211,8 +214,9 @@ public final class KnownJvmStore {
                 temurin.add(d);
             }
         }
-        // temurin-25 > temurin-21 > temurin-17 > temurin-11 lexically
-        temurin.sort((a, b) -> b.getName().compareTo(a.getName()));
+        // Preferred order 21 → 17 → 11 → 25, unknown temurin majors last.
+        temurin.sort(Comparator.comparingInt(KnownJvmStore::bundledMajorPreference)
+                .thenComparing(a -> a.getName()));
         List<String> homes = new ArrayList<>();
         for (File dir : temurin) {
             File home = findJreHome(dir);
@@ -221,6 +225,32 @@ public final class KnownJvmStore {
             }
         }
         return homes;
+    }
+
+    /**
+     * Preference rank for a bundled temurin-&lt;major&gt; directory: 21 &lt; 17 &lt; 11 &lt; 25,
+     * anything else last. Lower ranks sort first.
+     */
+    static int bundledMajorPreference(File temurinDir) {
+        String name = temurinDir.getName();
+        int major;
+        try {
+            major = Integer.parseInt(name.substring("temurin-".length()));
+        } catch (NumberFormatException | StringIndexOutOfBoundsException e) {
+            return Integer.MAX_VALUE;
+        }
+        switch (major) {
+            case 21:
+                return 0;
+            case 17:
+                return 1;
+            case 11:
+                return 2;
+            case 25:
+                return 3;
+            default:
+                return 4;
+        }
     }
 
     /** JRE home is the child of a temurin-* dir that contains bin/java (or Contents/Home on macOS). */
