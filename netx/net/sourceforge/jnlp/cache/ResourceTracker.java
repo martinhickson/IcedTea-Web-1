@@ -99,7 +99,6 @@ public class ResourceTracker {
     }
     
       /** notified on initialization or download of a resource */
-    private static final Object lock = new Object(); // used to lock static structures
 
     /** the resources known about by this resource tracker */
     private final List<Resource> resources = new ArrayList<>();
@@ -591,7 +590,7 @@ public class ResourceTracker {
      * @param resource  resource to be download
      */
     protected void startDownloadThread(Resource resource) {
-        CachedDaemonThreadPoolProvider.getThreadPool().execute(new ResourceDownloader(resource, lock));
+        CachedDaemonThreadPoolProvider.getThreadPool().execute(new ResourceDownloader(resource, null));
     }
 
     static Resource selectByFilter(Collection<Resource> source, Filter<Resource> filter) {
@@ -679,15 +678,33 @@ public class ResourceTracker {
     private boolean wait(Resource[] resources, long timeout) throws InterruptedException {
         long startTime = System.currentTimeMillis();
 
-        // Create JarGroupState + assign JarSlots for metrics tracking
+        // Create JarGroupState + assign JarSlots for metrics tracking. Pre-settle
+        // fresh slots for resources already in a terminal state (repeat wait()
+        // calls for already-downloaded jars) so the fresh IN_FLIGHT slot does not
+        // hang the loop — matches the old wait() returning immediately for done work.
         java.util.List<URL> urls = new java.util.ArrayList<>();
         for (Resource r : resources) {
             urls.add(r.getLocation());
         }
         net.sourceforge.jnlp.cache.download.JarGroupState metricsGroup =
                 net.sourceforge.jnlp.cache.download.JarGroupState.forJars(urls);
+        java.util.List<Resource> needsRestart = new java.util.ArrayList<>();
         for (int i = 0; i < resources.length; i++) {
-            resources[i].setJarSlot(metricsGroup.slot(i));
+            Resource r = resources[i];
+            net.sourceforge.jnlp.cache.download.JarSlot s = metricsGroup.slot(i);
+            r.setJarSlot(s);
+            if (r.isSet(DOWNLOADED) && hasUsableLocalFile(r)) {
+                s.settleGood(System.currentTimeMillis(), true);
+            } else if (r.isSet(ERROR) && r.isUnusableTerminalRetried()) {
+                s.settleUnusable(System.currentTimeMillis()); // → SETTLED_BAD (retried latch)
+            } else if (r.isSet(ERROR)) {
+                // premature ERROR with the one-shot retry still available — consume and
+                // re-enqueue so a fresh download settles the slot (old wait() requeued here)
+                if (r.consumeUnusableTerminalRetry()) {
+                    r.prepareRedownloadAfterUnusableTerminal();
+                    needsRestart.add(r);
+                }
+            }
         }
         this.lastMetricsGroup = metricsGroup;
 
@@ -695,87 +712,62 @@ public class ResourceTracker {
         for (Resource resource : resources) {
             startResource(resource);
         }
+        for (Resource resource : needsRestart) {
+            startResource(resource);
+        }
 
-        // wait for completion
+        // wait for completion — lock-free: poll JarSlot absorbing states, reclaim
+        // parked retries, and block on the group's done future. No synchronized,
+        // no wait(), no notifyAll() anywhere in the download path.
         while (true) {
+            // 1) reclaim + re-enqueue any JarSlots parked in RETRY_PENDING
+            java.util.List<Integer> reclaimed = metricsGroup.reclaimRetryPending();
+            if (!reclaimed.isEmpty()) {
+                for (Integer idx : reclaimed) {
+                    startResource(metricsGroup.slot(idx).location());
+                }
+            }
+
+            // 2) completion = every jar absorbed (GOOD implies a usable local file;
+            //    settleSlotGood validates the cache-hit path before marking GOOD)
             boolean finished = true;
-            List<Resource> requeue = new ArrayList<>();
-
-            synchronized (lock) {
-                // check for completion — DOWNLOADED/ERROR alone is not enough: a ghost
-                // localFile or premature ERROR must not unblock waitForJars before a
-                // usable main jar exists (Unknown Main-Class race).
-                for (Resource resource : resources) {
-                    synchronized (resource) {
-                        if (resource.isSet(DOWNLOADED) && hasUsableLocalFile(resource)) {
-                            continue;
-                        }
-                        if (resource.isSet(ERROR)
-                                || (resource.isSet(DOWNLOADED) && !hasUsableLocalFile(resource))) {
-                            // First observation of terminal-unusable: allow the in-flight /
-                            // just-started recovery from startResource. Only consume+requeue
-                            // when that recovery already finished badly (flag not yet set
-                            // means startResource cleared state but download has not completed
-                            // a failed recovery — treat as in-progress only when still
-                            // CONNECTING/DOWNLOADING). Here status is already ERROR/DOWNLOADED.
-                            if (!resource.isUnusableTerminalRetried()
-                                    && resource.consumeUnusableTerminalRetry()) {
-                                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
-                                        "Resource " + resource.getLocation()
-                                                + " finished without usable cache file; retrying once");
-                                resource.prepareRedownloadAfterUnusableTerminal();
-                                requeue.add(resource);
-                                finished = false;
-                            }
-                            // else terminal failure for this resource — count as done
-                            continue;
-                        }
-                        finished = false;
-                    }
+            for (Resource resource : resources) {
+                net.sourceforge.jnlp.cache.download.JarSlot s = resource.getJarSlot();
+                if (s == null) {
+                    finished = false;
+                    break;
                 }
-                if (finished) {
-                    logDownloadStats();
-                    return true;
+                net.sourceforge.jnlp.cache.download.JarState st = s.state();
+                if (st == net.sourceforge.jnlp.cache.download.JarState.GOOD
+                        || st == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD) {
+                    continue;
                 }
-
-                // wait
-                long waitTime = 0;
-
-                if (timeout > 0) {
-                    waitTime = timeout - (System.currentTimeMillis() - startTime);
-                    if (waitTime <= 0) {
-                        return false;
-                    }
-                }
-
-                if (requeue.isEmpty()) {
-                    lock.wait(waitTime);
-                }
+                finished = false; // IN_FLIGHT (or RETRY_PENDING before the reclaim above)
+            }
+            if (finished) {
+                logDownloadStats();
+                return true;
             }
 
-            for (Resource resource : requeue) {
-                startResource(resource);
+            // 3) block until the group settles or the poll interval elapses (so we can
+            //    reclaim retries). done.get() is future-based, not a monitor.
+            long remaining = timeout > 0 ? timeout - (System.currentTimeMillis() - startTime) : Long.MAX_VALUE;
+            if (remaining <= 0) {
+                return false;
             }
-            if (!requeue.isEmpty()) {
-                synchronized (lock) {
-                    lock.notifyAll();
-                }
-            }
-
-            // §4.4 reclaim: force-claim JarSlots parked in RETRY_PENDING and re-enqueue
-            if (lastMetricsGroup != null) {
-                java.util.List<Integer> reclaimed = lastMetricsGroup.reclaimRetryPending();
-                if (!reclaimed.isEmpty()) {
-                    for (Integer idx : reclaimed) {
-                        startResource(lastMetricsGroup.slot(idx).location());
-                    }
-                    synchronized (lock) {
-                        lock.notifyAll();
-                    }
-                }
+            long pollMs = Math.min(remaining, POLL_INTERVAL_MS);
+            try {
+                metricsGroup.done().get(pollMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+            } catch (java.util.concurrent.TimeoutException e) {
+                // poll interval elapsed — loop to reclaim/check again
+            } catch (java.util.concurrent.ExecutionException e) {
+                // done is completed with null — never expected; treat as poll elapsed
             }
         }
     }
+
+    /** how often the wait loop wakes to reclaim parked RETRY_PENDING jars (ms) */
+    private static final long POLL_INTERVAL_MS = 200;
 
     private void logDownloadStats() {
         if (lastMetricsGroup == null) return;

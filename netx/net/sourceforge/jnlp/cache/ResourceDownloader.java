@@ -65,7 +65,6 @@ public class ResourceDownloader implements Runnable {
     }
     private static final Set<String> LOGGED_MISSING_FAVICONS = new HashSet<>();
     private final Resource resource;
-    private final Object lock;
     /**
      * Pre-computed URL candidates (version-encoded, query-param, plain) to
      * try with GET when skipHeadIfNotCached is active and the cache is empty.
@@ -73,9 +72,13 @@ public class ResourceDownloader implements Runnable {
      */
     private List<URL> downloadUrlCandidates;
 
+    /**
+     * The {@code lock} parameter is retained for source/API compatibility but is
+     * ignored — downloads settle via the lock-free {@link JarSlot} machine and
+     * the old {@code lock.notifyAll()} handshake was removed.
+     */
     public ResourceDownloader(Resource resource, Object lock) {
         this.resource = resource;
-        this.lock = lock;
     }
 
     static boolean isFavIconUrl(URL url) {
@@ -303,9 +306,6 @@ public class ResourceDownloader implements Runnable {
                 synchronized (resource) {
                     resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(PREDOWNLOAD));
                 }
-                synchronized (lock) {
-                    lock.notifyAll(); // wake up wait's to check for completion
-                }
                 resource.fireDownloadEvent(); // fire CONNECTED
                 return;
             }
@@ -320,9 +320,6 @@ public class ResourceDownloader implements Runnable {
             OutputController.getLogger().log(e);
             resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
             settleSlotBad();
-            synchronized (lock) {
-                lock.notifyAll(); // wake up wait's to check for completion
-            }
             resource.fireDownloadEvent(); // fire ERROR
         }
     }
@@ -341,9 +338,6 @@ public class ResourceDownloader implements Runnable {
                 resource.setSize(location.length != null ? location.length : -1);
                 synchronized (resource) {
                     resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(PREDOWNLOAD));
-                }
-                synchronized (lock) {
-                    lock.notifyAll(); // wake up wait's to check for completion
                 }
                 resource.fireDownloadEvent(); // fire CONNECTED
                 return;
@@ -452,10 +446,6 @@ public class ResourceDownloader implements Runnable {
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL, ex);
             }
             entry.store();
-
-            synchronized (lock) {
-                lock.notifyAll(); // wake up wait's to check for completion
-            }
             resource.fireDownloadEvent(); // fire CONNECTED
 
             // explicitly close the URLConnection.
@@ -489,10 +479,6 @@ public class ResourceDownloader implements Runnable {
                 }
                 resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
                 settleSlotBad();
-            }
-
-            synchronized (lock) {
-                lock.notifyAll(); // wake up wait's to check for completion
             }
             resource.fireDownloadEvent(); // fire CONNECTED or ERROR
 
@@ -636,17 +622,11 @@ public class ResourceDownloader implements Runnable {
 
             resource.changeStatus(EnumSet.of(DOWNLOADING), EnumSet.of(DOWNLOADED));
             settleSlotGood(false);
-            synchronized (lock) {
-                lock.notifyAll(); // wake up wait's to check for completion
-            }
             resource.fireDownloadEvent(); // fire DOWNLOADED
         } catch (Exception ex) {
             logDownloadFailure(downloadFrom, ex);
             resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
             settleSlotBad();
-            synchronized (lock) {
-                lock.notifyAll();
-            }
             resource.fireDownloadEvent(); // fire ERROR
         } finally {
             if (connection != null) {
@@ -668,9 +648,15 @@ public class ResourceDownloader implements Runnable {
 
     private void settleSlotGood(boolean fromCache) {
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        if (slot != null) {
-            slot.settleGood(System.currentTimeMillis(), fromCache);
+        if (slot == null) return;
+        if (fromCache && !ResourceTracker.hasUsableLocalFile(resource)) {
+            // ghost cache entry: don't settle GOOD — park for the one-shot retry so
+            // the wait path re-enqueues and re-downloads instead of launching from a
+            // phantom file (Unknown Main-Class race).
+            slot.settleUnusable(System.currentTimeMillis());
+            return;
         }
+        slot.settleGood(System.currentTimeMillis(), fromCache);
     }
 
     private void settleSlotBad() {
