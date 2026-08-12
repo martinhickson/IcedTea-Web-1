@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.UnknownHostException;
+import javax.net.ssl.HttpsURLConnection;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.SSLSocketFactory;
 import javax.net.ssl.SSLSession;
@@ -14,7 +15,11 @@ public final class ItwSslSocketFactory extends SSLSocketFactory {
     private final SSLSocketFactory delegate;
 
     public ItwSslSocketFactory() {
-        this.delegate = ItwTls.context().getSocketFactory();
+        // Wrap ITW's DEFAULT factory (configured by JNLPRuntime with the
+        // VariableX509TrustManager chain), so trusted.jssecacerts / cert-dialog
+        // handling is preserved. We only stamp cipher/protocol order + handshake
+        // logging on top — never replace the trust chain.
+        this.delegate = HttpsURLConnection.getDefaultSSLSocketFactory();
     }
 
     @Override
