@@ -48,6 +48,33 @@ public final class SqliteCatalogProcessWorker {
                         }
                     }
                     System.out.println("OK added=" + added);
+                } else if ("alloc".equals(args[1])) {
+                    int count = Integer.parseInt(args[2]);
+                    File dbRoot = w.getCacheDir().getFile();
+                    StringBuilder ids = new StringBuilder();
+                    for (int i = 0; i < count; i++) {
+                        w.lock();
+                        try {
+                            w.load();
+                            int id = w.nextFolderId();
+                            if (ids.length() > 0) {
+                                ids.append(',');
+                            }
+                            ids.append(id);
+                            File marker = new File(dbRoot, id + "/claimed");
+                            if (!marker.getParentFile().isDirectory() && !marker.getParentFile().mkdirs()) {
+                                fail("mkdir " + marker.getParent());
+                            }
+                            if (!marker.exists() && !marker.createNewFile()) {
+                                fail("create " + marker);
+                            }
+                            w.addEntry(System.nanoTime() + "," + id, marker.getAbsolutePath());
+                            w.store();
+                        } finally {
+                            w.unlock();
+                        }
+                    }
+                    System.out.println("OK ids=" + ids);
                 } else if ("count".equals(args[1])) {
                     w.lock();
                     try {
@@ -56,13 +83,48 @@ public final class SqliteCatalogProcessWorker {
                     } finally {
                         w.unlock();
                     }
+                } else if ("insert-until-killed".equals(args[1])) {
+                    int workerId = Integer.parseInt(args[2]);
+                    File dbRoot = w.getCacheDir().getFile();
+                    int added = 0;
+                    System.out.println("READY starting");
+                    System.out.flush();
+                    for (int i = 0; i < 2000; i++) {
+                        File jar = new File(dbRoot, workerId + "/http/kill.example/u" + i + ".jar");
+                        w.lock();
+                        try {
+                            w.load();
+                            if (w.addEntry(System.nanoTime() + "," + workerId, jar.getAbsolutePath())) {
+                                added++;
+                            }
+                            w.store();
+                        } finally {
+                            w.unlock();
+                        }
+                    }
+                    System.out.println("OK added=" + added);
                 } else {
                     fail("unknown");
                 }
             } finally {
-                w.close();
+                // Timed close: never block System.exit on WAL checkpoint.
+                Thread closer = new Thread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            w.close();
+                        } catch (Throwable ignored) {
+                            // process is exiting
+                        }
+                    }
+                }, "sqlite-worker-close");
+                closer.setDaemon(true);
+                closer.start();
+                closer.join(2000);
             }
-            System.exit(0);
+            // halt skips sqlite-jdbc shutdown hooks that wait on WAL while a peer
+            // JVM still holds the catalog (System.exit hung Failsafe workers).
+            Runtime.getRuntime().halt(0);
         } catch (Throwable t) {
             t.printStackTrace(System.err);
             fail(t.getMessage());
@@ -71,6 +133,6 @@ public final class SqliteCatalogProcessWorker {
 
     private static void fail(String msg) {
         System.out.println("ERR " + msg);
-        System.exit(1);
+        Runtime.getRuntime().halt(1);
     }
 }

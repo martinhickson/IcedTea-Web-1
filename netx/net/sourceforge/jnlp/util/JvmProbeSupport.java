@@ -1,6 +1,9 @@
 package net.sourceforge.jnlp.util;
 
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileReader;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -12,13 +15,51 @@ import net.sourceforge.jnlp.runtime.JavawsUberLauncher;
 /**
  * Headless JVM version probing via the IcedTea-Web uber JAR {@code --java-version}
  * entry point (works with {@code javaw} on Windows without a console).
+ * Prefer {@link #readMajorFromReleaseFile(String)} for bulk discovery — process
+ * probes are expensive and must only run for the JVM that will actually be used.
  */
 public final class JvmProbeSupport {
 
     private static final Pattern QUOTED_JAVA_VERSION = Pattern.compile(
             "version \"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
+    private static final Pattern RELEASE_JAVA_VERSION = Pattern.compile(
+            "^JAVA_VERSION\\s*=\\s*\"?([^\"]+)\"?\\s*$");
 
     private JvmProbeSupport() {
+    }
+
+    /**
+     * Read major version from {@code $JAVA_HOME/release} without spawning a process.
+     *
+     * @return major version, or {@code 0} if unavailable
+     */
+    public static int readMajorFromReleaseFile(String jdkHome) {
+        if (jdkHome == null || jdkHome.trim().isEmpty()) {
+            return 0;
+        }
+        File release = new File(jdkHome.trim(), "release");
+        if (!release.isFile()) {
+            return 0;
+        }
+        try (BufferedReader reader = new BufferedReader(new FileReader(release))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                Matcher matcher = RELEASE_JAVA_VERSION.matcher(line.trim());
+                if (matcher.matches()) {
+                    return parseMajorToken(matcher.group(1));
+                }
+            }
+        } catch (IOException ignored) {
+            return 0;
+        }
+        return 0;
+    }
+
+    private static int parseMajorToken(String versionToken) {
+        if (versionToken == null || versionToken.isEmpty()) {
+            return 0;
+        }
+        return parseMajorVersionFromJavaVersionOutput("version \"" + versionToken.trim() + "\"");
     }
 
     public static File resolveLocalUberJar() {

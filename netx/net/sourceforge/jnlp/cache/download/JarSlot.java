@@ -136,4 +136,22 @@ public final class JarSlot {
         if (tm <= 0) return -1;
         return transferred.get() / (double) tm * 1000.0 / 1024.0;
     }
+
+    /** One-line per-jar download stats for logging at settle time. */
+    public String settleStatsLine() {
+        String k = kind == null ? "?" : kind.name();
+        long ttfb = ttfbMillis();
+        long dur = durationMillis();
+        double thr = throughputKBps();
+        return String.format(java.util.Locale.ROOT,
+                "Download complete: %s kind=%s ttfb=%s dur=%s thr=%s bytes=%d decomp=%s retried=%s",
+                location,
+                k,
+                ttfb >= 0 ? ttfb + "ms" : "-",
+                dur >= 0 ? dur + "ms" : "-",
+                thr >= 0 ? String.format(java.util.Locale.ROOT, "%.1fKB/s", thr) : "-",
+                transferred.get(),
+                decompressedBytes >= 0 ? Long.toString(decompressedBytes) : "-",
+                retried.get());
+    }
 }

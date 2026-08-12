@@ -10,8 +10,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
-import java.util.stream.Collectors;
 import net.sourceforge.jnlp.cache.CacheLRUWrapper;
 import net.sourceforge.jnlp.cache.CacheUtil;
 import org.junit.jupiter.api.AfterEach;
@@ -26,8 +26,8 @@ import org.junit.jupiter.api.io.TempDir;
 /**
  * Dual-JVM coverage for the SQLite cache catalog under {@code {cachedir}/db/}.
  * Primary CI home: existing {@code autodetect-windows} job; also runs on Linux
- * when this module is verified there. Unit CI additionally covers dual-JVM via
- * {@code SqliteCacheCatalogTest}.
+ * when this module is verified there. Dual-JVM ProcessBuilder belongs in Failsafe
+ * ({@code SqliteCacheCatalogIT} / this class), not Surefire.
  */
 @EnabledOnOs({OS.WINDOWS, OS.LINUX})
 class SqliteCacheCatalogDualJvmIT {
@@ -40,7 +40,10 @@ class SqliteCacheCatalogDualJvmIT {
     Path tmp;
 
     private Path cacheParent;
+    private String plantedLegacyIndex;
     private final List<CacheLRUWrapper> openWrappers = new ArrayList<>();
+    private final java.util.Map<Process, StringBuilder> workerOutput = new ConcurrentHashMap<>();
+    private final List<Process> workers = new ArrayList<>();
 
     @BeforeEach
     void setUp() throws Exception {
@@ -50,12 +53,19 @@ class SqliteCacheCatalogDualJvmIT {
         Path legacyJar = cacheParent.resolve("0/http/evil.example/legacy.jar");
         Files.createDirectories(legacyJar.getParent());
         Files.writeString(legacyJar, "legacy", StandardCharsets.UTF_8);
-        Files.writeString(cacheParent.resolve("recently_used"),
-                "1,0=" + legacyJar.toAbsolutePath() + "\n", StandardCharsets.UTF_8);
+        plantedLegacyIndex = "1,0=" + legacyJar.toAbsolutePath() + "\n";
+        Files.writeString(cacheParent.resolve("recently_used"), plantedLegacyIndex, StandardCharsets.UTF_8);
     }
 
     @AfterEach
     void tearDown() {
+        for (Process p : workers) {
+            if (p.isAlive()) {
+                p.destroyForcibly();
+            }
+        }
+        workers.clear();
+        workerOutput.clear();
         for (CacheLRUWrapper w : openWrappers) {
             try {
                 w.close();
@@ -100,7 +110,15 @@ class SqliteCacheCatalogDualJvmIT {
         assertThat(legacyFind).contains("matches=0");
 
         assertThat(cacheParent.resolve("db/cache_catalog.sqlite")).isRegularFile();
-        assertThat(cacheParent.resolve("recently_used")).isRegularFile();
+        assertThat(cacheParent.resolve("recently_used")).hasContent(plantedLegacyIndex);
+        Path nativeDir = cacheParent.resolve("db/native");
+        assertThat(nativeDir).as("xerial native extract under {cachedir}/db/native").isDirectory();
+        try (java.util.stream.Stream<Path> natives = Files.list(nativeDir)) {
+            assertThat(natives.map(p -> p.getFileName().toString().toLowerCase())
+                    .anyMatch(n -> n.contains("sqlitejdbc")))
+                    .as("sqlitejdbc native should be extracted under db/native, not %TEMP%")
+                    .isTrue();
+        }
     }
 
     @Test
@@ -174,26 +192,63 @@ class SqliteCacheCatalogDualJvmIT {
         }
         ProcessBuilder pb = new ProcessBuilder(cmd);
         pb.redirectErrorStream(true);
-        return pb.start();
+        Process process = pb.start();
+        workers.add(process);
+        StringBuilder buf = new StringBuilder();
+        workerOutput.put(process, buf);
+        Thread reader = new Thread(() -> {
+            try (BufferedReader r = new BufferedReader(
+                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = r.readLine()) != null) {
+                    synchronized (buf) {
+                        buf.append(line).append('\n');
+                    }
+                }
+            } catch (java.io.IOException ignored) {
+                // process closed
+            }
+        }, "sqlite-dualjvm-stdout");
+        reader.setDaemon(true);
+        reader.start();
+        return process;
     }
 
-    private static String waitOk(Process process) throws Exception {
-        boolean finished = process.waitFor(TIMEOUT_SEC, TimeUnit.SECONDS);
-        String output;
-        try (BufferedReader reader = new BufferedReader(
-                new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-            output = reader.lines().collect(Collectors.joining("\n"));
+    private String waitOk(Process process) throws Exception {
+        long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(TIMEOUT_SEC);
+        while (System.currentTimeMillis() < deadline && process.isAlive()) {
+            String snap = snapshotOutput(process);
+            if (snap.contains("OK ") || snap.contains("ERR ")) {
+                process.waitFor(5, TimeUnit.SECONDS);
+                break;
+            }
+            Thread.sleep(50);
         }
-        assertThat(finished).as("worker timed out; output=%s", output).isTrue();
-        assertThat(process.exitValue()).as("worker exit; output=%s", output).isZero();
+        if (process.isAlive()) {
+            process.destroyForcibly();
+            process.waitFor(5, TimeUnit.SECONDS);
+        }
+        String output = snapshotOutput(process);
         assertThat(output).as("worker output").contains("OK ");
         return output;
     }
 
+    private String snapshotOutput(Process process) {
+        StringBuilder buf = workerOutput.get(process);
+        if (buf == null) {
+            return "";
+        }
+        synchronized (buf) {
+            return buf.toString();
+        }
+    }
+
     private static String workerClasspath() throws Exception {
-        // Failsafe CP already includes icedtea-web-uber + test-classes.
-        String cp = System.getProperty("java.class.path");
-        assertThat(cp).as("java.class.path").isNotBlank();
+        String surefire = System.getProperty("surefire.test.class.path");
+        String cp = (surefire != null && !surefire.trim().isEmpty())
+                ? surefire
+                : System.getProperty("java.class.path");
+        assertThat(cp).as("worker classpath").isNotBlank();
         // Ensure worker class is present
         String worker = SqliteCatalogDualJvmWorker.class.getName().replace('.', '/') + ".class";
         assertThat(SqliteCatalogDualJvmWorker.class.getClassLoader().getResource(worker))

@@ -260,12 +260,25 @@ public class ResourceDownloader implements Runnable {
             }
             net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
             if (slot != null && slot.claimRetry()) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "Download retry for " + resource.getLocation()
+                                + " after unusable/corrupt attempt — one shot left");
                 doAttempt();   // attempt 2
+            }
+            if (!resource.isTerminal()) {
+                // No more retries: never leave IN_FLIGHT / orphaned RETRY_PENDING.
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "Download of " + resource.getLocation()
+                                + " out of retries — failing fast");
+                failFastOutOfRetries();
             }
         } catch (Throwable t) {
             // never leave the group hanging: settle bad on any unexpected failure
             OutputController.getLogger().log(t);
             settleSlotBad();
+            if (!resource.isTerminal()) {
+                failFastOutOfRetries();
+            }
         }
     }
 
@@ -370,7 +383,7 @@ public class ResourceDownloader implements Runnable {
             File existingOnDisk = null;
             boolean localUsable = localFile != null && localFile.isFile() && localFile.length() > 0
                     && (!CacheUtil.isJarResourceUrl(resource.getLocation())
-                    || CacheUtil.isValidJarFile(localFile));
+                    || jarPassesIntegrity(localFile));
             if (!localUsable) {
                 existingOnDisk = CacheUtil.findExistingCacheFile(resource.getLocation(), resource.getDownloadVersion());
             }
@@ -402,9 +415,10 @@ public class ResourceDownloader implements Runnable {
 
             // Never mark DOWNLOADED when the local file is missing — that is what produced
             // NoSuchFileException in JarCertVerifier with corrupt/partial cache state.
+            // Signature/digest verify happens here before confirming cache-hit success.
             if (current && localFile != null && localFile.isFile() && localFile.length() > 0
                     && (!CacheUtil.isJarResourceUrl(resource.getLocation())
-                    || CacheUtil.isValidJarFile(localFile))) {
+                    || jarPassesIntegrity(localFile))) {
                 settleSlotGood(true);
             }
 
@@ -643,6 +657,25 @@ public class ResourceDownloader implements Runnable {
 
     private void settleSlotGood(boolean fromCache) {
         resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
+        // Final gate: jars must pass signature/digest integrity before GOOD.
+        File local = resource.getLocalFile();
+        if (CacheUtil.isJarResourceUrl(resource.getLocation()) && local != null) {
+            try {
+                String result = CacheUtil.verifyJarIntegrity(local);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                        "Download integrity: " + result);
+            } catch (IOException integrityFailed) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "Download integrity FAILED before settle — not marking success: "
+                                + resource.getLocation() + " (" + integrityFailed.getMessage() + ")");
+                OutputController.getLogger().log(integrityFailed);
+                deleteCorruptLocal(local);
+                resource.setLocalFile(null);
+                settleSlotBad();
+                resource.fireDownloadEvent(); // ERROR
+                return;
+            }
+        }
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
@@ -662,6 +695,7 @@ public class ResourceDownloader implements Runnable {
         // cache hits loop forever: isCurrent=true → "Downloading" → new IN_FLIGHT slot.
         if (slot.state() == net.sourceforge.jnlp.cache.download.JarState.GOOD) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, slot.settleStatsLine());
         }
     }
 
@@ -673,9 +707,49 @@ public class ResourceDownloader implements Runnable {
             return;
         }
         // settleUnusable → RETRY_PENDING (not absorbing) on first failure; SETTLED_BAD after retry.
-        if (slot.settleUnusable(System.currentTimeMillis())
-                || slot.state() == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD) {
+        boolean terminal = slot.settleUnusable(System.currentTimeMillis())
+                || slot.state() == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD;
+        if (terminal) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "Download failed (out of retries or terminal error): " + slot.settleStatsLine());
+        }
+    }
+
+    /** Force SETTLED_BAD when attempts are exhausted and the slot never absorbed. */
+    private void failFastOutOfRetries() {
+        resource.clearEnqueued();
+        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+        if (slot == null) {
+            resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+            resource.fireDownloadEvent(); // ERROR
+            return;
+        }
+        slot.settleBadFinal(System.currentTimeMillis());
+        resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+        OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                "Download failed fast after retries exhausted: " + slot.settleStatsLine());
+        resource.fireDownloadEvent(); // ERROR
+    }
+
+    private static boolean jarPassesIntegrity(File file) {
+        try {
+            CacheUtil.verifyJarIntegrity(file);
+            return true;
+        } catch (IOException e) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, e);
+            return false;
+        }
+    }
+
+    private static void deleteCorruptLocal(File local) {
+        if (local == null || !local.isFile()) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(local.toPath());
+        } catch (IOException deleteEx) {
+            OutputController.getLogger().log(deleteEx);
         }
     }
 
@@ -769,6 +843,9 @@ public class ResourceDownloader implements Runnable {
                         }
                     }
                     if (!wrote) {
+                        OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                                "Download of " + downloadLocation + " out of IO retries ("
+                                        + retryCount + ") — failing fast");
                         throw lastFailure;
                     }
                 }
@@ -811,17 +888,18 @@ public class ResourceDownloader implements Runnable {
         if (slot != null && written != null) {
             slot.onDecompressed(written.length(), packGZ);
         }
-        if (CacheUtil.isJarResourceUrl(cacheLocation) && !CacheUtil.isValidJarFile(written)) {
-            String preview = CacheUtil.previewFileHead(written, 80);
-            if (written != null && written.isFile()) {
-                try {
-                    Files.deleteIfExists(written.toPath());
-                } catch (IOException deleteEx) {
-                    OutputController.getLogger().log(deleteEx);
-                }
+        if (CacheUtil.isJarResourceUrl(cacheLocation)) {
+            try {
+                String integrity = CacheUtil.verifyJarIntegrity(written);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                        "Download integrity (post-write): " + integrity);
+            } catch (IOException badJar) {
+                String preview = CacheUtil.previewFileHead(written, 80);
+                deleteCorruptLocal(written);
+                throw new IOException("Download of " + cacheLocation + " failed integrity/signature check"
+                        + (preview != null && !preview.isEmpty() ? " (" + preview + ")" : "")
+                        + ": " + badJar.getMessage(), badJar);
             }
-            throw new IOException("Download of " + cacheLocation + " is not a valid JAR"
-                    + (preview != null && !preview.isEmpty() ? " (" + preview + ")" : ""));
         }
         return written;
     }
@@ -833,50 +911,60 @@ public class ResourceDownloader implements Runnable {
      * and {@link net.sourceforge.jnlp.cache.download.JarSlot} the same way as
      * {@link #writeDownloadToFile} — otherwise Download stats stay at thr=-1 / bytes=0
      * for every pack.gz artifact.
+     * <p>
+     * Unpacks go through {@link net.sourceforge.jnlp.cache.download.PackUnpackFunnel}
+     * so concurrent pack.gz expansion stays under a heap-derived byte budget while
+     * always keeping at least one unpack running.
      */
     private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream) throws IOException {
         File localFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
         final net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        InputStream countedWire = new InputStream() {
-            private final InputStream delegate = packGzStream;
-            @Override
-            public int read() throws IOException {
-                int b = delegate.read();
-                if (b >= 0) {
-                    noteWireBytes(1);
+        // Estimate expanded size: known size, else wire hint * 4, else 16 MiB default.
+        long sizeHint = resource.getSize();
+        long estimate = sizeHint > 0 ? sizeHint
+                : (slot != null && slot.transferred() > 0 ? slot.transferred() * 4 : 16L << 20);
+        net.sourceforge.jnlp.cache.download.PackUnpackFunnel.getInstance().runUnpack(estimate, () -> {
+            InputStream countedWire = new InputStream() {
+                private final InputStream delegate = packGzStream;
+                @Override
+                public int read() throws IOException {
+                    int b = delegate.read();
+                    if (b >= 0) {
+                        noteWireBytes(1);
+                    }
+                    return b;
                 }
-                return b;
-            }
-            @Override
-            public int read(byte[] b, int off, int len) throws IOException {
-                int n = delegate.read(b, off, len);
-                if (n > 0) {
-                    noteWireBytes(n);
+                @Override
+                public int read(byte[] b, int off, int len) throws IOException {
+                    int n = delegate.read(b, off, len);
+                    if (n > 0) {
+                        noteWireBytes(n);
+                    }
+                    return n;
                 }
-                return n;
-            }
-            @Override
-            public void close() throws IOException {
-                delegate.close();
-            }
-            private void noteWireBytes(int n) {
-                resource.incrementTransferred(n);
-                if (slot != null) {
-                    long now = System.currentTimeMillis();
-                    slot.onFirstByte(now);
-                    slot.addTransferred(n);
+                @Override
+                public void close() throws IOException {
+                    delegate.close();
                 }
+                private void noteWireBytes(int n) {
+                    resource.incrementTransferred(n);
+                    if (slot != null) {
+                        long now = System.currentTimeMillis();
+                        slot.onFirstByte(now);
+                        slot.addTransferred(n);
+                    }
+                }
+            };
+            try (InputStream in = new GZIPInputStream(new BufferedInputStream(countedWire));
+                 OutputStream fileOut = Files.newOutputStream(localFile.toPath(),
+                         StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                 JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+                Pack200.newUnpacker().unpack(in, jarOut);
             }
-        };
-        try (InputStream in = new GZIPInputStream(new BufferedInputStream(countedWire));
-             OutputStream fileOut = Files.newOutputStream(localFile.toPath(),
-                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-             JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
-            Pack200.newUnpacker().unpack(in, jarOut);
-        }
-        if (slot != null) {
-            slot.onLastByte(System.currentTimeMillis());
-        }
+            if (slot != null) {
+                slot.onLastByte(System.currentTimeMillis());
+            }
+        });
         return localFile;
     }
 
@@ -981,12 +1069,15 @@ public class ResourceDownloader implements Runnable {
 
         File packed = CacheUtil.getCacheFile(compressedLocation, version);
         File unpacked = CacheUtil.getCacheFile(uncompressedLocation, version);
-        try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
-             OutputStream fileOut = Files.newOutputStream(unpacked.toPath(),
-                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-             JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
-            Pack200.newUnpacker().unpack(in, jarOut);
-        }
+        long estimate = packed.isFile() ? Math.max(packed.length() * 4, 16L << 20) : 16L << 20;
+        net.sourceforge.jnlp.cache.download.PackUnpackFunnel.getInstance().runUnpack(estimate, () -> {
+            try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
+                 OutputStream fileOut = Files.newOutputStream(unpacked.toPath(),
+                         StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                 JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+                Pack200.newUnpacker().unpack(in, jarOut);
+            }
+        });
     }
 
     /**

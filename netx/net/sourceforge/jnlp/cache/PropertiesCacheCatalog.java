@@ -205,6 +205,11 @@ final class PropertiesCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public int nextFolderId(File cacheDir) {
+        return CacheCatalog.claimFolderId(cacheDir, 0);
+    }
+
+    @Override
     public void close() {
         // PropertiesFile holds no long-lived JDBC resources.
     }

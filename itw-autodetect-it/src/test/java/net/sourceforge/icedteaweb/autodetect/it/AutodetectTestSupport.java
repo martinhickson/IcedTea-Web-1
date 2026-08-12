@@ -74,9 +74,12 @@ final class AutodetectTestSupport {
         Path cacheDir = Paths.get(cacheHome, "icedtea-web", "cache");
         Files.createDirectories(cacheDir);
         // Legacy index placeholder (ignored when deployment.cache.catalog.sqlite=true).
-        Files.writeString(cacheDir.resolve("recently_used"), "", StandardCharsets.UTF_8);
+        Files.writeString(cacheDir.resolve("recently_used"), PLANTED_LEGACY_INDEX, StandardCharsets.UTF_8);
         Files.createDirectories(cacheDir.resolve("db"));
     }
+
+    /** Distinctive bytes planted in legacy {@code recently_used}; sqlite path must not rewrite them. */
+    static final String PLANTED_LEGACY_INDEX = "PLANTED-LEGACY-DO-NOT-TOUCH\n";
 
     /** User cache root: {@code $XDG_CACHE_HOME/icedtea-web/cache}. */
     static Path userCacheRoot() {

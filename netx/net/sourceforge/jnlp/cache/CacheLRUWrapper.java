@@ -85,14 +85,24 @@ public class CacheLRUWrapper {
      */
     CacheLRUWrapper(boolean useSqlite, final InfrastructureFileDescriptor recentlyUsed,
             final InfrastructureFileDescriptor cacheDir) {
-        this.sqliteMode = useSqlite;
         if (useSqlite) {
             InfrastructureFileDescriptor parent = cacheDir != null ? cacheDir : PathsAndFiles.CACHE_DIR;
             this.cacheDir = dbDirDescriptor(parent);
-            this.recentlyUsedPropertiesFile = recentlyUsed; // unused in sqlite mode
             ensureDir(this.cacheDir.getFile());
-            this.catalog = new SqliteCacheCatalog(this.cacheDir.getFile());
+            File marker = new File(this.cacheDir.getFile(), SqliteCacheCatalog.FAILED_MARKER);
+            if (marker.isFile()) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "sqlite catalog sticky-fail marker present; using properties under db/");
+                this.sqliteMode = false;
+                this.recentlyUsedPropertiesFile = recentlyUsedUnder(this.cacheDir);
+                this.catalog = new PropertiesCacheCatalog(this.recentlyUsedPropertiesFile);
+            } else {
+                this.sqliteMode = true;
+                this.recentlyUsedPropertiesFile = recentlyUsed; // unused in sqlite mode
+                this.catalog = new SqliteCacheCatalog(this.cacheDir.getFile());
+            }
         } else {
+            this.sqliteMode = false;
             this.cacheDir = cacheDir != null ? cacheDir : PathsAndFiles.CACHE_DIR;
             this.recentlyUsedPropertiesFile = recentlyUsed != null ? recentlyUsed : PathsAndFiles.getRecentlyUsedFile();
             this.catalog = new PropertiesCacheCatalog(this.recentlyUsedPropertiesFile);
@@ -147,6 +157,20 @@ public class CacheLRUWrapper {
         return ((SqliteCacheCatalog) catalog).getDbFile();
     }
 
+    int sqlitePragmaSynchronous() throws java.sql.SQLException {
+        if (!(catalog instanceof SqliteCacheCatalog)) {
+            throw new IllegalStateException("not sqlite catalog");
+        }
+        return ((SqliteCacheCatalog) catalog).pragmaSynchronous();
+    }
+
+    String sqliteExplainFindEntriesPlan() throws java.sql.SQLException {
+        if (!(catalog instanceof SqliteCacheCatalog)) {
+            throw new IllegalStateException("not sqlite catalog");
+        }
+        return ((SqliteCacheCatalog) catalog).explainFindEntriesPlan();
+    }
+
     static boolean isSqliteCatalogEnabled() {
         try {
             String v = JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_CACHE_CATALOG_SQLITE);
@@ -171,6 +195,20 @@ public class CacheLRUWrapper {
             @Override
             public File getFile() {
                 return new File(parentCache.getFile(), DB_CACHE_DIR_NAME);
+            }
+
+            @Override
+            public String getFullPath() {
+                return getFile().getAbsolutePath();
+            }
+        };
+    }
+
+    static InfrastructureFileDescriptor recentlyUsedUnder(final InfrastructureFileDescriptor dir) {
+        return new InfrastructureFileDescriptor() {
+            @Override
+            public File getFile() {
+                return new File(dir.getFile(), PathsAndFiles.CACHE_INDEX_FILE_NAME);
             }
 
             @Override
@@ -339,6 +377,14 @@ public class CacheLRUWrapper {
 
     public String generateKey(String path) {
         return catalog.generateKey(path, getCacheDir().getFullPath());
+    }
+
+    /**
+     * Next unused numbered folder under the cache root (sqlite: {@code MAX(folder_id)+1}
+     * plus filesystem confirm).
+     */
+    public int nextFolderId() {
+        return catalog.nextFolderId(getCacheDir().getFile());
     }
 
     void clearLRUSortedEntries() {

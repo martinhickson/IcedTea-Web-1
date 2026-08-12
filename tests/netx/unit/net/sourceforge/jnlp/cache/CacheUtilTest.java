@@ -37,6 +37,7 @@ exception statement from your version.
 package net.sourceforge.jnlp.cache;
 
 import java.io.File;
+import java.io.IOException;
 import java.net.URL;
 import net.sourceforge.jnlp.annotations.Bug;
 import net.sourceforge.jnlp.util.UrlUtils;
@@ -166,6 +167,103 @@ public class CacheUtilTest {
         final File expected = new File("/tmp/https/example.com/applet/applet.php");
         Assert.assertEquals(expected, CacheUtil.urlToPath(u, "/tmp"));
     }
+
+    @Test
+    public void pathToURLPathRoundTripStripsFolderId() throws Exception {
+        assertRoundTripStripsFolderId("https://alta.example:8443/sonata/lib/app.jar", "7");
+    }
+
+    @Test
+    public void pathToURLPathRoundTripKeepsQuerySuffix() throws Exception {
+        File cacheRoot = newCacheRoot();
+        File folder = new File(cacheRoot, "2");
+        Assert.assertTrue(folder.mkdir());
+        try {
+            URL u = new URL("https://alta.example/sonata/lib/app.jar?build=16.6.0");
+            File onDisk = CacheUtil.urlToPath(u, folder.getAbsolutePath());
+            Assert.assertTrue(onDisk.getName().contains("build"));
+            String resourceUrl = CacheUtil.pathToURLPath(onDisk.getAbsolutePath(), cacheRoot.getAbsolutePath());
+            Assert.assertFalse(resourceUrl.startsWith("2" + File.separator) || resourceUrl.startsWith("2/"));
+            Assert.assertTrue(resourceUrl.replace('\\', '/').contains("sonata/lib/"));
+        } finally {
+            deleteTree(cacheRoot);
+        }
+    }
+
+    @Test
+    public void pathToURLPathRoundTripStripsPackGz() throws Exception {
+        File cacheRoot = newCacheRoot();
+        File folder = new File(cacheRoot, "3");
+        Assert.assertTrue(folder.mkdir());
+        try {
+            URL u = new URL("https://alta.example/sonata/lib/app.jar.pack.gz");
+            File onDisk = CacheUtil.urlToPath(u, folder.getAbsolutePath());
+            Assert.assertFalse("pack.gz suffix must be stripped before disk path",
+                    onDisk.getName().contains("pack.gz"));
+            Assert.assertTrue(onDisk.getName().endsWith("app.jar") || onDisk.getPath().endsWith("app.jar"));
+            String resourceUrl = CacheUtil.pathToURLPath(onDisk.getAbsolutePath(), cacheRoot.getAbsolutePath());
+            Assert.assertFalse(resourceUrl.contains("pack.gz"));
+            Assert.assertFalse(resourceUrl.startsWith("3" + File.separator) || resourceUrl.startsWith("3/"));
+        } finally {
+            deleteTree(cacheRoot);
+        }
+    }
+
+    @Test
+    public void pathToURLPathRoundTripHashesOverlongLeaf() throws Exception {
+        File cacheRoot = newCacheRoot();
+        File folder = new File(cacheRoot, "4");
+        Assert.assertTrue(folder.mkdir());
+        try {
+            StringBuilder leaf = new StringBuilder("app-");
+            for (int i = 0; i < 80; i++) {
+                leaf.append("verylongname");
+            }
+            leaf.append(".jar");
+            URL u = new URL("https://alta.example/sonata/lib/" + leaf);
+            File onDisk = CacheUtil.urlToPath(u, folder.getAbsolutePath());
+            Assert.assertTrue("overlong leaf should be hashed under 255 chars",
+                    onDisk.getName().length() <= 255);
+            String resourceUrl = CacheUtil.pathToURLPath(onDisk.getAbsolutePath(), cacheRoot.getAbsolutePath());
+            Assert.assertFalse(resourceUrl.startsWith("4" + File.separator) || resourceUrl.startsWith("4/"));
+        } finally {
+            deleteTree(cacheRoot);
+        }
+    }
+
+    private static void assertRoundTripStripsFolderId(String spec, String folderId) throws Exception {
+        File cacheRoot = newCacheRoot();
+        File folder = new File(cacheRoot, folderId);
+        Assert.assertTrue(folder.mkdir());
+        try {
+            URL u = new URL(spec);
+            File onDisk = CacheUtil.urlToPath(u, folder.getAbsolutePath());
+            String resourceUrl = CacheUtil.pathToURLPath(onDisk.getAbsolutePath(), cacheRoot.getAbsolutePath());
+            // Production lookup uses urlToPath(source, "").getPath() — must match stored resource_url.
+            Assert.assertEquals(CacheUtil.urlToPath(u, "").getPath(), resourceUrl);
+            Assert.assertFalse("folder id must not remain in resource_url",
+                    resourceUrl.startsWith(folderId + File.separator) || resourceUrl.startsWith(folderId + "/"));
+            Assert.assertFalse(resourceUrl.contains(File.separator + folderId + File.separator));
+        } finally {
+            deleteTree(cacheRoot);
+        }
+    }
+
+    private static File newCacheRoot() throws IOException {
+        File cacheRoot = File.createTempFile("itw-cache-root", "");
+        Assert.assertTrue(cacheRoot.delete() && cacheRoot.mkdir());
+        return cacheRoot;
+    }
+
+    private static void deleteTree(File root) {
+        File[] kids = root.listFiles();
+        if (kids != null) {
+            for (File k : kids) {
+                deleteTree(k);
+            }
+        }
+        root.delete();
+    }
     
     @Test
     public void CacheID(){
@@ -198,5 +296,26 @@ public class CacheUtilTest {
         Assert.assertNotEquals(cj2, cd2);
         Assert.assertNotEquals(cj31, cd31);
         Assert.assertNotEquals(cj32, cd32);
+    }
+
+    @Test
+    public void testIsCacheJarInfoFileSkipsSqliteInfrastructure() throws IOException {
+        File dir = File.createTempFile("itw-cache-ids", "dir");
+        Assert.assertTrue(dir.delete());
+        Assert.assertTrue(dir.mkdir());
+        File info = new File(dir, "0/http/ex.com/a.jar.info");
+        Assert.assertTrue(info.getParentFile().mkdirs());
+        Assert.assertTrue(info.createNewFile());
+        File sqlite = new File(dir, SqliteCacheCatalog.DB_FILE_NAME);
+        Assert.assertTrue(sqlite.createNewFile());
+        File nativeLib = new File(dir, "native/sqlitejdbc.dll");
+        Assert.assertTrue(nativeLib.getParentFile().mkdirs());
+        Assert.assertTrue(nativeLib.createNewFile());
+        File fakeInfoInNative = new File(dir, "native/x.info");
+        Assert.assertTrue(fakeInfoInNative.createNewFile());
+        Assert.assertTrue(CacheUtil.isCacheJarInfoFile(info.toPath()));
+        Assert.assertFalse(CacheUtil.isCacheJarInfoFile(sqlite.toPath()));
+        Assert.assertFalse(CacheUtil.isCacheJarInfoFile(nativeLib.toPath()));
+        Assert.assertFalse(CacheUtil.isCacheJarInfoFile(fakeInfoInNative.toPath()));
     }
 }

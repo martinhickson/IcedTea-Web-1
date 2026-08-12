@@ -740,9 +740,19 @@ public class ResourceTracker {
             net.sourceforge.jnlp.util.logging.OutputController.getLogger()
                     .log(net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_ALL,
                             "Download stats: " + stats.summaryLine());
+            // Always surface per-jar lines when anything failed; otherwise DEBUG.
+            net.sourceforge.jnlp.util.logging.OutputController.Level jarLevel =
+                    stats.failedCount > 0
+                            ? net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_ALL
+                            : net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_DEBUG;
             for (String line : stats.jarLines()) {
+                net.sourceforge.jnlp.util.logging.OutputController.getLogger().log(jarLevel, line);
+            }
+            if (stats.failedCount > 0) {
                 net.sourceforge.jnlp.util.logging.OutputController.getLogger()
-                        .log(net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_DEBUG, line);
+                        .log(net.sourceforge.jnlp.util.logging.OutputController.Level.ERROR_ALL,
+                                "Download group finished with " + stats.failedCount
+                                        + " failed jar(s) — see per-jar lines above");
             }
         } catch (Exception e) {
             // stats are diagnostic — never fail the launch on a stats error

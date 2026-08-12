@@ -90,6 +90,21 @@ jobs:
           & mvn @mvnArgs
         shell: pwsh
 
+      - name: Run SQLite catalog Failsafe IT
+        run: |
+          $mvnArgs = @(
+            "-s", "${{ github.workspace }}/.powershell/workflows/maven-settings.xml",
+            "-pl", "icedtea-web",
+            "failsafe:integration-test",
+            "failsafe:verify",
+            "-Dit.test=SqliteCacheCatalogIT",
+            "-P${{ matrix.profile }},coverage",
+            "-Djdk11.home=$env:JAVA_HOME",
+            "-Dbash.executable=${{ matrix.bash-executable }}"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
       - name: Upload JaCoCo unit test report
         if: matrix.profile == 'ci' && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4

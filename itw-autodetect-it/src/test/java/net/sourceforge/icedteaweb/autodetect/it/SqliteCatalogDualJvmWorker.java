@@ -100,8 +100,13 @@ public final class SqliteCatalogDualJvmWorker {
                     fail("unknown command " + command);
                 }
             } finally {
-                wrapper.close();
+                try {
+                    wrapper.close();
+                } catch (Throwable ignored) {
+                    // process is exiting
+                }
             }
+            Runtime.getRuntime().halt(0);
         } catch (Throwable t) {
             t.printStackTrace(System.err);
             fail(t.getClass().getSimpleName() + ": " + t.getMessage());
@@ -110,11 +115,10 @@ public final class SqliteCatalogDualJvmWorker {
 
     private static void ok(String detail) {
         System.out.println("OK " + detail);
-        System.exit(0);
     }
 
     private static void fail(String detail) {
         System.out.println("ERR " + detail);
-        System.exit(1);
+        Runtime.getRuntime().halt(1);
     }
 }

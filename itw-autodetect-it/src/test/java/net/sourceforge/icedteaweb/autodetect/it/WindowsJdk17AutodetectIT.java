@@ -102,6 +102,19 @@ class WindowsJdk17AutodetectIT {
         assertThat(hasNumberedDir)
                 .as("downloaded jars should land under cache/db/<n>/...")
                 .isTrue();
+        Path nativeDir = dbRoot.resolve("native");
+        assertThat(nativeDir)
+                .as("sqlitejdbc should extract under cache/db/native (VDI-safe, not %TEMP%)")
+                .isDirectory();
+        try (java.util.stream.Stream<Path> natives = Files.list(nativeDir)) {
+            assertThat(natives.map(p -> p.getFileName().toString().toLowerCase())
+                    .anyMatch(n -> n.contains("sqlitejdbc")))
+                    .as("expected sqlitejdbc native under " + nativeDir)
+                    .isTrue();
+        }
+        assertThat(AutodetectTestSupport.userCacheRoot().resolve("recently_used"))
+                .as("real javaws sqlite path must not rewrite planted legacy recently_used")
+                .hasContent(AutodetectTestSupport.PLANTED_LEGACY_INDEX);
 
         String markerBody = Files.readString(marker, StandardCharsets.UTF_8);
         assertThat(markerBody.toLowerCase(Locale.ROOT))

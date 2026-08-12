@@ -6,6 +6,7 @@
 package net.sourceforge.jnlp.cache;
 
 import java.io.File;
+import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -18,6 +19,10 @@ import java.util.List;
 import java.util.Map.Entry;
 import java.util.concurrent.locks.ReentrantLock;
 
+import org.sqlite.SQLiteConfig;
+
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
@@ -27,6 +32,8 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 final class SqliteCacheCatalog implements CacheCatalog {
 
     static final String DB_FILE_NAME = "cache_catalog.sqlite";
+    /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
+    static final String FAILED_MARKER = ".sqlite_catalog_failed";
     private static final int BUSY_TIMEOUT_MS = 5000;
 
     private final File dbFile;
@@ -52,21 +59,55 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return connection;
         }
         closeQuietly();
+        ensureParentAndNativeTmpdir();
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            markFailed();
+            throw new SQLException("sqlite-jdbc driver missing", e);
+        }
+        try {
+            return openAndInit(path);
+        } catch (SQLException first) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "sqlite catalog open failed, quarantining: " + dbFile);
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, first);
+            closeQuietly();
+            quarantineSidecars();
+            try {
+                return openAndInit(path);
+            } catch (SQLException second) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, second);
+                markFailed();
+                throw second;
+            }
+        }
+    }
+
+    private void ensureParentAndNativeTmpdir() {
         File parent = dbFile.getParentFile();
         if (parent != null && !parent.exists()) {
             parent.mkdirs();
         }
-        try {
-            Class.forName("org.sqlite.JDBC");
-        } catch (ClassNotFoundException e) {
-            throw new SQLException("sqlite-jdbc driver missing", e);
+        // Prefer extracting sqlitejdbc under the cache tree (VDI often blocks %TEMP%).
+        if (parent != null && System.getProperty("org.sqlite.tmpdir") == null) {
+            File nativeDir = new File(parent, "native");
+            if (nativeDir.isDirectory() || nativeDir.mkdirs()) {
+                System.setProperty("org.sqlite.tmpdir", nativeDir.getAbsolutePath());
+            }
         }
-        connection = DriverManager.getConnection("jdbc:sqlite:" + path);
+    }
+
+    private Connection openAndInit(String path) throws SQLException {
+        SQLiteConfig config = new SQLiteConfig();
+        config.setBusyTimeout(BUSY_TIMEOUT_MS);
+        connection = DriverManager.getConnection("jdbc:sqlite:" + path, config.toProperties());
         openPath = path;
         try (Statement st = connection.createStatement()) {
             st.execute("PRAGMA journal_mode=WAL");
             st.execute("PRAGMA busy_timeout=" + BUSY_TIMEOUT_MS);
-            st.execute("PRAGMA synchronous=NORMAL");
+            st.execute("PRAGMA synchronous=" + (cacheFsyncEnabled() ? "FULL" : "NORMAL"));
+            st.execute("PRAGMA foreign_keys=ON");
             st.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
             try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM schema_version")) {
                 if (rs.next() && rs.getInt(1) == 0) {
@@ -80,23 +121,107 @@ final class SqliteCacheCatalog implements CacheCatalog {
                     + "path TEXT NOT NULL UNIQUE,"
                     + "folder_id INTEGER NOT NULL,"
                     + "last_access INTEGER NOT NULL,"
-                    + "state TEXT NOT NULL DEFAULT 'ready',"
+                    + "state TEXT NOT NULL DEFAULT 'ready'"
+                    + " CHECK (state IN ('reserved','ready','orphan')),"
                     + "created_at INTEGER NOT NULL"
                     + ")");
             st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_url_access "
                     + "ON cache_entry (resource_url, last_access DESC)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_access "
                     + "ON cache_entry (last_access ASC)");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_folder "
+                    + "ON cache_entry (folder_id)");
         }
         return connection;
+    }
+
+    private void quarantineSidecars() {
+        File parent = dbFile.getParentFile();
+        if (parent == null) {
+            return;
+        }
+        long ts = System.currentTimeMillis();
+        String[] names = {
+            dbFile.getName(),
+            dbFile.getName() + "-wal",
+            dbFile.getName() + "-shm"
+        };
+        for (String name : names) {
+            File src = new File(parent, name);
+            if (!src.isFile()) {
+                continue;
+            }
+            File dest = new File(parent, name + ".corrupt-" + ts);
+            if (!src.renameTo(dest)) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "unable to quarantine " + src);
+            }
+        }
+    }
+
+    private void markFailed() {
+        File parent = dbFile.getParentFile();
+        if (parent == null) {
+            return;
+        }
+        File marker = new File(parent, FAILED_MARKER);
+        try {
+            if (!marker.exists() && !marker.createNewFile()) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "unable to write sqlite sticky-fail marker: " + marker);
+            }
+        } catch (IOException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+    }
+
+    boolean isUsable() {
+        try {
+            return connection != null && !connection.isClosed();
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    /** Package-private for tests: 1=NORMAL, 2=FULL. */
+    int pragmaSynchronous() throws SQLException {
+        try (Statement st = conn().createStatement();
+             ResultSet rs = st.executeQuery("PRAGMA synchronous")) {
+            if (!rs.next()) {
+                throw new SQLException("PRAGMA synchronous returned no row");
+            }
+            return rs.getInt(1);
+        }
+    }
+
+    /** Package-private for tests: EXPLAIN QUERY PLAN of indexed URL lookup. */
+    String explainFindEntriesPlan() throws SQLException {
+        try (Statement st = conn().createStatement();
+             ResultSet rs = st.executeQuery(
+                     "EXPLAIN QUERY PLAN SELECT lru_key, path FROM cache_entry "
+                             + "WHERE resource_url = 'probe' AND state IN ('reserved','ready') "
+                             + "ORDER BY last_access DESC")) {
+            StringBuilder plan = new StringBuilder();
+            while (rs.next()) {
+                if (plan.length() > 0) {
+                    plan.append('\n');
+                }
+                // SQLite: last column is "detail"
+                plan.append(rs.getString("detail"));
+            }
+            return plan.toString();
+        }
     }
 
     private void closeQuietly() {
         if (connection != null) {
             try {
                 try (Statement st = connection.createStatement()) {
-                    // Release WAL/SHM handles on Windows so tests can delete the temp dir.
-                    st.execute("PRAGMA wal_checkpoint(TRUNCATE)");
+                    // PASSIVE never waits for other connections. TRUNCATE/FULL deadlock
+                    // dual-JVM shutdown: close() blocks until the other process disconnects.
+                    // sqlite3_close of the last connection still checkpoints WAL.
+                    st.setQueryTimeout(2);
+                    st.execute("PRAGMA wal_checkpoint(PASSIVE)");
                 } catch (SQLException e) {
                     OutputController.getLogger().log(e);
                 }
@@ -250,6 +375,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
     @Override
     public List<Entry<String, String>> findEntriesByUrlPath(String urlPath, String cacheDirPath) {
         List<Entry<String, String>> entries = new ArrayList<>();
+        long t0 = System.nanoTime();
         try {
             Connection c = conn();
             try (PreparedStatement ps = c.prepareStatement(
@@ -266,6 +392,9 @@ final class SqliteCacheCatalog implements CacheCatalog {
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
+        long us = (System.nanoTime() - t0) / 1000L;
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                "sqlite catalog findEntriesByUrlPath us=" + us + " matches=" + entries.size());
         return entries;
     }
 
@@ -329,6 +458,24 @@ final class SqliteCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public int nextFolderId(File cacheDir) {
+        int candidate = 0;
+        try {
+            Connection c = conn();
+            try (Statement st = c.createStatement();
+                 ResultSet rs = st.executeQuery("SELECT COALESCE(MAX(folder_id), -1) FROM cache_entry")) {
+                if (rs.next()) {
+                    candidate = rs.getInt(1) + 1;
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            candidate = 0;
+        }
+        return CacheCatalog.claimFolderId(cacheDir, candidate);
+    }
+
+    @Override
     public void close() {
         closeQuietly();
     }
@@ -341,6 +488,22 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return new File(path).getParent();
         }
         return normalized.substring(0, idx).replace('/', File.separatorChar);
+    }
+
+    /** Test hook: when non-null, overrides {@code deployment.enable.cache.fsync}. */
+    static Boolean fsyncOverrideForTests;
+
+    private static boolean cacheFsyncEnabled() {
+        if (fsyncOverrideForTests != null) {
+            return fsyncOverrideForTests.booleanValue();
+        }
+        try {
+            String v = JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_ENABLE_CACHE_FSYNC);
+            return Boolean.parseBoolean(v);
+        } catch (Throwable e) {
+            // Slim dual-JVM workers may not have the full ITW graph (DownloadIndicator, …).
+            return false;
+        }
     }
 
     private static long parseLastAccess(String key, long fallback) {

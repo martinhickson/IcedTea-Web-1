@@ -169,8 +169,12 @@ public class CacheUtil {
             if (JNLPRuntime.isWindows()) {
                 removeWindowsShortcuts("ALL");
             }
-            FileUtils.recursiveDelete(cacheDir, cacheDir);
-            cacheDir.mkdir();
+            // Release sqlite WAL/SHM handles before deleting catalog files (Windows).
+            lruHandler.close();
+            deleteCacheContentsKeepingNative(cacheDir);
+            if (!cacheDir.isDirectory() && !cacheDir.mkdir()) {
+                throw new IOException("Unable to recreate cache directory: " + cacheDir);
+            }
             lruHandler.clearLRUSortedEntries();
             lruHandler.store();
         } catch (IOException e) {
@@ -178,6 +182,40 @@ public class CacheUtil {
         } finally {
             lruHandler.unlock();
         }
+        }
+        return true;
+    }
+
+    /**
+     * Delete cache contents but keep {@code native/}. xerial's JNI stays mapped
+     * in this JVM; deleting {@code sqlitejdbc.dll} (Windows) would fail clear-cache.
+     */
+    static void deleteCacheContentsKeepingNative(File cacheDir) throws IOException {
+        File[] children = cacheDir.listFiles();
+        if (children == null) {
+            return;
+        }
+        for (File child : children) {
+            if (child.isDirectory() && "native".equals(child.getName())) {
+                continue;
+            }
+            FileUtils.recursiveDelete(child, cacheDir);
+        }
+    }
+
+    /** True for per-jar {@code .info} files; skips sqlite catalog and JNI extract. */
+    static boolean isCacheJarInfoFile(Path t) {
+        if (t == null || !Files.isRegularFile(t)) {
+            return false;
+        }
+        if (!t.getFileName().toString().endsWith(CacheDirectory.INFO_SUFFIX)) {
+            return false;
+        }
+        for (Path p = t; p != null; p = p.getParent()) {
+            String n = p.getFileName() != null ? p.getFileName().toString() : "";
+            if ("native".equals(n) || n.startsWith(SqliteCacheCatalog.DB_FILE_NAME)) {
+                return false;
+            }
         }
         return true;
     }
@@ -215,7 +253,7 @@ public class CacheUtil {
             Files.walk(Paths.get(lruHandler.getCacheDir().getFile().getCanonicalPath())).filter(new Predicate<Path>() {
                 @Override
                 public boolean test(Path t) {
-                    return Files.isRegularFile(t);
+                    return isCacheJarInfoFile(t);
                 }
             }).forEach(new Consumer<Path>() {
                 @Override
@@ -360,7 +398,7 @@ public class CacheUtil {
             Files.walk(Paths.get(lruHandler.getCacheDir().getFile().getCanonicalPath())).filter(new Predicate<Path>() {
                 @Override
                 public boolean test(Path t) {
-                    return Files.isRegularFile(t);
+                    return isCacheJarInfoFile(t);
                 }
             }).forEach(new Consumer<Path>() {
                 @Override
@@ -669,6 +707,51 @@ public class CacheUtil {
     }
 
     /**
+     * Open the jar with signature/digest verification enabled and drain every entry.
+     * Throws when the ZIP is truncated, digests mismatch, or signatures fail — call this
+     * <em>before</em> marking a download GOOD so corrupt payloads never settle as cached.
+     * Does not use {@code JarFileCache} (must not pin a bad file).
+     *
+     * @return brief result text suitable for logging when verification succeeds
+     */
+    public static String verifyJarIntegrity(File file) throws IOException {
+        if (!isValidJarFile(file)) {
+            throw new IOException("not a valid JAR (missing/empty/non-ZIP): " + file);
+        }
+        byte[] buffer = new byte[8192];
+        int entries = 0;
+        int signedEntries = 0;
+        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(file, true)) {
+            java.util.Enumeration<java.util.jar.JarEntry> en = jar.entries();
+            while (en.hasMoreElements()) {
+                java.util.jar.JarEntry je = en.nextElement();
+                entries++;
+                try (InputStream is = jar.getInputStream(je)) {
+                    while (is.read(buffer) != -1) {
+                        // drain — SecurityException if signed entry digests fail
+                    }
+                } catch (SecurityException se) {
+                    throw new IOException("JAR signature/digest check failed for entry "
+                            + je.getName() + " in " + file, se);
+                }
+                if (!je.isDirectory() && je.getCodeSigners() != null && je.getCodeSigners().length > 0) {
+                    signedEntries++;
+                }
+            }
+        } catch (IOException e) {
+            throw e;
+        } catch (RuntimeException e) {
+            throw new IOException("JAR integrity check failed for " + file + ": " + e.getMessage(), e);
+        }
+        if (signedEntries > 0) {
+            return "signature is good and file has integrity (" + signedEntries + "/" + entries
+                    + " entries signed) path=" + file.getAbsolutePath();
+        }
+        return "file has integrity (unsigned ZIP OK, " + entries + " entries) path="
+                + file.getAbsolutePath();
+    }
+
+    /**
      * Short printable preview of a corrupt payload for logs / exception messages.
      */
     public static String previewFileHead(File file, int maxChars) {
@@ -791,23 +874,16 @@ public class CacheUtil {
             try {
                 lruHandler.lock();
                 lruHandler.load();
-                for (long i = 0; i < Long.MAX_VALUE; i++) {
-                    String path = lruHandler.getCacheDir().getFullPath()+ File.separator + i;
-                    File cDir = new File(path);
-                    if (!cDir.exists()) {
-                        // We can use this directory.
-                        try {
-                            cacheFile = urlToPath(source, path);
-                            FileUtils.createParentDir(cacheFile);
-                            File pf = new File(cacheFile.getPath() + CacheDirectory.INFO_SUFFIX);
-                            FileUtils.createRestrictedFile(pf, true); // Create the info file for marking later.
-                            lruHandler.addEntry(lruHandler.generateKey(cacheFile.getPath()), cacheFile.getPath());
-                        } catch (IOException ioe) {
-                            OutputController.getLogger().log(ioe);
-                        }
-
-                        break;
-                    }
+                int folderId = lruHandler.nextFolderId();
+                String path = lruHandler.getCacheDir().getFullPath() + File.separator + folderId;
+                try {
+                    cacheFile = urlToPath(source, path);
+                    FileUtils.createParentDir(cacheFile);
+                    File pf = new File(cacheFile.getPath() + CacheDirectory.INFO_SUFFIX);
+                    FileUtils.createRestrictedFile(pf, true); // Create the info file for marking later.
+                    lruHandler.addEntry(lruHandler.generateKey(cacheFile.getPath()), cacheFile.getPath());
+                } catch (IOException ioe) {
+                    OutputController.getLogger().log(ioe);
                 }
 
                 lruHandler.store();

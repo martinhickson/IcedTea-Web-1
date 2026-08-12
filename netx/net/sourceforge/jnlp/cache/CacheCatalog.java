@@ -5,6 +5,7 @@
 */
 package net.sourceforge.jnlp.cache;
 
+import java.io.File;
 import java.util.List;
 import java.util.Map.Entry;
 
@@ -61,6 +62,34 @@ interface CacheCatalog {
     void clear();
 
     String generateKey(String path, String cacheDirPath);
+
+    /**
+     * Next unused numbered cache folder under {@code cacheDir}.
+     * SQLite uses {@code MAX(folder_id)+1} then {@code mkdir} to claim the directory
+     * (atomic vs a second JVM).
+     */
+    int nextFolderId(File cacheDir);
+
+    /**
+     * Claim the next numbered directory with {@code mkdir} so two processes cannot
+     * both observe {@code !exists} and allocate the same id.
+     */
+    static int claimFolderId(File cacheDir, int startInclusive) {
+        if (cacheDir != null && !cacheDir.isDirectory()) {
+            cacheDir.mkdirs();
+        }
+        int candidate = startInclusive < 0 ? 0 : startInclusive;
+        while (true) {
+            File dir = new File(cacheDir, Integer.toString(candidate));
+            if (dir.mkdir()) {
+                return candidate;
+            }
+            if (candidate == Integer.MAX_VALUE) {
+                throw new IllegalStateException("cache folder id overflow under " + cacheDir);
+            }
+            candidate++;
+        }
+    }
 
     /** Release resources (e.g. JDBC connection). No-op for properties backend. */
     void close();

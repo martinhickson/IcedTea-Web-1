@@ -115,6 +115,40 @@ public final class JvmDescriptor {
         return value == null ? "" : value;
     }
 
+    /**
+     * Lightweight describe for discovery/selection: checks {@code bin/java} exists and
+     * reads version from {@code release} / path — <em>does not</em> spawn a JVM process.
+     * Use {@link #describe(String)} only for the JVM that will actually be used (or UI).
+     */
+    public static JvmDescriptor describeLight(String homePath) {
+        if (homePath == null || homePath.trim().isEmpty()) {
+            return new JvmDescriptor("", "", "", false, JvmValidationResult.STATE.EMPTY);
+        }
+        String normalized = homePath.trim();
+        File homeDir = new File(normalized);
+        File javaFile = new File(normalized + File.separator + "bin" + File.separator + "java"
+                + (JNLPRuntime.isWindows() ? ".exe" : ""));
+        if (!homeDir.isDirectory()) {
+            return new JvmDescriptor(normalized, detectFlavourFromPath(normalized),
+                    detectVersionFromPath(normalized), false, JvmValidationResult.STATE.NOT_DIR);
+        }
+        if (!javaFile.isFile()) {
+            return new JvmDescriptor(normalized, detectFlavourFromPath(normalized),
+                    detectVersionFromPath(normalized), false, JvmValidationResult.STATE.NOT_VALID_JDK);
+        }
+        int major = JvmProbeSupport.readMajorFromReleaseFile(normalized);
+        String version = major > 0 ? Integer.toString(major) : detectVersionFromPath(normalized);
+        String flavour = detectFlavourFromPath(normalized);
+        if (flavour.isEmpty()) {
+            flavour = "Java";
+        }
+        // Provisional valid: java binary present. Full validateJvm runs only on the chosen home.
+        return new JvmDescriptor(normalized, flavour, version, true, JvmValidationResult.STATE.VALID_JDK);
+    }
+
+    /**
+     * Full validation (may spawn a process probe). Call only for the selected JVM or UI.
+     */
     public static JvmDescriptor describe(String homePath) {
         if (homePath == null || homePath.trim().isEmpty()) {
             return new JvmDescriptor("", "", "", false, JvmValidationResult.STATE.EMPTY);

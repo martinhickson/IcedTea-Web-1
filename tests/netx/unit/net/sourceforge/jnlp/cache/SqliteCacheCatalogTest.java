@@ -11,6 +11,7 @@ import java.io.File;
 import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.sql.ResultSet;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map.Entry;
@@ -23,6 +24,7 @@ import org.junit.Before;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
+
 
 public class SqliteCacheCatalogTest {
 
@@ -65,6 +67,220 @@ public class SqliteCacheCatalogTest {
         }
         assertTrue(new File(parentCache, "recently_used").isFile());
         assertTrue(new File(parentCache, "0/http/evil.example/legacy.jar").isFile());
+    }
+
+    @Test
+    public void extractsNativeLibraryUnderDbNativeNotTemp() {
+        wrapper.lock();
+        try {
+            wrapper.load();
+        } finally {
+            wrapper.unlock();
+        }
+        String tmpdir = System.getProperty("org.sqlite.tmpdir");
+        assertTrue("org.sqlite.tmpdir should be set to {cachedir}/db/native", tmpdir != null);
+        File nativeDir = new File(tmpdir);
+        assertEquals("native", nativeDir.getName());
+        assertTrue(nativeDir.isDirectory());
+        File[] libs = nativeDir.listFiles((d, n) -> n.toLowerCase().contains("sqlitejdbc"));
+        assertTrue("expected sqlitejdbc native under " + nativeDir.getAbsolutePath(),
+                libs != null && libs.length > 0);
+    }
+
+    @Test
+    public void walModeSchemaVersionAndFolderIndex() throws Exception {
+        wrapper.lock();
+        try {
+            wrapper.load();
+        } finally {
+            wrapper.unlock();
+        }
+        File dbFile = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
+        Class.forName("org.sqlite.JDBC");
+        try (Connection c = DriverManager.getConnection(
+                "jdbc:sqlite:" + dbFile.getAbsolutePath().replace('\\', '/'))) {
+            try (Statement st = c.createStatement()) {
+                st.execute("PRAGMA busy_timeout=5000");
+                try (ResultSet rs = st.executeQuery("PRAGMA journal_mode")) {
+                    assertTrue(rs.next());
+                    assertEquals("wal", rs.getString(1).toLowerCase());
+                }
+                try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
+                    assertTrue(rs.next());
+                    assertEquals(1, rs.getInt(1));
+                }
+                try (ResultSet rs = st.executeQuery(
+                        "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_cache_entry_folder'")) {
+                    assertTrue("plan requires idx_cache_entry_folder", rs.next());
+                }
+            }
+        }
+    }
+
+    @Test
+    public void findEntriesUsesUrlAccessIndex() throws Exception {
+        wrapper.lock();
+        try {
+            wrapper.load();
+            String plan = wrapper.sqliteExplainFindEntriesPlan().toLowerCase();
+            assertTrue("expected idx_cache_entry_url_access in plan: " + plan,
+                    plan.contains("idx_cache_entry_url_access"));
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test
+    public void sqliteOpsDoNotWriteLegacyRecentlyUsed() throws Exception {
+        File legacy = new File(parentCache, "recently_used");
+        byte[] before = java.nio.file.Files.readAllBytes(legacy.toPath());
+        File jar = new File(dbRoot, "5/http/nowrite.example/app.jar");
+        assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+        assertTrue(jar.createNewFile());
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(wrapper.addEntry("1000,5", jar.getAbsolutePath()));
+            wrapper.store();
+            wrapper.findEntriesByUrlPath(
+                    CacheUtil.pathToURLPath(jar.getAbsolutePath(), dbRoot.getAbsolutePath()));
+        } finally {
+            wrapper.unlock();
+        }
+        byte[] after = java.nio.file.Files.readAllBytes(legacy.toPath());
+        assertEquals(new String(before, java.nio.charset.StandardCharsets.UTF_8),
+                new String(after, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void corruptCatalogQuarantinesAndRecreatesWithoutTouchingLegacy() throws Exception {
+        File legacy = new File(parentCache, "recently_used");
+        byte[] before = java.nio.file.Files.readAllBytes(legacy.toPath());
+        wrapper.lock();
+        try {
+            wrapper.load();
+        } finally {
+            wrapper.unlock();
+        }
+        wrapper.close();
+
+        File dbFile = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
+        java.nio.file.Files.write(dbFile.toPath(),
+                "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-wal").delete();
+        new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-shm").delete();
+
+        CacheLRUWrapper recovered = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            assertTrue(recovered.isSqliteMode());
+            recovered.lock();
+            try {
+                recovered.load();
+                File jar = new File(dbRoot, "1/http/recovered.example/x.jar");
+                assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+                assertTrue(jar.createNewFile());
+                assertTrue("fresh catalog after quarantine should accept inserts",
+                        recovered.addEntry("1,1", jar.getAbsolutePath()));
+                assertEquals(1, recovered.getLRUSortedEntries().size());
+            } finally {
+                recovered.unlock();
+            }
+        } finally {
+            recovered.close();
+        }
+        byte[] after = java.nio.file.Files.readAllBytes(legacy.toPath());
+        assertEquals(new String(before, java.nio.charset.StandardCharsets.UTF_8),
+                new String(after, java.nio.charset.StandardCharsets.UTF_8));
+        File[] quarantined = dbRoot.listFiles((d, n) -> n.contains(".corrupt-"));
+        assertTrue("corrupt file should be quarantined", quarantined != null && quarantined.length > 0);
+        assertFalse(new File(dbRoot, SqliteCacheCatalog.FAILED_MARKER).isFile());
+    }
+
+    @Test
+    public void stickyFailMarkerUsesPropertiesUnderDbNotParentLegacy() throws Exception {
+        File marker = new File(dbRoot, SqliteCacheCatalog.FAILED_MARKER);
+        assertTrue(marker.createNewFile());
+        File parentLegacy = new File(parentCache, "recently_used");
+        byte[] before = java.nio.file.Files.readAllBytes(parentLegacy.toPath());
+
+        CacheLRUWrapper fallen = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            assertFalse("sticky marker should disable sqlite backend", fallen.isSqliteMode());
+            assertEquals(dbRoot.getAbsolutePath(), fallen.getCacheDir().getFullPath());
+            File jar = new File(dbRoot, "2/http/sticky.example/app.jar");
+            assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+            assertTrue(jar.createNewFile());
+            fallen.lock();
+            try {
+                fallen.load();
+                assertTrue(fallen.addEntry(fallen.generateKey(jar.getAbsolutePath()), jar.getAbsolutePath()));
+                assertTrue(fallen.store());
+            } finally {
+                fallen.unlock();
+            }
+            File dbRecentlyUsed = new File(dbRoot, "recently_used");
+            assertTrue("fallback properties live under db/", dbRecentlyUsed.isFile());
+        } finally {
+            fallen.close();
+        }
+        byte[] after = java.nio.file.Files.readAllBytes(parentLegacy.toPath());
+        assertEquals(new String(before, java.nio.charset.StandardCharsets.UTF_8),
+                new String(after, java.nio.charset.StandardCharsets.UTF_8));
+    }
+
+    @Test
+    public void nextFolderIdUsesCatalogMaxThenFilesystemConfirm() throws Exception {
+        File f0 = new File(dbRoot, "0/http/fold.example/a.jar");
+        File f5 = new File(dbRoot, "5/http/fold.example/b.jar");
+        assertTrue(f0.getParentFile().mkdirs() || f0.getParentFile().isDirectory());
+        assertTrue(f5.getParentFile().mkdirs() || f5.getParentFile().isDirectory());
+        assertTrue(f0.createNewFile());
+        assertTrue(f5.createNewFile());
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(wrapper.addEntry("1000,0", f0.getAbsolutePath()));
+            assertTrue(wrapper.addEntry("2000,5", f5.getAbsolutePath()));
+            // filesystem ahead of catalog: dir 6 exists empty
+            File extra = new File(dbRoot, "6");
+            assertTrue(extra.mkdir() || extra.isDirectory());
+            assertEquals(7, wrapper.nextFolderId());
+            assertTrue("mkdir claim should create the allocated folder",
+                    new File(dbRoot, "7").isDirectory());
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test(timeout = 10000)
+    public void claimFolderIdMkdirIsUniqueAcrossThreads() throws Exception {
+        final File root = tmp.newFolder("claim-root");
+        final int perThread = 30;
+        final java.util.Set<Integer> ids = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        final CountDownLatch start = new CountDownLatch(1);
+        final CountDownLatch done = new CountDownLatch(2);
+        Runnable body = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    start.await();
+                    for (int i = 0; i < perThread; i++) {
+                        ids.add(CacheCatalog.claimFolderId(root, 0));
+                    }
+                } catch (Exception e) {
+                    throw new RuntimeException(e);
+                } finally {
+                    done.countDown();
+                }
+            }
+        };
+        Thread a = new Thread(body, "claim-a");
+        Thread b = new Thread(body, "claim-b");
+        a.start();
+        b.start();
+        start.countDown();
+        assertTrue(done.await(8, TimeUnit.SECONDS));
+        assertEquals(perThread * 2, ids.size());
     }
 
     @Test
@@ -254,5 +470,218 @@ public class SqliteCacheCatalogTest {
         } finally {
             reopened.close();
         }
+    }
+
+    @Test
+    public void killSwitchFalseUsesLegacyRoot() throws Exception {
+        CacheLRUWrapper legacy = CacheLRUWrapper.createForTests(false, parentCache);
+        try {
+            assertFalse(legacy.isSqliteMode());
+            assertEquals(parentCache.getAbsolutePath(), legacy.getCacheDir().getFullPath());
+            File jar = new File(parentCache, "4/http/legacy.example/app.jar");
+            assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+            assertTrue(jar.createNewFile());
+            legacy.lock();
+            try {
+                legacy.load();
+                assertTrue(legacy.addEntry(legacy.generateKey(jar.getAbsolutePath()), jar.getAbsolutePath()));
+                assertTrue(legacy.store());
+            } finally {
+                legacy.unlock();
+            }
+            assertTrue(new File(parentCache, "recently_used").isFile()
+                    || legacy.getRecentlyUsedFile().getFile().isFile());
+        } finally {
+            legacy.close();
+        }
+    }
+
+    @Test
+    public void multiGenerationNewestFirstSkipsGhost() throws Exception {
+        File older = new File(dbRoot, "10/http/gen.example/app.jar");
+        File newerGhost = new File(dbRoot, "11/http/gen.example/app.jar");
+        assertTrue(older.getParentFile().mkdirs() || older.getParentFile().isDirectory());
+        assertTrue(newerGhost.getParentFile().mkdirs() || newerGhost.getParentFile().isDirectory());
+        assertTrue(older.createNewFile());
+        try (java.io.FileOutputStream out = new java.io.FileOutputStream(older)) {
+            out.write(new byte[] {'P', 'K', 3, 4});
+        }
+        // newer generation listed but jar missing (ghost)
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(wrapper.addEntry("1000,10", older.getAbsolutePath()));
+            assertTrue(wrapper.addEntry("2000,11", newerGhost.getAbsolutePath()));
+            wrapper.store();
+            String url = CacheUtil.pathToURLPath(older.getAbsolutePath(), dbRoot.getAbsolutePath());
+            List<Entry<String, String>> found = wrapper.findEntriesByUrlPath(url);
+            assertEquals(2, found.size());
+            assertEquals(newerGhost.getAbsolutePath(), found.get(0).getValue());
+            File recovered = null;
+            for (Entry<String, String> e : found) {
+                File candidate = new File(e.getValue());
+                if (candidate.isFile() && candidate.length() > 0) {
+                    recovered = candidate;
+                    break;
+                }
+            }
+            assertEquals(older.getAbsolutePath(), recovered.getAbsolutePath());
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void busyTimeoutAllowsSecondConnectionToWait() throws Exception {
+        wrapper.lock();
+        try {
+            wrapper.load();
+        } finally {
+            wrapper.unlock();
+        }
+        wrapper.close();
+
+        File dbFile = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
+        Class.forName("org.sqlite.JDBC");
+        final CountDownLatch holding = new CountDownLatch(1);
+        final CountDownLatch done = new CountDownLatch(1);
+        final AtomicInteger errors = new AtomicInteger();
+        Thread holder = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    Connection c = DriverManager.getConnection(
+                            "jdbc:sqlite:" + dbFile.getAbsolutePath().replace('\\', '/'));
+                    try {
+                        c.createStatement().execute("PRAGMA busy_timeout=5000");
+                        c.createStatement().execute("BEGIN IMMEDIATE");
+                        holding.countDown();
+                        Thread.sleep(400);
+                        c.createStatement().execute("COMMIT");
+                    } finally {
+                        c.close();
+                    }
+                } catch (Exception e) {
+                    errors.incrementAndGet();
+                    holding.countDown();
+                } finally {
+                    done.countDown();
+                }
+            }
+        }, "sqlite-busy-holder");
+        holder.setDaemon(true);
+        holder.start();
+        assertTrue(holding.await(5, TimeUnit.SECONDS));
+
+        CacheLRUWrapper other = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            File jar = new File(dbRoot, "8/http/busy.example/app.jar");
+            assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+            assertTrue(jar.createNewFile());
+            long t0 = System.nanoTime();
+            other.lock();
+            try {
+                other.load();
+                assertTrue(other.addEntry(System.nanoTime() + ",8", jar.getAbsolutePath()));
+            } finally {
+                other.unlock();
+            }
+            long waitedMs = (System.nanoTime() - t0) / 1_000_000L;
+            assertTrue("expected to wait on busy lock, waitedMs=" + waitedMs, waitedMs >= 200);
+        } finally {
+            other.close();
+        }
+        assertTrue(done.await(10, TimeUnit.SECONDS));
+        assertEquals(0, errors.get());
+    }
+
+    @Test
+    public void cacheFsyncTogglesPragmaSynchronous() throws Exception {
+        Boolean prev = SqliteCacheCatalog.fsyncOverrideForTests;
+        try {
+            SqliteCacheCatalog.fsyncOverrideForTests = Boolean.FALSE;
+            assertEquals(1, pragmaSynchronous(tmp.newFolder("sync-normal")));
+            SqliteCacheCatalog.fsyncOverrideForTests = Boolean.TRUE;
+            assertEquals(2, pragmaSynchronous(tmp.newFolder("sync-full")));
+        } finally {
+            SqliteCacheCatalog.fsyncOverrideForTests = prev;
+        }
+    }
+
+    private static int pragmaSynchronous(File parentCache) throws Exception {
+        CacheLRUWrapper w = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            w.lock();
+            try {
+                w.load();
+                return w.sqlitePragmaSynchronous();
+            } finally {
+                w.unlock();
+            }
+        } finally {
+            w.close();
+        }
+    }
+
+    @Test(timeout = 15000)
+    public void closeDoesNotBlockWhileAnotherConnectionIsOpen() throws Exception {
+        CacheLRUWrapper other = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            other.lock();
+            try {
+                other.load();
+                other.store();
+            } finally {
+                other.unlock();
+            }
+            long t0 = System.nanoTime();
+            wrapper.close();
+            wrapper = null;
+            long ms = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - t0);
+            assertTrue("close blocked on other connection: " + ms + "ms", ms < 8000);
+        } finally {
+            other.close();
+        }
+    }
+
+    @Test
+    public void closeThenDeleteDbDirRecreatesCatalogWithoutTouchingLegacy() throws Exception {
+        File legacy = new File(parentCache, "recently_used");
+        byte[] before = java.nio.file.Files.readAllBytes(legacy.toPath());
+        File jar = new File(dbRoot, "3/http/clear.example/app.jar");
+        assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+        assertTrue(jar.createNewFile());
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(wrapper.addEntry("1000,3", jar.getAbsolutePath()));
+        } finally {
+            wrapper.unlock();
+        }
+        File nativeDir = new File(dbRoot, "native");
+        if (!nativeDir.isDirectory()) {
+            assertTrue(nativeDir.mkdirs());
+        }
+        File nativeMarker = new File(nativeDir, "keep-me.dll");
+        if (!nativeMarker.isFile()) {
+            assertTrue(nativeMarker.createNewFile());
+        }
+        File dbFile = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
+        assertTrue(dbFile.isFile());
+        wrapper.close();
+        CacheUtil.deleteCacheContentsKeepingNative(dbRoot);
+        assertTrue("JNI extract dir must survive clear-cache", nativeMarker.isFile());
+        assertFalse(dbFile.exists());
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(wrapper.getLRUSortedEntries().isEmpty());
+        } finally {
+            wrapper.unlock();
+        }
+        assertTrue(new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME).isFile());
+        byte[] after = java.nio.file.Files.readAllBytes(legacy.toPath());
+        assertEquals(new String(before, java.nio.charset.StandardCharsets.UTF_8),
+                new String(after, java.nio.charset.StandardCharsets.UTF_8));
     }
 }

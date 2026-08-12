@@ -303,8 +303,9 @@ public final class KnownJvmStore {
         return new Comparator<String>() {
             @Override
             public int compare(String left, String right) {
-                JvmDescriptor leftDesc = JvmDescriptor.describe(left);
-                JvmDescriptor rightDesc = JvmDescriptor.describe(right);
+                // Light describe only — sorting must not process-probe every JDK.
+                JvmDescriptor leftDesc = JvmDescriptor.describeLight(left);
+                JvmDescriptor rightDesc = JvmDescriptor.describeLight(right);
                 int vendor = Integer.compare(vendorRank(leftDesc), vendorRank(rightDesc));
                 if (vendor != 0) {
                     return vendor;
