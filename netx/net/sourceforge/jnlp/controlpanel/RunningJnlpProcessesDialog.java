@@ -66,8 +66,12 @@ public final class RunningJnlpProcessesDialog extends JDialog {
         proceedButton = new JButton(proceedLabelKey);
         proceedButton.setEnabled(false);
         proceedButton.addActionListener(e -> {
-            if (!tracked.isEmpty()
-                    || (requiresGlobalCacheLockClear() && CacheUtil.isCacheLockedByOtherInstance())) {
+            // E.6 verify-on-proceed: re-run the authoritative check at CLICK time,
+            // not the last 2s-refresh snapshot. Between the refresh and the click a
+            // new javaws could have started (or a lock been taken) — clearing then
+            // would race. If still not clear, re-render the fresh list and stay open.
+            if (!canClearCacheNow(jnlpPathFilter)) {
+                refreshProcessList();
                 return;
             }
             proceedClicked = true;

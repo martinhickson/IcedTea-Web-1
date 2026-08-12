@@ -37,12 +37,8 @@
 
 package net.sourceforge.jnlp.cache;
 
-import static net.sourceforge.jnlp.cache.Resource.Status.PRECONNECT;
-import static net.sourceforge.jnlp.cache.Resource.Status.CONNECTED;
-import static net.sourceforge.jnlp.cache.Resource.Status.CONNECTING;
-import static net.sourceforge.jnlp.cache.Resource.Status.PREDOWNLOAD;
 import static net.sourceforge.jnlp.cache.Resource.Status.DOWNLOADED;
-import static net.sourceforge.jnlp.cache.Resource.Status.DOWNLOADING;
+import static net.sourceforge.jnlp.cache.Resource.Status.ERROR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
@@ -128,10 +124,10 @@ public class ResourceTest {
         Resource res = createResource(testName);
         Set<Resource.Status> original = res.getCopyOfStatus();
         assertTrue("Original should be emtpy", original.isEmpty());
-        original.add(DOWNLOADING);
+        original.add(DOWNLOADED);
         Set<Resource.Status> dummy = res.getCopyOfStatus();
         assertFalse(dummy.equals(original));
-        assertFalse(dummy.contains(DOWNLOADING));		
+        assertFalse(dummy.contains(DOWNLOADED));		
     }
 
     @Test
@@ -143,38 +139,31 @@ public class ResourceTest {
     @Test
     public void testSetFlag() throws Exception {
         Resource res = createResource("SetFlag");
-        setStatus(res, EnumSet.of(PRECONNECT));
+        res.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
         assertFalse("Resource should have been initialized", isUninitialized(res));
-        assertTrue("Resource should have had PRECONNECT set", hasFlag(res, PRECONNECT));
-        assertTrue("Resource should have only had PRECONNECT set", hasOnly(res, EnumSet.of(PRECONNECT)));
+        assertTrue("Resource should have had DOWNLOADED set", hasFlag(res, DOWNLOADED));
+        assertFalse("Resource should not have had ERROR set", hasFlag(res, ERROR));
     }
 
     @Test
     public void testSetMultipleFlags() throws Exception {
         Resource res = createResource("SetFlags");
-        setStatus(res, EnumSet.of(PRECONNECT, PREDOWNLOAD));
+        res.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
         assertFalse("Resource should have been initialized", isUninitialized(res));
-        assertTrue("Resource should have had PRECONNECT set", hasFlag(res, PRECONNECT));
-        assertTrue("Resource should have had PREDOWNLOAD set", hasFlag(res, PREDOWNLOAD));
-        assertTrue("Resource should have only had PRECONNECT and PREDOWNLOAD set", hasOnly(res, EnumSet.of(PRECONNECT, PREDOWNLOAD)));
+        assertTrue("Resource should have had ERROR set", hasFlag(res, ERROR));
+        assertFalse("Resource should not have had DOWNLOADED set", hasFlag(res, DOWNLOADED));
     }
 
     @Test
     public void testChangeStatus() throws Exception {
+        // changeStatus/phase flags are retired no-ops; terminal state is the JarSlot/terminalState
         Resource res = createResource("ChangeStatus");
-        setStatus(res, EnumSet.of(PRECONNECT));
-        assertTrue("Resource should have had PRECONNECT set", hasFlag(res, PRECONNECT));
-        assertTrue("Resource should have only had PRECONNECT set", hasOnly(res, EnumSet.of(PRECONNECT)));
-
-        Collection<Resource.Status> downloadFlags = EnumSet.of(PREDOWNLOAD, DOWNLOADING, DOWNLOADED);
-        Collection<Resource.Status> connectFlags = EnumSet.of(PRECONNECT, CONNECTING, CONNECTED);
-        changeStatus(res, connectFlags, downloadFlags);
-
-        assertTrue("Resource should have had PREDOWNLOAD set", hasFlag(res, PREDOWNLOAD));
-        assertTrue("Resource should have had DOWNLOADING set", hasFlag(res, DOWNLOADING));
-        assertTrue("Resource should have had DOWNLOADED set", hasFlag(res, DOWNLOADED));
-        assertTrue("Resource should have only had PREDOWNLOAD{,ING,ED} flags set", hasOnly(res, downloadFlags));
-        assertFalse("Resource should not have had PRECONNECT set", hasFlag(res, PRECONNECT));
+        res.changeStatus(EnumSet.of(Resource.Status.PRECONNECT, Resource.Status.CONNECTING, Resource.Status.CONNECTED),
+                EnumSet.of(Resource.Status.PREDOWNLOAD, Resource.Status.DOWNLOADING, DOWNLOADED));
+        assertFalse("changeStatus is retired (no-op): no DOWNLOADED via phase flags", hasFlag(res, DOWNLOADED));
+        res.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
+        assertTrue("terminalState drives DOWNLOADED", hasFlag(res, DOWNLOADED));
+        assertFalse("no ERROR set", hasFlag(res, ERROR));
     }
 
     private static Resource createResource(String testName) throws MalformedURLException {

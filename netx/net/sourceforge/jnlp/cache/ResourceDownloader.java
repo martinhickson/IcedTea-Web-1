@@ -1,12 +1,7 @@
 package net.sourceforge.jnlp.cache;
 
-import static net.sourceforge.jnlp.cache.Resource.Status.CONNECTED;
-import static net.sourceforge.jnlp.cache.Resource.Status.CONNECTING;
 import static net.sourceforge.jnlp.cache.Resource.Status.DOWNLOADED;
-import static net.sourceforge.jnlp.cache.Resource.Status.DOWNLOADING;
 import static net.sourceforge.jnlp.cache.Resource.Status.ERROR;
-import static net.sourceforge.jnlp.cache.Resource.Status.PRECONNECT;
-import static net.sourceforge.jnlp.cache.Resource.Status.PREDOWNLOAD;
 
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
@@ -266,16 +261,20 @@ public class ResourceDownloader implements Runnable {
 
     @Override
     public void run() {
-        if (resource.isSet(PRECONNECT) && !resource.hasFlags(EnumSet.of(ERROR, CONNECTING, CONNECTED))) {
-            resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(CONNECTING));
-            resource.fireDownloadEvent(); // fire CONNECTING
-            initializeResource();
+        // Legacy phase flags retired — the JarSlot machine owns state. Semantics
+        // preserved: run the connect phase, then the download phase, unless the
+        // resource already reached a terminal state (initialize* may complete or
+        // park it as ready-to-download).
+        if (resource.isSet(DOWNLOADED) || resource.isSet(ERROR)) {
+            return;
         }
-        if (resource.isSet(PREDOWNLOAD) && !resource.hasFlags(EnumSet.of(ERROR, DOWNLOADING, DOWNLOADED))) {
-            resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(DOWNLOADING));
-            resource.fireDownloadEvent(); // fire CONNECTING
-            downloadResource();
+        resource.fireDownloadEvent(); // fire CONNECTING
+        initializeResource();
+        if (resource.isSet(DOWNLOADED) || resource.isSet(ERROR)) {
+            return;
         }
+        resource.fireDownloadEvent(); // fire CONNECTING
+        downloadResource();
     }
 
     private void initializeResource() {
@@ -303,9 +302,7 @@ public class ResourceDownloader implements Runnable {
                 downloadUrlCandidates = new ResourceUrlCreator(resource, options).getUrls();
                 resource.setDownloadLocation(downloadUrlCandidates.get(0));
                 resource.setSize(-1);
-                synchronized (resource) {
-                    resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(PREDOWNLOAD));
-                }
+
                 resource.fireDownloadEvent(); // fire CONNECTED
                 return;
             }
@@ -318,7 +315,6 @@ public class ResourceDownloader implements Runnable {
             }
         } catch (Exception e) {
             OutputController.getLogger().log(e);
-            resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
             settleSlotBad();
             resource.fireDownloadEvent(); // fire ERROR
         }
@@ -336,9 +332,7 @@ public class ResourceDownloader implements Runnable {
             // validate we can go straight to the download phase.
             if (isSkipHeadIfNotCached() && !entry.isCached()) {
                 resource.setSize(location.length != null ? location.length : -1);
-                synchronized (resource) {
-                    resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(PREDOWNLOAD));
-                }
+
                 resource.fireDownloadEvent(); // fire CONNECTED
                 return;
             }
@@ -396,14 +390,12 @@ public class ResourceDownloader implements Runnable {
                 resource.setLocalFile(localFile);
                 // resource.connection = connection;
                 resource.setSize(size);
-                resource.changeStatus(EnumSet.of(PRECONNECT, CONNECTING), EnumSet.of(CONNECTED, PREDOWNLOAD));
 
                 // Never mark DOWNLOADED when the local file is missing — that is what produced
                 // NoSuchFileException in JarCertVerifier with corrupt/partial cache state.
                 if (current && localFile != null && localFile.isFile() && localFile.length() > 0
                         && (!CacheUtil.isJarResourceUrl(resource.getLocation())
                         || CacheUtil.isValidJarFile(localFile))) {
-                    resource.changeStatus(EnumSet.of(PREDOWNLOAD, DOWNLOADING), EnumSet.of(DOWNLOADED));
                     settleSlotGood(true);
                 }
             }
@@ -468,7 +460,6 @@ public class ResourceDownloader implements Runnable {
                 synchronized (resource) {
                     resource.setLocalFile(localFile);
                     resource.setSize(size);
-                    resource.changeStatus(EnumSet.of(PREDOWNLOAD, DOWNLOADING), EnumSet.of(DOWNLOADED));
                     settleSlotGood(true);
                 }
             } else {
@@ -477,7 +468,6 @@ public class ResourceDownloader implements Runnable {
                 } else {
                     OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "You are trying to get resource " + resource.getLocation().toExternalForm() + " but it is not in cache and could not be downloaded. Attempting to continue, but you may expect failure");
                 }
-                resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
                 settleSlotBad();
             }
             resource.fireDownloadEvent(); // fire CONNECTED or ERROR
@@ -619,13 +609,10 @@ public class ResourceDownloader implements Runnable {
             } else {
                 downloadFile(connection, downloadTo, false, null);
             }
-
-            resource.changeStatus(EnumSet.of(DOWNLOADING), EnumSet.of(DOWNLOADED));
             settleSlotGood(false);
             resource.fireDownloadEvent(); // fire DOWNLOADED
         } catch (Exception ex) {
             logDownloadFailure(downloadFrom, ex);
-            resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(ERROR));
             settleSlotBad();
             resource.fireDownloadEvent(); // fire ERROR
         } finally {
@@ -647,8 +634,12 @@ public class ResourceDownloader implements Runnable {
     }
 
     private void settleSlotGood(boolean fromCache) {
+        resource.setEnqueued(false);   // allow a retry/next wait to re-enqueue
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        if (slot == null) return;
+        if (slot == null) {
+            resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
+            return;
+        }
         if (fromCache && !ResourceTracker.hasUsableLocalFile(resource)) {
             // ghost cache entry: don't settle GOOD — park for the one-shot retry so
             // the wait path re-enqueues and re-downloads instead of launching from a
@@ -660,10 +651,13 @@ public class ResourceDownloader implements Runnable {
     }
 
     private void settleSlotBad() {
+        resource.setEnqueued(false);   // allow a retry/next wait to re-enqueue
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        if (slot != null) {
-            slot.settleUnusable(System.currentTimeMillis());
+        if (slot == null) {
+            resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+            return;
         }
+        slot.settleUnusable(System.currentTimeMillis());
     }
 
     private void downloadPackGzFile(URLConnection connection, URL downloadFrom, URL downloadTo) throws IOException {

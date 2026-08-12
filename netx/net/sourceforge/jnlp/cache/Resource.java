@@ -26,6 +26,7 @@ import java.util.Set;
 import net.sourceforge.jnlp.DownloadOptions;
 import net.sourceforge.jnlp.Version;
 import net.sourceforge.jnlp.cache.download.JarSlot;
+import net.sourceforge.jnlp.cache.download.JarState;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.UrlUtils;
 import net.sourceforge.jnlp.util.WeakList;
@@ -96,8 +97,16 @@ public class Resource {
     /** lock-free slot for timing/metrics/settle (set when a JarGroupState is created for the group) */
     private volatile JarSlot jarSlot;
 
-    /** the status of the resource */
-    private final EnumSet<Status> status = EnumSet.noneOf(Status.class);
+    /** the status of the resource — LEGACY MIGRATION: retired. The lock-free
+     *  {@link JarSlot} state machine is the single source of truth (see
+     *  ResourceTracker.wait). The {@link Status} enum and isSet/hasFlags remain
+     *  for API compatibility only, delegating to the JarSlot. */
+    /** terminal state for resources with no wait-group slot yet (cache-hit / prefetch):
+     *  null = not terminal, GOOD = usable, SETTLED_BAD = failed. Once a JarSlot
+     *  exists it is the single source of truth; this is only read pre-slot. */
+    private volatile JarState terminalState;
+    /** dedup guard: a download for this resource is enqueued/active (legacy PROCESSING flag) */
+    private volatile boolean enqueued;
     
     /** Update policy for this resource */
     private final UpdatePolicy updatePolicy;
@@ -278,33 +287,68 @@ public class Resource {
     }
 
     /**
-     * @return the status of the resource
+     * @return the status of the resource — derived from the JarSlot state machine
      */
     public Set<Status> getCopyOfStatus() {
-        return EnumSet.copyOf(status);
-
+        if (isSet(Status.DOWNLOADED)) {
+            return EnumSet.of(Status.DOWNLOADED);
+        }
+        if (isSet(Status.ERROR)) {
+            return EnumSet.of(Status.ERROR);
+        }
+        return EnumSet.noneOf(Status.class);
     }
 
     /**
-     * Check if the specified flag is set.
-     * @param flag a status flag
-     * @return true iff the flag is set
+     * Check if the specified flag is set. Delegates to the JarSlot state machine
+     * (legacy EnumSet retired); falls back to {@link #terminalState} when no
+     * JarSlot exists yet.
      */
     public boolean isSet(Status flag) {
-        synchronized (status) {
-            return status.contains(flag);
+        JarSlot s = jarSlot;
+        if (s != null) {
+            switch (flag) {
+                case DOWNLOADED: return s.state() == JarState.GOOD;
+                case ERROR: return s.state() == JarState.SETTLED_BAD;
+                default: return false; // phase flags retired
+            }
+        }
+        switch (flag) {
+            case DOWNLOADED: return terminalState == JarState.GOOD;
+            case ERROR: return terminalState == JarState.SETTLED_BAD;
+            default: return false;
         }
     }
 
     /**
      * Check if all the specified flags are set.
-     * @param flags a collection of flags
-     * @return true iff all the flags are set
      */
     public boolean hasFlags(Collection<Status> flags) {
-        synchronized (status) {
-            return status.containsAll(flags);
+        if (flags == null) {
+            return true;
         }
+        for (Status f : flags) {
+            if (!isSet(f)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * @return true if the resource reached a terminal state (usable file or exhausted retry)
+     */
+    public boolean isTerminal() {
+        JarSlot s = jarSlot;
+        return s != null ? s.state().isAbsorbing() : terminalState != null;
+    }
+
+    public JarState getTerminalState() {
+        return terminalState;
+    }
+
+    public void setTerminalState(JarState terminalState) {
+        this.terminalState = terminalState;
     }
 
     /**
@@ -318,75 +362,55 @@ public class Resource {
      * Returns a human-readable status string.
      */
     private String getStatusString() {
-        StringBuilder result = new StringBuilder();
-
-        synchronized (status) {
-            if (status.isEmpty()) {
-                return "<>";
-            }
-            for (Status stat : status) {
-                result.append(stat.toString()).append(" ");
-            }
+        Set<Status> s = getCopyOfStatus();
+        if (s.isEmpty()) {
+            return "<>";
         }
-
+        StringBuilder result = new StringBuilder();
+        for (Status stat : s) {
+            result.append(stat.toString()).append(" ");
+        }
         return result.toString().trim();
     }
 
     /**
-     * Changes the status by clearing the flags in the first
-     * parameter and setting the flags in the second.  This method
-     * is synchronized on this resource.
-     * @param clear a collection of status flags to unset
-     * @param add a collection of status flags to set
+     * LEGACY: retired. Terminal state transitions now happen through the
+     * {@link JarSlot} machine (settleGood/settleUnusable). No-op.
      */
     public void changeStatus(Collection<Status> clear, Collection<Status> add) {
-        synchronized (status) {
-            if (clear != null) {
-                status.removeAll(clear);
-            }
-            if (add != null) {
-                status.addAll(add);
-            }
-        }
+        // intentionally empty — the JarSlot state machine is the source of truth
     }
 
     /**
-     * Set status flag
-     * @param flag a flag to set
+     * LEGACY: retired. No-op (see {@link #changeStatus}).
      */
     public void setStatusFlag(Status flag) {
-        synchronized (status) {
-            status.add(flag);
-        }
     }
 
     /**
-     * Set flags
-     * @param flags a collection of flags to set
+     * LEGACY: retired. No-op (see {@link #changeStatus}).
      */
     public void setStatusFlags(Collection<Status> flags) {
-        synchronized (status) {
-            status.addAll(flags);
-        }
     }
 
     /**
-     * Unset flags
-     * @param flags a collection of flags to unset
+     * LEGACY: retired. No-op (see {@link #changeStatus}).
      */
     public void unsetStatusFlag(Collection<Status> flags) {
-        synchronized (status) {
-            status.removeAll(flags);
-        }
     }
 
     /**
-     * Clear all flags
+     * LEGACY: retired. No-op (the JarSlot machine owns terminal/reset state).
      */
     public void resetStatus() {
-        synchronized (status) {
-            status.clear();
-        }
+    }
+
+    public boolean isEnqueued() {
+        return enqueued;
+    }
+
+    public void setEnqueued(boolean enqueued) {
+        this.enqueued = enqueued;
     }
 
     /**
@@ -395,7 +419,7 @@ public class Resource {
      * was already used.
      */
     boolean consumeUnusableTerminalRetry() {
-        synchronized (status) {
+        synchronized (this) {
             if (unusableTerminalRetried) {
                 return false;
             }
@@ -405,7 +429,7 @@ public class Resource {
     }
 
     boolean isUnusableTerminalRetried() {
-        synchronized (status) {
+        synchronized (this) {
             return unusableTerminalRetried;
         }
     }
@@ -414,7 +438,7 @@ public class Resource {
      * Allow one automatic recovery again (new tracker / new launch sharing this URL).
      */
     void clearUnusableTerminalRetry() {
-        synchronized (status) {
+        synchronized (this) {
             unusableTerminalRetried = false;
         }
     }
@@ -434,9 +458,7 @@ public class Resource {
      * @return true iff any flags have been set
      */
     public boolean isInitialized() {
-        synchronized (status) {
-            return !status.isEmpty();
-        }
+        return isTerminal() || getJarSlot() != null;
     }
 
     /**

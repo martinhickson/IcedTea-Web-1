@@ -217,7 +217,7 @@ public class ResourceTracker {
             // they will just 'pass through' the tracker as if they were
             // never added (for example, not affecting the total download size).
             synchronized (resource) {
-                resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(DOWNLOADED, CONNECTED, PROCESSING));
+                resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
             }
             fireDownloadEvent(resource);
             return true;
@@ -233,7 +233,7 @@ public class ResourceTracker {
                     resource.setLocalFile(CacheUtil.getCacheFile(resource.getLocation(), resource.getDownloadVersion()));
                     resource.setSize(resource.getLocalFile().length());
                     resource.setTransferred(resource.getLocalFile().length());
-                    resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(DOWNLOADED, CONNECTED, PROCESSING));
+                    resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
                 }
                 fireDownloadEvent(resource);
                 return true;
@@ -553,15 +553,12 @@ public class ResourceTracker {
                 return true;
             }
 
-            enqueue = !resource.isSet(PROCESSING);
-
-            if (!(resource.isSet(CONNECTED) || resource.isSet(CONNECTING)))
-                resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(PRECONNECT, PROCESSING));
-            if (!(resource.isSet(DOWNLOADED) || resource.isSet(DOWNLOADING)))
-                resource.changeStatus(EnumSet.noneOf(Resource.Status.class), EnumSet.of(PREDOWNLOAD, PROCESSING));
-
-            if (!(resource.isSet(PREDOWNLOAD) || resource.isSet(PRECONNECT)))
-                enqueue = false;
+            // Dedup: never enqueue two downloads for the same resource. The legacy
+            // PROCESSING EnumSet flag is retired; a single volatile flag does the job.
+            enqueue = !resource.isEnqueued();
+            if (enqueue) {
+                resource.setEnqueued(true);
+            }
         }
 
         if (enqueue)
@@ -668,6 +665,13 @@ public class ResourceTracker {
 
     /**
      * Wait for some resources.
+     *
+     * State model: the lock-free {@link JarSlot} machine is the SINGLE source of
+     * truth for download state. The legacy {@link Resource.Status} EnumSet was
+     * retired; {@code Resource.isSet}/{@code changeStatus} now delegate to the
+     * JarSlot (terminal states) or are no-ops (phase flags). A small volatile
+     * {@code enqueued} flag guards double-enqueue, and {@code alreadyDownloaded}
+     * marks cache-hit resources before a wait group exists.
      *
      * @param resources the resources to wait for
      * @param timeout the timeout, or {@code 0} to wait until completed

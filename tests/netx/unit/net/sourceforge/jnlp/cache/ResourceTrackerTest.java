@@ -36,8 +36,7 @@
  */
 package net.sourceforge.jnlp.cache;
 
-import static net.sourceforge.jnlp.cache.Resource.Status.CONNECTED;
-import static net.sourceforge.jnlp.cache.Resource.Status.DOWNLOADING;
+import static net.sourceforge.jnlp.cache.Resource.Status.DOWNLOADED;
 import static net.sourceforge.jnlp.cache.Resource.Status.ERROR;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
@@ -86,9 +85,9 @@ public class ResourceTrackerTest extends NoStdOutErrTest{
     public void testSelectByStatusOneMatchingResource() throws Exception {
         Resource resource = createResource("oneMatchingResource");
         Assert.assertNotNull(resource);
-        resource.setStatusFlag(DOWNLOADING);
+        resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
         List<Resource> resources = Arrays.asList(resource);
-        Resource result = ResourceTracker.selectByStatus(resources, DOWNLOADING, ERROR);
+        Resource result = ResourceTracker.selectByStatus(resources, DOWNLOADED, ERROR);
         Assert.assertEquals(resource, result);
     }
 
@@ -97,7 +96,7 @@ public class ResourceTrackerTest extends NoStdOutErrTest{
         Resource resource = createResource("noMatchingResource");
         Assert.assertNotNull(resource);
         List<Resource> resources = Arrays.asList(resource);
-        Resource result = ResourceTracker.selectByStatus(resources, DOWNLOADING, ERROR);
+        Resource result = ResourceTracker.selectByStatus(resources, DOWNLOADED, ERROR);
         Assert.assertNull(result);
     }
 
@@ -105,9 +104,9 @@ public class ResourceTrackerTest extends NoStdOutErrTest{
     public void testSelectByStatusExcludedResources() throws Exception {
         Resource resource = createResource("excludedResources");
         Assert.assertNotNull(resource);
-        resource.setStatusFlag(ERROR);
+        resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
         List<Resource> resources = Arrays.asList(resource);
-        Resource result = ResourceTracker.selectByStatus(resources, DOWNLOADING, ERROR);
+        Resource result = ResourceTracker.selectByStatus(resources, DOWNLOADED, ERROR);
         Assert.assertNull(result);
     }
 
@@ -115,15 +114,12 @@ public class ResourceTrackerTest extends NoStdOutErrTest{
     public void testSelectByStatusMixedResources() throws Exception {
         Resource r1 = createResource("mixedResources1");
         Assert.assertNotNull(r1);
-        r1.setStatusFlag(CONNECTED);
-        r1.setStatusFlag(DOWNLOADING);
+        r1.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
         Resource r2 = createResource("mixedResources2");
         Assert.assertNotNull(r2);
-        r2.setStatusFlag(CONNECTED);
-        r2.setStatusFlag(DOWNLOADING);
-        r2.setStatusFlag(ERROR);
+        r2.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
         List<Resource> resources = Arrays.asList(r1, r2);
-        Resource result = ResourceTracker.selectByStatus(resources, EnumSet.of(CONNECTED, DOWNLOADING), EnumSet.of(ERROR));
+        Resource result = ResourceTracker.selectByStatus(resources, EnumSet.of(DOWNLOADED), EnumSet.of(ERROR));
         Assert.assertEquals(r1, result);
     }
 
