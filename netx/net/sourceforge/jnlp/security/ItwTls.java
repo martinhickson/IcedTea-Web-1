@@ -44,9 +44,21 @@ public final class ItwTls {
     };
 
     private static final SSLContext CTX = build();
-    private static final String[] CIPHERS = resolveCipherSuites();
 
     private ItwTls() {}
+
+    /**
+     * CIPHERS is resolved LAZILY (not a static final at class-init) so the
+     * deployment.tls.client.cipherSuites override is read after the
+     * deployment.properties file has been merged into the configuration —
+     * resolveCipherSuites() at class-load time could see the pre-merge config
+     * and silently ignore the override.
+     */
+    private static class CiphersHolder {
+        static final String[] VALUE = resolveCipherSuites();
+    }
+
+    static String[] ciphers() { return CiphersHolder.VALUE; }
 
     private static SSLContext build() {
         try {
@@ -63,12 +75,12 @@ public final class ItwTls {
     public static SSLParameters parameters() {
         SSLParameters p = CTX.getDefaultSSLParameters();
         p.setProtocols(PROTOCOLS);
-        p.setCipherSuites(CIPHERS);
+        p.setCipherSuites(ciphers());
         return p;
     }
 
     static String offeredCipherSummary() {
-        return String.join(",", CIPHERS);
+        return String.join(",", ciphers());
     }
 
     private static String[] resolveCipherSuites() {
@@ -78,11 +90,20 @@ public final class ItwTls {
                     .getProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_SUITES);
         } catch (Exception ignored) {}
         String[] order;
+        String source;
         if (override != null && !override.trim().isEmpty()) {
             order = splitCsv(override);
+            source = "override";
         } else {
-            order = hasAesNni() ? AES_NIO_ORDER : NO_AES_NIO_ORDER;
+            boolean aes = hasAesNni();
+            order = aes ? AES_NIO_ORDER : NO_AES_NIO_ORDER;
+            source = aes ? "aes-ni-detected" : "no-aes-ni-fallback";
         }
+        String resolved = String.join(",", order);
+        try {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                    "ItwTls cipher order [" + source + "]: " + resolved);
+        } catch (Exception ignored) {}
         return validateOrFail(order);
     }
 
@@ -112,8 +133,14 @@ public final class ItwTls {
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         try {
             if (os.contains("linux")) {
+                // x86_64: "flags" line; aarch64 (Graviton): "Features" line.
+                // Containers see the host CPU's /proc/cpuinfo, so this is accurate
+                // inside EKS pods too. Absent the token → false → ChaCha-first (safe).
                 for (String line : Files.readAllLines(Paths.get("/proc/cpuinfo"))) {
-                    if (line.startsWith("flags") && line.contains(" aes")) return true;
+                    String t = line.trim();
+                    if ((t.startsWith("flags") || t.startsWith("Features")) && line.contains(" aes")) {
+                        return true;
+                    }
                 }
                 return false;
             }
