@@ -267,6 +267,37 @@ jobs:
           Ensure-Pack200MavenDependency
         shell: pwsh
 
+      - name: Build icedtea-web uber (no bundled JRE download)
+        run: |
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-pl", "icedtea-web",
+            "-am",
+            "install",
+            "-DskipTests",
+            "-Djdk11.home=$env:JDK11_HOME",
+            "-Dbash.executable=C:\Program Files\Git\usr\bin\bash.exe"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
+      # Dual-JVM SQLite catalog IT only needs the uber jar — run before distro Temurin
+      # downloads so Adoptium 503s cannot hide catalog regressions.
+      - name: Run SQLite cache catalog dual-JVM IT
+        run: |
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-f", "itw-autodetect-it/pom.xml",
+            "verify",
+            "-Ditest=SqliteCacheCatalogDualJvmIT",
+            "-Ditw.jdk11.home=$env:JDK11_HOME",
+            "-Ditw.jdk17.home=$env:JDK17_HOME",
+            "-Ditw.javaws.bin=C:\nonexistent\javaws.exe",
+            "-Ditw.autodetect.it.failure.ignore=false"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
       - name: Build Windows distribution (unsigned)
         run: |
           $mvnArgs = @(
