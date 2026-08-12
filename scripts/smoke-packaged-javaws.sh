@@ -69,22 +69,36 @@ run_capped() {
 
 fail() { echo "SMOKE-FAIL: $*" >&2; exit 1; }
 
-# --- build a tiny sandboxed smoke app (no permissions requested -> unsigned is fine) ---
+# --- build + SIGN a tiny all-permissions smoke app ---------------------------
+# Signed with a self-signed cert so the app can request <all-permissions> and
+# write its success marker to a file (stdout capture through the .NET launcher
+# redirect is unreliable across platforms). -Xtrustall accepts the cert.
 mkdir -p "$WORK/out"
 cat > "$WORK/SmokeMain.java" <<'EOF'
+import java.nio.file.Files;
+import java.nio.file.Paths;
 public class SmokeMain {
-  public static void main(String[] a) {
+  public static void main(String[] a) throws Exception {
+    java.io.File f = new java.io.File(System.getProperty("user.home"), "itw-smoke-success.txt");
+    f.getParentFile().mkdirs();
+    Files.write(f.toPath(), ("ITW_SMOKE_SUCCESS app-launched-on-bundled-jvm\n"
+        + "java.home=" + System.getProperty("java.home") + "\n").getBytes("UTF-8"));
     System.out.println("ITW_SMOKE_SUCCESS app-launched-on-bundled-jvm");
   }
 }
 EOF
 javac -d "$WORK" "$WORK/SmokeMain.java"
-printf 'Manifest-Version: 1.0\nMain-Class: SmokeMain\nApplication-Name: ITW Smoke\n\n' > "$WORK/out/MANIFEST.MF"
+printf 'Manifest-Version: 1.0\nMain-Class: SmokeMain\nApplication-Name: ITW Smoke\nPermissions: all-permissions\nCodebase: *\nApplication-Library-Allowable-Codebase: *\n\n' > "$WORK/out/MANIFEST.MF"
 jar cfm "$WORK/app.jar" "$WORK/out/MANIFEST.MF" -C "$WORK" SmokeMain.class
+keytool -genkeypair -keystore "$WORK/itw-smoke.jks" -storepass changeit -keypass changeit \
+  -alias smoke -dname "CN=ITW Smoke, OU=IT, O=IcedTea-Web, C=NZ" -keyalg RSA -validity 365 >/dev/null 2>&1
+jarsigner -keystore "$WORK/itw-smoke.jks" -storepass changeit -keypass changeit \
+  -digestalg SHA-256 -sigalg SHA256withRSA "$WORK/app.jar" smoke >/dev/null 2>&1
 cat > "$WORK/app.jnlp" <<'EOF'
 <?xml version="1.0" encoding="UTF-8"?>
 <jnlp spec="1.0+" codebase="." href="app.jnlp">
   <information><title>ITW Smoke</title><vendor>IcedTea-Web</vendor></information>
+  <security><all-permissions/></security>
   <resources><j2se version="1.8+"/><jar href="app.jar" main="true"/></resources>
   <application-desc main-class="SmokeMain"/>
 </jnlp>
@@ -129,17 +143,12 @@ export XDG_CACHE_HOME="$WORK/home/.cache"
 export XDG_DATA_HOME="$WORK/home/.local/share"
 mkdir -p "$HOME"
 
-# --- 1. launcher run -> handoff record ---
-# -Xnofork keeps the app in the download-JVM process so its stdout lands in the
-# launcher redirect log (this is how the packaged launcher captures app output
-# on Windows). -Xnofork makes the launcher take its "relaunch" resolution path,
-# which prefers JAVA_HOME — unset it so resolution falls back to the bundled
-# runtime/temurin-21 scan (the default we are asserting).
+# --- 1. launcher run (default resolution) -> handoff record proves the download
+# JVM is the bundled Temurin 21. Do NOT pass -Xnofork here: -Xnofork makes the
+# launcher take its "relaunch" resolution path (which prefers JAVA_HOME), and we
+# must not unset JAVA_HOME because the app-launch phase below relies on it.
 URL="http://127.0.0.1:$PORT/app.jnlp"
-run_capped 45 env -u JAVA_HOME "$LAUNCHER" -headless -verbose -Xtrustall -Xnofork \
-  -J-Djava.awt.headless=true \
-  -J-Ddeployment.log=true -J-Ddeployment.log.file=true -J-Ddeployment.log.file.clientapp=true \
-  "$URL"
+run_capped 30 "$LAUNCHER" -headless -verbose -Xtrustall -J-Djava.awt.headless=true "$URL"
 
 LOG_BASE="$(find "$HOME" -type d -name log -path "*icedtea-web*" 2>/dev/null | head -1)"
 MAIN_LOG="$(find "$LOG_BASE" -name "*.log" ! -name "*prelaunch*" ! -name "*relaunch*" 2>/dev/null | head -1)"
@@ -158,11 +167,19 @@ case "$CHILD_VER" in
   *) fail "download JVM version $CHILD_VER does not start with $EXPECTED_MAJOR" ;;
 esac
 
-# --- 2. app launch evidence ---
+# --- 2. app launch evidence: relaunch-style (-Xnofork) with normal JAVA_HOME so
+# ITW file logging captures the app marker reliably on every platform.
+run_capped 45 "$LAUNCHER" -headless -verbose -Xtrustall -Xnofork \
+  -J-Djava.awt.headless=true \
+  -J-Ddeployment.log=true -J-Ddeployment.log.file=true -J-Ddeployment.log.file.clientapp=true \
+  "$URL"
 marker_found=0
-# primary: poll the ITW javantx logs (file logging on -> app stdout lands there
-# on every platform, independent of the launcher stdout-redirect quirk)
+MARKER_FILE="$HOME/itw-smoke-success.txt"
 for _ in $(seq 1 90); do
+  if [ -f "$MARKER_FILE" ]; then
+    marker_found=1
+    break
+  fi
   if grep -ra "ITW_SMOKE_SUCCESS" "$LOG_BASE" 2>/dev/null | grep -qv "SMOKE-FAIL"; then
     marker_found=1
     break
@@ -186,12 +203,11 @@ fi
 
 [ "$marker_found" = 1 ] || {
   echo "SMOKE-FAIL: app did not print ITW_SMOKE_SUCCESS (handoff=$CHILD_VER)"
+  echo "--- marker file: $(ls -la "$MARKER_FILE" 2>/dev/null || echo missing)"
   echo "--- log files:"
   find "$LOG_BASE" -type f 2>/dev/null | head -20
   echo "--- main handoff log full content:"
   cat "$MAIN_LOG" 2>/dev/null
-  echo "--- prelaunch log full content:"
-  cat "${MAIN_LOG%-relaunch.log}"*prelaunch* 2>/dev/null | head -40
   echo "--- log highlights:"
   grep -raE "Selected JVM|Exception|Fatal|Error|ITW_SMOKE|Starting application|Invoking main|Permission|LaunchException|jdk=" "$LOG_BASE" 2>/dev/null | grep -avE "Handoff|Child |Standard |Working dir|\.NET|Command:|Handoff complete|OS:|Architecture" | head -25
   exit 1
