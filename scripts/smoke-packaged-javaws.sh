@@ -180,7 +180,14 @@ if [ "$marker_found" = 0 ] && [ "$IS_WINDOWS" != 1 ]; then
   fi
 fi
 
-[ "$marker_found" = 1 ] || fail "app did not print ITW_SMOKE_SUCCESS (handoff=$CHILD_VER)"
+[ "$marker_found" = 1 ] || {
+  echo "SMOKE-FAIL: app did not print ITW_SMOKE_SUCCESS (handoff=$CHILD_VER)"
+  echo "--- log files:"
+  find "$LOG_BASE" -type f 2>/dev/null | head -20
+  echo "--- log highlights:"
+  grep -raE "Selected JVM|Exception|Fatal|Error|ITW_SMOKE|Starting application|Invoking main|Permission|LaunchException|jdk=" "$LOG_BASE" 2>/dev/null | grep -avE "Handoff|Child |Standard |Working dir|\.NET|Command:|Handoff complete|OS:|Architecture" | head -25
+  exit 1
+}
 echo "== app launched on bundled JVM (ITW_SMOKE_SUCCESS found)"
 
 # --- 3. cache + seeded JVM order ---
