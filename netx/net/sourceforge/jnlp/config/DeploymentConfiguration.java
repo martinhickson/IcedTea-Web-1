@@ -512,6 +512,16 @@ public final class DeploymentConfiguration {
         // unchangeableConfiguration — that must stay defaults+system for save().
         persistedConfiguration = copySettingsMap(currentConfiguration);
         maybeAutodetectJdksOnLoad();
+        // Seed the bundled Temurin JREs (Appendix D) into the known-JVM list at first
+        // run — unconditional (no autodetect flag), no-op when no bundle is present.
+        try {
+            if (KnownJvmStore.applyBundledJvms(this)) {
+                save();
+                persistedConfiguration = copySettingsMap(currentConfiguration);
+            }
+        } catch (IOException ex) {
+            OutputController.getLogger().log(ex);
+        }
     }
 
     private void maybeAutodetectJdksOnLoad() {

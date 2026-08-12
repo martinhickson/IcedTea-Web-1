@@ -1,6 +1,7 @@
 package net.sourceforge.jnlp.config;
 
 import java.io.File;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -156,6 +157,112 @@ public final class KnownJvmStore {
             setKnownJvmHomes(config, new ArrayList<>(merged));
         }
         return changed;
+    }
+
+    /**
+     * Seeds the bundled Temurin JREs (Appendix D) into the known-JVM list at
+     * first run. The MSI ships four JREs under {@code [installDir]/runtime/temurin-*}
+     * (linux/windows: {@code temurin-<ver>/<jdk>/bin/java}; macOS:
+     * {@code temurin-<ver>/<jdk>/Contents/Home/bin/java}). They are registered as
+     * pinned top-priority homes (highest major first) so the JVM manager can
+     * select them for JNLP {@code <j2se>} requirements. No-op when no bundle is
+     * present (e.g. a source/IDE run). The launcher separately resolves the
+     * download JVM (temurin-25); this only feeds the app-JVM selection list.
+     *
+     * @return true if any bundled home was added (caller should persist)
+     */
+    public static boolean applyBundledJvms(DeploymentConfiguration config) {
+        List<String> bundled = discoverBundledJvmHomes();
+        if (bundled.isEmpty()) {
+            return false;
+        }
+        List<String> before = new ArrayList<>(getKnownJvmHomes(config));
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        for (String home : bundled) {            // bundled first = top priority
+            merged.add(home);
+        }
+        for (String home : before) {
+            merged.add(home);
+        }
+        List<String> current = new ArrayList<>(merged);
+        setKnownJvmHomes(config, current);
+        return !before.equals(current);
+    }
+
+    /**
+     * Scans {@code [installDir]/runtime/temurin-*} for JRE homes, highest major first.
+     */
+    static List<String> discoverBundledJvmHomes() {
+        File installRoot = findInstallRoot();
+        if (installRoot == null) {
+            return Collections.emptyList();
+        }
+        File runtime = new File(installRoot, "runtime");
+        if (!runtime.isDirectory()) {
+            return Collections.emptyList();
+        }
+        File[] dirs = runtime.listFiles();
+        if (dirs == null) {
+            return Collections.emptyList();
+        }
+        List<File> temurin = new ArrayList<>();
+        for (File d : dirs) {
+            if (d.isDirectory() && d.getName().toLowerCase(Locale.ROOT).startsWith("temurin-")) {
+                temurin.add(d);
+            }
+        }
+        // temurin-25 > temurin-21 > temurin-17 > temurin-11 lexically
+        temurin.sort((a, b) -> b.getName().compareTo(a.getName()));
+        List<String> homes = new ArrayList<>();
+        for (File dir : temurin) {
+            File home = findJreHome(dir);
+            if (home != null) {
+                homes.add(home.getAbsolutePath());
+            }
+        }
+        return homes;
+    }
+
+    /** JRE home is the child of a temurin-* dir that contains bin/java (or Contents/Home on macOS). */
+    private static File findJreHome(File temurinDir) {
+        File[] children = temurinDir.listFiles();
+        if (children == null) {
+            return null;
+        }
+        for (File c : children) {
+            if (!c.isDirectory()) {
+                continue;
+            }
+            File bin = new File(c, "bin");
+            if (new File(bin, "java").isFile() || new File(bin, "java.exe").isFile()) {
+                return c;                       // linux / windows layout
+            }
+            File contentsHome = new File(c, "Contents" + File.separator + "Home");
+            if (new File(contentsHome, "bin" + File.separator + "java").isFile()) {
+                return contentsHome;            // mac layout
+            }
+        }
+        return null;
+    }
+
+    /** Install root = parent of the launcher's bin dir (icedtea-web.bin.location) or the uber-jar's lib dir. */
+    static File findInstallRoot() {
+        String binLocation = System.getProperty("icedtea-web.bin.location");
+        if (binLocation != null && !binLocation.trim().isEmpty()) {
+            File exe = new File(binLocation);
+            File exeDir = exe.getParentFile();
+            if (exeDir != null && exeDir.getParentFile() != null) {
+                return exeDir.getParentFile();  // [installRoot]/bin/.. -> [installRoot]
+            }
+        }
+        try {
+            URI loc = KnownJvmStore.class.getProtectionDomain().getCodeSource().getLocation().toURI();
+            File lib = new File(loc).getParentFile();   // [installRoot]/lib
+            if (lib != null && lib.getParentFile() != null) {
+                return lib.getParentFile();
+            }
+        } catch (Exception ignored) {}
+        return null;
     }
 
     /**

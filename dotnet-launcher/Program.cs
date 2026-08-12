@@ -155,13 +155,19 @@ internal static class Program
         var runtimeRoot = new DirectoryInfo(Path.Combine(installRoot.FullName, "runtime"));
         if (runtimeRoot.Exists)
         {
-            // Preferred download JVM: runtime\temurin-25\bin\java.exe (Appendix D.5).
-            // Must be preferred explicitly — with multiple bundled JREs a blind
-            // EnumerateFiles scan would pick whichever the filesystem yields first.
-            var preferred = Path.Combine(runtimeRoot.FullName, "temurin-25", "bin", JavaExecutableName());
-            if (File.Exists(preferred))
+            // Preferred download JVM: the java under runtime\temurin-25 (Appendix D.5).
+            // The Temurin tarball extracts to runtime\temurin-25\<jdk-ver>\bin\java.exe
+            // (macOS: ...\Contents\Home\bin\java), so scan within temurin-25 rather than
+            // a fixed path — a blind runtime-wide scan would be non-deterministic.
+            var t25 = new DirectoryInfo(Path.Combine(runtimeRoot.FullName, "temurin-25"));
+            if (t25.Exists)
             {
-                return preferred;
+                var preferred = t25.EnumerateFiles(JavaExecutableName(), SearchOption.AllDirectories)
+                    .FirstOrDefault(file => string.Equals(file.Directory?.Name, "bin", StringComparison.OrdinalIgnoreCase));
+                if (preferred != null)
+                {
+                    return preferred.FullName;
+                }
             }
 
             var bundledJava = runtimeRoot.EnumerateFiles(JavaExecutableName(), SearchOption.AllDirectories)
