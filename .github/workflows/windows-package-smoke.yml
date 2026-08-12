@@ -36,9 +36,9 @@ jobs:
       - name: Set up Groovy (sample HTTP server; python is banned)
         run: |
           if (-not (Get-Command groovy -ErrorAction SilentlyContinue)) {
-            $version = "4.0.24"
+            $version = "4.0.33"
             $zip = "apache-groovy-binary-$version.zip"
-            $url = "https://github.com/apache/groovy/releases/download/GROOVY_4_0_24/$zip"
+            $url = "https://archive.apache.org/dist/groovy/$version/distribution/$zip"
             Invoke-WebRequest -Uri $url -OutFile $zip
             Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\groovy" -Force
             $bin = "$env:RUNNER_TEMP\groovy\groovy-$version\bin"
