@@ -693,23 +693,7 @@ public class ResourceTracker {
         net.sourceforge.jnlp.cache.download.JarGroupState metricsGroup =
                 net.sourceforge.jnlp.cache.download.JarGroupState.forJars(urls);
         java.util.List<Resource> needsRestart = new java.util.ArrayList<>();
-        for (int i = 0; i < resources.length; i++) {
-            Resource r = resources[i];
-            net.sourceforge.jnlp.cache.download.JarSlot s = metricsGroup.slot(i);
-            r.setJarSlot(s);
-            if (r.isSet(DOWNLOADED) && hasUsableLocalFile(r)) {
-                s.settleGood(System.currentTimeMillis(), true);
-            } else if (r.isSet(ERROR) && r.isUnusableTerminalRetried()) {
-                s.settleUnusable(System.currentTimeMillis()); // → SETTLED_BAD (retried latch)
-            } else if (r.isSet(ERROR)) {
-                // premature ERROR with the one-shot retry still available — consume and
-                // re-enqueue so a fresh download settles the slot (old wait() requeued here)
-                if (r.consumeUnusableTerminalRetry()) {
-                    r.prepareRedownloadAfterUnusableTerminal();
-                    needsRestart.add(r);
-                }
-            }
-        }
+        preSettleSlots(resources, metricsGroup, needsRestart);
         this.lastMetricsGroup = metricsGroup;
 
         // start them downloading / connecting in background
@@ -786,6 +770,37 @@ public class ResourceTracker {
             }
         } catch (Exception e) {
             // stats are diagnostic — never fail the launch on a stats error
+        }
+    }
+
+    /**
+     * Pre-settle fresh JarSlots for resources already in a terminal state
+     * (repeat wait() calls for already-downloaded jars), so a fresh IN_FLIGHT
+     * slot does not hang the loop. Terminal-unusable resources with a retry
+     * available are consumed and added to {@code needsRestart}.
+     */
+    static void preSettleSlots(Resource[] resources, net.sourceforge.jnlp.cache.download.JarGroupState group,
+            List<Resource> needsRestart) {
+        for (int i = 0; i < resources.length; i++) {
+            Resource r = resources[i];
+            net.sourceforge.jnlp.cache.download.JarSlot s = group.slot(i);
+            // read terminalState BEFORE assigning the slot, otherwise isSet() would
+            // delegate to the fresh IN_FLIGHT slot and never see the prior outcome
+            net.sourceforge.jnlp.cache.download.JarState terminal = r.getTerminalState();
+            r.setJarSlot(s);
+            if (terminal == net.sourceforge.jnlp.cache.download.JarState.GOOD && hasUsableLocalFile(r)) {
+                s.settleGood(System.currentTimeMillis(), true);
+            } else if (terminal == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD
+                    && r.isUnusableTerminalRetried()) {
+                s.settleBadFinal(System.currentTimeMillis()); // retry already spent → terminal FAILED
+            } else if (terminal == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD) {
+                // premature ERROR with the one-shot retry still available — consume and
+                // re-enqueue so a fresh download settles the slot (old wait() requeued here)
+                if (r.consumeUnusableTerminalRetry()) {
+                    r.prepareRedownloadAfterUnusableTerminal();
+                    needsRestart.add(r);
+                }
+            }
         }
     }
 

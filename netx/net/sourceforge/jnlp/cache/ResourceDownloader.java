@@ -787,6 +787,11 @@ public class ResourceDownloader implements Runnable {
         File written = packGZ
                 ? unpackPackGzToCacheFile(cacheLocation, raw)
                 : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw));
+        // compressionRatio metric: on-disk decompressed size vs wire bytes
+        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+        if (slot != null && written != null) {
+            slot.onDecompressed(written.length(), packGZ);
+        }
         if (CacheUtil.isJarResourceUrl(cacheLocation) && !CacheUtil.isValidJarFile(written)) {
             String preview = CacheUtil.previewFileHead(written, 80);
             if (written != null && written.isFile()) {

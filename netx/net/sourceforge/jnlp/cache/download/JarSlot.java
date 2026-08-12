@@ -91,6 +91,21 @@ public final class JarSlot {
         return false;
     }
 
+    /**
+     * Force-settle SETTLED_BAD from IN_FLIGHT (coordinator-side). Used when
+     * pre-settling a fresh slot for a resource whose one-shot retry was ALREADY
+     * consumed — the normal settleUnusable would park in RETRY_PENDING, but no
+     * re-download is allowed, so it must go straight to terminal failure.
+     */
+    public boolean settleBadFinal(long now) {
+        if (casState(JarState.IN_FLIGHT, JarState.SETTLED_BAD)) {
+            this.kind = MetricKind.FAILED;
+            publishSettle(now);
+            return true;
+        }
+        return false;
+    }
+
     private boolean casState(JarState expect, JarState update) {
         return state.compareAndSet(expect.ordinal(), update.ordinal());
     }
