@@ -9,34 +9,28 @@
   <version>1.0.0-SNAPSHOT</version>
   <packaging>jar</packaging>
 
-  <name>IcedTea-Web multi-jar download integration tests</name>
+  <name>IcedTea-Web multi-jar / pack.gz download integration tests</name>
   <description>
     Standalone Failsafe integration tests for the download pipeline with many
-    medium-sized jars (20 x 20 MB): Undertow serves the JNLP + jars over HTTP,
-    a real javaws (uber jar) launch downloads all resources in parallel and the
-    app must load a class from every jar. Pure Java, not part of the main reactor.
+    medium-sized jars and the pack200/gzip matrix. Undertow serves a JNLP + 20
+    x ~20 MB jars over HTTP in plain / Content-Encoding gzip / pack.gz-only
+    variants; a real javaws (uber jar, or the packaged launcher when
+    -Ditw.javaws.bin is set) downloads them all and the app must load a class
+    from every jar. Pure Java, not part of the main reactor.
   </description>
 
   <properties>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>11</maven.compiler.release>
-    <icedtea-web.version>2.0.1-SNAPSHOT</icedtea-web.version>
     <junit.version>5.10.2</junit.version>
     <assertj.version>3.25.3</assertj.version>
     <undertow.version>2.3.26.Final</undertow.version>
     <commons-lang3.version>3.14.0</commons-lang3.version>
     <bytebuddy.version>1.18.8</bytebuddy.version>
-    <itw.uberjar.classifier>uber</itw.uberjar.classifier>
     <itw.multijar.timeout.seconds>300</itw.multijar.timeout.seconds>
   </properties>
 
   <dependencies>
-    <dependency>
-      <groupId>net.sourceforge.icedtea-web</groupId>
-      <artifactId>icedtea-web</artifactId>
-      <version>${icedtea-web.version}</version>
-      <classifier>${itw.uberjar.classifier}</classifier>
-    </dependency>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter</artifactId>
@@ -95,7 +89,10 @@
           <forkedProcessTimeoutInSeconds>600</forkedProcessTimeoutInSeconds>
           <systemPropertyVariables>
             <itw.multijar.timeout.seconds>${itw.multijar.timeout.seconds}</itw.multijar.timeout.seconds>
-            <itw.test.home>${project.build.directory}/itw-test-home</itw.test.home>
+            <!-- source-tree mode: path to icedtea-web-*-uber.jar -->
+            <itw.uber.jar></itw.uber.jar>
+            <!-- packaged-install mode: path to the installed bin/javaws(.exe) -->
+            <itw.javaws.bin></itw.javaws.bin>
           </systemPropertyVariables>
         </configuration>
         <executions>

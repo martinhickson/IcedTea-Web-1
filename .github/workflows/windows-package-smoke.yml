@@ -27,11 +27,11 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Set up JDK 17 (compile smoke sample)
+      - name: Set up JDK 11 (compile smoke sample + pack200 fixture generation)
         uses: actions/setup-java@v5
         with:
           distribution: corretto
-          java-version: '17'
+          java-version: '11'
 
       - name: Set up Groovy (sample HTTP server; python is banned)
         run: |
@@ -101,3 +101,10 @@ jobs:
       - name: Smoke-test installed launcher
         run: bash scripts/smoke-packaged-javaws.sh "$ITW_INSTALL_ROOT" 8123 "${{ inputs.expected_download_jvm }}"
         shell: bash
+
+      - name: Run multi-jar + pack.gz matrix IT against installed launcher
+        run: |
+          mvn -B -f itw-multijar-it/pom.xml verify `
+            "-Ditw.javaws.bin=$env:ITW_INSTALL_ROOT\bin\javaws.exe" `
+            "-Ditw.multijar.timeout.seconds=300"
+        shell: pwsh
