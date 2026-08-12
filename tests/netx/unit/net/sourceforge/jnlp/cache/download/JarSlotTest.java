@@ -31,6 +31,31 @@ public class JarSlotTest {
     }
 
     @Test
+    public void settleStatsLineIncludesKindBytesAndRetried() {
+        JarSlot s = slot(0, url("http://localhost/stats.jar"));
+        s.onConnect(1000L);
+        s.onFirstByte(1100L);
+        s.addTransferred(2048L);
+        s.onLastByte(1200L);
+        s.onDecompressed(4096L, true);
+        assertTrue(s.settleGood(1300L, false));
+        String line = s.settleStatsLine();
+        assertTrue(line.contains("Download complete:"), line);
+        assertTrue(line.contains("kind=DOWNLOADED"), line);
+        assertTrue(line.contains("bytes=2048"), line);
+        assertTrue(line.contains("retried=false"), line);
+    }
+
+    @Test
+    public void settleBadFinalMarksFailedWithoutRetryPark() {
+        JarSlot s = slot(0, url("http://localhost/fail.jar"));
+        assertTrue(s.settleBadFinal(1000L));
+        assertEquals(JarState.SETTLED_BAD, s.state());
+        assertEquals(MetricKind.FAILED, s.kind);
+        assertTrue(s.settleStatsLine().contains("kind=FAILED"), s.settleStatsLine());
+    }
+
+    @Test
     public void settleGoodIsIdempotent() {
         JarSlot s = slot(0, url("http://localhost/a.jar"));
         assertTrue(s.settleGood(1000L, false));
@@ -96,6 +121,24 @@ public class JarSlotTest {
         s.addTransferred(10);
         s.addTransferred(20);
         assertEquals(30, s.transferred());
+    }
+
+    @Test
+    public void settleStatsLineBeforeKindUsesPlaceholders() {
+        JarSlot s = slot(0, url("http://localhost/pending.jar"));
+        String line = s.settleStatsLine();
+        assertTrue(line.contains("kind=?"), line);
+        assertTrue(line.contains("ttfb=-"), line);
+        assertTrue(line.contains("thr=-"), line);
+        assertTrue(line.contains("decomp=-"), line);
+    }
+
+    @Test
+    public void settleBadFinalIsNoOpAfterAlreadyGood() {
+        JarSlot s = slot(0, url("http://localhost/a.jar"));
+        assertTrue(s.settleGood(1L, false));
+        assertFalse(s.settleBadFinal(2L));
+        assertEquals(JarState.GOOD, s.state());
     }
 
     @Test

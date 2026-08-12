@@ -327,10 +327,14 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     private File setupFile(String fileName, String text) throws IOException {
+        return setupFile(fileName, text.getBytes());
+    }
+
+    private File setupFile(String fileName, byte[] body) throws IOException {
         File downloadDir = downloadServer.getDir();
         File file = new File(downloadDir, fileName);
         file.createNewFile();
-        Files.write(file.toPath(), text.getBytes());
+        Files.write(file.toPath(), body);
         file.deleteOnExit();
 
         return file;
@@ -499,6 +503,24 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
             // writeDownloadStream deletes the bad file; anything left must not look usable
             assertTrue(local.length() == 0 || !CacheUtil.isValidJarFile(local));
         }
+    }
+
+    @Test
+    public void testDownloadRejectsTruncatedZipMagicOnlyJar() throws IOException {
+        // Passes ZIP/JAR magic sniff but fails verifyJarIntegrity (enumerate/drain).
+        setupFile("trunc-magic.jar", new byte[] { 'P', 'K', 3, 4, 0, 0 });
+
+        Resource resource = Resource.getResource(downloadServer.getUrl("trunc-magic.jar"), null, UpdatePolicy.FORCE);
+        ResourceDownloader resourceDownloader = new ResourceDownloader(resource, new Object());
+        resource.setStatusFlag(Resource.Status.PRECONNECT);
+        resource.setDownloadOptions(new DownloadOptions(false, false));
+        resourceDownloader.run();
+
+        assertTrue("truncated jar must not settle as a successful download",
+                resource.hasFlags(EnumSet.of(Resource.Status.ERROR)));
+        File local = resource.getLocalFile();
+        assertTrue("integrity failure must clear local file",
+                local == null || !local.isFile());
     }
 
     private void setupPackGzFile(String fileName, String version) throws IOException {

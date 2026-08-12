@@ -51,6 +51,7 @@ import net.sourceforge.jnlp.util.logging.SingleStreamLogger;
 public final class WriterBasedFileLog implements SingleStreamLogger {
 
     private final BufferedWriter bw;
+    private boolean closed;
 
     public WriterBasedFileLog(String fileName, boolean append) {
         this(fileName, fileName, append);
@@ -71,11 +72,18 @@ public final class WriterBasedFileLog implements SingleStreamLogger {
 
     /**
      * Log the String to file.
+     * <p>
+     * After {@link #close()}, further calls are ignored. The OutputController
+     * consumer daemon can still drain the queue after {@code JNLPRuntime.exit}
+     * closes the file log; throwing here used to spam ERROR_DEBUG.
      *
-     * @param s {@link Exception} that was thrown.
+     * @param s line to write
      */
     @Override
     public synchronized void log(String s) {
+        if (closed || s == null) {
+            return;
+        }
         try {
             bw.write(s);
             if (!s.endsWith("\n")) {
@@ -83,18 +91,22 @@ public final class WriterBasedFileLog implements SingleStreamLogger {
             }
             bw.flush();
         } catch (IOException e) {
-            throw new RuntimeException(e);
+            // Closed underneath us, or filesystem went away — never poison the logger.
+            closed = true;
         }
     }
 
     @Override
-    public void close() throws IOException {
+    public synchronized void close() throws IOException {
+        if (closed) {
+            return;
+        }
+        closed = true;
         try {
             bw.flush();
         } finally {
             bw.close();
         }
-
     }
 
 }

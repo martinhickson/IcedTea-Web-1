@@ -645,6 +645,42 @@ public class SqliteCacheCatalogTest {
     }
 
     @Test
+    public void removeContainsClearAndGetValueRoundTrip() throws Exception {
+        File jarA = new File(dbRoot, "4/http/round.example/a.jar");
+        File jarB = new File(dbRoot, "5/http/round.example/b.jar");
+        assertTrue(jarA.getParentFile().mkdirs() || jarA.getParentFile().isDirectory());
+        assertTrue(jarB.getParentFile().mkdirs() || jarB.getParentFile().isDirectory());
+        assertTrue(jarA.createNewFile());
+        assertTrue(jarB.createNewFile());
+
+        wrapper.lock();
+        try {
+            wrapper.load();
+            String keyA = wrapper.generateKey(jarA.getAbsolutePath());
+            String keyB = wrapper.generateKey(jarB.getAbsolutePath());
+            assertTrue(wrapper.addEntry(keyA, jarA.getAbsolutePath()));
+            assertTrue(wrapper.addEntry(keyB, jarB.getAbsolutePath()));
+            assertTrue(wrapper.store());
+
+            assertTrue(wrapper.containsKey(keyA));
+            assertTrue(wrapper.containsValue(jarB.getAbsolutePath()));
+            assertEquals(jarA.getAbsolutePath(), wrapper.getValue(keyA));
+            assertEquals(2, wrapper.getLRUSortedEntries().size());
+
+            assertTrue(wrapper.removeEntry(keyA));
+            assertFalse(wrapper.containsKey(keyA));
+            assertEquals(1, wrapper.getLRUSortedEntries().size());
+
+            wrapper.clearLRUSortedEntries();
+            assertTrue(wrapper.getLRUSortedEntries().isEmpty());
+            assertFalse(wrapper.containsValue(jarB.getAbsolutePath()));
+            assertFalse(wrapper.removeEntry(keyB)); // already cleared
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test
     public void closeThenDeleteDbDirRecreatesCatalogWithoutTouchingLegacy() throws Exception {
         File legacy = new File(parentCache, "recently_used");
         byte[] before = java.nio.file.Files.readAllBytes(legacy.toPath());

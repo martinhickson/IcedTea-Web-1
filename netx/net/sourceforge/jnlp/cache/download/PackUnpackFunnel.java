@@ -95,19 +95,36 @@ public final class PackUnpackFunnel {
                 int a = active.get();
                 long inflight = inFlightBytes.get();
                 long budget = budgetBytes();
-                // Always admit the first unpacker; otherwise require budget headroom.
-                boolean admit = a == 0 || inflight + reserve <= budget;
-                if (admit && inFlightBytes.compareAndSet(inflight, inflight + reserve)) {
-                    active.incrementAndGet();
+                if (a == 0) {
+                    // Empty pipeline: always admit exactly one unpacker (CAS), even if
+                    // reserve alone exceeds budget. Do NOT use a plain a==0 check +
+                    // separate byte CAS — two threads can both observe a==0 and both enter.
+                    if (!active.compareAndSet(0, 1)) {
+                        continue;
+                    }
+                    inFlightBytes.addAndGet(reserve);
                     if (spins > 0) {
-                        logDebug("PackUnpackFunnel admitted after wait spins=" + spins
-                                + " reserve=" + reserve + " inFlight=" + (inflight + reserve)
-                                + " active=" + active.get() + " budget=" + budget);
+                        logDebug("PackUnpackFunnel admitted first unpacker after wait spins=" + spins
+                                + " reserve=" + reserve + " budget=" + budget);
                     }
                     return;
                 }
-                spins++;
-                LockSupport.parkNanos(5_000_000L); // 5ms
+                // Pipeline busy: require budget headroom, then claim bytes + slot.
+                if (inflight + reserve > budget) {
+                    spins++;
+                    LockSupport.parkNanos(5_000_000L); // 5ms
+                    continue;
+                }
+                if (!inFlightBytes.compareAndSet(inflight, inflight + reserve)) {
+                    continue;
+                }
+                active.incrementAndGet();
+                if (spins > 0) {
+                    logDebug("PackUnpackFunnel admitted after wait spins=" + spins
+                            + " reserve=" + reserve + " inFlight=" + (inflight + reserve)
+                            + " active=" + active.get() + " budget=" + budget);
+                }
+                return;
             }
         } finally {
             waiting.decrementAndGet();

@@ -122,6 +122,7 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         showIncomplete = new JCheckBox();
         highLight = new JCheckBox();
         wordWrap = new JCheckBox();
+        wordWrap.setSelected(true); // long Download complete lines are unreadable without wrap
         showDebug = new JCheckBox();
         showInfo = new JCheckBox();
         showItw = new JCheckBox();
