@@ -3,12 +3,17 @@ package net.sourceforge.jnlp.security;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
+import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
+import javax.crypto.spec.IvParameterSpec;
+import javax.crypto.spec.SecretKeySpec;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
@@ -44,6 +49,17 @@ public final class ItwTls {
     };
 
     private static final SSLContext CTX = build();
+
+    /**
+     * Cipher-order strategy: default to ChaCha20-first and DISABLE AES-NI
+     * auto-detection (benchmark + CPUID flags). Rationale: ChaCha20-Poly1305 is
+     * fast in software on hardware without AES-NI (EKS/Graviton/VMs), robust to
+     * AES execution-unit contention on shared cores, and side-channel immune.
+     * The cost is only ~2-4x slower client decrypt than AES-NI AES on Win11.
+     * Set to true to re-enable detection. An explicit
+     * deployment.tls.client.cipherSuites override ALWAYS wins regardless.
+     */
+    private static final boolean ENABLE_AES_NI_DETECTION = false;
 
     private ItwTls() {}
 
@@ -94,10 +110,13 @@ public final class ItwTls {
         if (override != null && !override.trim().isEmpty()) {
             order = splitCsv(override);
             source = "override";
+        } else if (!ENABLE_AES_NI_DETECTION) {
+            order = NO_AES_NIO_ORDER;
+            source = "chacha-default";
         } else {
-            boolean aes = hasAesNni();
-            order = aes ? AES_NIO_ORDER : NO_AES_NIO_ORDER;
-            source = aes ? "aes-ni-detected" : "no-aes-ni-fallback";
+            Detection d = detectCipherPreference();
+            order = d.prefersAes ? AES_NIO_ORDER : NO_AES_NIO_ORDER;
+            source = d.source;
         }
         String resolved = String.join(",", order);
         try {
@@ -127,6 +146,66 @@ public final class ItwTls {
         return Arrays.stream(csv.split(","))
                 .map(String::trim).filter(s -> !s.isEmpty())
                 .toArray(String[]::new);
+    }
+
+    private static final class Detection {
+        final boolean prefersAes;
+        final String source;
+        Detection(boolean prefersAes, String source) {
+            this.prefersAes = prefersAes;
+            this.source = source;
+        }
+    }
+
+    /**
+     * Choose AES-GCM vs ChaCha20 by MEASURING the actual per-byte cipher speed
+     * on this JVM/CPU, falling back to CPUID flags when the benchmark can't run
+     * (e.g. ChaCha20 cipher absent on JDK < 12). Measuring catches two things a
+     * static flag check cannot: an AES-NI-less/slow CPU, AND contention on a
+     * shared/hyperthreaded core (EKS pods sharing a physical core both doing
+     * AES-heavy work degrade each other's AES throughput).
+     */
+    static Detection detectCipherPreference() {
+        final int size = 1 << 20; // 1 MiB
+        byte[] data = new byte[size];
+        new SecureRandom().nextBytes(data);
+        try {
+            Long aesMs = benchmark("AES/GCM/NoPadding", data);
+            Long chachaMs = benchmark("ChaCha20-Poly1305", data);
+            if (aesMs != null && chachaMs != null) {
+                return new Detection(aesMs <= chachaMs,
+                        aesMs <= chachaMs ? "aes-benchmark" : "chacha-benchmark");
+            }
+            // ChaCha unavailable (JDK < 12) — trust the flag heuristic
+            boolean aes = hasAesNni();
+            return new Detection(aes, aes ? "aes-ni-detected" : "no-aes-ni-fallback");
+        } catch (Throwable t) {
+            boolean aes = hasAesNni();
+            return new Detection(aes, aes ? "aes-ni-detected" : "no-aes-ni-fallback");
+        }
+    }
+
+    /** Encrypt {@code data} once with {@code alg}; returns ms, or null if unavailable. */
+    private static Long benchmark(String alg, byte[] data) {
+        try {
+            Cipher c = Cipher.getInstance(alg);
+            byte[] key = new byte[32];
+            new SecureRandom().nextBytes(key);
+            byte[] nonce = new byte[12];
+            new SecureRandom().nextBytes(nonce);
+            if (alg.startsWith("ChaCha")) {
+                c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "ChaCha20"),
+                        new IvParameterSpec(nonce));
+            } else {
+                c.init(Cipher.ENCRYPT_MODE, new SecretKeySpec(key, "AES"),
+                        new GCMParameterSpec(128, nonce));
+            }
+            long t0 = System.nanoTime();
+            c.doFinal(data);
+            return (System.nanoTime() - t0) / 1_000_000L;
+        } catch (Exception e) {
+            return null; // cipher or params unavailable on this JDK
+        }
     }
 
     static boolean hasAesNni() {
