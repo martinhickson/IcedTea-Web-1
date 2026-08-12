@@ -12,7 +12,7 @@
   <packaging>pom</packaging>
 
   <name>IcedTea-Web Maven Distribution</name>
-  <description>Maven-built IcedTea-Web distribution with .NET launcher and bundled Corretto</description>
+  <description>Maven-built IcedTea-Web distribution with .NET launcher and bundled Temurin JREs</description>
 
   <properties>
     <itw.distribution.root>${project.build.directory}/dist/icedtea-web-${project.version}</itw.distribution.root>
@@ -241,9 +241,9 @@
         <itw.distribution.platform>windows</itw.distribution.platform>
         <itw.dotnet.runtime.identifier>win-x64</itw.dotnet.runtime.identifier>
         <itw.launcher.extension>.exe</itw.launcher.extension>
-        <itw.corretto.url>https://corretto.aws/downloads/latest/amazon-corretto-11-x64-windows-jdk.zip</itw.corretto.url>
-        <itw.corretto.archive>${project.build.directory}/downloads/corretto-windows-jdk.zip</itw.corretto.archive>
-        <!-- Temurin JREs for multi-JDK support (Appendix D) -->
+        <!-- Temurin JREs for multi-JDK support (Appendix D). Corretto 11 is retired:
+             the download JVM must be a modern JDK (GREASE/modern TLS fingerprint), and
+             Temurin-11 JRE covers the app-side Java-11 requirement. -->
         <itw.temurin11.url>https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin11.url>
         <itw.temurin11.archive>${project.build.directory}/downloads/temurin-11-jre.zip</itw.temurin11.archive>
         <itw.temurin17.url>https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin17.url>
@@ -261,7 +261,7 @@
             <version>3.1.0</version>
             <executions>
               <execution>
-                <id>assemble-windows-dotnet-corretto-distribution</id>
+                <id>assemble-windows-dotnet-temurin-distribution</id>
                 <phase>package</phase>
                 <goals>
                   <goal>run</goal>
@@ -271,7 +271,6 @@
                     <delete dir="${itw.distribution.root}"/>
                     <mkdir dir="${itw.distribution.root}/bin"/>
                     <mkdir dir="${itw.distribution.root}/lib"/>
-                    <mkdir dir="${itw.distribution.root}/runtime/corretto"/>
                     <mkdir dir="${project.build.directory}/downloads"/>
 
                     <copy todir="${itw.distribution.root}/bin">
@@ -288,7 +287,6 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
                     <mkdir dir="${project.build.directory}/downloads"/>
 
-                    <get src="${itw.corretto.url}" dest="${itw.corretto.archive}" skipexisting="true"/>
                     <get src="${itw.temurin11.url}" dest="${itw.temurin11.archive}" skipexisting="true"/>
                     <get src="${itw.temurin17.url}" dest="${itw.temurin17.archive}" skipexisting="true"/>
                     <get src="${itw.temurin21.url}" dest="${itw.temurin21.archive}" skipexisting="true"/>
@@ -298,16 +296,13 @@
                     <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">
                       <zipfileset dir="${project.build.directory}/dist">
                         <exclude name="**/bin/*"/>
-                        <exclude name="**/runtime/corretto/**/bin/*"/>
                         <exclude name="**/runtime/temurin-*/**/bin/*"/>
                       </zipfileset>
                       <zipfileset dir="${project.build.directory}/dist" filemode="755">
                         <include name="**/bin/*"/>
-                        <include name="**/runtime/corretto/**/bin/*"/>
                         <include name="**/runtime/temurin-*/**/bin/*"/>
                       </zipfileset>
                     </zip>
-                    <unzip src="${itw.corretto.archive}" dest="${itw.distribution.root}/runtime/corretto"/>
                     <unzip src="${itw.temurin11.archive}" dest="${itw.distribution.root}/runtime/temurin-11"/>
                     <unzip src="${itw.temurin17.archive}" dest="${itw.distribution.root}/runtime/temurin-17"/>
                     <unzip src="${itw.temurin21.archive}" dest="${itw.distribution.root}/runtime/temurin-21"/>
