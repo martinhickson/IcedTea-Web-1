@@ -113,14 +113,17 @@ public final class ApacheHttpClient implements ItwHttpClient {
         }
         ClassicHttpResponse response = null;
         IOException last = null;
-        for (int attempt = 0; attempt < 3; attempt++) {
+        // Cipher-offer short-circuit only: a probe miss tries the next stage
+        // on this same request. Not an IO/download retry budget.
+        while (true) {
+            int stageAtStart = ItwTls.effectiveOffer(url.getHost());
             try {
                 response = client.execute(newRequest(uri, method, requestHeaders));
                 last = null;
                 break;
             } catch (IOException e) {
                 last = e;
-                if (!ItwTls.shouldRetryWithNextOffer(url.getHost(), e)) {
+                if (!ItwTls.continueOpenAfterHandshakeMiss(url.getHost(), e, stageAtStart)) {
                     throw e;
                 }
             }

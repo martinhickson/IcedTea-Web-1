@@ -11,6 +11,8 @@ import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSocket;
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import org.junit.jupiter.api.Test;
 
 public class ItwSslSocketFactoryTest {
@@ -55,6 +57,36 @@ public class ItwSslSocketFactoryTest {
             assertArrayEquals(new String[] { "TLSv1.3" }, sock.getSSLParameters().getProtocols());
         } finally {
             sock.close();
+        }
+    }
+
+    @Test
+    public void applyParametersFollowsHostOfferAfterCipherFallback() throws Exception {
+        String saved = JNLPRuntime.getConfiguration()
+                .getProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE);
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, ItwTls.CIPHER_MODE_PROBE);
+        ItwTls.resetHostOfferForTest();
+        try {
+            assertTrue(ItwTls.shouldRetryWithNextOffer("cdn.example",
+                    new javax.net.ssl.SSLHandshakeException("handshake_failure")));
+            SSLSocket sock = (SSLSocket) SSLContext.getDefault().getSocketFactory().createSocket();
+            try {
+                SSLParameters p = sock.getSSLParameters();
+                p.setServerNames(Collections.singletonList(new SNIHostName("cdn.example")));
+                sock.setSSLParameters(p);
+                ItwSslSocketFactory.applyParameters(sock);
+                assertArrayEquals(ItwTls.tls12Ciphers(), sock.getSSLParameters().getCipherSuites());
+                assertArrayEquals(new String[] { "TLSv1.2" }, sock.getSSLParameters().getProtocols());
+            } finally {
+                sock.close();
+            }
+        } finally {
+            if (saved != null) {
+                JNLPRuntime.getConfiguration()
+                        .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, saved);
+            }
+            ItwTls.resetHostOfferForTest();
         }
     }
 

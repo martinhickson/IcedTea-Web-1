@@ -35,6 +35,10 @@ public final class TlsProbeAccess {
         return ItwTls.OFFER_TLS12;
     }
 
+    public static int aes256() {
+        return ItwTls.OFFER_AES256;
+    }
+
     public static int full() {
         return ItwTls.OFFER_FULL;
     }

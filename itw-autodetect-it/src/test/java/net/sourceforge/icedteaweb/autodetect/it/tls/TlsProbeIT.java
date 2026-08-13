@@ -15,6 +15,7 @@ import javax.net.ssl.TrustManager;
 import javax.net.ssl.X509TrustManager;
 import net.sourceforge.jnlp.security.ApacheHttpClient;
 import net.sourceforge.jnlp.security.HttpResponse;
+import net.sourceforge.jnlp.security.OracleHttpClient;
 import net.sourceforge.jnlp.security.TlsProbeAccess;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,11 +55,12 @@ class TlsProbeIT {
         assumeCipher("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
         assumeCipher("TLS_CHACHA20_POLY1305_SHA256");
         assumeCipher("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384");
         try (UndertowHttpsServer server = UndertowHttpsServer.start(UndertowHttpsServer.Mode.TLS12_AES_RSA)) {
             assertEquals("tls-ok", getBody(server.url()));
             assertEquals(TlsProbeAccess.full(), TlsProbeAccess.offerStage(HOST));
-            assertTrue(server.closeNotifyCount() >= 2,
-                    "tls13 and tls12 probes must close_notify before AES; got "
+            assertTrue(server.closeNotifyCount() >= 3,
+                    "tls13, tls12, and aes256 probes must close_notify before AES-128; got "
                             + server.closeNotifyCount());
         }
     }
@@ -85,6 +87,18 @@ class TlsProbeIT {
     }
 
     @Test
+    void closeNotifyOnTls13ThenTls12HoldsAes256() throws Exception {
+        assumeCipher("TLS_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384");
+        try (UndertowHttpsServer server = UndertowHttpsServer.start(UndertowHttpsServer.Mode.TLS12_AES256)) {
+            assertEquals("tls-ok", getBody(server.url()));
+            assertEquals(TlsProbeAccess.aes256(), TlsProbeAccess.offerStage(HOST));
+            assertEquals(2, server.closeNotifyCount());
+        }
+    }
+
+    @Test
     void pkixFailureDoesNotAdvanceProbe() throws Exception {
         assumeCipher("TLS_CHACHA20_POLY1305_SHA256");
         SSLContext.setDefault(previousDefault);
@@ -97,6 +111,57 @@ class TlsProbeIT {
             assertEquals(TlsProbeAccess.tls13(), TlsProbeAccess.offerStage(HOST),
                     "PKIX must not walk the cipher list; got stage " + TlsProbeAccess.offerStage(HOST));
             assertEquals(0, server.closeNotifyCount());
+        }
+    }
+
+    @Test
+    void secondGetOnCachedFullDoesNotCloseNotifyAgain() throws Exception {
+        assumeCipher("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
+        assumeCipher("TLS_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384");
+        try (UndertowHttpsServer server = UndertowHttpsServer.start(UndertowHttpsServer.Mode.TLS12_AES_RSA)) {
+            assertEquals("tls-ok", getBody(server.url()));
+            int afterProbe = server.closeNotifyCount();
+            assertTrue(afterProbe >= 3);
+            assertEquals(TlsProbeAccess.full(), TlsProbeAccess.offerStage(HOST));
+            assertEquals("tls-ok", getBody(server.url()));
+            assertEquals(afterProbe, server.closeNotifyCount());
+        }
+    }
+
+    @Test
+    void headAlsoFallsThroughToAes() throws Exception {
+        assumeCipher("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
+        assumeCipher("TLS_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384");
+        try (UndertowHttpsServer server = UndertowHttpsServer.start(UndertowHttpsServer.Mode.TLS12_AES_RSA)) {
+            ApacheHttpClient client = new ApacheHttpClient();
+            try (HttpResponse response = client.open(new URL(server.url()), "HEAD", null, null)) {
+                assertEquals(200, response.getStatusCode());
+            }
+            assertEquals(TlsProbeAccess.full(), TlsProbeAccess.offerStage(HOST));
+            assertTrue(server.closeNotifyCount() >= 3);
+        }
+    }
+
+    @Test
+    void oracleClientAlsoFallsThroughToAes() throws Exception {
+        assumeCipher("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256");
+        assumeCipher("TLS_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256");
+        assumeCipher("TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384");
+        try (UndertowHttpsServer server = UndertowHttpsServer.start(UndertowHttpsServer.Mode.TLS12_AES_RSA)) {
+            OracleHttpClient client = new OracleHttpClient();
+            try (HttpResponse response = client.open(new URL(server.url()), "GET", null, null)) {
+                assertEquals(200, response.getStatusCode());
+                try (InputStream in = response.getBody()) {
+                    assertEquals("tls-ok", new String(in.readAllBytes(), StandardCharsets.UTF_8));
+                }
+            }
+            assertEquals(TlsProbeAccess.full(), TlsProbeAccess.offerStage(HOST));
+            assertTrue(server.closeNotifyCount() >= 3);
         }
     }
 

@@ -34,6 +34,11 @@ final class UndertowHttpsServer implements AutoCloseable {
                 new String[] { "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256" },
                 new int[] { ClientHelloCiphers.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 },
                 false),
+        TLS12_AES256(
+                new String[] { "TLSv1.2" },
+                new String[] { "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384" },
+                new int[] { ClientHelloCiphers.TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 },
+                false),
         TLS13_CHACHA(
                 new String[] { "TLSv1.3" },
                 new String[] { "TLS_CHACHA20_POLY1305_SHA256" },

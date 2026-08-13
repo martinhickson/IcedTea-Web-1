@@ -34,18 +34,21 @@ public final class ItwTls {
     /** Probe stage 2: TLS 1.2 ECDHE-ECDSA ChaCha only. */
     static final int OFFER_TLS12 = 1;
     static final int OFFER_PREFERRED = OFFER_TLS13;
+    /** Probe stage 3: TLS 1.2 ECDHE-RSA AES-256-GCM only. */
+    static final int OFFER_AES256 = 2;
     /** Probe exhausted: full protocol + cipher list. */
-    static final int OFFER_FULL = 2;
+    static final int OFFER_FULL = 3;
 
     /**
-     * Default ({@code probe}): two single-suite tries, then the full list.
+     * Default ({@code probe}): three single-suite tries, then the full list.
      * <ol>
      *   <li>TLS 1.3 {@code TLS_CHACHA20_POLY1305_SHA256}</li>
      *   <li>TLS 1.2 {@code TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256}</li>
+     *   <li>TLS 1.2 {@code TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384}</li>
      *   <li>full ChaCha-first multi-suite list</li>
      * </ol>
-     * Each SSL handshake abort (cipher miss, {@code close_notify}, protocol
-     * alert) advances one stage; the chosen stage is cached per host.
+     * Cipher misses short-circuit to the next stage inside the HTTP open;
+     * they are not download IO retries. The chosen stage is cached per host.
      * {@code full}: skip probing and use the multi-suite list.
      */
     public static final String CIPHER_MODE_PROBE = "probe";
@@ -53,6 +56,7 @@ public final class ItwTls {
 
     static final String TLS13_CHACHA = "TLS_CHACHA20_POLY1305_SHA256";
     static final String TLS12_CHACHA = "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256";
+    static final String TLS12_AES256 = "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384";
 
     private static final String[] TLS13_PROTOCOLS = { "TLSv1.3" };
     private static final String[] TLS12_PROTOCOLS = { "TLSv1.2" };
@@ -85,7 +89,7 @@ public final class ItwTls {
     private static final SSLContext CTX = build();
 
     /**
-     * Per-host offer stage: 0 TLS 1.3 probe, 1 TLS 1.2 probe, 2 full list.
+     * Per-host offer stage: 0 TLS 1.3, 1 TLS 1.2 ChaCha, 2 AES-256-GCM, 3 full.
      * ConcurrentHashMap + AtomicInteger: no locks on the handshake path.
      */
     private static final ConcurrentHashMap<String, AtomicInteger> HOST_OFFER = new ConcurrentHashMap<>();
@@ -112,6 +116,7 @@ public final class ItwTls {
         static final String[] FULL = resolveFullCipherSuites();
         static final String[] TLS13 = resolveSupported(TLS13_CHACHA);
         static final String[] TLS12 = resolveSupported(TLS12_CHACHA);
+        static final String[] AES256 = resolveSupported(TLS12_AES256);
         static {
             logResolved();
         }
@@ -125,8 +130,9 @@ public final class ItwTls {
                     "ItwTls ready: mode=" + (isProbeMode() ? CIPHER_MODE_PROBE : CIPHER_MODE_FULL)
                     + " tls13=" + joinOrNone(Lists.TLS13)
                     + " tls12=" + joinOrNone(Lists.TLS12)
+                    + " aes256=" + joinOrNone(Lists.AES256)
                     + (isProbeMode()
-                            ? " (try TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then full list)"
+                            ? " (try TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then TLS 1.2 ECDHE-RSA AES256-GCM, then full list)"
                             : " (legacy multi-suite list)"));
         } catch (Exception ignored) {}
     }
@@ -145,6 +151,10 @@ public final class ItwTls {
 
     static String[] tls12Ciphers() {
         return Lists.TLS12;
+    }
+
+    static String[] aes256Ciphers() {
+        return Lists.AES256;
     }
 
     static String[] ciphers() {
@@ -201,6 +211,8 @@ public final class ItwTls {
                 return Lists.TLS13;
             case OFFER_TLS12:
                 return Lists.TLS12;
+            case OFFER_AES256:
+                return Lists.AES256;
             default:
                 return Lists.FULL;
         }
@@ -215,6 +227,8 @@ public final class ItwTls {
                 return TLS13_PROTOCOLS;
             case OFFER_TLS12:
                 return TLS12_PROTOCOLS;
+            case OFFER_AES256:
+                return TLS12_PROTOCOLS;
             default:
                 return FULL_PROTOCOLS;
         }
@@ -222,12 +236,19 @@ public final class ItwTls {
 
     static int effectiveStage(int state) {
         if (state == OFFER_TLS13 && Lists.TLS13.length == 0) {
-            return Lists.TLS12.length == 0 ? OFFER_FULL : OFFER_TLS12;
+            return effectiveStage(OFFER_TLS12);
         }
         if (state == OFFER_TLS12 && Lists.TLS12.length == 0) {
+            return effectiveStage(OFFER_AES256);
+        }
+        if (state == OFFER_AES256 && Lists.AES256.length == 0) {
             return OFFER_FULL;
         }
         return state;
+    }
+
+    static int effectiveOffer(String host) {
+        return effectiveStage(offerState(host).get());
     }
 
     static String stageName(int state) {
@@ -236,6 +257,8 @@ public final class ItwTls {
                 return "tls13";
             case OFFER_TLS12:
                 return "tls12";
+            case OFFER_AES256:
+                return "aes256";
             default:
                 return "full";
         }
@@ -282,15 +305,50 @@ public final class ItwTls {
         if (TLS12_CHACHA.equals(cipher)) {
             return OFFER_TLS12;
         }
+        if (TLS12_AES256.equals(cipher)) {
+            return OFFER_AES256;
+        }
         return OFFER_FULL;
     }
 
     /**
      * @return true if the caller should retry this host with the next probe stage
-     *         (TLS 1.3 → TLS 1.2 → full)
+     *         (TLS 1.3 → TLS 1.2 ChaCha → AES-256-GCM → full). False once the
+     *         host is already on the full list — the offer does not advance further.
      */
     static boolean shouldRetryWithNextOffer(String host, Throwable failure) {
         return shouldRetryWithFullCiphers(host, failure);
+    }
+
+    /**
+     * Cipher probe miss: advance the host offer if a narrower stage is still
+     * current, log DEBUG (no stack), and return true so {@code open()} tries
+     * the next offer on this same request. Not a download failure and not an
+     * IO retry.
+     */
+    public static boolean shortCircuitToNextOffer(String host, Throwable failure) {
+        if (!isProbeMode() || !isCipherNegotiationFailure(failure)) {
+            return false;
+        }
+        return shouldRetryWithNextOffer(host, failure);
+    }
+
+    /**
+     * Inner {@code open()} short-circuit: try the next cipher offer on this
+     * same URL. Returns false once the full list has already been tried for
+     * this attempt ({@code stageAtStart == FULL}) or the failure is not a
+     * probe miss. A sibling thread may already have moved the host to full
+     * while this socket still used a narrower offer — that still continues
+     * once, with the current (full) list.
+     */
+    public static boolean continueOpenAfterHandshakeMiss(String host, Throwable failure,
+            int stageAtStart) {
+        if (shortCircuitToNextOffer(host, failure)) {
+            return true;
+        }
+        return isProbeMode()
+                && isCipherNegotiationFailure(failure)
+                && stageAtStart != OFFER_FULL;
     }
 
     /**
@@ -305,31 +363,59 @@ public final class ItwTls {
         if (next == previous) {
             return false;
         }
+        String[] missed = suitesFor(host);
         offerState(host).compareAndSet(previous, next);
-        try {
-            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
-                    "ItwTls fail host=" + hostKey(host)
-                    + " stage=" + stageName(previous)
-                    + " (" + failure.getClass().getSimpleName()
-                    + (failure.getMessage() != null ? ": " + failure.getMessage() : "")
-                    + "); next=" + stageName(next));
-        } catch (Exception ignored) {}
+        logCipherNotNegotiated(host, previous, next, missed, failure);
         return true;
+    }
+
+    private static void logCipherNotNegotiated(String host, int previous, int next,
+            String[] missed, Throwable failure) {
+        try {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                    "ItwTls cipher suite not negotiated host=" + hostKey(host)
+                    + " stage=" + stageName(previous)
+                    + " suites=" + String.join(",", missed)
+                    + " (" + handshakeMissReason(failure) + "); trying "
+                    + stageName(next));
+        } catch (Exception ignored) {}
+    }
+
+    public static String handshakeMissReason(Throwable t) {
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            String m = c.getMessage();
+            if (m == null) {
+                continue;
+            }
+            String l = m.toLowerCase(Locale.ROOT);
+            if (l.contains("close_notify")) {
+                return "close_notify";
+            }
+            if (l.contains("handshake_failure") || l.contains("received fatal alert: handshake")) {
+                return "handshake_failure";
+            }
+            if (l.contains("no cipher suites in common")) {
+                return "no cipher suites in common";
+            }
+        }
+        return t != null ? t.getClass().getSimpleName() : "unknown";
     }
 
     static int nextStage(int current) {
         int stage = effectiveStage(current);
         if (stage == OFFER_TLS13) {
-            return Lists.TLS12.length > 0 ? OFFER_TLS12 : OFFER_FULL;
+            return effectiveStage(OFFER_TLS12);
         }
         if (stage == OFFER_TLS12) {
-            return OFFER_FULL;
+            return effectiveStage(OFFER_AES256);
         }
         return OFFER_FULL;
     }
 
     static boolean isPreferredCipher(String cipher) {
-        return TLS13_CHACHA.equals(cipher) || TLS12_CHACHA.equals(cipher);
+        return TLS13_CHACHA.equals(cipher)
+                || TLS12_CHACHA.equals(cipher)
+                || TLS12_AES256.equals(cipher);
     }
 
     static void resetHostOfferForTest() {
@@ -345,7 +431,7 @@ public final class ItwTls {
         return host.toLowerCase(Locale.ROOT);
     }
 
-    static boolean isCipherNegotiationFailure(Throwable t) {
+    public static boolean isCipherNegotiationFailure(Throwable t) {
         boolean handshake = false;
         for (Throwable c = t; c != null; c = c.getCause()) {
             if (c instanceof SSLPeerUnverifiedException) {
@@ -428,7 +514,8 @@ public final class ItwTls {
         try {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
                     "ItwTls probe tls13=" + joinOrNone(Lists.TLS13)
-                    + " tls12=" + joinOrNone(Lists.TLS12));
+                    + " tls12=" + joinOrNone(Lists.TLS12)
+                    + " aes256=" + joinOrNone(Lists.AES256));
         } catch (Exception ignored) {}
     }
 

@@ -440,7 +440,7 @@ public class Defaults {
                         null,
                         null
                 },
-                /* probe (default): TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then full list */
+                /* probe (default): TLS 1.3 ChaCha, TLS 1.2 ECDHE-ECDSA ChaCha, TLS 1.2 AES-256-GCM, then full */
                 {
                         DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE,
                         BasicValueValidators.getStringValidator(new String[] {

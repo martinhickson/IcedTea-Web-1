@@ -34,6 +34,7 @@ import net.sourceforge.jnlp.runtime.Boot;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.security.ConnectionFactory;
+import net.sourceforge.jnlp.security.ItwTls;
 import net.sourceforge.jnlp.security.SecurityDialogs;
 import net.sourceforge.jnlp.security.dialogs.InetSecurity511Panel;
 import net.sourceforge.jnlp.util.HttpUtils;
@@ -564,9 +565,16 @@ public class ResourceDownloader implements Runnable {
 
                     }
                 } catch (IOException e) {
-                    // continue to next candidate
-                    logResourceDebug(resourceLocation, "While processing " + url.toString() + " by " + requestMethod + " for resource " + resource.toString() + " got " + e + ": ");
-                    logResourceDebug(resourceLocation, e);
+                    if (ItwTls.isCipherNegotiationFailure(e)) {
+                        logResourceDebug(resourceLocation, "TLS cipher suite not negotiated for "
+                                + url + " by " + requestMethod + " ("
+                                + ItwTls.handshakeMissReason(e) + ")");
+                    } else {
+                        logResourceDebug(resourceLocation, "While processing " + url.toString()
+                                + " by " + requestMethod + " for resource " + resource.toString()
+                                + " got " + e + ": ");
+                        logResourceDebug(resourceLocation, e);
+                    }
                 }
             }
         }
@@ -596,16 +604,23 @@ public class ResourceDownloader implements Runnable {
                     // HTTP error codes (404 etc.) are not exceptions; check the
                     // status explicitly to fall through to the next candidate.
                     if (response.getStatusCode() >= 400) {
-                        logResourceDebug(downloadTo, "GET returned " + response.getStatusCode() + " for " + candidate + ", trying next URL candidate");
+                        logResourceDebug(downloadTo, "GET returned " + response.getStatusCode()
+                                + " for " + candidate + ", trying next URL candidate");
                         response.close();
                         response = null;
                         continue;
                     }
                     downloadFrom = candidate;
-                    break; // success
+                    break;
                 } catch (IOException e) {
                     lastError = e;
-                    logResourceDebug(downloadTo, "GET failed for " + candidate + ", trying next URL candidate");
+                    if (ItwTls.isCipherNegotiationFailure(e)) {
+                        logResourceDebug(downloadTo, "TLS cipher suite not negotiated for "
+                                + candidate + " (" + ItwTls.handshakeMissReason(e) + ")");
+                    } else {
+                        logResourceDebug(downloadTo, "GET failed for " + candidate
+                                + ", trying next URL candidate");
+                    }
                 }
             }
             if (response == null) {

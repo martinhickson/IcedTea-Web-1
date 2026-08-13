@@ -290,8 +290,9 @@ public final class DeploymentConfiguration {
     public static final String KEY_TLS_CLIENT_CIPHER_SUITES = "deployment.tls.client.cipherSuites";
     /**
      * TLS cipher offer mode: {@code probe} (default) tries TLS 1.3 ChaCha,
-     * then TLS 1.2 ECDHE-ECDSA ChaCha, then the full list; {@code full} is
-     * the ChaCha-first multi-suite list with no probing.
+     * then TLS 1.2 ECDHE-ECDSA ChaCha, then TLS 1.2 ECDHE-RSA AES-256-GCM,
+     * then the full list (inner short-circuit in HTTP open, not IO retries);
+     * {@code full} is the ChaCha-first multi-suite list with no probing.
      */
     public static final String KEY_TLS_CLIENT_CIPHER_MODE = "deployment.tls.client.cipherMode";
     public static final String KEY_HTTP_CLIENT = "deployment.http.client";

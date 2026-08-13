@@ -21,7 +21,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 /**
- * Probe TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then the full list.
+ * Probe TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then TLS 1.2
+ * AES-256-GCM, then the full list. Cipher misses short-circuit inside open().
  */
 public class ItwTlsCipherProbeTest {
 
@@ -90,6 +91,16 @@ public class ItwTlsCipherProbeTest {
     }
 
     @Test
+    public void negotiatedAes256CachesAes256ProbeForHost() {
+        assumeAes256Supported();
+        ItwTls.noteNegotiated("cdn.example", ItwTls.TLS12_AES256, "TLSv1.2");
+        assertEquals(ItwTls.OFFER_AES256, ItwTls.offerState("cdn.example").get());
+        assertArrayEquals(ItwTls.aes256Ciphers(), ItwTls.suitesFor("cdn.example"));
+        assertArrayEquals(new String[] { "TLSv1.2" }, ItwTls.protocolsFor("cdn.example"));
+        assertArrayEquals(ItwTls.tls13Ciphers(), ItwTls.suitesFor("fresh.example"));
+    }
+
+    @Test
     public void negotiatedAesCachesFullListForThatHostOnly() {
         ItwTls.noteNegotiated("legacy.example", "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256", "TLSv1.2");
         assertEquals(ItwTls.OFFER_FULL, ItwTls.offerState("legacy.example").get());
@@ -98,42 +109,53 @@ public class ItwTlsCipherProbeTest {
     }
 
     @Test
-    public void handshakeFailureAdvancesTls13ThenTls12ThenSticksToFull() {
+    public void handshakeFailureAdvancesTls13ThenTls12ThenAes256ThenSticksToFull() {
         SSLHandshakeException fail = new SSLHandshakeException("Received fatal alert: handshake_failure");
-        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
-        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("app.example").get());
-        assertArrayEquals(ItwTls.tls12Ciphers(), ItwTls.suitesFor("app.example"));
-        assertArrayEquals(new String[] { "TLSv1.2" }, ItwTls.protocolsFor("app.example"));
-
-        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
-        assertEquals(ItwTls.OFFER_FULL, ItwTls.offerState("app.example").get());
-        assertArrayEquals(ItwTls.fullCiphers(), ItwTls.suitesFor("app.example"));
-        assertFalse(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        assertWalksToFull("app.example", fail);
+        assertFalse(ItwTls.shortCircuitToNextOffer("app.example", fail));
+        assertTrue(ItwTls.continueOpenAfterHandshakeMiss("app.example", fail, ItwTls.OFFER_TLS13),
+                "open() must try the current offer once if this attempt started on a narrower stage");
+        assertFalse(ItwTls.continueOpenAfterHandshakeMiss("app.example", fail, ItwTls.OFFER_FULL));
     }
 
     @Test
-    public void closeNotifyDuringHandshakeAdvancesTls13ThenTls12ThenFull() {
+    public void closeNotifyDuringHandshakeAdvancesTls13ThenTls12ThenAes256ThenFull() {
         SSLProtocolException fail = new SSLProtocolException("Received close_notify during handshake");
         assertTrue(ItwTls.isCipherNegotiationFailure(fail));
-        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
-        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("app.example").get());
-        assertArrayEquals(ItwTls.tls12Ciphers(), ItwTls.suitesFor("app.example"));
-        assertArrayEquals(new String[] { "TLSv1.2" }, ItwTls.protocolsFor("app.example"));
-
-        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        assertWalksToFull("app.example", fail);
+        assertFalse(ItwTls.shortCircuitToNextOffer("app.example", fail));
+        assertTrue(ItwTls.continueOpenAfterHandshakeMiss("app.example", fail, ItwTls.OFFER_TLS12),
+                "parallel GET must continue this same URL after siblings already moved the host to full");
         assertEquals(ItwTls.OFFER_FULL, ItwTls.offerState("app.example").get());
-        assertArrayEquals(ItwTls.fullCiphers(), ItwTls.suitesFor("app.example"));
-        assertFalse(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        assertFalse(ItwTls.continueOpenAfterHandshakeMiss("app.example", fail, ItwTls.OFFER_FULL));
+    }
+
+    @Test
+    public void handshakeMissReasonIsAShortPhraseNotAStack() {
+        assertEquals("close_notify", ItwTls.handshakeMissReason(
+                new SSLProtocolException("Received close_notify during handshake")));
+        assertEquals("handshake_failure", ItwTls.handshakeMissReason(
+                new SSLHandshakeException("Received fatal alert: handshake_failure")));
+        assertEquals("no cipher suites in common", ItwTls.handshakeMissReason(
+                new IOException("no cipher suites in common")));
+        assertEquals("close_notify", ItwTls.handshakeMissReason(
+                new IOException("I/O", new SSLProtocolException("Received close_notify during handshake"))));
+    }
+
+    @Test
+    public void fullModeDoesNotContinueOpenOnHandshakeMiss() {
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, ItwTls.CIPHER_MODE_FULL);
+        SSLHandshakeException fail = new SSLHandshakeException("Received fatal alert: handshake_failure");
+        assertFalse(ItwTls.continueOpenAfterHandshakeMiss("full.example", fail, ItwTls.OFFER_TLS13));
+        assertFalse(ItwTls.shortCircuitToNextOffer("full.example", fail));
     }
 
     @Test
     public void wrappedCloseNotifyStillRetries() {
         IOException wrapped = new IOException("I/O",
                 new SSLProtocolException("Received close_notify during handshake"));
-        assertTrue(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
-        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("nested.example").get());
-        assertTrue(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
-        assertFalse(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
+        assertWalksToFull("nested.example", wrapped);
     }
 
     @Test
@@ -142,6 +164,8 @@ public class ItwTlsCipherProbeTest {
                 new SSLPeerUnverifiedException("peer not authenticated")));
         assertFalse(ItwTls.shouldRetryWithNextOffer("app.example",
                 new SSLHandshakeException("PKIX path building failed")));
+        assertFalse(ItwTls.continueOpenAfterHandshakeMiss("app.example",
+                new SSLHandshakeException("PKIX path building failed"), ItwTls.OFFER_TLS13));
         assertEquals(ItwTls.OFFER_UNKNOWN, ItwTls.offerState("app.example").get());
     }
 
@@ -156,10 +180,7 @@ public class ItwTlsCipherProbeTest {
     public void nestedHandshakeFailureStillRetries() {
         IOException wrapped = new IOException("I/O",
                 new SSLHandshakeException("Received fatal alert: handshake_failure"));
-        assertTrue(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
-        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("nested.example").get());
-        assertTrue(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
-        assertFalse(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
+        assertWalksToFull("nested.example", wrapped);
     }
 
     @Test
@@ -257,6 +278,9 @@ public class ItwTlsCipherProbeTest {
         assertEquals(ItwTls.TLS13_CHACHA, ItwTls.offeredCipherSummary("fresh.example"));
         assertEquals("tls13", ItwTls.stageName(ItwTls.OFFER_TLS13));
         assertEquals("tls12", ItwTls.stageName(ItwTls.OFFER_TLS12));
+        if (ItwTls.aes256Ciphers().length > 0) {
+            assertEquals("aes256", ItwTls.stageName(ItwTls.OFFER_AES256));
+        }
         assertEquals("full", ItwTls.stageName(ItwTls.OFFER_FULL));
         assertNotNull(ItwTls.context());
     }
@@ -295,5 +319,115 @@ public class ItwTlsCipherProbeTest {
     @Test
     public void probeCiphersIsTheTls13Suite() {
         assertArrayEquals(ItwTls.tls13Ciphers(), ItwTls.probeCiphers());
+    }
+
+    @Test
+    public void genericSslExceptionIsAProbeMiss() {
+        javax.net.ssl.SSLException fail = new javax.net.ssl.SSLException("protocol error");
+        assertTrue(ItwTls.isCipherNegotiationFailure(fail));
+        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("app.example").get());
+    }
+
+    @Test
+    public void closeNotifyInIoExceptionMessageStillRetries() {
+        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example",
+                new IOException("Received close_notify during handshake")));
+        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("app.example").get());
+    }
+
+    @Test
+    public void pkixCauseWinsOverOuterSslException() {
+        javax.net.ssl.SSLException outer = new javax.net.ssl.SSLException("handshake failed");
+        outer.initCause(new SSLHandshakeException("PKIX path building failed"));
+        assertFalse(ItwTls.isCipherNegotiationFailure(outer));
+        assertFalse(ItwTls.shouldRetryWithNextOffer("app.example", outer));
+        assertEquals(ItwTls.OFFER_UNKNOWN, ItwTls.offerState("app.example").get());
+    }
+
+    @Test
+    public void peerUnverifiedCauseDoesNotFallback() {
+        javax.net.ssl.SSLException outer = new javax.net.ssl.SSLException("peer");
+        outer.initCause(new SSLPeerUnverifiedException("peer not authenticated"));
+        assertFalse(ItwTls.shouldRetryWithNextOffer("app.example", outer));
+        assertEquals(ItwTls.OFFER_UNKNOWN, ItwTls.offerState("app.example").get());
+    }
+
+    @Test
+    public void unableToFindValidCertificationDoesNotFallback() {
+        assertFalse(ItwTls.shouldRetryWithNextOffer("app.example",
+                new SSLHandshakeException("unable to find valid certification path to requested target")));
+        assertEquals(ItwTls.OFFER_UNKNOWN, ItwTls.offerState("app.example").get());
+    }
+
+    @Test
+    public void noteNegotiatedNullCipherIsANoOp() {
+        ItwTls.noteNegotiated("app.example", null, "TLSv1.3");
+        assertEquals(ItwTls.OFFER_UNKNOWN, ItwTls.offerState("app.example").get());
+        assertArrayEquals(ItwTls.tls13Ciphers(), ItwTls.suitesFor("app.example"));
+    }
+
+    @Test
+    public void emptyAndProbeModeAreCaseInsensitiveProbe() {
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, "");
+        assertTrue(ItwTls.isProbeMode());
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, "  Probe  ");
+        assertTrue(ItwTls.isProbeMode());
+    }
+
+    @Test
+    public void fullModeNoteNegotiatedDoesNotHoldAProbeStage() {
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, ItwTls.CIPHER_MODE_FULL);
+        ItwTls.noteNegotiated("cdn.example", ItwTls.TLS13_CHACHA, "TLSv1.3");
+        assertArrayEquals(ItwTls.fullCiphers(), ItwTls.suitesFor("cdn.example"));
+        assertArrayEquals(new String[] { "TLSv1.3", "TLSv1.2" }, ItwTls.protocolsFor("cdn.example"));
+    }
+
+    @Test
+    public void shouldRetryWithFullCiphersIsTheSameAdvance() {
+        SSLHandshakeException fail = new SSLHandshakeException("handshake_failure");
+        assertTrue(ItwTls.shouldRetryWithFullCiphers("app.example", fail));
+        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("app.example").get());
+    }
+
+    @Test
+    public void offeredCipherSummaryFollowsHostAdvance() {
+        SSLHandshakeException fail = new SSLHandshakeException("handshake_failure");
+        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        assertEquals(ItwTls.TLS12_CHACHA, ItwTls.offeredCipherSummary("app.example"));
+        if (ItwTls.aes256Ciphers().length > 0) {
+            assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+            assertEquals(ItwTls.TLS12_AES256, ItwTls.offeredCipherSummary("app.example"));
+            assertArrayEquals(new String[] { "TLSv1.2" }, ItwTls.protocolsFor("app.example"));
+        }
+        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        assertEquals(String.join(",", ItwTls.fullCiphers()), ItwTls.offeredCipherSummary("app.example"));
+        assertArrayEquals(new String[] { "TLSv1.3", "TLSv1.2" }, ItwTls.protocolsFor("app.example"));
+    }
+
+    private static void assumeAes256Supported() {
+        org.junit.jupiter.api.Assumptions.assumeTrue(ItwTls.aes256Ciphers().length > 0,
+                "JVM does not support " + ItwTls.TLS12_AES256);
+    }
+
+    /** TLS 1.3 → TLS 1.2 ChaCha → AES-256-GCM (if supported) → full. */
+    private static void assertWalksToFull(String host, Exception fail) {
+        assertTrue(ItwTls.shouldRetryWithNextOffer(host, fail));
+        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState(host).get());
+        assertArrayEquals(ItwTls.tls12Ciphers(), ItwTls.suitesFor(host));
+        assertArrayEquals(new String[] { "TLSv1.2" }, ItwTls.protocolsFor(host));
+        if (ItwTls.aes256Ciphers().length > 0) {
+            assertTrue(ItwTls.shouldRetryWithNextOffer(host, fail));
+            assertEquals(ItwTls.OFFER_AES256, ItwTls.offerState(host).get());
+            assertArrayEquals(ItwTls.aes256Ciphers(), ItwTls.suitesFor(host));
+            assertArrayEquals(new String[] { "TLSv1.2" }, ItwTls.protocolsFor(host));
+        }
+        assertTrue(ItwTls.shouldRetryWithNextOffer(host, fail));
+        assertEquals(ItwTls.OFFER_FULL, ItwTls.offerState(host).get());
+        assertArrayEquals(ItwTls.fullCiphers(), ItwTls.suitesFor(host));
+        assertFalse(ItwTls.shouldRetryWithNextOffer(host, fail));
     }
 }

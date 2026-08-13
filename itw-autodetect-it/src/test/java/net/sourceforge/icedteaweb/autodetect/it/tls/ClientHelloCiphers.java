@@ -11,6 +11,7 @@ final class ClientHelloCiphers {
     static final int TLS_CHACHA20_POLY1305_SHA256 = 0x1303;
     static final int TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256 = 0xCCA9;
     static final int TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256 = 0xC02F;
+    static final int TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384 = 0xC030;
 
     enum Outcome {
         INCOMPLETE,
@@ -70,5 +71,35 @@ final class ClientHelloCiphers {
     static int recordLength(ByteBuffer src) {
         int pos = src.position();
         return 5 + (((src.get(pos + 3) & 0xff) << 8) | (src.get(pos + 4) & 0xff));
+    }
+
+    static ByteBuffer syntheticHello(int... cipherIds) {
+        int csLen = cipherIds.length * 2;
+        int body = 2 + 32 + 1 + 2 + csLen + 1 + 1;
+        int recLen = 4 + body;
+        ByteBuffer buf = ByteBuffer.allocate(5 + recLen);
+        buf.put((byte) 22);
+        buf.put((byte) 3);
+        buf.put((byte) 3);
+        buf.put((byte) (recLen >> 8));
+        buf.put((byte) recLen);
+        buf.put((byte) 1);
+        buf.put((byte) 0);
+        buf.put((byte) (body >> 8));
+        buf.put((byte) body);
+        buf.put((byte) 3);
+        buf.put((byte) 3);
+        buf.put(new byte[32]);
+        buf.put((byte) 0);
+        buf.put((byte) (csLen >> 8));
+        buf.put((byte) csLen);
+        for (int id : cipherIds) {
+            buf.put((byte) (id >> 8));
+            buf.put((byte) id);
+        }
+        buf.put((byte) 1);
+        buf.put((byte) 0);
+        buf.flip();
+        return buf;
     }
 }
