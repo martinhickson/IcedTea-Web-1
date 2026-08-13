@@ -75,10 +75,10 @@ public final class GroupStats {
             if (s.ttfbMillis[i] > 0) sumTtfb += s.ttfbMillis[i];
             if (s.transferMillis[i] > 0) sumTransfer += s.transferMillis[i];
             if (s.throughputKBps[i] > 0 && s.throughputKBps[i] < minThr) minThr = s.throughputKBps[i];
-            // Reused keep-alive: connect completes almost immediately after slot start.
-            // connectMillis is an absolute wall clock (see JarSlot.onConnect), not a delta.
-            if (slot.connectMillis >= 0 && slot.startMillis >= 0
-                    && slot.connectMillis - slot.startMillis <= 1) {
+            // Reused keep-alive: connect start→end is near-instant. Do NOT compare against
+            // slot.startMillis (shared group start) — late jars would look like handshakes.
+            if (slot.connectMillis >= 0 && slot.connectStartMillis >= 0
+                    && slot.connectMillis - slot.connectStartMillis <= 1) {
                 reused++;
             }
         }

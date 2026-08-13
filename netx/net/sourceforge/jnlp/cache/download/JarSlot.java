@@ -18,6 +18,9 @@ public final class JarSlot {
     final CompletableFuture<Void> settled = new CompletableFuture<>();
 
     volatile long startMillis;
+    /** Wall clock when HTTP connect began ({@code -1} if unknown). */
+    volatile long connectStartMillis = -1;
+    /** Wall clock when HTTP connect finished ({@code -1} if unknown). */
     volatile long connectMillis = -1;
     volatile long firstByteMillis = -1;
     volatile long lastByteMillis  = -1;
@@ -44,7 +47,15 @@ public final class JarSlot {
         transferred.addAndGet(deltaBytes);
     }
 
-    public void onConnect(long now)         { this.connectMillis = now; }
+    /** Record connect completion; treat as zero-duration (reused) when start unknown. */
+    public void onConnect(long now) {
+        onConnect(now, now);
+    }
+
+    public void onConnect(long connectStart, long connectEnd) {
+        this.connectStartMillis = connectStart;
+        this.connectMillis = connectEnd;
+    }
 
     public void onFirstByte(long now) {
         if (firstByteMillis == -1) firstByteMillis = now;

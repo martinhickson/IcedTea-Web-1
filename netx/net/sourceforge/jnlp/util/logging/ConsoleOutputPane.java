@@ -258,14 +258,14 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         };
     }
 
-    private void syncPlayPauseButtons() {
+    void syncPlayPauseButtons() {
         final boolean live = autorefresh.isSelected();
         play.setEnabled(!live);
         pause.setEnabled(live);
         refresh.setEnabled(!live);
     }
 
-    private void setAutoRefreshLive(final boolean live) {
+    void setAutoRefreshLive(final boolean live) {
         if (autorefresh.isSelected() == live) {
             syncPlayPauseButtons();
             return;
@@ -277,6 +277,19 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         } else {
             statistics.setText(model.createStatisticHint());
         }
+    }
+
+    /** Package-visible for unit tests. */
+    boolean isAutoRefreshLive() {
+        return autorefresh.isSelected();
+    }
+
+    boolean isPlayEnabled() {
+        return play.isEnabled();
+    }
+
+    boolean isPauseEnabled() {
+        return pause.isEnabled();
     }
 
     final ActionListener defaultActionSingleton = createDefaultAction();

@@ -655,8 +655,9 @@ public class ResourceDownloader implements Runnable {
                 net.sourceforge.jnlp.security.HttpClientProvider.getDefault().open(location, "GET", headers, timing);
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot != null) {
-            long connected = timing.connectEndMillis > 0 ? timing.connectEndMillis : System.currentTimeMillis();
-            slot.onConnect(connected);
+            long end = timing.connectEndMillis > 0 ? timing.connectEndMillis : System.currentTimeMillis();
+            long start = timing.connectStartMillis > 0 ? timing.connectStartMillis : end;
+            slot.onConnect(start, end);
         }
         return response;
     }
@@ -929,6 +930,23 @@ public class ResourceDownloader implements Runnable {
      * so concurrent pack.gz expansion stays under a heap-derived byte budget while
      * always keeping at least one unpack running.
      */
+    /**
+     * Prefer already-counted wire bytes, else HTTP Content-Length, else declared resource size.
+     * Package-visible for unit tests.
+     */
+    static long packWireHintBytes(long slotTransferred, long contentLength, long resourceSize) {
+        if (slotTransferred > 0L) {
+            return slotTransferred;
+        }
+        if (contentLength > 0L) {
+            return contentLength;
+        }
+        if (resourceSize > 0L) {
+            return resourceSize;
+        }
+        return 0L;
+    }
+
     private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream) throws IOException {
         return unpackPackGzToCacheFile(cacheLocation, packGzStream, -1L);
     }
@@ -941,13 +959,7 @@ public class ResourceDownloader implements Runnable {
         // where class-heavy packs peaked ~30–34× pack.gz wire. Prefer HTTP Content-Length
         // — slot.transferred() is still 0 at stream start, and resource size may be -1.
         long sizeHint = resource.getSize();
-        long wireHint = slot != null ? slot.transferred() : 0L;
-        if (wireHint <= 0L && contentLength > 0L) {
-            wireHint = contentLength;
-        }
-        if (wireHint <= 0L && sizeHint > 0L) {
-            wireHint = sizeHint;
-        }
+        long wireHint = packWireHintBytes(slot != null ? slot.transferred() : 0L, contentLength, sizeHint);
         long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
                 .estimateReserveBytes(wireHint, sizeHint);
         net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {

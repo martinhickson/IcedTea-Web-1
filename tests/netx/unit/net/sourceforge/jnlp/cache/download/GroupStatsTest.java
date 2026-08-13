@@ -26,8 +26,9 @@ public class GroupStatsTest {
                 url("http://localhost/c.jar")));
 
         JarSlot dl = g.slot(0);
-        dl.onConnect(dl.startMillis); // reused connection (connect - start <= 1)
-        dl.onFirstByte(dl.startMillis + 5);
+        // Late jar relative to group start, but connect itself is instant → reused.
+        dl.onConnect(dl.startMillis + 5_000, dl.startMillis + 5_000);
+        dl.onFirstByte(dl.startMillis + 5_005);
         dl.onLastByte(dl.startMillis + 25);
         dl.addTransferred(2048);
         dl.onDecompressed(4096, true);
@@ -72,8 +73,8 @@ public class GroupStatsTest {
         JarSlot a = g.slot(0);
         a.settleUnusable(a.startMillis + 1);
         assertTrue(a.claimRetry());
-        a.onConnect(a.startMillis + 50); // handshake, not reuse
-        a.onFirstByte(a.startMillis + 60);
+        a.onConnect(a.startMillis + 50, a.startMillis + 80); // 30ms connect = handshake
+        a.onFirstByte(a.startMillis + 90);
         a.onLastByte(a.startMillis + 160);
         a.addTransferred(1024);
         assertTrue(a.settleGood(a.startMillis + 200, false));
@@ -86,6 +87,21 @@ public class GroupStatsTest {
         assertEquals(1, s.handshakes);
         assertTrue(s.summaryLine().contains("retried=1"), s.summaryLine());
         assertTrue(s.jarLines()[0].contains("retried=true"), s.jarLines()[0]);
+    }
+
+    @Test
+    public void lateJarWithInstantConnectCountsAsReusedNotHandshake() {
+        JarGroupState g = JarGroupState.forJars(Arrays.asList(url("http://localhost/late.jar")));
+        JarSlot late = g.slot(0);
+        long t = late.startMillis + 10_000; // far after group start
+        late.onConnect(t, t); // zero-duration connect
+        late.onFirstByte(t + 1);
+        late.onLastByte(t + 10);
+        late.addTransferred(512);
+        assertTrue(late.settleGood(t + 20, false));
+        GroupStats s = g.stats();
+        assertEquals(1, s.reusedConnections);
+        assertEquals(0, s.handshakes);
     }
 
     @Test

@@ -557,6 +557,15 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void packWireHintPrefersTransferredThenContentLengthThenSize() {
+        assertEquals(100L, ResourceDownloader.packWireHintBytes(100L, 200L, 300L));
+        assertEquals(200L, ResourceDownloader.packWireHintBytes(0L, 200L, 300L));
+        assertEquals(200L, ResourceDownloader.packWireHintBytes(-1L, 200L, 300L));
+        assertEquals(300L, ResourceDownloader.packWireHintBytes(0L, -1L, 300L));
+        assertEquals(0L, ResourceDownloader.packWireHintBytes(0L, -1L, -1L));
+    }
+
+    @Test
     public void isFavIconUrlDetectsCommonPaths() throws Exception {
         assertTrue(ResourceDownloader.isFavIconUrl(new URL("http://127.0.0.1:4201/jnlp/favicon.ico")));
         assertTrue(ResourceDownloader.isFavIconUrl(new URL("http://127.0.0.1:4201/favicon.ico")));
