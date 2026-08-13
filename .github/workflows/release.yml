@@ -570,6 +570,27 @@ jobs:
           & .github/workflows/sign.ps1 -Phase Msi
         shell: pwsh
 
+      - name: Free disk space before macOS DMG
+        if: runner.os == 'macOS'
+        run: |
+          set -euo pipefail
+          echo "Disk before cleanup:"
+          df -h
+          # Self-contained .NET + Temurin trees leave little headroom for hdiutil.
+          rm -rf \
+            "$HOME/Library/Caches/"* \
+            "$HOME/.nuget/packages" \
+            "$HOME/.dotnet/packs" \
+            "$HOME/.dotnet/library-packs" \
+            icedtea-web/target \
+            icedtea-web-integration/target \
+            itw-assertj-it/target \
+            2>/dev/null || true
+          # Keep distribution zip + dist tree; build-dmg.sh moves dist into the .app.
+          echo "Disk after cleanup:"
+          df -h
+        shell: bash
+
       - name: Build macOS DMG
         if: runner.os == 'macOS'
         run: |
