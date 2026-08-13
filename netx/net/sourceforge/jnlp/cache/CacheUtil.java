@@ -221,7 +221,9 @@ public class CacheUtil {
     }
 
     public static boolean clearCache(final String application, boolean jnlpPath, boolean domain) {
-        // clear one app — only block when this application's JNLP processes are still running
+        // Block when this clear would delete a running app's files. JAR hrefs
+        // from -Xcacheids never appear on the process command line, so matching
+        // only the id string used to skip the busy guard and yank a live jar.
         if (!canClearApplicationCache(application)) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, R("CCannotClearCache"));
             return false;
@@ -281,15 +283,42 @@ public class CacheUtil {
     }
 
     /**
-     * @return true when cache entries for {@code application} may be cleared without stopping unrelated JNLP apps
+     * @return true when {@code application} may be cleared without deleting
+     *         resources a running JNLP process still needs (JNLP URL or JAR href)
      */
     public static boolean canClearApplicationCache(String application) {
         if (application == null || application.trim().isEmpty()) {
             return false;
         }
-        return net.sourceforge.jnlp.util.JnlpRunningProcessSupport
-                .listRunningJnlpProcesses(application).isEmpty()
+        return !net.sourceforge.jnlp.util.JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(application)
                 && CacheLRUWrapper.getInstance().getCacheDir().getFile().isDirectory();
+    }
+
+    /**
+     * True when {@code cacheId} (JNLP or JAR href) lives in the same cache
+     * directory as {@code runningJnlpPath}, so clearing it would remove the
+     * running application's files.
+     */
+    public static boolean cacheIdSharesDirectoryWithJnlp(String cacheId, String runningJnlpPath) {
+        if (cacheId == null || runningJnlpPath == null) {
+            return false;
+        }
+        String idRel = applicationToCacheRelativePath(cacheId);
+        String jnlpRel = applicationToCacheRelativePath(runningJnlpPath);
+        if (idRel == null || jnlpRel == null) {
+            return false;
+        }
+        if (idRel.equalsIgnoreCase(jnlpRel)) {
+            return true;
+        }
+        int idSlash = idRel.lastIndexOf('/');
+        int jnlpSlash = jnlpRel.lastIndexOf('/');
+        if (idSlash <= 0 || jnlpSlash <= 0) {
+            return false;
+        }
+        String idDir = idRel.substring(0, idSlash + 1);
+        String jnlpDir = jnlpRel.substring(0, jnlpSlash + 1);
+        return idDir.equalsIgnoreCase(jnlpDir);
     }
 
     /**

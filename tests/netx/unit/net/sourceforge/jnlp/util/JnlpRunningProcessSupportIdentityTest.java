@@ -33,4 +33,27 @@ public class JnlpRunningProcessSupportIdentityTest {
         // a PID far beyond typical ranges is not a live process → startInstant absent → false
         assertFalse(JnlpRunningProcessSupport.isSameProcess(9999999, "2000-01-01T00:00:00Z"));
     }
+
+    @Test
+    public void matchesJnlpPathDoesNotTreatJarHrefAsRunningJnlp() {
+        JnlpRunningProcessSupport.RunningProcess running = new JnlpRunningProcessSupport.RunningProcess(42, "console", "1.0",
+                "java -jar icedtea-web-uber.jar http://127.0.0.1:4200/jnlp/console/app.jnlp",
+                "http://127.0.0.1:4200/jnlp/console/app.jnlp");
+        assertTrue(running.matchesJnlpPath("http://127.0.0.1:4200/jnlp/console/app.jnlp"));
+        // -Xcacheids lists this JAR href; it is a valid -Xclearcache target but is
+        // not on the command line / lock metadata. Filtering the busy list by it
+        // used to skip the guard.
+        assertFalse(running.matchesJnlpPath("http://127.0.0.1:4200/jnlp/console/app.jar"));
+        assertFalse(running.matchesJnlpPath("http://127.0.0.1:4200/jnlp/swing-gui/app.jar"));
+        assertTrue(running.blocksCacheClear("http://127.0.0.1:4200/jnlp/console/app.jnlp"));
+        assertTrue(running.blocksCacheClear("http://127.0.0.1:4200/jnlp/console/app.jar"));
+        assertTrue(running.blocksCacheClear("127.0.0.1"));
+        assertFalse(running.blocksCacheClear("http://127.0.0.1:4200/jnlp/swing-gui/app.jar"));
+        assertFalse(running.blocksCacheClear("http://127.0.0.1:4200/jnlp/swing-gui/app.jnlp"));
+
+        JnlpRunningProcessSupport.RunningProcess fromCommandLine = new JnlpRunningProcessSupport.RunningProcess(
+                43, "console",
+                "java -jar icedtea-web-uber.jar -jnlp http://127.0.0.1:4200/jnlp/console/app.jnlp");
+        assertTrue(fromCommandLine.blocksCacheClear("http://127.0.0.1:4200/jnlp/console/app.jar"));
+    }
 }

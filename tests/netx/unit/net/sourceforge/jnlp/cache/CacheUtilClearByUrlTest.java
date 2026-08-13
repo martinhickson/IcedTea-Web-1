@@ -76,6 +76,25 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void canClearApplicationCacheRejectsBlankId() {
+        Assert.assertFalse(CacheUtil.canClearApplicationCache(null));
+        Assert.assertFalse(CacheUtil.canClearApplicationCache("  "));
+    }
+
+    @Test
+    public void jarCacheIdSharesDirectoryWithRunningJnlp() {
+        String jnlp = "http://127.0.0.1:4200/jnlp/console/app.jnlp";
+        Assert.assertTrue(CacheUtil.cacheIdSharesDirectoryWithJnlp(
+                "http://127.0.0.1:4200/jnlp/console/app.jar", jnlp));
+        Assert.assertTrue(CacheUtil.cacheIdSharesDirectoryWithJnlp(jnlp, jnlp));
+        Assert.assertFalse(CacheUtil.cacheIdSharesDirectoryWithJnlp(
+                "http://127.0.0.1:4200/jnlp/swing-gui/app.jar", jnlp));
+        Assert.assertFalse(CacheUtil.cacheIdSharesDirectoryWithJnlp(null, jnlp));
+        Assert.assertFalse(CacheUtil.cacheIdSharesDirectoryWithJnlp(
+                "http://127.0.0.1:4200/jnlp/console/app.jar", null));
+    }
+
+    @Test
     public void clearByUnknownUrlDoesNotDeleteOtherApps() throws Exception {
         URL other = new URL("http://127.0.0.1:4200/jnlp/swing-gui/app.jnlp");
         File otherFile = writeCachedResource(other, "<jnlp/>");

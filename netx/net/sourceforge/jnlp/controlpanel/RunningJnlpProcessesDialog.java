@@ -103,7 +103,9 @@ public final class RunningJnlpProcessesDialog extends JDialog {
     }
 
     /**
-     * If matching JNLP apps are running, shows this dialog until they are stopped or the user cancels.
+     * If JNLP apps that would lose cache files are running, shows this dialog until they
+     * are stopped or the user cancels. JAR cache ids are included: they do not appear in
+     * process metadata, so matching only the JNLP path used to skip the busy guard.
      */
     public static boolean ensureProcessesStopped(Component parent, String jnlpPathFilter) {
         if (canClearCacheNow(jnlpPathFilter)) {
@@ -146,7 +148,7 @@ public final class RunningJnlpProcessesDialog extends JDialog {
     }
 
     private static boolean canClearCacheNow(String jnlpPathFilter) {
-        if (!JnlpRunningProcessSupport.listRunningJnlpProcesses(jnlpPathFilter).isEmpty()) {
+        if (JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(jnlpPathFilter)) {
             return false;
         }
         if (!requiresGlobalCacheLockClear(jnlpPathFilter)) {
@@ -168,7 +170,13 @@ public final class RunningJnlpProcessesDialog extends JDialog {
     }
 
     private void refreshProcessList() {
-        List<RunningProcess> latest = JnlpRunningProcessSupport.listRunningJnlpProcesses(jnlpPathFilter);
+        List<RunningProcess> latest = new ArrayList<>();
+        for (RunningProcess process : JnlpRunningProcessSupport.listRunningJnlpProcesses()) {
+            if (jnlpPathFilter == null || jnlpPathFilter.trim().isEmpty()
+                    || process.blocksCacheClear(jnlpPathFilter)) {
+                latest.add(process);
+            }
+        }
         tracked.clear();
         tracked.addAll(latest);
 

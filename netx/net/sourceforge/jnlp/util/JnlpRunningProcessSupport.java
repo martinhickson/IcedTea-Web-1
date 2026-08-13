@@ -117,6 +117,32 @@ public final class JnlpRunningProcessSupport {
             return pathsMatch(commandLine, filter);
         }
 
+        /**
+         * True when {@code -Xclearcache cacheId} would remove this process's
+         * resources. JAR hrefs from {@code -Xcacheids} never appear on the
+         * command line; they still share the JNLP's cache directory.
+         * Filename-only matching is intentionally not used ({@code app.jnlp}
+         * would otherwise collide across unrelated apps).
+         */
+        public boolean blocksCacheClear(String cacheId) {
+            if (cacheId == null || cacheId.trim().isEmpty()) {
+                return true;
+            }
+            String id = cacheId.trim();
+            String runningJnlp = jnlpPath;
+            if (runningJnlp == null || runningJnlp.trim().isEmpty()) {
+                runningJnlp = JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine);
+            }
+            if (runningJnlp != null && runningJnlp.trim().equalsIgnoreCase(id)) {
+                return true;
+            }
+            if (CacheUtil.cacheIdSharesDirectoryWithJnlp(id, runningJnlp)) {
+                return true;
+            }
+            return runningJnlp != null
+                    && runningJnlp.toLowerCase(Locale.ROOT).contains(id.toLowerCase(Locale.ROOT));
+        }
+
         private static boolean pathsMatch(String haystackRaw, String needleRaw) {
             String haystack = haystackRaw.toLowerCase(Locale.ROOT);
             String needle = needleRaw.trim().toLowerCase(Locale.ROOT);
@@ -159,6 +185,26 @@ public final class JnlpRunningProcessSupport {
 
     public static List<RunningProcess> listRunningJnlpProcesses() {
         return listRunningJnlpProcesses(null);
+    }
+
+    /**
+     * {@code -Xclearcache} / cache UI must wait when a running JNLP app would
+     * lose cache files. Pass {@code null} for a global clear (any app).
+     * Do not match only on {@code cacheId} via {@link RunningProcess#matchesJnlpPath}:
+     * {@code -Xcacheids} JAR hrefs never appear in lock metadata or the command
+     * line, so that filter used to skip the busy guard.
+     */
+    public static boolean cacheClearBlockedByRunningApps(String cacheId) {
+        List<RunningProcess> running = listRunningJnlpProcesses();
+        if (cacheId == null || cacheId.trim().isEmpty()) {
+            return !running.isEmpty();
+        }
+        for (RunningProcess process : running) {
+            if (process.blocksCacheClear(cacheId)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public static List<RunningProcess> listRunningJnlpProcesses(String jnlpPathFilter) {
