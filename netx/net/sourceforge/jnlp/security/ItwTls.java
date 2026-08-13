@@ -28,32 +28,34 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 
 public final class ItwTls {
 
-    static final int OFFER_UNKNOWN = 0;
-    static final int OFFER_PREFERRED = 1;
+    /** Probe stage 1: TLS 1.3 ChaCha only (also the unset/default host state). */
+    static final int OFFER_TLS13 = 0;
+    static final int OFFER_UNKNOWN = OFFER_TLS13;
+    /** Probe stage 2: TLS 1.2 ECDHE-ECDSA ChaCha only. */
+    static final int OFFER_TLS12 = 1;
+    static final int OFFER_PREFERRED = OFFER_TLS13;
+    /** Probe exhausted: full protocol + cipher list. */
     static final int OFFER_FULL = 2;
 
     /**
-     * Default ({@code probe}): offer only the fastest ChaCha20-Poly1305 suite.
-     * TLS 1.3 {@code TLS_CHACHA20_POLY1305_SHA256} is AEAD-only; the typical
-     * ECDH group on current JDKs is X25519 (Ed25519 is a signature algorithm,
-     * not a TLS 1.3 cipher). If that handshake fails, fall back to the full
-     * list and cache the result per host.
-     * {@code full}: previous behaviour (ChaCha-first multi-suite list).
+     * Default ({@code probe}): two single-suite tries, then the full list.
+     * <ol>
+     *   <li>TLS 1.3 {@code TLS_CHACHA20_POLY1305_SHA256}</li>
+     *   <li>TLS 1.2 {@code TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256}</li>
+     *   <li>full ChaCha-first multi-suite list</li>
+     * </ol>
+     * Each handshake failure advances one stage; the chosen stage is cached
+     * per host. {@code full}: skip probing and use the multi-suite list.
      */
     public static final String CIPHER_MODE_PROBE = "probe";
     public static final String CIPHER_MODE_FULL = "full";
 
-    private static final String[] PROTOCOLS = { "TLSv1.3", "TLSv1.2" };
+    static final String TLS13_CHACHA = "TLS_CHACHA20_POLY1305_SHA256";
+    static final String TLS12_CHACHA = "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256";
 
-    /**
-     * Single-suite probe order: first supported candidate is the only offer.
-     * TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then ECDHE-RSA ChaCha.
-     */
-    private static final String[] PREFERRED_CANDIDATES = {
-        "TLS_CHACHA20_POLY1305_SHA256",
-        "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
-        "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
-    };
+    private static final String[] TLS13_PROTOCOLS = { "TLSv1.3" };
+    private static final String[] TLS12_PROTOCOLS = { "TLSv1.2" };
+    private static final String[] FULL_PROTOCOLS = { "TLSv1.3", "TLSv1.2" };
 
     private static final String[] AES_NIO_ORDER = {
         "TLS_AES_128_GCM_SHA256",
@@ -82,11 +84,12 @@ public final class ItwTls {
     private static final SSLContext CTX = build();
 
     /**
-     * Per-host offer state. 0 unknown (probe), 1 preferred negotiated, 2 must
-     * use the full list. ConcurrentHashMap + AtomicInteger: no locks on the
-     * handshake path.
+     * Per-host offer stage: 0 TLS 1.3 probe, 1 TLS 1.2 probe, 2 full list.
+     * ConcurrentHashMap + AtomicInteger: no locks on the handshake path.
      */
     private static final ConcurrentHashMap<String, AtomicInteger> HOST_OFFER = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, Integer> LOGGED_TRY_STAGE = new ConcurrentHashMap<>();
+    private static final ConcurrentHashMap<String, String> LOGGED_RESULT = new ConcurrentHashMap<>();
 
     /**
      * Cipher-order strategy for {@code full} mode: default to ChaCha20-first
@@ -106,7 +109,8 @@ public final class ItwTls {
      */
     private static class Lists {
         static final String[] FULL = resolveFullCipherSuites();
-        static final String[] PROBE = resolveProbeCipher(FULL);
+        static final String[] TLS13 = resolveSupported(TLS13_CHACHA);
+        static final String[] TLS12 = resolveSupported(TLS12_CHACHA);
         static {
             logResolved();
         }
@@ -118,9 +122,10 @@ public final class ItwTls {
         try {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
                     "ItwTls ready: mode=" + (isProbeMode() ? CIPHER_MODE_PROBE : CIPHER_MODE_FULL)
-                    + " preferred=" + String.join(",", Lists.PROBE)
+                    + " tls13=" + joinOrNone(Lists.TLS13)
+                    + " tls12=" + joinOrNone(Lists.TLS12)
                     + (isProbeMode()
-                            ? " (single suite; fallback to full list on handshake failure)"
+                            ? " (try TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then full list)"
                             : " (legacy multi-suite list)"));
         } catch (Exception ignored) {}
     }
@@ -130,7 +135,15 @@ public final class ItwTls {
     }
 
     static String[] probeCiphers() {
-        return Lists.PROBE;
+        return Lists.TLS13.length > 0 ? Lists.TLS13 : Lists.TLS12;
+    }
+
+    static String[] tls13Ciphers() {
+        return Lists.TLS13;
+    }
+
+    static String[] tls12Ciphers() {
+        return Lists.TLS12;
     }
 
     static String[] ciphers() {
@@ -155,8 +168,10 @@ public final class ItwTls {
 
     public static SSLParameters parametersFor(String host) {
         SSLParameters p = CTX.getDefaultSSLParameters();
-        p.setProtocols(PROTOCOLS);
-        p.setCipherSuites(suitesFor(host));
+        String[] protocols = protocolsFor(host);
+        String[] suites = suitesFor(host);
+        p.setProtocols(protocols);
+        p.setCipherSuites(suites);
         if (host != null && !host.isEmpty()) {
             try {
                 p.setServerNames(Collections.singletonList(new SNIHostName(host)));
@@ -164,6 +179,7 @@ public final class ItwTls {
                 // literal IPv4/IPv6: SNI host names are not used
             }
         }
+        logTry(host, effectiveStage(offerState(host).get()), protocols, suites);
         return p;
     }
 
@@ -179,11 +195,49 @@ public final class ItwTls {
         if (!isProbeMode()) {
             return Lists.FULL;
         }
-        int state = offerState(host).get();
-        if (state == OFFER_FULL) {
-            return Lists.FULL;
+        switch (effectiveStage(offerState(host).get())) {
+            case OFFER_TLS13:
+                return Lists.TLS13;
+            case OFFER_TLS12:
+                return Lists.TLS12;
+            default:
+                return Lists.FULL;
         }
-        return Lists.PROBE;
+    }
+
+    static String[] protocolsFor(String host) {
+        if (!isProbeMode()) {
+            return FULL_PROTOCOLS;
+        }
+        switch (effectiveStage(offerState(host).get())) {
+            case OFFER_TLS13:
+                return TLS13_PROTOCOLS;
+            case OFFER_TLS12:
+                return TLS12_PROTOCOLS;
+            default:
+                return FULL_PROTOCOLS;
+        }
+    }
+
+    static int effectiveStage(int state) {
+        if (state == OFFER_TLS13 && Lists.TLS13.length == 0) {
+            return Lists.TLS12.length == 0 ? OFFER_FULL : OFFER_TLS12;
+        }
+        if (state == OFFER_TLS12 && Lists.TLS12.length == 0) {
+            return OFFER_FULL;
+        }
+        return state;
+    }
+
+    static String stageName(int state) {
+        switch (effectiveStage(state)) {
+            case OFFER_TLS13:
+                return "tls13";
+            case OFFER_TLS12:
+                return "tls12";
+            default:
+                return "full";
+        }
     }
 
     static boolean isProbeMode() {
@@ -206,45 +260,81 @@ public final class ItwTls {
     }
 
     static void noteNegotiated(String host, String cipher) {
-        if (!isProbeMode() || cipher == null) {
+        noteNegotiated(host, cipher, null);
+    }
+
+    static void noteNegotiated(String host, String cipher, String protocol) {
+        if (cipher == null) {
             return;
         }
-        offerState(host).set(isPreferredCipher(cipher) ? OFFER_PREFERRED : OFFER_FULL);
+        int stay = stageForNegotiatedCipher(cipher);
+        if (isProbeMode()) {
+            offerState(host).set(stay);
+        }
+        logResult(host, cipher, protocol, stay);
+    }
+
+    static int stageForNegotiatedCipher(String cipher) {
+        if (TLS13_CHACHA.equals(cipher)) {
+            return OFFER_TLS13;
+        }
+        if (TLS12_CHACHA.equals(cipher)) {
+            return OFFER_TLS12;
+        }
+        return OFFER_FULL;
     }
 
     /**
-     * @return true if the caller should retry this host with the full cipher list
+     * @return true if the caller should retry this host with the next probe stage
+     *         (TLS 1.3 → TLS 1.2 → full)
+     */
+    static boolean shouldRetryWithNextOffer(String host, Throwable failure) {
+        return shouldRetryWithFullCiphers(host, failure);
+    }
+
+    /**
+     * @return true if the caller should retry this host with the next offer stage
      */
     static boolean shouldRetryWithFullCiphers(String host, Throwable failure) {
         if (!isProbeMode() || !isCipherNegotiationFailure(failure)) {
             return false;
         }
-        int previous = offerState(host).getAndSet(OFFER_FULL);
-        if (previous == OFFER_FULL) {
+        int previous = offerState(host).get();
+        int next = nextStage(previous);
+        if (next == previous) {
             return false;
         }
+        offerState(host).compareAndSet(previous, next);
         try {
             OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
-                    "ItwTls: preferred suite not negotiated for " + hostKey(host)
-                    + " (" + failure.getClass().getSimpleName() + "); retrying with full cipher list");
+                    "ItwTls fail host=" + hostKey(host)
+                    + " stage=" + stageName(previous)
+                    + " (" + failure.getClass().getSimpleName()
+                    + (failure.getMessage() != null ? ": " + failure.getMessage() : "")
+                    + "); next=" + stageName(next));
         } catch (Exception ignored) {}
         return true;
     }
 
+    static int nextStage(int current) {
+        int stage = effectiveStage(current);
+        if (stage == OFFER_TLS13) {
+            return Lists.TLS12.length > 0 ? OFFER_TLS12 : OFFER_FULL;
+        }
+        if (stage == OFFER_TLS12) {
+            return OFFER_FULL;
+        }
+        return OFFER_FULL;
+    }
+
     static boolean isPreferredCipher(String cipher) {
-        if (cipher == null) {
-            return false;
-        }
-        for (String c : Lists.PROBE) {
-            if (cipher.equals(c)) {
-                return true;
-            }
-        }
-        return false;
+        return TLS13_CHACHA.equals(cipher) || TLS12_CHACHA.equals(cipher);
     }
 
     static void resetHostOfferForTest() {
         HOST_OFFER.clear();
+        LOGGED_TRY_STAGE.clear();
+        LOGGED_RESULT.clear();
     }
 
     private static String hostKey(String host) {
@@ -316,25 +406,64 @@ public final class ItwTls {
         return validateOrFail(order);
     }
 
-    private static String[] resolveProbeCipher(String[] full) {
+    private static String[] resolveSupported(String suite) {
         Set<String> supported = new HashSet<>(Arrays.asList(
                 CTX.getSocketFactory().getSupportedCipherSuites()));
-        for (String c : PREFERRED_CANDIDATES) {
-            if (supported.contains(c)) {
-                return new String[] { c };
-            }
+        if (supported.contains(suite)) {
+            return new String[] { suite };
         }
         try {
             OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
-                    "ItwTls: no ChaCha probe suite on this JDK; using full list");
+                    "ItwTls: probe suite not supported on this JDK: " + suite);
         } catch (Exception ignored) {}
-        return full;
+        return new String[0];
     }
 
     private static void logResolved() {
         try {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
-                    "ItwTls probe cipher: " + String.join(",", Lists.PROBE));
+                    "ItwTls probe tls13=" + joinOrNone(Lists.TLS13)
+                    + " tls12=" + joinOrNone(Lists.TLS12));
+        } catch (Exception ignored) {}
+    }
+
+    private static String joinOrNone(String[] suites) {
+        return suites.length == 0 ? "(none)" : String.join(",", suites);
+    }
+
+    private static void logTry(String host, int stage, String[] protocols, String[] suites) {
+        if (!isProbeMode()) {
+            return;
+        }
+        String key = hostKey(host);
+        Integer prev = LOGGED_TRY_STAGE.put(key, stage);
+        if (prev != null && prev == stage) {
+            return;
+        }
+        try {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "ItwTls try host=" + (key.isEmpty() ? "-" : key)
+                    + " stage=" + stageName(stage)
+                    + " tls=" + String.join(",", protocols)
+                    + " suites=" + String.join(",", suites));
+        } catch (Exception ignored) {}
+    }
+
+    private static void logResult(String host, String cipher, String protocol, int stay) {
+        String key = hostKey(host);
+        String tls = protocol != null && !protocol.isEmpty() ? protocol : "unknown";
+        String line = tls + "/" + cipher + "/" + stageName(stay);
+        String prev = LOGGED_RESULT.put(key, line);
+        OutputController.Level level = line.equals(prev)
+                ? OutputController.Level.MESSAGE_DEBUG
+                : OutputController.Level.MESSAGE_ALL;
+        try {
+            OutputController.getLogger().log(level,
+                    "ItwTls result host=" + (key.isEmpty() ? "-" : key)
+                    + " tls=" + tls
+                    + " cipher=" + cipher
+                    + " stage=" + stageName(stay)
+                    + (stay == OFFER_FULL ? " (full list)" : " (probe hold)"));
         } catch (Exception ignored) {}
     }
 

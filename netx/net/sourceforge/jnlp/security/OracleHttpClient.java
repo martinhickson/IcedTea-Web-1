@@ -21,15 +21,19 @@ public final class OracleHttpClient implements ItwHttpClient {
     @Override
     public HttpResponse open(URL url, String method, Map<String, String> requestHeaders, ConnectionTiming timing)
             throws IOException {
-        try {
-            return openOnce(url, method, requestHeaders, timing);
-        } catch (IOException e) {
-            if (!"https".equalsIgnoreCase(url.getProtocol())
-                    || !ItwTls.shouldRetryWithFullCiphers(url.getHost(), e)) {
-                throw e;
+        IOException last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                return openOnce(url, method, requestHeaders, timing);
+            } catch (IOException e) {
+                last = e;
+                if (!"https".equalsIgnoreCase(url.getProtocol())
+                        || !ItwTls.shouldRetryWithNextOffer(url.getHost(), e)) {
+                    throw e;
+                }
             }
-            return openOnce(url, method, requestHeaders, timing);
         }
+        throw last != null ? last : new IOException("TLS probe retries exhausted for " + url);
     }
 
     private HttpResponse openOnce(URL url, String method, Map<String, String> requestHeaders, ConnectionTiming timing)

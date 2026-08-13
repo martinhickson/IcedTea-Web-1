@@ -24,10 +24,11 @@ mvn test -pl icedtea-web -am -Pci -Dtest='*'
 
 ## Workflow
 
-1. Change Java → `run-itw-groovy.sh --compile-java <probe>` (compiler:compile only).
+1. Change Java → `run-itw-groovy.sh --compile-java <probe>` (`mvn compile`, which runs generate-sources so `netx/` is on the compile path).
 2. Iterate the probe / package-visible helpers until green.
 3. Promote stable asserts into `tests/netx/unit/...` JUnit so CI JaCoCo still counts.
 4. Do **not** replace CI unit tests with Groovy-only coverage.
+5. Do **not** use `compiler:compile` alone — it skips `build-helper:add-source` and compiles nothing.
 
 ## Notes
 

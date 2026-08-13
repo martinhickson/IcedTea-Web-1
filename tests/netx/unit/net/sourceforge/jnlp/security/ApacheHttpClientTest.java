@@ -1,8 +1,11 @@
 package net.sourceforge.jnlp.security;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.InputStream;
+import java.net.ProtocolException;
+import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,5 +37,12 @@ public class ApacheHttpClientTest {
             }
             assertEquals("hello file-url\n", body);
         }
+    }
+
+    @Test
+    public void postIsRejectedBeforeConnect() throws Exception {
+        ApacheHttpClient client = new ApacheHttpClient();
+        assertThrows(ProtocolException.class,
+                () -> client.open(new URL("http://127.0.0.1/x"), "POST", null, null));
     }
 }

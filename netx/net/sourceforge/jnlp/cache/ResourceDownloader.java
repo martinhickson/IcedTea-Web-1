@@ -1026,12 +1026,18 @@ public class ResourceDownloader implements Runnable {
 
     /** Copy HTTP bytes to {@code dest} immediately; first/last-byte clocks follow the wire, not unpack. */
     private void writeCountedStreamToFile(File dest, InputStream in) throws IOException {
+        writeCountedStreamToFile(dest, in, resource, resource.getJarSlot());
+    }
+
+    static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
+            net.sourceforge.jnlp.cache.download.JarSlot slot) throws IOException {
         byte buf[] = new byte[8192];
         int rlen;
-        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest))) {
             while (-1 != (rlen = in.read(buf))) {
-                resource.incrementTransferred(rlen);
+                if (resource != null) {
+                    resource.incrementTransferred(rlen);
+                }
                 if (slot != null) {
                     long now = System.currentTimeMillis();
                     slot.onFirstByte(now);

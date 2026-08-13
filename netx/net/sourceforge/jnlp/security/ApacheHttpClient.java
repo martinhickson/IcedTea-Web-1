@@ -108,19 +108,25 @@ public final class ApacheHttpClient implements ItwHttpClient {
         if (!"GET".equalsIgnoreCase(method) && !"HEAD".equalsIgnoreCase(method)) {
             throw new java.net.ProtocolException("Unsupported request method: " + method);
         }
-        HttpUriRequestBase request = newRequest(uri, method, requestHeaders);
-
         if (timing != null) {
             timing.connectStartMillis = System.currentTimeMillis();
         }
-        ClassicHttpResponse response;
-        try {
-            response = client.execute(request);
-        } catch (IOException e) {
-            if (!ItwTls.shouldRetryWithFullCiphers(url.getHost(), e)) {
-                throw e;
+        ClassicHttpResponse response = null;
+        IOException last = null;
+        for (int attempt = 0; attempt < 3; attempt++) {
+            try {
+                response = client.execute(newRequest(uri, method, requestHeaders));
+                last = null;
+                break;
+            } catch (IOException e) {
+                last = e;
+                if (!ItwTls.shouldRetryWithNextOffer(url.getHost(), e)) {
+                    throw e;
+                }
             }
-            response = client.execute(newRequest(uri, method, requestHeaders));
+        }
+        if (response == null) {
+            throw last != null ? last : new IOException("TLS probe retries exhausted for " + url);
         }
         if (timing != null) {
             timing.connectEndMillis = System.currentTimeMillis();

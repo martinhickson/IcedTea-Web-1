@@ -147,4 +147,26 @@ class ResourceDownloaderSettleTest {
         assertTrue(text.contains("length: null"), text);
         assertTrue(text.contains("lastModified: null"), text);
     }
+
+    @Test
+    void writeCountedStreamRecordsWireClocksNotUnpack() throws Exception {
+        URL u = url("http://localhost/counted-" + System.nanoTime() + ".jar");
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(u));
+        JarSlot slot = group.slot(0);
+        slot.onConnect(1L, 2L);
+        r.setJarSlot(slot);
+
+        Path dest = tmp.resolve("wire.bin");
+        byte[] payload = new byte[12_000];
+        Arrays.fill(payload, (byte) 7);
+        ResourceDownloader.writeCountedStreamToFile(dest.toFile(),
+                new java.io.ByteArrayInputStream(payload), r, slot);
+
+        assertEquals(payload.length, dest.toFile().length());
+        assertEquals(payload.length, r.getTransferred());
+        assertEquals(payload.length, slot.transferred());
+        assertTrue(slot.ttfbMillis() >= 0, "TTFB is first-byte minus connect, recorded during drain");
+        assertTrue(slot.transferMillis() >= 0, "last-byte clock must be set on drain complete");
+    }
 }

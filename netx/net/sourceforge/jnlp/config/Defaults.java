@@ -440,7 +440,7 @@ public class Defaults {
                         null,
                         null
                 },
-                /* probe (default): one ChaCha suite then fallback; full: previous multi-suite list */
+                /* probe (default): TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then full list */
                 {
                         DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE,
                         BasicValueValidators.getStringValidator(new String[] {

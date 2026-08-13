@@ -101,7 +101,7 @@ public final class ItwSslSocketFactory extends SSLSocketFactory {
             SSLSession s = e.getSession();
             String peer = s.getPeerHost();
             String cipher = s.getCipherSuite();
-            ItwTls.noteNegotiated(peer, cipher);
+            ItwTls.noteNegotiated(peer, cipher, s.getProtocol());
             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
                 "TLS established: cipher=" + cipher
                 + " protocol=" + s.getProtocol()

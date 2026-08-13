@@ -289,9 +289,9 @@ public final class DeploymentConfiguration {
     public static final String KEY_HTTPCONNECTION_READ_TIMEOUT = "deployment.http.connection.readTimeout";
     public static final String KEY_TLS_CLIENT_CIPHER_SUITES = "deployment.tls.client.cipherSuites";
     /**
-     * TLS cipher offer mode: {@code probe} (default) offers only the fastest
-     * ChaCha20-Poly1305 suite and falls back to the full list on handshake
-     * failure; {@code full} is the previous ChaCha-first multi-suite list.
+     * TLS cipher offer mode: {@code probe} (default) tries TLS 1.3 ChaCha,
+     * then TLS 1.2 ECDHE-ECDSA ChaCha, then the full list; {@code full} is
+     * the ChaCha-first multi-suite list with no probing.
      */
     public static final String KEY_TLS_CLIENT_CIPHER_MODE = "deployment.tls.client.cipherMode";
     public static final String KEY_HTTP_CLIENT = "deployment.http.client";

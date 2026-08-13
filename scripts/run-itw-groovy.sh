@@ -54,9 +54,9 @@ export GROOVY_HOME
 export PATH="$GROOVY_HOME/bin:$PATH"
 
 if [[ "$COMPILE_JAVA" -eq 1 ]]; then
-  echo "Compiling icedtea-web (compiler:compile only)..."
+  echo "Compiling icedtea-web (generate-sources + compile)..."
   mvn -s "$ROOT_DIR/.powershell/workflows/maven-settings.xml" -pl icedtea-web -am \
-    -DskipTests compiler:compile \
+    -DskipTests compile \
     "-Djdk11.home=$JAVA_HOME" -q
 fi
 

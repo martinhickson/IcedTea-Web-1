@@ -36,6 +36,12 @@ class ConsoleOutputPanePlayPauseTest {
         assertTrue(pane.isPauseEnabled());
     }
 
+    @Test
+    void playAndPauseStayOnMainChromeWhenDetailsStartHidden() {
+        ConsoleOutputPane pane = new ConsoleOutputPane(new EmptyProvider());
+        assertTrue(pane.isPlayPauseOnMainPanel());
+    }
+
     private static final class EmptyProvider extends Observable implements ObservableMessagesProvider {
         private final List<MessageWithHeader> data = new ArrayList<>();
 
