@@ -36,6 +36,7 @@
  */
 package net.sourceforge.jnlp;
 
+import net.sourceforge.jnlp.runtime.Translator;
 import org.junit.Assert;
 import org.junit.Test;
 
@@ -129,17 +130,32 @@ public class VersionTest {
         //head support jdk 7+, so this statements should be always true
         Version.JreVersion jreVersion = new Version.JreVersion("1.4 1.5+", true, true);
         Version.JreVersion jreVersion1 = new Version.JreVersion("1.6+", true, true);
+        Assert.assertTrue(jreVersion.satisfiesRunningJre());
+        Assert.assertTrue(jreVersion1.satisfiesRunningJre());
     }
 
-    @Test(expected = RuntimeException.class)
-    public void jreVersionTestFails1() {
-        //head support jdk 7+, so this statements should be always false
-        Version.JreVersion jreVersion = new Version.JreVersion("2", true, true);
+    @Test
+    public void jreVersionStrictMismatchDoesNotThrowAtConstruct() {
+        Version.JreVersion.warned = false;
+        Version.JreVersion tooOld = new Version.JreVersion("1.4", true, true);
+        Version.JreVersion future = new Version.JreVersion("2", true, true);
+        Assert.assertFalse(tooOld.satisfiesRunningJre());
+        Assert.assertFalse(future.satisfiesRunningJre());
     }
 
-    @Test(expected = RuntimeException.class)
-    public void jreVersionTestFails2() {
-        //head support jdk 7+, so this statements should be always false
-        Version.JreVersion jreVersion = new Version.JreVersion("1.4", true, true);
+    @Test
+    public void jreVersionSatisfiesRunningMajor() {
+        String major = System.getProperty("java.version").split("[.\\-_]")[0];
+        Version.JreVersion exact = new Version.JreVersion(major, true, true);
+        Assert.assertTrue(exact.satisfiesRunningJre());
+    }
+
+    @Test
+    public void jreStrictMismatchMessageSpelling() {
+        String msg = Translator.R("JREStrictMismatch", "21.0.12", "17");
+        Assert.assertFalse(msg, msg.contains("deffined"));
+        Assert.assertFalse(msg, msg.contains("dont match"));
+        Assert.assertTrue(msg, msg.contains("Strict mode is enabled"));
+        Assert.assertTrue(msg, msg.contains("does not match"));
     }
 }

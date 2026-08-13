@@ -17,7 +17,6 @@
 package net.sourceforge.jnlp;
 
 import java.util.*;
-import javax.swing.JOptionPane;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.runtime.Translator;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -45,12 +44,9 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 public class Version {
     
     /**
-     * This is special case of version, used only for checking jre version. If
-     * jre do not match, in strict not-headless mode the dialog with
-     * confirrmation appears If jre do not match, in strict headless mode the
-     * exception is thrown If jre match, or non-strict mode is run, then only
-     * message is printed
-     *
+     * JRE version from a {@code <j2se>} element. Parse-time construction only
+     * records a mismatch; it must not abort. {@code -strict} is JNLP format
+     * checking — JDK relaunch is decided later in {@code Launcher}.
      */
     public static class JreVersion extends Version {
 
@@ -61,45 +57,43 @@ public class Version {
         }
 
         /*
-         *  for testing purposes
+         *  for testing purposes. {@code strict}/{@code headless} are kept for
+         *  callers; they no longer throw or show a dialog at parse time.
          */
         JreVersion(String v, boolean strict, boolean headless) {
             super(v);
-            boolean match = matchesJreVersion();
-            if (!match && v != null) {
-                String requestedMajor = v.split("[.\\-_]")[0];
-                String actualMajor = getJreVersion().split("[.\\-_]")[0];
-                if (requestedMajor.equals(actualMajor)) {
-                    match = true; // Major version matches, consider it compatible
-                }
-            }
-            if (!match) {
-                String s = Translator.R("JREversionDontMatch", getJreVersion(), v);
-                String e = "Strict run is  deffined, and your JRE - " + getJreVersion() + " - dont match requested JRE(s) - " + v;
-                if (strict) {
-                    if (!headless) {
-                        if (!warned) {
-                            int r = JOptionPane.showConfirmDialog(null, s + "\n" + Translator.R("JREContinueDialogSentence2"), Translator.R("JREContinueDialogSentenceTitle"), JOptionPane.YES_NO_OPTION);
-                            if (r == JOptionPane.NO_OPTION) {
-                                throw new RuntimeException(e);
-                            }
-                            warned = true;
-                        }
-                    } else {
-                        throw new RuntimeException(e);
-                    }
-                } else if (!warned) {
+            if (!satisfiesRunningJre()) {
+                if (!warned) {
                     // JNLP is often re-parsed several times before relaunch; log once.
-                    OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, s);
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                            Translator.R("JREversionDontMatch", getJreVersion(), v));
                     warned = true;
                 }
             } else {
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "good - your JRE - " + getJreVersion() + " - match requested JRE - " + v);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                        "good - your JRE - " + getJreVersion() + " - match requested JRE - " + v);
             }
         }
 
         public boolean matchesJreVersion() {
             return matches(getJreVersion());
+        }
+
+        /**
+         * True when the running JVM satisfies this request, including exact
+         * {@code <j2se version="N"/>} matching any N.x runtime.
+         */
+        public boolean satisfiesRunningJre() {
+            if (matchesJreVersion()) {
+                return true;
+            }
+            String requested = toString();
+            if (requested == null || requested.isEmpty()) {
+                return false;
+            }
+            String requestedMajor = requested.split("[.\\-_]")[0];
+            String actualMajor = getJreVersion().split("[.\\-_]")[0];
+            return requestedMajor.equals(actualMajor);
         }
 
         private String getJreVersion() {

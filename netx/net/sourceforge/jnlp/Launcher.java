@@ -588,6 +588,8 @@ public class Launcher {
                 return null;
             }
 
+            failIfStrictAndRunningJreMismatches(file);
+
             handler.launchInitialized(file);
 
             ApplicationInstance app = createApplication(file);
@@ -711,6 +713,7 @@ public class Launcher {
                 }
             }
         }
+        failIfStrictAndRunningJreMismatches(file);
         if (handler != null) {
             handler.launchInitialized(file);
         }
@@ -1122,6 +1125,39 @@ public class Launcher {
         }
         return JvmSelector.matchesStrategy(descriptor, requestedVersion,
                 KnownJvmStore.getMatchStrategy(JNLPRuntime.getConfiguration()));
+    }
+
+    /**
+     * In-process start after relaunch was skipped or forked. {@code -strict}
+     * must not abort parse, but it still refuses to run on the wrong JRE.
+     */
+    private void failIfStrictAndRunningJreMismatches(JNLPFile file) throws LaunchException {
+        ParserSettings settings = file.getParserSettings();
+        if (settings == null || !settings.isStrict()) {
+            return;
+        }
+        JREDesc selected = file.selectJreDescForLaunch();
+        if (selected == null || selected.getVersion() == null) {
+            return;
+        }
+        Version.JreVersion requested = selected.getVersion();
+        if (requested.satisfiesRunningJre()) {
+            return;
+        }
+        String current = System.getProperty("java.version");
+        String wanted = requested.toString();
+        if (!JNLPRuntime.isHeadless()) {
+            int answer = JOptionPane.showConfirmDialog(null,
+                    R("JREStrictMismatch", current, wanted) + "\n" + R("JREContinueDialogSentence2"),
+                    R("JREContinueDialogSentenceTitle"),
+                    JOptionPane.YES_NO_OPTION);
+            if (answer != JOptionPane.NO_OPTION) {
+                return;
+            }
+        }
+        throw launchError(new LaunchException(file, null, R("LSFatal"), R("LCLaunching"),
+                R("JREStrictMismatch", current, wanted),
+                R("JREStrictMismatchInfo")));
     }
 
     private boolean currentRuntimeDoesNotSatisfyRequestedJre(JNLPFile file) {

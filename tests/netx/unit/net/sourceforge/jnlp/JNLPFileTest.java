@@ -422,4 +422,19 @@ public class JNLPFileTest extends NoStdOutErrTest{
         boolean rrrrrr = JNLPFile.stringMatches("CrapSystem", null);
         Assert.assertTrue(rrrrrr);
     }
+
+    @Test
+    public void strictParseExactJ2seDoesNotThrowWhenBootstrapDiffers() throws Exception {
+        Version.JreVersion.warned = false;
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<jnlp spec=\"1.0+\">\n"
+                + "  <information><title>t</title><vendor>v</vendor></information>\n"
+                + "  <resources><j2se version=\"1.4\"/></resources>\n"
+                + "  <application-desc main-class=\"example.Main\"/>\n"
+                + "</jnlp>\n";
+        ParserSettings strict = new ParserSettings(true, true, true);
+        JNLPFile file = new JNLPFile(new ByteArrayInputStream(xml.getBytes("UTF-8")), strict);
+        Assert.assertFalse(file.getResources().getJREs()[0].getVersion().satisfiesRunningJre());
+        Assert.assertTrue(file.needsNewVM());
+    }
 }
