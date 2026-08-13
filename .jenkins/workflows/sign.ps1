@@ -124,6 +124,7 @@ function Get-IcedTeaWebSignableExes {
         'javaws.exe',
         'javawsc.exe',
         'icedtea-web-settings.exe',
+        'itweb-settings.exe',
         'policyeditor.exe'
     )
 
@@ -155,6 +156,7 @@ function Get-IcedTeaWebLauncherNames {
         'javaws.exe',
         'javawsc.exe',
         'icedtea-web-settings.exe',
+        'itweb-settings.exe',
         'policyeditor.exe'
     )
 }

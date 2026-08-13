@@ -7,9 +7,12 @@
 | `javaws.exe` | WinExe (GUI) | Explorer double-click, JNLP, desktop — no console flash |
 | `javawsc.exe` | Exe (console) | cmd/bash CLI — `-version`, `-help`, scripts; **cmd waits** on this binary |
 | `icedtea-web-settings.exe` | WinExe (GUI) | Copy of `javaws.exe`; `CommandLine` / `ControlPanel` main class (chosen from binary name) |
+| `itweb-settings.exe` | WinExe (GUI) | 2.9.x compatibility name; same launcher as `icedtea-web-settings` |
 | `policyeditor.exe` | WinExe (GUI) | Copy of `javaws.exe`; `PolicyEditor` main class (chosen from binary name) |
 
-Pattern mirrors `java.exe` / `javaw.exe`: GUI vs console entry points. `icedtea-web-settings` and `policyeditor` are not separate builds — Maven and `publish-dotnet-launchers.ps1` copy `javaws` to each alias.
+Pattern mirrors `java.exe` / `javaw.exe`: GUI vs console entry points. `icedtea-web-settings`, `itweb-settings`, and `policyeditor` are not separate builds — Maven and `publish-dotnet-launchers.ps1` copy `javaws` to each alias.
+
+**`itweb-settings` alias (keep 2.9.x scripts working):** Linux/macOS ship a symlink (or DMG `exec` wrapper) to `icedtea-web-settings`. Windows ships a duplicate `.exe` — NTFS symlinks need admin/Developer Mode, and hard links split on MSI repair/upgrade.
 
 ## javaws.exe (GUI)
 
@@ -54,7 +57,7 @@ Local dev shortcut (Windows): `scripts/publish-dotnet-launchers.ps1`
 | Linux | `.packaging/workflows/icons/icedtea-web.png` | `share/pixmaps/` in dist (`javaws`, `icedtea-web-settings`, `policyeditor`); DEB/RPM install `/usr/share/pixmaps/` + `Icon=` in `.desktop` files |
 | macOS | `.packaging/workflows/icons/*.png` → `icedtea-web.icns` via `prepare-macos-icon.sh` | `.app` `Resources/icedtea-web.icns` + `CFBundleIconFile` in DMG build |
 
-`javawsc` is published on all platforms (merged into `dotnet-publish` before assembly). Linux packages symlink `/usr/bin/javawsc`; macOS DMG includes `bin/javawsc` and a `MacOS/javawsc` wrapper script. Legacy repo-root `javaws.ico` / `javaws.png` (Duke mascot) is not used.
+`javawsc` is published on all platforms (merged into `dotnet-publish` before assembly). Linux packages symlink `/usr/bin/javawsc` and `/usr/bin/itweb-settings`; macOS DMG includes `bin/` plus `MacOS/` wrapper scripts. Legacy repo-root `javaws.ico` / `javaws.png` (Duke mascot) is not used.
 
 ## CLI usage
 
@@ -65,6 +68,7 @@ javawsc.exe -help
 javaws.exe -Xcacheids   # text control ops wait and inherit stdio (not detached)
 javaws.exe foo.jnlp
 icedtea-web-settings -list   # any settings argv waits; no args still opens the GUI
+itweb-settings -list         # 2.9.x name; same as icedtea-web-settings
 ```
 
-GUI `javaws` still detaches for JNLP / desktop launches. Detach is skipped for javaws text control options (`-help`, `-version`, `-license`, `-Xcacheids`, `-Xclearcache`) and for any `icedtea-web-settings` command-line invocation. `javawsc` always waits.
+GUI `javaws` still detaches for JNLP / desktop launches. Detach is skipped for javaws text control options (`-help`, `-version`, `-license`, `-Xcacheids`, `-Xclearcache`) and for any `icedtea-web-settings` / `itweb-settings` command-line invocation. `javawsc` always waits.

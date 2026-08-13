@@ -44,7 +44,7 @@ if ($SafeVersion -notmatch "^\d+\.\d+\.\d+(\.\d+)?$") {
     $SafeVersion = "1.0.1.0"
 }
 
-foreach ($required in @("javaws.exe", "javawsc.exe", "icedtea-web-settings.exe", "policyeditor.exe")) {
+foreach ($required in @("javaws.exe", "javawsc.exe", "icedtea-web-settings.exe", "itweb-settings.exe", "policyeditor.exe")) {
     if (-not (Test-Path (Join-Path $DistDir "bin\$required") -PathType Leaf)) {
         throw "Distribution does not contain bin\$required`: $DistDir"
     }
@@ -68,7 +68,7 @@ function Test-RequireSignedDistributionLaunchers {
 
 if (Test-RequireSignedDistributionLaunchers) {
     $unsigned = @()
-    foreach ($required in @("javaws.exe", "javawsc.exe", "icedtea-web-settings.exe", "policyeditor.exe")) {
+    foreach ($required in @("javaws.exe", "javawsc.exe", "icedtea-web-settings.exe", "itweb-settings.exe", "policyeditor.exe")) {
         $launcherPath = Join-Path $DistDir "bin\$required"
         $signature = Get-AuthenticodeSignature -LiteralPath $launcherPath
         if ($signature.Status -ne 'Valid') {

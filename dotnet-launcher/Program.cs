@@ -546,8 +546,7 @@ internal static class Program
             return configuredMain;
         }
 
-        if (launcherName.Equals("icedtea-web-settings", StringComparison.OrdinalIgnoreCase)
-            || launcherName.Equals("icedtea_web_settings", StringComparison.OrdinalIgnoreCase))
+        if (IsSettingsLauncher(launcherName))
         {
             return SettingsMainClass;
         }

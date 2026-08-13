@@ -60,13 +60,22 @@ create_payload_root() {
   mkdir -p "$payload_root$INSTALL_ROOT" "$payload_root/usr/bin" "$payload_root/usr/share/applications" "$payload_root/usr/share/pixmaps"
   cp -a "$DIST_DIR/." "$payload_root$INSTALL_ROOT/"
   chmod +x "$payload_root$INSTALL_ROOT/bin/javaws" "$payload_root$INSTALL_ROOT/bin/javawsc" "$payload_root$INSTALL_ROOT/bin/icedtea-web-settings" "$payload_root$INSTALL_ROOT/bin/policyeditor"
+  # 2.9.x compatibility name under /opt (symlink, not a second copy).
+  if [[ ! -e "$payload_root$INSTALL_ROOT/bin/itweb-settings" ]]; then
+    ln -s icedtea-web-settings "$payload_root$INSTALL_ROOT/bin/itweb-settings"
+  fi
   # Temurin ProcessBuilder helper lives in lib/, not bin/.
   find "$payload_root$INSTALL_ROOT/runtime" -type f -name jspawnhelper -exec chmod 755 {} +
   "$ROOT_DIR/scripts/assert-jspawnhelper-executable.sh" "$payload_root$INSTALL_ROOT"
   ln -s "$INSTALL_ROOT/bin/javaws" "$payload_root/usr/bin/javaws"
   ln -s "$INSTALL_ROOT/bin/javawsc" "$payload_root/usr/bin/javawsc"
   ln -s "$INSTALL_ROOT/bin/icedtea-web-settings" "$payload_root/usr/bin/icedtea-web-settings"
+  ln -s "$INSTALL_ROOT/bin/icedtea-web-settings" "$payload_root/usr/bin/itweb-settings"
   ln -s "$INSTALL_ROOT/bin/policyeditor" "$payload_root/usr/bin/policyeditor"
+  if [[ ! -e "$payload_root$INSTALL_ROOT/bin/itweb-settings" || ! -L "$payload_root/usr/bin/itweb-settings" ]]; then
+    echo "Compatibility alias itweb-settings was not installed under $INSTALL_ROOT/bin or /usr/bin" >&2
+    exit 1
+  fi
   cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/javaws.png"
   cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/icedtea-web-settings.png"
   cp "$ICON_PNG" "$payload_root/usr/share/pixmaps/policyeditor.png"
@@ -204,6 +213,7 @@ $INSTALL_ROOT
 /usr/bin/javaws
 /usr/bin/javawsc
 /usr/bin/icedtea-web-settings
+/usr/bin/itweb-settings
 /usr/bin/policyeditor
 /usr/share/applications/icedtea-web-javaws.desktop
 /usr/share/applications/icedtea-web-settings.desktop

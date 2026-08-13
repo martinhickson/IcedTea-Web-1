@@ -152,7 +152,7 @@ jobs:
             throw "Distribution directory not found"
           }
           $suffix = if ($env:OS -eq 'Windows_NT') { '.exe' } else { '' }
-          $required = @('javaws', 'javawsc', 'icedtea-web-settings', 'policyeditor')
+          $required = @('javaws', 'javawsc', 'icedtea-web-settings', 'itweb-settings', 'policyeditor')
           foreach ($name in $required) {
             $path = Join-Path $dist.FullName ("bin\" + $name + $suffix)
             if (-not (Test-Path -LiteralPath $path)) {

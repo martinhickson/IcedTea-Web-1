@@ -10,4 +10,4 @@ _icedteawebsettings()
     COMPREPLY=($(compgen -W "${opts}" -- ${cur}))
     return 0
 }
-complete -F _icedteawebsettings icedtea-web-settings
+complete -F _icedteawebsettings icedtea-web-settings itweb-settings
