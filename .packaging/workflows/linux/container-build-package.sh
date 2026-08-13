@@ -7,8 +7,11 @@ VERSION="${ITW_VERSION:-2.0.1-SNAPSHOT}"
 DIST_DIR="${ITW_DIST_DIR:-$ROOT_DIR/icedtea-web-distribution/target/dist/icedtea-web-$VERSION}"
 OUTPUT_DIR="${ITW_NATIVE_OUTPUT_DIR:-$ROOT_DIR/icedtea-web-distribution/target/native-packages}"
 PACKAGE_NAME="${ITW_PACKAGE_NAME:-icedtea-web}"
-MAINTAINER="${ITW_PACKAGE_MAINTAINER:-IcedTea-Web Maintainers <noreply@example.invalid>}"
-DESCRIPTION="${ITW_PACKAGE_DESCRIPTION:-IcedTea-Web Java Web Start launcher with bundled .NET launcher and Amazon Corretto 11}"
+MAINTAINER="${ITW_PACKAGE_MAINTAINER:-Martin Hickson <martinhickson@users.noreply.github.com>}"
+DESCRIPTION="${ITW_PACKAGE_DESCRIPTION:-IcedTea-Web Java Web Start launcher with bundled .NET launcher and Eclipse Temurin 11, 17, 21, and 25}"
+LONG_DESCRIPTION="This package installs the Maven-built IcedTea-Web distribution, including
+ the self-contained .NET launcher and bundled Eclipse Temurin 11, 17, 21,
+ and 25 JREs under /opt/icedtea-web/runtime."
 DEB_ARCH="${ITW_DEB_ARCH:-amd64}"
 RPM_ARCH="${ITW_RPM_ARCH:-x86_64}"
 INSTALL_ROOT="/opt/icedtea-web"
@@ -38,6 +41,51 @@ mkdir -p "$OUTPUT_DIR"
 
 safe_rpm_version() {
   echo "$VERSION" | tr '-' '_'
+}
+
+install_doc_files() {
+  local payload_root="$1"
+  local doc_dir="$payload_root/usr/share/doc/$PACKAGE_NAME"
+  local changelog
+  mkdir -p "$doc_dir"
+  {
+    cat <<EOF
+IcedTea-Web
+https://github.com/martinhickson/IcedTea-Web-1
+
+Copyright 2008-2026 Red Hat, Inc. and contributors.
+License: GPL-2 with exceptions / LGPL as described below.
+
+Bundled Eclipse Temurin JREs under /opt/icedtea-web/runtime/temurin-*
+are from Adoptium and remain under their own licenses.
+
+EOF
+    cat "$ROOT_DIR/LICENSE"
+    echo
+    cat "$ROOT_DIR/COPYING"
+  } > "$doc_dir/copyright"
+  chmod 644 "$doc_dir/copyright"
+
+  command -v gzip >/dev/null 2>&1 || {
+    echo "gzip is required to ship Debian changelog docs." >&2
+    exit 1
+  }
+  changelog="$(mktemp)"
+  cat > "$changelog" <<EOF
+$PACKAGE_NAME ($VERSION) unstable; urgency=medium
+
+  * Package IcedTea-Web with a self-contained .NET launcher and bundled
+    Eclipse Temurin 11, 17, 21, and 25 JREs.
+
+ -- $MAINTAINER  $(date -R)
+EOF
+  gzip -9n -c "$changelog" > "$doc_dir/changelog.Debian.gz"
+  rm -f "$changelog"
+  chmod 644 "$doc_dir/changelog.Debian.gz"
+  if [[ -f "$ROOT_DIR/NEWS" ]]; then
+    gzip -9n -c "$ROOT_DIR/NEWS" > "$doc_dir/changelog.gz"
+    chmod 644 "$doc_dir/changelog.gz"
+  fi
 }
 
 install_hicolor_icons() {
@@ -129,6 +177,12 @@ Terminal=false
 Categories=Settings;Utility;
 Keywords=IcedTea;IcedTea-Web;java;javaws;web;start;webstart;jnlp;policy;security;permissions;
 EOF
+
+  install_doc_files "$payload_root"
+  if [[ ! -f "$payload_root/usr/share/doc/$PACKAGE_NAME/copyright" || ! -f "$payload_root/usr/share/doc/$PACKAGE_NAME/changelog.Debian.gz" ]]; then
+    echo "Debian policy docs were not installed under /usr/share/doc/$PACKAGE_NAME" >&2
+    exit 1
+  fi
 }
 
 build_deb() {
@@ -149,8 +203,7 @@ Priority: optional
 Architecture: $DEB_ARCH
 Maintainer: $MAINTAINER
 Description: $DESCRIPTION
- This package installs the Maven-built IcedTea-Web distribution, including
- the self-contained .NET launcher and bundled Amazon Corretto 11 runtime.
+ $LONG_DESCRIPTION
 EOF
   cat > "$deb_root/DEBIAN/postinst" <<'EOF'
 #!/bin/sh
@@ -196,8 +249,7 @@ URL: https://github.com/martinhickson/IcedTea-Web-1
 Source0: %{name}-%{version}.tar.gz
 
 %description
-IcedTea-Web Java Web Start launcher packaged with the self-contained .NET
-launcher and bundled Amazon Corretto 11 runtime.
+$LONG_DESCRIPTION
 
 %prep
 %setup -q
@@ -222,6 +274,7 @@ $INSTALL_ROOT
 /usr/share/pixmaps/icedtea-web-settings.png
 /usr/share/pixmaps/policyeditor.png
 /usr/share/icons/hicolor
+/usr/share/doc/$PACKAGE_NAME
 EOF
 
   rpmbuild -bb --target "$RPM_ARCH" --define "_topdir $rpm_topdir" "$rpm_topdir/SPECS/${PACKAGE_NAME}.spec"
