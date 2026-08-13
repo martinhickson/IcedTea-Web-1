@@ -706,7 +706,8 @@ public class ResourceDownloader implements Runnable {
         }
     }
 
-    private void settleSlotBad() {
+    /** Package-visible for unit tests of the settle / fail-fast paths. */
+    void settleSlotBad() {
         resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
@@ -723,8 +724,8 @@ public class ResourceDownloader implements Runnable {
         }
     }
 
-    /** Force SETTLED_BAD when attempts are exhausted and the slot never absorbed. */
-    private void failFastOutOfRetries() {
+    /** Force SETTLED_BAD when attempts are exhausted and the slot never absorbed. Package-visible for tests. */
+    void failFastOutOfRetries() {
         resource.clearEnqueued();
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
@@ -1177,7 +1178,7 @@ public class ResourceDownloader implements Runnable {
                     + "url: " + (URL == null ? "null" : URL.toExternalForm()) + "; "
                     + "result:" + result + "; "
                     + "lastModified: " + (lastModified == null ? "null" : lastModified.toString()) + "; "
-                    + "length: " + length == null ? "null" : length.toString() + "; ";
+                    + "length: " + (length == null ? "null" : length.toString()) + "; ";
         }
     }
 

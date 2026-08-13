@@ -566,6 +566,16 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void logMissingFavIconInfoDedupesPerOrigin() throws Exception {
+        URL first = new URL("http://127.0.0.1:4201/jnlp/favicon.ico");
+        URL sibling = new URL("http://127.0.0.1:4201/favicon.ico");
+        ResourceDownloader.logMissingFavIconInfo(first);
+        ResourceDownloader.logMissingFavIconInfo(sibling); // same origin key → trace only
+        ResourceDownloader.logFavIconTrace("manual favicon trace");
+        Assert.assertEquals("<unknown>", ResourceDownloader.faviconMissingLogKey(null));
+    }
+
+    @Test
     public void isFavIconUrlDetectsCommonPaths() throws Exception {
         assertTrue(ResourceDownloader.isFavIconUrl(new URL("http://127.0.0.1:4201/jnlp/favicon.ico")));
         assertTrue(ResourceDownloader.isFavIconUrl(new URL("http://127.0.0.1:4201/favicon.ico")));

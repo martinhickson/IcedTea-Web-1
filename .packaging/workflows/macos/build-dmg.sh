@@ -29,11 +29,16 @@ STAGING="$OUTPUT_DIR/dmg-staging"
 APP_ROOT="$STAGING/$APP_NAME.app/Contents"
 DMG_LAYOUT="$STAGING/dmg-layout"
 DMG_FILE="$OUTPUT_DIR/icedtea-web-${VERSION}-${RID}.dmg"
+TMP_DMG="${TMPDIR:-/tmp}/icedtea-web-${VERSION}-${RID}.$$.dmg"
 
 rm -rf "$STAGING"
 mkdir -p "$APP_ROOT/MacOS" "$APP_ROOT/Resources/opt/icedtea-web" "$DMG_LAYOUT"
 
-cp -a "$DIST_DIR/." "$APP_ROOT/Resources/opt/icedtea-web/"
+# Move (not copy) the assembled dist into the .app bundle so we do not keep two
+# full trees on disk. Self-contained .NET + Temurin trees are large enough that a
+# second copy + hdiutil scratch space OOMs GitHub macos-15 runners.
+mv "$DIST_DIR"/* "$APP_ROOT/Resources/opt/icedtea-web/"
+rmdir "$DIST_DIR" 2>/dev/null || rm -rf "$DIST_DIR"
 chmod +x "$APP_ROOT/Resources/opt/icedtea-web/bin/"* 2>/dev/null || true
 
 ICON_SCRIPT="$ROOT_DIR/.packaging/workflows/macos/prepare-macos-icon.sh"
@@ -115,15 +120,34 @@ cat > "$APP_ROOT/Info.plist" <<EOF
 </plist>
 EOF
 
-cp -R "$STAGING/$APP_NAME.app" "$DMG_LAYOUT/"
+# Move the .app into the DMG layout (avoid a third full tree).
+mv "$STAGING/$APP_NAME.app" "$DMG_LAYOUT/"
 ln -s /Applications "$DMG_LAYOUT/Applications"
 
+# Drop heavy build intermediates that are no longer needed for packaging.
+rm -rf \
+  "$ROOT_DIR/icedtea-web/target" \
+  "$ROOT_DIR/dotnet-launcher/bin" \
+  "$ROOT_DIR/dotnet-launcher/obj" \
+  "$ROOT_DIR/icedtea-web-distribution/target/dotnet-publish" \
+  "$ROOT_DIR/icedtea-web-distribution/target/dotnet-publish-console" \
+  "$ROOT_DIR/icedtea-web-distribution/target/jre" \
+  2>/dev/null || true
+
+echo "Disk before hdiutil:"
+df -h "$OUTPUT_DIR" "${TMPDIR:-/tmp}" || true
+du -sh "$DMG_LAYOUT" || true
+
+# Build to TMPDIR then move — keeps hdiutil scratch off a nearly-full workspace when possible.
+rm -f "$TMP_DMG" "$DMG_FILE"
 hdiutil create \
   -volname "IcedTea-Web ${VERSION}" \
   -srcfolder "$DMG_LAYOUT" \
   -ov \
   -format UDZO \
-  "$DMG_FILE"
+  "$TMP_DMG"
 
+mv -f "$TMP_DMG" "$DMG_FILE"
 rm -rf "$STAGING"
 echo "Built macOS DMG: $DMG_FILE"
+ls -lh "$DMG_FILE"
