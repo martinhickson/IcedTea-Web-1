@@ -103,7 +103,15 @@ public final class TeeOutputStream extends PrintStream implements SingleStreamLo
 
     @Override
     public void log(String s) {
-        JavaMessage  jm = new JavaMessage(new Header(getlevel(), false), s);
+        if (s != null) {
+            String trimmed = s.trim();
+            if (trimmed.startsWith("SLF4J:")) {
+                // Binder-missing / NOP warnings must not become ERROR_ALL.
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, trimmed);
+                return;
+            }
+        }
+        JavaMessage jm = new JavaMessage(new Header(getlevel(), false), s);
         jm.getHeader().isClientApp = true;
         OutputController.getLogger().log(jm);
     }

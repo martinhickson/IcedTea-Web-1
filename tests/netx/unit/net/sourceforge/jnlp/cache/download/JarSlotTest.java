@@ -31,6 +31,43 @@ public class JarSlotTest {
     }
 
     @Test
+    public void settleStatsLineIncludesKindBytesAndRetried() {
+        JarSlot s = slot(0, url("http://localhost/stats.jar"));
+        s.onConnect(1000L);
+        s.onFirstByte(1100L);
+        s.addTransferred(2048L);
+        s.onLastByte(1200L);
+        s.onDecompressed(4096L, true);
+        assertTrue(s.settleGood(1300L, false));
+        String line = s.settleStatsLine();
+        assertTrue(line.contains("Download complete:"), line);
+        assertTrue(line.contains("kind=DOWNLOADED"), line);
+        assertTrue(line.contains("bytes=2048"), line);
+        assertTrue(line.contains("retried=false"), line);
+    }
+
+    @Test
+    public void settleBadFinalMarksFailedWithoutRetryPark() {
+        JarSlot s = slot(0, url("http://localhost/fail.jar"));
+        assertTrue(s.settleBadFinal(1000L));
+        assertEquals(JarState.SETTLED_BAD, s.state());
+        assertEquals(MetricKind.FAILED, s.kind);
+        assertTrue(s.settleStatsLine().contains("kind=FAILED"), s.settleStatsLine());
+    }
+
+    @Test
+    public void settleBadFinalAbsorbsFromRetryPending() {
+        // fail-fast / Error path: settleUnusable parks RETRY_PENDING; must still absorb.
+        JarSlot s = slot(0, url("http://localhost/oom.jar"));
+        assertFalse(s.settleUnusable(1000L));
+        assertEquals(JarState.RETRY_PENDING, s.state());
+        assertTrue(s.settleBadFinal(1100L));
+        assertEquals(JarState.SETTLED_BAD, s.state());
+        assertTrue(s.settled().isDone());
+        assertTrue(s.state().isAbsorbing());
+    }
+
+    @Test
     public void settleGoodIsIdempotent() {
         JarSlot s = slot(0, url("http://localhost/a.jar"));
         assertTrue(s.settleGood(1000L, false));
@@ -99,6 +136,24 @@ public class JarSlotTest {
     }
 
     @Test
+    public void settleStatsLineBeforeKindUsesPlaceholders() {
+        JarSlot s = slot(0, url("http://localhost/pending.jar"));
+        String line = s.settleStatsLine();
+        assertTrue(line.contains("kind=?"), line);
+        assertTrue(line.contains("ttfb=-"), line);
+        assertTrue(line.contains("thr=-"), line);
+        assertTrue(line.contains("decomp=-"), line);
+    }
+
+    @Test
+    public void settleBadFinalIsNoOpAfterAlreadyGood() {
+        JarSlot s = slot(0, url("http://localhost/a.jar"));
+        assertTrue(s.settleGood(1L, false));
+        assertFalse(s.settleBadFinal(2L));
+        assertEquals(JarState.GOOD, s.state());
+    }
+
+    @Test
     public void timestampsAndDerivedMetrics() {
         JarSlot s = slot(0, url("http://localhost/a.jar"));
         s.startMillis = 10;               // explicit so derived deltas are deterministic
@@ -107,8 +162,50 @@ public class JarSlotTest {
         s.addTransferred(100);
         s.onLastByte(30);
         assertTrue(s.settleGood(40, false));
-        assertEquals(10, s.ttfbMillis());        // 20 - 10 (start)
-        assertEquals(30, s.durationMillis());    // 40 - 10
+        assertEquals(10, s.ttfbMillis());        // 20 - 10 (connect end)
+        assertEquals(30, s.durationMillis());    // 40 - 10 (connect start)
         assertEquals(10, s.transferMillis());    // 30 - 20
+    }
+
+    @Test
+    public void ttfbIsFromConnectNotGroupStart() {
+        JarSlot s = slot(0, url("http://localhost/late.jar"));
+        s.startMillis = 0; // group started long before this jar connected
+        s.onConnect(5000L, 5020L);
+        s.onFirstByte(5035L);
+        s.onLastByte(5100L);
+        s.addTransferred(100);
+        assertTrue(s.settleGood(5200L, false));
+        assertEquals(15, s.ttfbMillis());       // 5035 - 5020
+        assertEquals(200, s.durationMillis());  // 5200 - 5000 connect start
+        assertEquals(65, s.transferMillis());   // 5100 - 5035
+    }
+
+    @Test
+    public void ttfbIsUnknownUntilConnectEvenIfGroupStartAndFirstByteExist() {
+        JarSlot s = slot(0, url("http://localhost/queued.jar"));
+        s.startMillis = 0L;
+        s.onFirstByte(180_000L);
+        assertEquals(-1, s.ttfbMillis(), "TTFB must not fall back to firstByte-groupStart");
+    }
+
+    @Test
+    public void onFirstByteKeepsTheFirstStamp() {
+        JarSlot s = slot(0, url("http://localhost/a.jar"));
+        s.onConnect(100L, 110L);
+        s.onFirstByte(120L);
+        s.onFirstByte(999L);
+        assertEquals(10, s.ttfbMillis());
+    }
+
+    @Test
+    public void durationUsesConnectStartNotGroupStart() {
+        JarSlot s = slot(0, url("http://localhost/late.jar"));
+        s.startMillis = 0L;
+        s.onConnect(10_000L, 10_010L);
+        s.onFirstByte(10_020L);
+        s.onLastByte(10_100L);
+        assertTrue(s.settleGood(10_200L, false));
+        assertEquals(200, s.durationMillis());
     }
 }

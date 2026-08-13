@@ -43,6 +43,7 @@ final class AutodetectTestSupport {
         }
         Properties props = new Properties();
         props.setProperty(DeploymentConfiguration.KEY_AUTODETECT_JDKS, "false");
+        props.setProperty(DeploymentConfiguration.KEY_CACHE_CATALOG_SQLITE, "true");
         props.setProperty("deployment.log", "true");
         props.setProperty("deployment.log.file", "true");
         writeDeploymentProperties(props);
@@ -51,7 +52,7 @@ final class AutodetectTestSupport {
 
     /**
      * Wipe the isolated cache so each run starts clean (avoids Windows
-     * recently_used remap races from prior launches).
+     * recently_used remap races / leftover {@code db/} catalog from prior launches).
      */
     static void ensureFreshCacheIndex() throws IOException {
         String cacheHome = System.getenv("XDG_CACHE_HOME");
@@ -72,7 +73,25 @@ final class AutodetectTestSupport {
         }
         Path cacheDir = Paths.get(cacheHome, "icedtea-web", "cache");
         Files.createDirectories(cacheDir);
-        Files.writeString(cacheDir.resolve("recently_used"), "", StandardCharsets.UTF_8);
+        // Legacy index placeholder (ignored when deployment.cache.catalog.sqlite=true).
+        Files.writeString(cacheDir.resolve("recently_used"), PLANTED_LEGACY_INDEX, StandardCharsets.UTF_8);
+        Files.createDirectories(cacheDir.resolve("db"));
+    }
+
+    /** Distinctive bytes planted in legacy {@code recently_used}; sqlite path must not rewrite them. */
+    static final String PLANTED_LEGACY_INDEX = "PLANTED-LEGACY-DO-NOT-TOUCH\n";
+
+    /** User cache root: {@code $XDG_CACHE_HOME/icedtea-web/cache}. */
+    static Path userCacheRoot() {
+        String cacheHome = System.getenv("XDG_CACHE_HOME");
+        if (cacheHome == null || cacheHome.isBlank()) {
+            cacheHome = System.getProperty("user.home") + File.separator + ".cache";
+        }
+        return Paths.get(cacheHome, "icedtea-web", "cache");
+    }
+
+    static Path sqliteCatalogFile() {
+        return userCacheRoot().resolve("db").resolve("cache_catalog.sqlite");
     }
 
     static void writeDeploymentProperties(Properties props) throws IOException {

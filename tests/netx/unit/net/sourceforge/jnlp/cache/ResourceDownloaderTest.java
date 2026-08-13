@@ -327,10 +327,14 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     private File setupFile(String fileName, String text) throws IOException {
+        return setupFile(fileName, text.getBytes());
+    }
+
+    private File setupFile(String fileName, byte[] body) throws IOException {
         File downloadDir = downloadServer.getDir();
         File file = new File(downloadDir, fileName);
         file.createNewFile();
-        Files.write(file.toPath(), text.getBytes());
+        Files.write(file.toPath(), body);
         file.deleteOnExit();
 
         return file;
@@ -501,6 +505,24 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         }
     }
 
+    @Test
+    public void testDownloadRejectsTruncatedZipMagicOnlyJar() throws IOException {
+        // Passes ZIP/JAR magic sniff but fails verifyJarIntegrity (enumerate/drain).
+        setupFile("trunc-magic.jar", new byte[] { 'P', 'K', 3, 4, 0, 0 });
+
+        Resource resource = Resource.getResource(downloadServer.getUrl("trunc-magic.jar"), null, UpdatePolicy.FORCE);
+        ResourceDownloader resourceDownloader = new ResourceDownloader(resource, new Object());
+        resource.setStatusFlag(Resource.Status.PRECONNECT);
+        resource.setDownloadOptions(new DownloadOptions(false, false));
+        resourceDownloader.run();
+
+        assertTrue("truncated jar must not settle as a successful download",
+                resource.hasFlags(EnumSet.of(Resource.Status.ERROR)));
+        File local = resource.getLocalFile();
+        assertTrue("integrity failure must clear local file",
+                local == null || !local.isFile());
+    }
+
     private void setupPackGzFile(String fileName, String version) throws IOException {
         File downloadDir = downloadServer.getDir();
 
@@ -532,6 +554,25 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         gos.write(Files.readAllBytes(pack.toPath()));
         gos.finish();
         gos.close();
+    }
+
+    @Test
+    public void packWireHintPrefersTransferredThenContentLengthThenSize() {
+        assertEquals(100L, ResourceDownloader.packWireHintBytes(100L, 200L, 300L));
+        assertEquals(200L, ResourceDownloader.packWireHintBytes(0L, 200L, 300L));
+        assertEquals(200L, ResourceDownloader.packWireHintBytes(-1L, 200L, 300L));
+        assertEquals(300L, ResourceDownloader.packWireHintBytes(0L, -1L, 300L));
+        assertEquals(0L, ResourceDownloader.packWireHintBytes(0L, -1L, -1L));
+    }
+
+    @Test
+    public void logMissingFavIconInfoDedupesPerOrigin() throws Exception {
+        URL first = new URL("http://127.0.0.1:4201/jnlp/favicon.ico");
+        URL sibling = new URL("http://127.0.0.1:4201/favicon.ico");
+        ResourceDownloader.logMissingFavIconInfo(first);
+        ResourceDownloader.logMissingFavIconInfo(sibling); // same origin key → trace only
+        ResourceDownloader.logFavIconTrace("manual favicon trace");
+        Assert.assertEquals("<unknown>", ResourceDownloader.faviconMissingLogKey(null));
     }
 
     @Test

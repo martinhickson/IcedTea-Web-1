@@ -218,7 +218,11 @@
         <artifactId>maven-surefire-plugin</artifactId>
         <version>3.2.5</version>
         <configuration>
-          <skipTests>true</skipTests>
+          <skipTests>false</skipTests>
+          <includes>
+            <include>**/tls/*IT.java</include>
+            <include>**/tls/*Test.java</include>
+          </includes>
         </configuration>
       </plugin>
       <plugin>
@@ -231,6 +235,7 @@
           </includes>
           <excludes>
             <exclude>**/SampleAppHostIT.java</exclude>
+            <exclude>**/tls/**</exclude>
           </excludes>
           <testFailureIgnore>${itw.autodetect.it.failure.ignore}</testFailureIgnore>
           <systemPropertyVariables>

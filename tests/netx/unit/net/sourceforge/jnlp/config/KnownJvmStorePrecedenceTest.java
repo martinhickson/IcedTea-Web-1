@@ -107,6 +107,29 @@ public class KnownJvmStorePrecedenceTest extends NoStdOutErrTest {
         Assert.assertEquals(2, KnownJvmStore.vendorRank(other));
     }
 
+    @Test
+    public void autodetectionPreferenceComparatorUsesDescribeLightOnly() throws Exception {
+        File dir = Files.createTempDirectory("itw-jdk-light-sort").toFile();
+        String open11 = fakeLightHome(dir, "Java", "jdk-11.0.1");
+        String temurin21 = fakeLightHome(dir, "Eclipse Adoptium", "jdk-21.0.1");
+        String corretto17 = fakeLightHome(dir, "Amazon Corretto", "jdk17.0.1");
+
+        // Fake homes have java.exe but cannot be process-probed — comparator must still rank.
+        Assert.assertTrue(JvmDescriptor.describeLight(corretto17).isValid());
+        List<String> homes = new ArrayList<>(Arrays.asList(open11, temurin21, corretto17));
+        homes.sort(KnownJvmStore.autodetectionPreferenceComparator());
+
+        Assert.assertEquals(Arrays.asList(corretto17, temurin21, open11), homes);
+    }
+
+    private static String fakeLightHome(File root, String vendorDir, String leaf) throws Exception {
+        File home = new File(root, vendorDir + File.separator + leaf);
+        Assert.assertTrue(new File(home, "bin").mkdirs());
+        String javaName = "java" + (File.separatorChar == '\\' ? ".exe" : "");
+        Assert.assertTrue(new File(home, "bin" + File.separator + javaName).createNewFile());
+        return home.getAbsolutePath();
+    }
+
     private static List<String> pathsOf(List<JvmDescriptor> descriptors) {
         List<String> paths = new ArrayList<>();
         for (JvmDescriptor descriptor : descriptors) {

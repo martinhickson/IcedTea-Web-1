@@ -21,6 +21,23 @@ public final class OracleHttpClient implements ItwHttpClient {
     @Override
     public HttpResponse open(URL url, String method, Map<String, String> requestHeaders, ConnectionTiming timing)
             throws IOException {
+        // Cipher-offer short-circuit only: a probe miss tries the next stage
+        // on this same request. Not an IO/download retry budget.
+        while (true) {
+            int stageAtStart = ItwTls.effectiveOffer(url.getHost());
+            try {
+                return openOnce(url, method, requestHeaders, timing);
+            } catch (IOException e) {
+                if (!"https".equalsIgnoreCase(url.getProtocol())
+                        || !ItwTls.continueOpenAfterHandshakeMiss(url.getHost(), e, stageAtStart)) {
+                    throw e;
+                }
+            }
+        }
+    }
+
+    private HttpResponse openOnce(URL url, String method, Map<String, String> requestHeaders, ConnectionTiming timing)
+            throws IOException {
         if (timing != null) {
             timing.connectStartMillis = System.currentTimeMillis();
         }
@@ -36,8 +53,15 @@ public final class OracleHttpClient implements ItwHttpClient {
         // getResponseCode() executes the request; capture the status eagerly so it
         // does not throw when read later from the response object.
         int statusCode = HttpURLConnection.HTTP_OK;
-        if (connection instanceof HttpURLConnection) {
-            statusCode = ((HttpURLConnection) connection).getResponseCode();
+        try {
+            if (connection instanceof HttpURLConnection) {
+                statusCode = ((HttpURLConnection) connection).getResponseCode();
+            }
+        } catch (IOException e) {
+            if (connection instanceof HttpURLConnection) {
+                HttpUtils.consumeAndCloseConnectionSilently((HttpURLConnection) connection, connection.getURL());
+            }
+            throw e;
         }
         if (timing != null) {
             timing.connectEndMillis = System.currentTimeMillis();

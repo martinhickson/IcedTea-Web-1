@@ -62,4 +62,46 @@ public class JarGroupStateTest {
         g.slot(1).addTransferred(20);
         assertEquals(30, g.bytesSoFar());
     }
+
+    @Test
+    public void reclaimRetryPendingClaimsOrphanedSlots() {
+        JarGroupState g = JarGroupState.forJars(Arrays.asList(
+                url("http://localhost/a.jar"), url("http://localhost/b.jar")));
+        assertTrue(g.slot(0).settleGood(100L, false));
+        g.slot(1).settleUnusable(100L); // RETRY_PENDING, no waiter claimed it
+        assertEquals(JarState.RETRY_PENDING, g.slot(1).state());
+        assertTrue(!g.done().isDone());
+
+        java.util.List<Integer> reclaimed = g.reclaimRetryPending();
+        assertEquals(java.util.Collections.singletonList(1), reclaimed);
+        assertEquals(JarState.IN_FLIGHT, g.slot(1).state());
+        assertTrue(g.slot(1).settleGood(200L, false));
+        assertTrue(g.done().isDone());
+        assertEquals(1, g.stats().retriedCount);
+    }
+
+    @Test
+    public void reclaimRetryPendingIsNoOpWhenNothingParked() {
+        JarGroupState g = JarGroupState.forJars(Arrays.asList(url("http://localhost/a.jar")));
+        assertTrue(g.slot(0).settleGood(1L, false));
+        assertTrue(g.reclaimRetryPending().isEmpty());
+    }
+
+    @Test
+    public void awaitAndSlotLookupByUrl() throws Exception {
+        URL a = url("http://localhost/a.jar");
+        URL b = url("http://localhost/b.jar");
+        JarGroupState g = JarGroupState.forJars(Arrays.asList(a, b));
+        assertEquals(0, g.slot(a).index());
+        assertEquals(1, g.slot(b).index());
+        assertEquals(2, g.size());
+        assertTrue(g.wallDurationMillis() >= 0);
+
+        g.slot(a).settleGood(50L, false);
+        g.slot(b).settleGood(60L, true);
+        g.await(a).join();
+        g.awaitAll();
+        assertTrue(g.done().isDone());
+        assertTrue(g.wallDurationMillis() >= 0);
+    }
 }

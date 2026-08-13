@@ -288,6 +288,13 @@ public final class DeploymentConfiguration {
     public static final String KEY_HTTPCONNECTION_CONNECT_TIMEOUT = "deployment.http.connection.connectTimeout";
     public static final String KEY_HTTPCONNECTION_READ_TIMEOUT = "deployment.http.connection.readTimeout";
     public static final String KEY_TLS_CLIENT_CIPHER_SUITES = "deployment.tls.client.cipherSuites";
+    /**
+     * TLS cipher offer mode: {@code probe} (default) tries TLS 1.3 ChaCha,
+     * then TLS 1.2 ECDHE-ECDSA ChaCha, then TLS 1.2 ECDHE-RSA AES-256-GCM,
+     * then the full list (inner short-circuit in HTTP open, not IO retries);
+     * {@code full} is the ChaCha-first multi-suite list with no probing.
+     */
+    public static final String KEY_TLS_CLIENT_CIPHER_MODE = "deployment.tls.client.cipherMode";
     public static final String KEY_HTTP_CLIENT = "deployment.http.client";
     public static final String KEY_ITW_DOWNLOAD_JVM = "deployment.itw.download.jvm";
     
@@ -335,12 +342,20 @@ public final class DeploymentConfiguration {
     public static final String KEY_SMALL_SIZE_OVERRIDE_WIDTH = "deployment.small.size.override.width";
     public static final String KEY_SMALL_SIZE_OVERRIDE_HEIGHT = "deployment.small.size.override.height";
     public static final String KEY_ENABLE_CACHE_FSYNC = "deployment.enable.cache.fsync";
+
+    /**
+     * When true, cache jars and the LRU catalog live under {@code {cachedir}/db/}
+     * using SQLite ({@code cache_catalog.sqlite}). Legacy {@code recently_used}
+     * under {@code {cachedir}/} is ignored. When false, use the properties index.
+     */
+    public static final String KEY_CACHE_CATALOG_SQLITE = "deployment.cache.catalog.sqlite";
     public static final String KEY_BACKGROUND_THREADS_COUNT = "deployment.background.threads.count";
     /**
-     * Boolean. If true (default), temporarily double {@link #KEY_BACKGROUND_THREADS_COUNT}
-     * after the first successful jar download while more jars are still downloading;
-     * if any pack200-gzip download is observed after that doubling, shrink back to the
-     * configured count. At most one double and one half.
+     * Boolean. If true (default), size download workers and the HTTP per-route
+     * pool to twice {@link #KEY_BACKGROUND_THREADS_COUNT} from the start (default
+     * 6 → 12 real slots). After the first successful jar the executor may still
+     * latch as doubled; if any pack200-gzip download is observed after that,
+     * shrink workers back to the configured count. At most one double and one half.
      */
     public static final String KEY_BACKGROUND_THREADS_ADAPTIVE = "deployment.background.threads.adaptive";
     public static final String KEY_MAX_URLS_DOWNLOAD_INDICATOR = "deployment.max.urls.download.indicator";
@@ -349,6 +364,11 @@ public final class DeploymentConfiguration {
     public static final String KEY_HTTP_USE_GZIP = "deployment.http.useGZip";
     /** Boolean. If true, skip the HEAD cache-validation request when the resource is not in cache. */
     public static final String KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED = "deployment.http.skipHeadIfNotCached";
+    /**
+     * Boolean. If true (default), HEAD uncached jars 12-wide then start GETs
+     * largest-first so fat transfers overlap on a saturated pipe.
+     */
+    public static final String KEY_HTTP_SIZE_FIRST_DOWNLOADS = "deployment.http.sizeFirstDownloads";
 
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     

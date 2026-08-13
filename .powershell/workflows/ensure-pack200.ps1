@@ -63,7 +63,7 @@ function Invoke-Pack200Download {
     )
 
     $proxyUrl = Get-ProxyUrlForDownload
-    for ($attempt = 1; $attempt -le 3; $attempt++) {
+    for ($attempt = 1; $attempt -le 8; $attempt++) {
         try {
             if (Test-Path -LiteralPath $OutFile) {
                 Remove-Item -LiteralPath $OutFile -Force
@@ -83,10 +83,11 @@ function Invoke-Pack200Download {
             }
             return
         } catch {
-            if ($attempt -eq 3) {
+            if ($attempt -eq 8) {
                 throw "Failed to download $Url`: $_"
             }
-            Start-Sleep -Seconds (3 * $attempt)
+            # GitHub/Adoptium sometimes return 503 under load; back off harder.
+            Start-Sleep -Seconds ([Math]::Min(60, 5 * $attempt))
         }
     }
 }

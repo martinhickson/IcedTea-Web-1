@@ -34,6 +34,7 @@ import net.sourceforge.jnlp.runtime.Boot;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.security.ConnectionFactory;
+import net.sourceforge.jnlp.security.ItwTls;
 import net.sourceforge.jnlp.security.SecurityDialogs;
 import net.sourceforge.jnlp.security.dialogs.InetSecurity511Panel;
 import net.sourceforge.jnlp.util.HttpUtils;
@@ -260,12 +261,31 @@ public class ResourceDownloader implements Runnable {
             }
             net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
             if (slot != null && slot.claimRetry()) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "Download retry for " + resource.getLocation()
+                                + " after unusable/corrupt attempt — one shot left");
                 doAttempt();   // attempt 2
+            }
+            if (!resource.isTerminal()) {
+                // No more retries: never leave IN_FLIGHT / orphaned RETRY_PENDING.
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "Download of " + resource.getLocation()
+                                + " out of retries — failing fast");
+                failFastOutOfRetries();
             }
         } catch (Throwable t) {
             // never leave the group hanging: settle bad on any unexpected failure
             OutputController.getLogger().log(t);
-            settleSlotBad();
+            if (t instanceof Error) {
+                // OOM / linkage / etc.: retry rarely helps and settleUnusable→RETRY_PENDING
+                // used to strand the group when settleBadFinal only accepted IN_FLIGHT.
+                failFastOutOfRetries();
+            } else {
+                settleSlotBad();
+                if (!resource.isTerminal()) {
+                    failFastOutOfRetries();
+                }
+            }
         }
     }
 
@@ -370,7 +390,7 @@ public class ResourceDownloader implements Runnable {
             File existingOnDisk = null;
             boolean localUsable = localFile != null && localFile.isFile() && localFile.length() > 0
                     && (!CacheUtil.isJarResourceUrl(resource.getLocation())
-                    || CacheUtil.isValidJarFile(localFile));
+                    || jarPassesIntegrity(localFile));
             if (!localUsable) {
                 existingOnDisk = CacheUtil.findExistingCacheFile(resource.getLocation(), resource.getDownloadVersion());
             }
@@ -402,9 +422,10 @@ public class ResourceDownloader implements Runnable {
 
             // Never mark DOWNLOADED when the local file is missing — that is what produced
             // NoSuchFileException in JarCertVerifier with corrupt/partial cache state.
+            // Signature/digest verify happens here before confirming cache-hit success.
             if (current && localFile != null && localFile.isFile() && localFile.length() > 0
                     && (!CacheUtil.isJarResourceUrl(resource.getLocation())
-                    || CacheUtil.isValidJarFile(localFile))) {
+                    || jarPassesIntegrity(localFile))) {
                 settleSlotGood(true);
             }
 
@@ -544,9 +565,16 @@ public class ResourceDownloader implements Runnable {
 
                     }
                 } catch (IOException e) {
-                    // continue to next candidate
-                    logResourceDebug(resourceLocation, "While processing " + url.toString() + " by " + requestMethod + " for resource " + resource.toString() + " got " + e + ": ");
-                    logResourceDebug(resourceLocation, e);
+                    if (ItwTls.isCipherNegotiationFailure(e)) {
+                        logResourceDebug(resourceLocation, "TLS cipher suite not negotiated for "
+                                + url + " by " + requestMethod + " ("
+                                + ItwTls.handshakeMissReason(e) + ")");
+                    } else {
+                        logResourceDebug(resourceLocation, "While processing " + url.toString()
+                                + " by " + requestMethod + " for resource " + resource.toString()
+                                + " got " + e + ": ");
+                        logResourceDebug(resourceLocation, e);
+                    }
                 }
             }
         }
@@ -576,16 +604,23 @@ public class ResourceDownloader implements Runnable {
                     // HTTP error codes (404 etc.) are not exceptions; check the
                     // status explicitly to fall through to the next candidate.
                     if (response.getStatusCode() >= 400) {
-                        logResourceDebug(downloadTo, "GET returned " + response.getStatusCode() + " for " + candidate + ", trying next URL candidate");
+                        logResourceDebug(downloadTo, "GET returned " + response.getStatusCode()
+                                + " for " + candidate + ", trying next URL candidate");
                         response.close();
                         response = null;
                         continue;
                     }
                     downloadFrom = candidate;
-                    break; // success
+                    break;
                 } catch (IOException e) {
                     lastError = e;
-                    logResourceDebug(downloadTo, "GET failed for " + candidate + ", trying next URL candidate");
+                    if (ItwTls.isCipherNegotiationFailure(e)) {
+                        logResourceDebug(downloadTo, "TLS cipher suite not negotiated for "
+                                + candidate + " (" + ItwTls.handshakeMissReason(e) + ")");
+                    } else {
+                        logResourceDebug(downloadTo, "GET failed for " + candidate
+                                + ", trying next URL candidate");
+                    }
                 }
             }
             if (response == null) {
@@ -635,14 +670,35 @@ public class ResourceDownloader implements Runnable {
                 net.sourceforge.jnlp.security.HttpClientProvider.getDefault().open(location, "GET", headers, timing);
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot != null) {
-            long connected = timing.connectEndMillis > 0 ? timing.connectEndMillis : System.currentTimeMillis();
-            slot.onConnect(connected);
+            long end = timing.connectEndMillis > 0 ? timing.connectEndMillis : System.currentTimeMillis();
+            long start = timing.connectStartMillis > 0 ? timing.connectStartMillis : end;
+            slot.onConnect(start, end);
         }
         return response;
     }
 
-    private void settleSlotGood(boolean fromCache) {
+    /** Package-visible for Groovy probes / unit tests. */
+    void settleSlotGood(boolean fromCache) {
         resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
+        // Final gate: jars must pass signature/digest integrity before GOOD.
+        File local = resource.getLocalFile();
+        if (CacheUtil.isJarResourceUrl(resource.getLocation()) && local != null) {
+            try {
+                String result = CacheUtil.verifyJarIntegrity(local);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                        "Download integrity: " + result);
+            } catch (IOException integrityFailed) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "Download integrity FAILED before settle — not marking success: "
+                                + resource.getLocation() + " (" + integrityFailed.getMessage() + ")");
+                OutputController.getLogger().log(integrityFailed);
+                deleteCorruptLocal(local);
+                resource.setLocalFile(null);
+                settleSlotBad();
+                resource.fireDownloadEvent(); // ERROR
+                return;
+            }
+        }
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
@@ -662,10 +718,12 @@ public class ResourceDownloader implements Runnable {
         // cache hits loop forever: isCurrent=true → "Downloading" → new IN_FLIGHT slot.
         if (slot.state() == net.sourceforge.jnlp.cache.download.JarState.GOOD) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, slot.settleStatsLine());
         }
     }
 
-    private void settleSlotBad() {
+    /** Package-visible for unit tests of the settle / fail-fast paths. */
+    void settleSlotBad() {
         resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
@@ -673,9 +731,49 @@ public class ResourceDownloader implements Runnable {
             return;
         }
         // settleUnusable → RETRY_PENDING (not absorbing) on first failure; SETTLED_BAD after retry.
-        if (slot.settleUnusable(System.currentTimeMillis())
-                || slot.state() == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD) {
+        boolean terminal = slot.settleUnusable(System.currentTimeMillis())
+                || slot.state() == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD;
+        if (terminal) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "Download failed (out of retries or terminal error): " + slot.settleStatsLine());
+        }
+    }
+
+    /** Force SETTLED_BAD when attempts are exhausted and the slot never absorbed. Package-visible for tests. */
+    void failFastOutOfRetries() {
+        resource.clearEnqueued();
+        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+        if (slot == null) {
+            resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+            resource.fireDownloadEvent(); // ERROR
+            return;
+        }
+        slot.settleBadFinal(System.currentTimeMillis());
+        resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+        OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                "Download failed fast after retries exhausted: " + slot.settleStatsLine());
+        resource.fireDownloadEvent(); // ERROR
+    }
+
+    private static boolean jarPassesIntegrity(File file) {
+        try {
+            CacheUtil.verifyJarIntegrity(file);
+            return true;
+        } catch (IOException e) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, e);
+            return false;
+        }
+    }
+
+    private static void deleteCorruptLocal(File local) {
+        if (local == null || !local.isFile()) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(local.toPath());
+        } catch (IOException deleteEx) {
+            OutputController.getLogger().log(deleteEx);
         }
     }
 
@@ -727,7 +825,8 @@ public class ResourceDownloader implements Runnable {
             boolean wrote = false;
             File writtenFile = null;
             try {
-                writtenFile = writeDownloadStream(cacheLocation, response.getBody(), packGZ);
+                writtenFile = writeDownloadStream(cacheLocation, response.getBody(), packGZ,
+                        response.getContentLength());
                 wrote = true;
             } catch (IOException ex) {
                 if (isFavIconUrl(downloadLocation)) {
@@ -744,7 +843,8 @@ public class ResourceDownloader implements Runnable {
                     byte[] body = (byte[]) result[1];
                     OutputController.getLogger().log(head);
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
-                    writtenFile = writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ);
+                    writtenFile = writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ,
+                            body != null ? body.length : -1L);
                     wrote = true;
                 } else {
                     logDownloadFailure(downloadLocation, ex);
@@ -769,6 +869,9 @@ public class ResourceDownloader implements Runnable {
                         }
                     }
                     if (!wrote) {
+                        OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                                "Download of " + downloadLocation + " out of IO retries ("
+                                        + retryCount + ") — failing fast");
                         throw lastFailure;
                     }
                 }
@@ -801,83 +904,63 @@ public class ResourceDownloader implements Runnable {
      * @return the cache file that was written
      */
     private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ) throws IOException {
+        return writeDownloadStream(cacheLocation, raw, packGZ, -1L);
+    }
+
+    private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ, long contentLength)
+            throws IOException {
         // Validate the exact file we wrote — a second getCacheFile() can resolve a different
         // LRU slot and falsely reject a good pack200 unpack (or leave poison on disk).
         File written = packGZ
-                ? unpackPackGzToCacheFile(cacheLocation, raw)
+                ? drainThenUnpackPackGz(cacheLocation, raw)
                 : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw));
         // compressionRatio metric: on-disk decompressed size vs wire bytes
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot != null && written != null) {
             slot.onDecompressed(written.length(), packGZ);
         }
-        if (CacheUtil.isJarResourceUrl(cacheLocation) && !CacheUtil.isValidJarFile(written)) {
-            String preview = CacheUtil.previewFileHead(written, 80);
-            if (written != null && written.isFile()) {
-                try {
-                    Files.deleteIfExists(written.toPath());
-                } catch (IOException deleteEx) {
-                    OutputController.getLogger().log(deleteEx);
-                }
+        if (CacheUtil.isJarResourceUrl(cacheLocation)) {
+            try {
+                String integrity = CacheUtil.verifyJarIntegrity(written);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                        "Download integrity (post-write): " + integrity);
+            } catch (IOException badJar) {
+                String preview = CacheUtil.previewFileHead(written, 80);
+                deleteCorruptLocal(written);
+                throw new IOException("Download of " + cacheLocation + " failed integrity/signature check"
+                        + (preview != null && !preview.isEmpty() ? " (" + preview + ")" : "")
+                        + ": " + badJar.getMessage(), badJar);
             }
-            throw new IOException("Download of " + cacheLocation + " is not a valid JAR"
-                    + (preview != null && !preview.isEmpty() ? " (" + preview + ")" : ""));
         }
         return written;
     }
 
     /**
-     * Pack200-gzip decode directly to the cache jar path.
-     * Avoids buffering the entire unpacked jar in a {@code ByteArrayOutputStream}.
-     * Wire bytes (pre-gunzip) are counted into {@link Resource#incrementTransferred}
-     * and {@link net.sourceforge.jnlp.cache.download.JarSlot} the same way as
-     * {@link #writeDownloadToFile} — otherwise Download stats stay at thr=-1 / bytes=0
-     * for every pack.gz artifact.
+     * Drain the HTTP pack.gz body to disk first (records real TTFB, releases the
+     * connection), then Pack200-unpack under admission using the exact wire size.
+     * Waiting for a heap slot with the response unread made mean TTFB ≈ wall clock.
      */
-    private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream) throws IOException {
-        File localFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
-        final net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        InputStream countedWire = new InputStream() {
-            private final InputStream delegate = packGzStream;
-            @Override
-            public int read() throws IOException {
-                int b = delegate.read();
-                if (b >= 0) {
-                    noteWireBytes(1);
+    private File drainThenUnpackPackGz(URL cacheLocation, InputStream packGzStream) throws IOException {
+        File jarFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
+        File packed = new File(jarFile.getPath() + ".pack.gz.download");
+        try {
+            writeCountedStreamToFile(packed, new BufferedInputStream(packGzStream));
+            long wire = packed.isFile() ? packed.length() : 0L;
+            long sizeHint = resource.getSize();
+            long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
+                    .estimateReserveBytes(wire, sizeHint);
+            net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
+                try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
+                     OutputStream fileOut = Files.newOutputStream(jarFile.toPath(),
+                             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                     JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+                    Pack200.newUnpacker().unpack(in, jarOut);
                 }
-                return b;
-            }
-            @Override
-            public int read(byte[] b, int off, int len) throws IOException {
-                int n = delegate.read(b, off, len);
-                if (n > 0) {
-                    noteWireBytes(n);
-                }
-                return n;
-            }
-            @Override
-            public void close() throws IOException {
-                delegate.close();
-            }
-            private void noteWireBytes(int n) {
-                resource.incrementTransferred(n);
-                if (slot != null) {
-                    long now = System.currentTimeMillis();
-                    slot.onFirstByte(now);
-                    slot.addTransferred(n);
-                }
-            }
-        };
-        try (InputStream in = new GZIPInputStream(new BufferedInputStream(countedWire));
-             OutputStream fileOut = Files.newOutputStream(localFile.toPath(),
-                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-             JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
-            Pack200.newUnpacker().unpack(in, jarOut);
+            });
+            return jarFile;
+        } finally {
+            deleteCorruptLocal(packed);
         }
-        if (slot != null) {
-            slot.onLastByte(System.currentTimeMillis());
-        }
-        return localFile;
     }
 
     private File retryDownload(net.sourceforge.jnlp.security.HttpResponse response, URL downloadLocation, CacheEntry downloadEntry,
@@ -903,7 +986,8 @@ public class ResourceDownloader implements Runnable {
         // raw gzip bytes under names like sonata-dao__V....jar while JarCertVerifier opened the
         // missing unversioned sonata-dao.jar (Windows production launch failure).
         try {
-            return writeDownloadStream(downloadEntry.getLocation(), retried.getBody(), packGZ);
+            return writeDownloadStream(downloadEntry.getLocation(), retried.getBody(), packGZ,
+                    retried.getContentLength());
         } finally {
             retried.close();
         }
@@ -932,14 +1016,43 @@ public class ResourceDownloader implements Runnable {
         }
     }
 
+    /**
+     * Prefer already-counted wire bytes, else HTTP Content-Length, else declared resource size.
+     * Package-visible for unit tests.
+     */
+    static long packWireHintBytes(long slotTransferred, long contentLength, long resourceSize) {
+        if (slotTransferred > 0L) {
+            return slotTransferred;
+        }
+        if (contentLength > 0L) {
+            return contentLength;
+        }
+        if (resourceSize > 0L) {
+            return resourceSize;
+        }
+        return 0L;
+    }
+
     private File writeDownloadToFile(URL downloadLocation, InputStream in) throws IOException {
         File localFile = CacheUtil.getCacheFile(downloadLocation, resource.getDownloadVersion());
-        byte buf[] = new byte[1024];
+        writeCountedStreamToFile(localFile, in);
+        return localFile;
+    }
+
+    /** Copy HTTP bytes to {@code dest} immediately; first/last-byte clocks follow the wire, not unpack. */
+    private void writeCountedStreamToFile(File dest, InputStream in) throws IOException {
+        writeCountedStreamToFile(dest, in, resource, resource.getJarSlot());
+    }
+
+    static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
+            net.sourceforge.jnlp.cache.download.JarSlot slot) throws IOException {
+        byte buf[] = new byte[8192];
         int rlen;
-        net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(localFile))) {
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest))) {
             while (-1 != (rlen = in.read(buf))) {
-                resource.incrementTransferred(rlen);
+                if (resource != null) {
+                    resource.incrementTransferred(rlen);
+                }
                 if (slot != null) {
                     long now = System.currentTimeMillis();
                     slot.onFirstByte(now);
@@ -952,7 +1065,6 @@ public class ResourceDownloader implements Runnable {
             }
             in.close();
         }
-        return localFile;
     }
 
     private void uncompressGzip(URL compressedLocation, URL uncompressedLocation, Version version) throws IOException {
@@ -981,12 +1093,16 @@ public class ResourceDownloader implements Runnable {
 
         File packed = CacheUtil.getCacheFile(compressedLocation, version);
         File unpacked = CacheUtil.getCacheFile(uncompressedLocation, version);
-        try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
-             OutputStream fileOut = Files.newOutputStream(unpacked.toPath(),
-                     StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-             JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
-            Pack200.newUnpacker().unpack(in, jarOut);
-        }
+        long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
+                .estimateReserveBytes(packed.isFile() ? packed.length() : 0L, 0L);
+        net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
+            try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
+                 OutputStream fileOut = Files.newOutputStream(unpacked.toPath(),
+                         StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                 JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+                Pack200.newUnpacker().unpack(in, jarOut);
+            }
+        });
     }
 
     /**
@@ -1045,7 +1161,7 @@ public class ResourceDownloader implements Runnable {
                     + "url: " + (URL == null ? "null" : URL.toExternalForm()) + "; "
                     + "result:" + result + "; "
                     + "lastModified: " + (lastModified == null ? "null" : lastModified.toString()) + "; "
-                    + "length: " + length == null ? "null" : length.toString() + "; ";
+                    + "length: " + (length == null ? "null" : length.toString()) + "; ";
         }
     }
 

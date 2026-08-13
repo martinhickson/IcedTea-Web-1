@@ -14,10 +14,14 @@ public final class JvmSelector {
     private JvmSelector() {
     }
 
+    /**
+     * Light descriptors for known homes (no process probe per install).
+     * Full {@link JvmDescriptor#describe(String)} is reserved for the chosen JVM.
+     */
     public static List<JvmDescriptor> describeKnownJvms(DeploymentConfiguration config) {
         List<JvmDescriptor> result = new ArrayList<>();
         for (String home : KnownJvmStore.getKnownJvmHomes(config)) {
-            result.add(JvmDescriptor.describe(home));
+            result.add(JvmDescriptor.describeLight(home));
         }
         return result;
     }
@@ -30,21 +34,39 @@ public final class JvmSelector {
         if (jnlpUrl != null && !jnlpUrl.trim().isEmpty()) {
             String assigned = KnownJvmAssignmentStore.findJvmHomeForJnlpUrl(config, jnlpUrl.trim());
             if (assigned != null) {
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
-                        "Selected JVM from JDK assignment for JNLP [" + jnlpUrl + "]: " + assigned);
-                return assigned;
+                JvmDescriptor validated = JvmDescriptor.describe(assigned);
+                if (validated.isValid()) {
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                            "Selected JVM from JDK assignment for JNLP [" + jnlpUrl + "]: " + assigned
+                                    + " (validated)");
+                    return assigned;
+                }
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "Assigned JVM failed validation, ignoring: " + assigned);
             }
         }
         List<JvmDescriptor> candidates = describeKnownJvms(config);
         JdkMatchStrategy strategy = KnownJvmStore.getMatchStrategy(config);
-        JvmDescriptor selected = selectBest(candidates, requestedVersion, strategy);
-        if (selected == null) {
-            return null;
+        // Try best light match, then next, validating only the candidate we would use.
+        List<JvmDescriptor> remaining = new ArrayList<>(candidates);
+        while (!remaining.isEmpty()) {
+            JvmDescriptor selected = selectBest(remaining, requestedVersion, strategy);
+            if (selected == null) {
+                return null;
+            }
+            JvmDescriptor validated = JvmDescriptor.describe(selected.getHomePath());
+            if (validated.isValid()) {
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                        "Selected JVM for JNLP request [" + requestedVersion + "] using "
+                                + strategy.getConfigValue() + " strategy: " + validated.getDisplayName()
+                                + " (" + validated.getHomePath() + ") — validated this JVM only");
+                return validated.getHomePath();
+            }
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "Candidate JVM failed validation, trying next: " + selected.getHomePath());
+            remaining.removeIf(c -> selected.getHomePath().equals(c.getHomePath()));
         }
-        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
-                "Selected JVM for JNLP request [" + requestedVersion + "] using " + strategy.getConfigValue()
-                        + " strategy: " + selected.getDisplayName() + " (" + selected.getHomePath() + ")");
-        return selected.getHomePath();
+        return null;
     }
 
     public static JvmDescriptor selectBest(List<JvmDescriptor> candidates, String requestedVersion) {

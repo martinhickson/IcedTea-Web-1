@@ -291,7 +291,7 @@ function Get-ItwJavaProcessCount {
         $cmd = $proc.CommandLine
         if ($null -ne $cmd) {
             $lower = $cmd.ToLowerInvariant()
-            if ($lower.Contains($needle) -or $lower.Contains("icedtea-web-uber")) {
+            if ($lower.Contains($needle)) {
                 $matching += $proc
             }
         }

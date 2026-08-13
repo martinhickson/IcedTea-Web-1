@@ -1047,8 +1047,9 @@ public class Launcher {
     private JvmDescriptor findDetectedJvmForRequest(String requestedVersion) {
         JdkMatchStrategy strategy = KnownJvmStore.getMatchStrategy(JNLPRuntime.getConfiguration());
         List<JvmDescriptor> detected = new ArrayList<>();
+        // Light discovery only — do not validate/process-probe every install.
         for (String home : JvmAutodetector.discoverValidJvmHomes()) {
-            JvmDescriptor descriptor = JvmDescriptor.describe(home);
+            JvmDescriptor descriptor = JvmDescriptor.describeLight(home);
             if (descriptor.isValid()
                     && JvmSelector.matchesStrategy(descriptor, requestedVersion, strategy)) {
                 detected.add(descriptor);
@@ -1057,7 +1058,21 @@ public class Launcher {
         if (detected.isEmpty()) {
             return null;
         }
-        return JvmSelector.selectBest(detected, requestedVersion, strategy);
+        List<JvmDescriptor> remaining = new ArrayList<>(detected);
+        while (!remaining.isEmpty()) {
+            JvmDescriptor selected = JvmSelector.selectBest(remaining, requestedVersion, strategy);
+            if (selected == null) {
+                return null;
+            }
+            JvmDescriptor validated = JvmDescriptor.describe(selected.getHomePath());
+            if (validated.isValid()) {
+                return validated;
+            }
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "Autodetected JVM failed validation, trying next: " + selected.getHomePath());
+            remaining.removeIf(c -> selected.getHomePath().equals(c.getHomePath()));
+        }
+        return null;
     }
 
     private void saveDetectedJvm(JvmDescriptor detected) throws LaunchException {

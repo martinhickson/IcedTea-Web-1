@@ -294,10 +294,11 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
                     <mkdir dir="${project.build.directory}/downloads"/>
 
-                    <get src="${itw.temurin11.url}" dest="${itw.temurin11.archive}" skipexisting="true"/>
-                    <get src="${itw.temurin17.url}" dest="${itw.temurin17.archive}" skipexisting="true"/>
-                    <get src="${itw.temurin21.url}" dest="${itw.temurin21.archive}" skipexisting="true"/>
-                    <get src="${itw.temurin25.url}" dest="${itw.temurin25.archive}" skipexisting="true"/>
+                    <!-- retries: Adoptium/GitHub occasionally returns 503 on GHA -->
+                    <get src="${itw.temurin11.url}" dest="${itw.temurin11.archive}" skipexisting="true" retries="5"/>
+                    <get src="${itw.temurin17.url}" dest="${itw.temurin17.archive}" skipexisting="true" retries="5"/>
+                    <get src="${itw.temurin21.url}" dest="${itw.temurin21.archive}" skipexisting="true" retries="5"/>
+                    <get src="${itw.temurin25.url}" dest="${itw.temurin25.archive}" skipexisting="true" retries="5"/>
 
                     <delete file="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip"/>
                     <zip destfile="${project.build.directory}/icedtea-web-${project.version}-${itw.dotnet.runtime.identifier}.zip">

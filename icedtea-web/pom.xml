@@ -65,6 +65,15 @@
       <version>5.6.4</version>
     </dependency>
     <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+      <version>1.7.36</version>
+    </dependency>
+    <dependency>
+      <groupId>org.xerial</groupId>
+      <artifactId>sqlite-jdbc</artifactId>
+    </dependency>
+    <dependency>
       <groupId>org.junit.jupiter</groupId>
       <artifactId>junit-jupiter-engine</artifactId>
       <version>${junit.version}</version>
@@ -138,7 +147,7 @@
               <rules>
                 <requireJavaVersion>
                   <version>[11,)</version>
-                  <message>Maven must run on Java 11 or newer because the Pack200 compatibility dependency is compiled for Java 11. The Maven build still emits Java 8 bytecode via source/target 1.8.</message>
+                  <message>Maven host JVM must be JDK 11 or later to build. Output bytecode is Java 11 only (source/target 11) so runtime stays JDK 11-compatible — not a newer class-file level.</message>
                 </requireJavaVersion>
                 <requireMavenVersion>
                   <version>[3.6.0,)</version>
@@ -222,6 +231,8 @@
                   <directory>${project.basedir}/../netx</directory>
                   <excludes>
                     <exclude>**/*.java</exclude>
+                    <!-- Split package with java.desktop when compiling as source 11 -->
+                    <exclude>sun/applet/**</exclude>
                   </excludes>
                 </resource>
               </resources>
@@ -236,6 +247,7 @@
             <configuration>
               <sources>
                 <source>${project.basedir}/../tests/netx/unit</source>
+                <source>${project.basedir}/../tests/netx/it</source>
                 <source>${project.basedir}/../tests/test-extensions</source>
               </sources>
             </configuration>
@@ -275,8 +287,31 @@
             <include>**/*Test.java</include>
             <include>**/Test*.java</include>
           </includes>
+          <excludes>
+            <exclude>**/*IT.java</exclude>
+          </excludes>
           <argLine>@{jacocoArgLine} @{itw.jpms.argLine}</argLine>
         </configuration>
+      </plugin>
+
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-failsafe-plugin</artifactId>
+        <version>3.2.5</version>
+        <configuration>
+          <includes>
+            <include>**/*IT.java</include>
+          </includes>
+          <argLine>@{jacocoArgLine} @{itw.jpms.argLine}</argLine>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>integration-test</goal>
+              <goal>verify</goal>
+            </goals>
+          </execution>
+        </executions>
       </plugin>
 
       <plugin>
@@ -510,6 +545,26 @@
                   </arguments>
                 </configuration>
               </execution>
+              <execution>
+                <id>assert-uber-jar-sqlite-jdbc</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-entry-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/sqlite/JDBC.class</argument>
+                    <argument>shaded uber jar sqlite-jdbc</argument>
+                  </arguments>
+                </configuration>
+              </execution>
             </executions>
           </plugin>
         </plugins>
@@ -562,6 +617,23 @@
                   </arguments>
                 </configuration>
               </execution>
+              <execution>
+                <id>assert-uber-jar-sqlite-jdbc</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-entry-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/sqlite/JDBC.class</argument>
+                    <argument>shaded uber jar sqlite-jdbc</argument>
+                  </arguments>
+                </configuration>
+              </execution>
             </executions>
           </plugin>
         </plugins>
@@ -611,6 +683,23 @@
                     <argument>../scripts/assert-pack200-intrinsic-in-jar.sh</argument>
                     <argument>${uberjar.file}</argument>
                     <argument>shaded uber jar (post-shade)</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-sqlite-jdbc</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-entry-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/sqlite/JDBC.class</argument>
+                    <argument>shaded uber jar sqlite-jdbc</argument>
                   </arguments>
                 </configuration>
               </execution>

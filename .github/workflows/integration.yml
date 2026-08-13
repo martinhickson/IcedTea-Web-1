@@ -13,6 +13,7 @@ on:
           - assertj-it
           - process-launch
           - autodetect-windows
+          - sqlite-catalog
           - multijar-it
       strict_autodetect:
         description: 'Fail autodetect-windows job on test failure (default ignores failures while TDD)'
@@ -204,6 +205,125 @@ jobs:
             -Ditw.uber.jar="$GITHUB_WORKSPACE/icedtea-web/target/icedtea-web-2.0.1-SNAPSHOT-uber.jar" \
             -Ditw.multijar.timeout.seconds=300
 
+  sqlite-catalog-linux:
+    name: SQLite catalog (Ubuntu)
+    if: inputs.suite == 'all' || inputs.suite == 'autodetect-windows' || inputs.suite == 'sqlite-catalog'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Corretto 11
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: '11'
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2
+          key: ubuntu-sqlite-catalog-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ubuntu-sqlite-catalog-m2-
+
+      - name: Ensure pack200 Maven artifact
+        run: |
+          chmod +x scripts/ensure-pack200-maven.sh
+          ./scripts/ensure-pack200-maven.sh
+
+      - name: Run SQLite catalog unit + Failsafe IT
+        run: |
+          mvn -s "$MAVEN_SETTINGS" -pl icedtea-web -am -Dexec.skip=true \
+            test-compile surefire:test failsafe:integration-test failsafe:verify \
+            -Dtest=SqliteCacheCatalogTest,CacheUtilTest \
+            -Dit.test=SqliteCacheCatalogIT \
+            -Djdk11.home="$JAVA_HOME" \
+            -Dbash.executable=bash
+
+  sqlite-catalog-windows:
+    name: SQLite catalog (Windows)
+    if: inputs.suite == 'all' || inputs.suite == 'autodetect-windows' || inputs.suite == 'sqlite-catalog'
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      - name: Set up Corretto 11
+        uses: actions/setup-java@v5
+        with:
+          distribution: corretto
+          java-version: '11'
+
+      - name: Set up Git Bash
+        run: |
+          if (-not (Test-Path "C:\Program Files\Git\usr\bin\bash.exe")) {
+            choco install git.install -y --no-progress
+          }
+          echo "C:\Program Files\Git\usr\bin" >> $env:GITHUB_PATH
+          echo "C:\Program Files\Git\bin" >> $env:GITHUB_PATH
+        shell: pwsh
+
+      - name: Cache Maven dependencies
+        uses: actions/cache@v5
+        with:
+          path: ~/.m2
+          key: windows-sqlite-catalog-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: windows-sqlite-catalog-m2-
+
+      - name: Ensure pack200 Maven artifact
+        run: |
+          function Write-Detail { param([string]$Message) Write-Host $Message }
+          . ./.powershell/workflows/ensure-pack200.ps1
+          Ensure-Pack200MavenDependency
+        shell: pwsh
+
+      - name: Build icedtea-web
+        run: |
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-pl", "icedtea-web",
+            "-am",
+            "install",
+            "-DskipTests",
+            "-Dexec.skip=true",
+            "-Djdk11.home=$env:JAVA_HOME",
+            "-Dbash.executable=C:\Program Files\Git\usr\bin\bash.exe"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
+      - name: Run SQLite catalog Failsafe IT
+        run: |
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-pl", "icedtea-web",
+            "failsafe:integration-test",
+            "failsafe:verify",
+            "-Dit.test=SqliteCacheCatalogIT",
+            "-Dexec.skip=true",
+            "-Djdk11.home=$env:JAVA_HOME",
+            "-Dbash.executable=C:\Program Files\Git\usr\bin\bash.exe"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
+      - name: Run SQLite dual-JVM IT
+        run: |
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-f", "itw-autodetect-it/pom.xml",
+            "verify",
+            "-Ditest=SqliteCacheCatalogDualJvmIT",
+            "-Ditw.jdk11.home=$env:JAVA_HOME",
+            "-Ditw.jdk17.home=$env:JAVA_HOME",
+            "-Ditw.javaws.bin=C:\nonexistent\javaws.exe",
+            "-Ditw.autodetect.it.failure.ignore=false"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
   autodetect-windows:
     name: Windows JDK autodetect
     if: inputs.suite == 'all' || inputs.suite == 'autodetect-windows'
@@ -265,6 +385,72 @@ jobs:
           function Write-Detail { param([string]$Message) Write-Host $Message }
           . ./.powershell/workflows/ensure-pack200.ps1
           Ensure-Pack200MavenDependency
+        shell: pwsh
+
+      - name: Build icedtea-web uber (no bundled JRE download)
+        run: |
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-pl", "icedtea-web",
+            "-am",
+            "install",
+            "-DskipTests",
+            "-Djdk11.home=$env:JDK11_HOME",
+            "-Dbash.executable=C:\Program Files\Git\usr\bin\bash.exe"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
+      # Dual-JVM SQLite catalog IT only needs the uber jar — run before distro Temurin
+      # downloads so Adoptium 503s cannot hide catalog regressions.
+      - name: Run SQLite cache catalog dual-JVM IT
+        run: |
+          $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
+            "-f", "itw-autodetect-it/pom.xml",
+            "verify",
+            "-Ditest=SqliteCacheCatalogDualJvmIT",
+            "-Ditw.jdk11.home=$env:JDK11_HOME",
+            "-Ditw.jdk17.home=$env:JDK17_HOME",
+            "-Ditw.javaws.bin=C:\nonexistent\javaws.exe",
+            "-Ditw.autodetect.it.failure.ignore=false"
+          )
+          & mvn @mvnArgs
+        shell: pwsh
+
+      # Ant <get> still flakes on Adoptium/GitHub even with retries=5. Prefetch into the
+      # same paths skipexisting=true expects so assemble does not hit the network.
+      - name: Prefetch Temurin JREs for Windows distribution
+        run: |
+          $destDir = "icedtea-web-distribution/target/downloads"
+          New-Item -ItemType Directory -Force -Path $destDir | Out-Null
+          $files = @(
+            @{ Name = "temurin-11-jre.zip"; Url = "https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jre/hotspot/normal/eclipse" },
+            @{ Name = "temurin-17-jre.zip"; Url = "https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse" },
+            @{ Name = "temurin-21-jre.zip"; Url = "https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse" },
+            @{ Name = "temurin-25-jre.zip"; Url = "https://api.adoptium.net/v3/binary/latest/25/ga/windows/x64/jre/hotspot/normal/eclipse" }
+          )
+          foreach ($f in $files) {
+            $out = Join-Path $destDir $f.Name
+            if ((Test-Path $out) -and ((Get-Item $out).Length -gt 1MB)) {
+              Write-Host "Already present: $($f.Name)"
+              continue
+            }
+            $ok = $false
+            for ($attempt = 1; $attempt -le 10; $attempt++) {
+              try {
+                Write-Host "Download $($f.Name) attempt $attempt"
+                Invoke-WebRequest -Uri $f.Url -OutFile $out -UseBasicParsing
+                if ((Get-Item $out).Length -lt 1MB) { throw "download too small" }
+                $ok = $true
+                break
+              } catch {
+                Write-Warning $_
+                Start-Sleep -Seconds ([Math]::Min(60, 5 * $attempt))
+              }
+            }
+            if (-not $ok) { throw "Failed to prefetch $($f.Name)" }
+          }
         shell: pwsh
 
       - name: Build Windows distribution (unsigned)

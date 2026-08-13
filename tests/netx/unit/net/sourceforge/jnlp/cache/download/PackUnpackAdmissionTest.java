@@ -1,0 +1,325 @@
+package net.sourceforge.jnlp.cache.download;
+
+import java.io.IOException;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.Test;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+class PackUnpackAdmissionTest {
+
+    private final PackUnpackAdmission admission = PackUnpackAdmission.getInstance();
+
+    @AfterEach
+    void resetBudget() {
+        admission.setBudgetOverrideBytes(null);
+    }
+
+    @Test
+    void alwaysAdmitsAtLeastOneUnpackEvenWhenReserveExceedsBudget() throws Exception {
+        admission.setBudgetOverrideBytes(1L << 20); // 1 MiB budget
+        AtomicBoolean ran = new AtomicBoolean();
+        admission.runUnpack(64L << 20, () -> ran.set(true)); // 64 MiB reserve
+        assertTrue(ran.get());
+        assertEquals(0, admission.activeUnpackers());
+        assertEquals(0, admission.inFlightBytes());
+    }
+
+    @Test
+    void releasesBudgetWhenUnpackThrows() {
+        admission.setBudgetOverrideBytes(32L << 20);
+        try {
+            admission.runUnpack(8L << 20, () -> {
+                throw new IOException("boom");
+            });
+        } catch (IOException expected) {
+            assertTrue(expected.getMessage().contains("boom"));
+        }
+        assertEquals(0, admission.activeUnpackers());
+        assertEquals(0, admission.inFlightBytes());
+        assertEquals(0, admission.waitingUnpackers());
+    }
+
+    @Test
+    void onlyOneFirstUnpackerWinsEmptyPipelineRace() throws Exception {
+        admission.setBudgetOverrideBytes(1L << 20); // tiny — second must wait, not both enter
+        CountDownLatch bothStarted = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger entered = new AtomicInteger();
+        AtomicInteger maxActive = new AtomicInteger();
+
+        Runnable body = () -> {
+            try {
+                bothStarted.countDown();
+                bothStarted.await(5, TimeUnit.SECONDS);
+                admission.runUnpack(64L << 20, () -> {
+                    entered.incrementAndGet();
+                    bumpMax(maxActive);
+                    try {
+                        release.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+        Thread t1 = new Thread(body, "race-1");
+        Thread t2 = new Thread(body, "race-2");
+        t1.start();
+        t2.start();
+        assertTrue(bothStarted.await(5, TimeUnit.SECONDS));
+        Thread.sleep(80);
+        // Critical: empty-pipeline race must not admit both oversized reserves.
+        assertEquals(1, admission.activeUnpackers());
+        assertEquals(1, entered.get());
+        release.countDown();
+        t1.join(5000);
+        t2.join(5000);
+        assertEquals(2, entered.get());
+        assertEquals(1, maxActive.get());
+        assertEquals(0, admission.activeUnpackers());
+    }
+
+    @Test
+    void secondUnpackWaitsUntilBudgetFreesButPipelineStaysNonEmpty() throws Exception {
+        admission.setBudgetOverrideBytes(10L << 20); // 10 MiB
+        CountDownLatch firstInside = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        AtomicInteger maxActive = new AtomicInteger();
+        AtomicInteger secondStarted = new AtomicInteger();
+
+        Thread t1 = new Thread(() -> {
+            try {
+                admission.runUnpack(8L << 20, () -> {
+                    bumpMax(maxActive);
+                    firstInside.countDown();
+                    try {
+                        releaseFirst.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "unpack-1");
+        Thread t2 = new Thread(() -> {
+            try {
+                assertTrue(firstInside.await(5, TimeUnit.SECONDS));
+                admission.runUnpack(8L << 20, () -> {
+                    secondStarted.incrementAndGet();
+                    bumpMax(maxActive);
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "unpack-2");
+
+        t1.start();
+        assertTrue(firstInside.await(5, TimeUnit.SECONDS));
+        t2.start();
+        // While first holds budget, second should be waiting (active still 1).
+        Thread.sleep(50);
+        assertEquals(1, admission.activeUnpackers());
+        assertEquals(0, secondStarted.get());
+        releaseFirst.countDown();
+        t1.join(5000);
+        t2.join(5000);
+        assertEquals(1, secondStarted.get());
+        assertTrue(maxActive.get() >= 1);
+        assertEquals(0, admission.activeUnpackers());
+    }
+
+    @Test
+    void inFlightBytesNeverNegativeAfterNormalRelease() throws Exception {
+        admission.setBudgetOverrideBytes(32L << 20);
+        admission.runUnpack(4L << 20, () -> { });
+        assertEquals(0, admission.inFlightBytes());
+        assertEquals(0, admission.activeUnpackers());
+        assertTrue(admission.inFlightBytes() >= 0);
+    }
+
+    @Test
+    void budgetOverrideBelowMinReserveStillAllowsAdmission() throws Exception {
+        admission.setBudgetOverrideBytes(1L); // below MIN_RESERVE — clamp must keep pipeline usable
+        assertTrue(admission.budgetBytes() >= PackUnpackAdmission.MIN_RESERVE_BYTES);
+        AtomicBoolean ran = new AtomicBoolean();
+        admission.runUnpack(1, () -> ran.set(true));
+        assertTrue(ran.get());
+        assertEquals(0, admission.activeUnpackers());
+    }
+
+    @Test
+    void twoSmallUnpacksMayRunConcurrentlyUnderBudget() throws Exception {
+        admission.setBudgetOverrideBytes(64L << 20);
+        CountDownLatch bothInside = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger maxActive = new AtomicInteger();
+
+        Runnable body = () -> {
+            try {
+                admission.runUnpack(4L << 20, () -> {
+                    bumpMax(maxActive);
+                    bothInside.countDown();
+                    try {
+                        release.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        };
+        Thread t1 = new Thread(body, "small-1");
+        Thread t2 = new Thread(body, "small-2");
+        t1.start();
+        t2.start();
+        assertTrue(bothInside.await(5, TimeUnit.SECONDS));
+        assertEquals(2, maxActive.get());
+        release.countDown();
+        t1.join(5000);
+        t2.join(5000);
+        assertEquals(0, admission.activeUnpackers());
+        assertEquals(0, admission.inFlightBytes());
+    }
+
+    @Test
+    void estimateReserveUsesMeasuredWireMultiplier() {
+        // Class-heavy pack A: wire ~17 MiB → retained ~579 MiB (~33.7×) on OOM dump
+        long wireA = 17_193_474L;
+        long reserveA = PackUnpackAdmission.estimateReserveBytes(wireA, 0L);
+        assertEquals(wireA * PackUnpackAdmission.WIRE_TO_HEAP_MULTIPLIER, reserveA);
+        assertTrue(reserveA > PackUnpackAdmission.MAX_BUDGET_BYTES);
+
+        // Class-heavy pack B: wire ~24 MiB → retained ~725 MiB (~30.1×)
+        long wireB = 24_062_954L;
+        long reserveB = PackUnpackAdmission.estimateReserveBytes(wireB, 0L);
+        assertEquals(wireB * PackUnpackAdmission.WIRE_TO_HEAP_MULTIPLIER, reserveB);
+        assertTrue(reserveB > PackUnpackAdmission.MAX_BUDGET_BYTES);
+
+        assertEquals(PackUnpackAdmission.DEFAULT_RESERVE_BYTES,
+                PackUnpackAdmission.estimateReserveBytes(0L, 0L));
+    }
+
+    @Test
+    void twoDefaultReservesCannotStackUnderMaxBudget() throws Exception {
+        // Regression: empty-path used to set active before inFlight, letting a busy-path
+        // thread admit a second DEFAULT_RESERVE while inFlight was still 0.
+        admission.setBudgetOverrideBytes(PackUnpackAdmission.MAX_BUDGET_BYTES);
+        long reserve = PackUnpackAdmission.DEFAULT_RESERVE_BYTES;
+        CountDownLatch firstInside = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        AtomicInteger maxActive = new AtomicInteger();
+        AtomicInteger secondStarted = new AtomicInteger();
+
+        Thread t1 = new Thread(() -> {
+            try {
+                admission.runUnpack(reserve, () -> {
+                    bumpMax(maxActive);
+                    firstInside.countDown();
+                    try {
+                        releaseFirst.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "default-a");
+        Thread t2 = new Thread(() -> {
+            try {
+                assertTrue(firstInside.await(5, TimeUnit.SECONDS));
+                admission.runUnpack(reserve, () -> {
+                    secondStarted.incrementAndGet();
+                    bumpMax(maxActive);
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "default-b");
+
+        t1.start();
+        assertTrue(firstInside.await(5, TimeUnit.SECONDS));
+        t2.start();
+        Thread.sleep(80);
+        assertEquals(1, admission.activeUnpackers());
+        assertEquals(0, secondStarted.get());
+        releaseFirst.countDown();
+        t1.join(5000);
+        t2.join(5000);
+        assertEquals(1, secondStarted.get());
+        assertEquals(1, maxActive.get());
+    }
+
+    @Test
+    void measuredLargePackReservesCannotRunConcurrentlyUnderProductionBudget() throws Exception {
+        // Same budget cap as production (512 MiB); two large class-heavy reserves must serialize.
+        admission.setBudgetOverrideBytes(PackUnpackAdmission.MAX_BUDGET_BYTES);
+        long reserveA = PackUnpackAdmission.estimateReserveBytes(17_193_474L, 0L);
+        long reserveB = PackUnpackAdmission.estimateReserveBytes(24_062_954L, 0L);
+
+        CountDownLatch firstInside = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        AtomicInteger maxActive = new AtomicInteger();
+        AtomicInteger secondStarted = new AtomicInteger();
+
+        Thread t1 = new Thread(() -> {
+            try {
+                admission.runUnpack(reserveA, () -> {
+                    bumpMax(maxActive);
+                    firstInside.countDown();
+                    try {
+                        releaseFirst.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "unpack-a");
+        Thread t2 = new Thread(() -> {
+            try {
+                assertTrue(firstInside.await(5, TimeUnit.SECONDS));
+                admission.runUnpack(reserveB, () -> {
+                    secondStarted.incrementAndGet();
+                    bumpMax(maxActive);
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "unpack-b");
+
+        t1.start();
+        assertTrue(firstInside.await(5, TimeUnit.SECONDS));
+        t2.start();
+        Thread.sleep(80);
+        assertEquals(1, admission.activeUnpackers());
+        assertEquals(0, secondStarted.get());
+        releaseFirst.countDown();
+        t1.join(5000);
+        t2.join(5000);
+        assertEquals(1, secondStarted.get());
+        assertEquals(1, maxActive.get());
+        assertEquals(0, admission.activeUnpackers());
+    }
+
+    private static void bumpMax(AtomicInteger maxActive) {
+        int a = PackUnpackAdmission.getInstance().activeUnpackers();
+        maxActive.accumulateAndGet(a, Math::max);
+    }
+}

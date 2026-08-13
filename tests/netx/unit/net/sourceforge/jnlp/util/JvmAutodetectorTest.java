@@ -36,6 +36,13 @@ class JvmAutodetectorTest {
                 "java version \"1.8.0_402\""));
         assertEquals(11, JvmProbeSupport.parseMajorVersionFromJavaVersionOutput(
                 "openjdk version \"11.0.25\" 2024-10-15 LTS"));
+        assertEquals(0, JvmProbeSupport.parseMajorVersionFromJavaVersionOutput(null));
+        assertEquals(0, JvmProbeSupport.parseMajorVersionFromJavaVersionOutput("no quotes here"));
+        assertEquals("version \"17\"", JvmProbeSupport.syntheticVersionOutput(17));
+        assertEquals("version \"1.8.0\"", JvmProbeSupport.syntheticVersionOutput(8));
+        assertEquals("", JvmProbeSupport.syntheticVersionOutput(0));
+        assertEquals(21, JvmProbeSupport.parseMajorVersionFromJavaVersionOutput(
+                JvmProbeSupport.syntheticVersionOutput(21)));
     }
 
     @Test

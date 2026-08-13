@@ -99,4 +99,25 @@ public class AdaptiveBackgroundThreadsTest {
         a.onJarDownloadSucceeded();
         assertEquals(AdaptiveBackgroundThreads.MAX_THREADS, pool.getCorePoolSize());
     }
+
+    @Test
+    public void connectionSlotsMatchAdaptiveCeiling() {
+        assertEquals(12, AdaptiveBackgroundThreads.connectionSlots(6, true));
+        assertEquals(6, AdaptiveBackgroundThreads.connectionSlots(6, false));
+        assertEquals(24, AdaptiveBackgroundThreads.connectionSlots(20, true));
+        assertEquals(2, AdaptiveBackgroundThreads.connectionSlots(1, true));
+    }
+
+    @Test
+    public void growingResizeStartsExtraCoreThreadsForQueuedWork() {
+        pool = new ThreadPoolExecutor(6, 6, 60L, TimeUnit.SECONDS,
+                new LinkedBlockingQueue<Runnable>());
+        AdaptiveBackgroundThreads a = new AdaptiveBackgroundThreads(true, 6, pool);
+        for (int i = 0; i < 12; i++) {
+            pool.getQueue().offer(() -> { });
+        }
+        a.onJarDownloadSucceeded();
+        assertEquals(12, pool.getCorePoolSize());
+        assertEquals(12, pool.getPoolSize(), "extra cores must start so queued jars are not stuck on 6 workers");
+    }
 }

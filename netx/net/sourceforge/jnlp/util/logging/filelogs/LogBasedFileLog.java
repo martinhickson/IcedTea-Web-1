@@ -55,6 +55,7 @@ public final class LogBasedFileLog implements SingleStreamLogger {
     //really instance bounded
     private final Logger impl;
     private final FileHandler fh;
+    private boolean closed;
 
     // testing constructor 
     public LogBasedFileLog(String fileName, boolean append) {
@@ -84,17 +85,29 @@ public final class LogBasedFileLog implements SingleStreamLogger {
     }
 
     /**
-     * Log the String to file.
+     * Log the String to file. After {@link #close()}, further calls are ignored
+     * (same lifecycle race as {@link WriterBasedFileLog}).
      *
-     * @param s {@link Exception} that was thrown.
+     * @param s line to write
      */
     @Override
     public synchronized void log(String s) {
-        impl.log(Level.FINE, s);
+        if (closed || s == null) {
+            return;
+        }
+        try {
+            impl.log(Level.FINE, s);
+        } catch (RuntimeException e) {
+            closed = true;
+        }
     }
 
     @Override
-    public void close() {
+    public synchronized void close() {
+        if (closed) {
+            return;
+        }
+        closed = true;
         fh.close();
     }
 

@@ -392,7 +392,8 @@ public class ResourceTracker {
         return !CacheUtil.isJarResourceUrl(location) || CacheUtil.isValidJarFile(local);
     }
 
-    private File resolveUsableLocalFile(Resource resource, URL location) {
+    /** Visible for Groovy probes / unit tests. */
+    protected File resolveUsableLocalFile(Resource resource, URL location) {
         if (resource.getLocalFile() != null) {
             File local = resource.getLocalFile();
             boolean usable = local.isFile() && local.length() > 0
@@ -420,7 +421,8 @@ public class ResourceTracker {
      *
      * @return true if a re-download was started
      */
-    private boolean requeueUnusableTerminal(Resource resource) {
+    /** Visible for Groovy probes / unit tests. */
+    protected boolean requeueUnusableTerminal(Resource resource) {
         if (hasUsableLocalFile(resource) && resource.isSet(DOWNLOADED)) {
             return false;
         }
@@ -568,6 +570,10 @@ public class ResourceTracker {
      * @param resource  resource to be download
      */
     protected void startDownloadThread(Resource resource) {
+        if (SizeFirstDownloadQueue.isEnabled()) {
+            SizeFirstDownloadQueue.enqueue(resource);
+            return;
+        }
         CachedDaemonThreadPoolProvider.noteJarDownloadStarting();
         CachedDaemonThreadPoolProvider.getThreadPool().execute(new ResourceDownloader(resource, null));
     }
@@ -687,6 +693,10 @@ public class ResourceTracker {
             startResource(resource);
         }
 
+        // HEAD pending jars (12-wide) then submit GETs largest-first. No-op when
+        // size-first is off (downloads already started from startDownloadThread).
+        SizeFirstDownloadQueue.flush();
+
         // wait for completion — PURE EVENT BARRIER. The download thread drives its
         // own one-shot retry (see ResourceDownloader.run), so RETRY_PENDING never
         // persists and every slot reaches an absorbing state on its own. The waiter
@@ -733,16 +743,27 @@ public class ResourceTracker {
         return true;
     }
 
-    private void logDownloadStats() {
+    /** Visible for Groovy probes / unit tests. */
+    protected void logDownloadStats() {
         if (lastMetricsGroup == null) return;
         try {
             net.sourceforge.jnlp.cache.download.GroupStats stats = lastMetricsGroup.stats();
             net.sourceforge.jnlp.util.logging.OutputController.getLogger()
                     .log(net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_ALL,
                             "Download stats: " + stats.summaryLine());
+            // Always surface per-jar lines when anything failed; otherwise DEBUG.
+            net.sourceforge.jnlp.util.logging.OutputController.Level jarLevel =
+                    stats.failedCount > 0
+                            ? net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_ALL
+                            : net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_DEBUG;
             for (String line : stats.jarLines()) {
+                net.sourceforge.jnlp.util.logging.OutputController.getLogger().log(jarLevel, line);
+            }
+            if (stats.failedCount > 0) {
                 net.sourceforge.jnlp.util.logging.OutputController.getLogger()
-                        .log(net.sourceforge.jnlp.util.logging.OutputController.Level.MESSAGE_DEBUG, line);
+                        .log(net.sourceforge.jnlp.util.logging.OutputController.Level.ERROR_ALL,
+                                "Download group finished with " + stats.failedCount
+                                        + " failed jar(s) — see per-jar lines above");
             }
         } catch (Exception e) {
             // stats are diagnostic — never fail the launch on a stats error
@@ -766,6 +787,12 @@ public class ResourceTracker {
             r.setJarSlot(s);
             if (terminal == net.sourceforge.jnlp.cache.download.JarState.GOOD && hasUsableLocalFile(r)) {
                 s.settleGood(System.currentTimeMillis(), true);
+            } else if (terminal == net.sourceforge.jnlp.cache.download.JarState.GOOD) {
+                // Ghost: prior wait marked GOOD but local file is missing/corrupt.
+                // Leaving the fresh slot IN_FLIGHT would hang done() forever.
+                r.setTerminalState(null);
+                r.prepareRedownloadAfterUnusableTerminal();
+                needsRestart.add(r);
             } else if (terminal == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD
                     && r.isUnusableTerminalRetried()) {
                 s.settleBadFinal(System.currentTimeMillis()); // retry already spent → terminal FAILED

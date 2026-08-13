@@ -176,4 +176,22 @@ public class WriterBasedFileLogTest {
         Assert.assertTrue(r3.evaluate(s2));
 
     }
+
+    /**
+     * Regression: OutputController consumer can still flush after JNLPRuntime.exit
+     * closes the file log. log() must not throw RuntimeException("Stream closed").
+     */
+    @Test
+    public void logAfterCloseIsIgnoredWithoutThrowing() throws Exception {
+        File f = File.createTempFile("WriterBasedFileLogger-closed", "iteTest");
+        f.deleteOnExit();
+        WriterBasedFileLog log = new WriterBasedFileLog(f.getAbsolutePath(), false);
+        log.log(line1);
+        log.close();
+        log.log("after-close must not throw");
+        log.close(); // idempotent
+        String s = StreamUtils.readStreamAsString(new FileInputStream(f), true);
+        Assert.assertTrue(r1.evaluate(s));
+        Assert.assertFalse(s.contains("after-close must not throw"));
+    }
 }

@@ -145,10 +145,13 @@ public class OutputController {
         }
     }
 
-    public void close() throws Exception {
+    public synchronized void close() throws Exception {
         flush();
-        if (LogConfig.getLogConfig().isLogToFile()){
+        if (LogConfig.getLogConfig().isLogToFile()) {
             getFileLog().close();
+            if (LogConfig.getLogConfig().isLogToFileForClientApp()) {
+                getAppFileLog().close();
+            }
         }
     }
 

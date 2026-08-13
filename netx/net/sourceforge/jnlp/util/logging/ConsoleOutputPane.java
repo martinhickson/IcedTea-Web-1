@@ -110,6 +110,8 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         sortBy = new JComboBox<>();
         searchLabel = new JLabel();
         autorefresh = new JCheckBox();
+        play = new JButton();
+        pause = new JButton();
         refresh = new JButton();
         apply = new JButton();
         regExFilter = new JTextField();
@@ -122,6 +124,7 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         showIncomplete = new JCheckBox();
         highLight = new JCheckBox();
         wordWrap = new JCheckBox();
+        wordWrap.setSelected(true); // long Download complete lines are unreadable without wrap
         showDebug = new JCheckBox();
         showInfo = new JCheckBox();
         showItw = new JCheckBox();
@@ -143,7 +146,7 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         showHeaders.setSelected(LogConfig.getLogConfig().isEnableHeaders());
         setHeadersCheckBoxesEnabled(showHeaders.isSelected());
         setMessagesCheckBoxesEnabled(showMessage.isSelected());
-        refresh.setEnabled(!autorefresh.isSelected());
+        syncPlayPauseButtons();
         if (JNLPRuntime.isWebstartApplication()) {
             showPlugin.setSelected(false);
             showPreInit.setSelected(false);
@@ -248,11 +251,49 @@ public class ConsoleOutputPane extends JPanel implements Observer {
                 } else if (source == showMessage) {
                     setMessagesCheckBoxesEnabled(showMessage.isSelected());
                 } else if (source == autorefresh) {
-                    refresh.setEnabled(!autorefresh.isSelected());
+                    syncPlayPauseButtons();
                 }
                 refreshAction();
             }
         };
+    }
+
+    void syncPlayPauseButtons() {
+        final boolean live = autorefresh.isSelected();
+        play.setEnabled(!live);
+        pause.setEnabled(live);
+        refresh.setEnabled(!live);
+    }
+
+    void setAutoRefreshLive(final boolean live) {
+        if (autorefresh.isSelected() == live) {
+            syncPlayPauseButtons();
+            return;
+        }
+        autorefresh.setSelected(live);
+        syncPlayPauseButtons();
+        if (live) {
+            refreshAction();
+        } else {
+            statistics.setText(model.createStatisticHint());
+        }
+    }
+
+    /** Package-visible for unit tests. */
+    boolean isAutoRefreshLive() {
+        return autorefresh.isSelected();
+    }
+
+    boolean isPlayEnabled() {
+        return play.isEnabled();
+    }
+
+    boolean isPauseEnabled() {
+        return pause.isEnabled();
+    }
+
+    boolean isPlayPauseOnMainPanel() {
+        return play.getParent() == this && pause.getParent() == this;
     }
 
     final ActionListener defaultActionSingleton = createDefaultAction();
@@ -406,7 +447,35 @@ public class ConsoleOutputPane extends JPanel implements Observer {
 
         autorefresh.setSelected(true);
         autorefresh.setText(Translator.R("COPautoRefresh"));
+        autorefresh.setVisible(false); // play/pause buttons own this state in the UI
         autorefresh.addActionListener(getDefaultActionSingleton());
+
+        play.setText(Translator.R("COPplay"));
+        play.setToolTipText(Translator.R("COPplayTip"));
+        play.setForeground(new Color(0x1B7A2F));
+        play.setBackground(new Color(0xD9F2DE));
+        play.setOpaque(true);
+        play.setContentAreaFilled(true);
+        play.addActionListener(new ActionListener() {
+            @Override
+            public final void actionPerformed(final ActionEvent evt) {
+                setAutoRefreshLive(true);
+            }
+        });
+
+        pause.setText(Translator.R("COPpause"));
+        pause.setToolTipText(Translator.R("COPpauseTip"));
+        pause.setForeground(new Color(0xA65F00));
+        pause.setBackground(new Color(0xFFE2B8));
+        pause.setOpaque(true);
+        pause.setContentAreaFilled(true);
+        pause.addActionListener(new ActionListener() {
+            @Override
+            public final void actionPerformed(final ActionEvent evt) {
+                setAutoRefreshLive(false);
+            }
+        });
+        syncPlayPauseButtons();
 
         refresh.setText(Translator.R("COPrefresh"));
         refresh.addActionListener(getDefaultActionSingleton());
@@ -575,7 +644,6 @@ public class ConsoleOutputPane extends JPanel implements Observer {
                 addComponent(showIncomplete).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(showComplete)).
                 addGroup(jPanel2Layout.createSequentialGroup().
-                addComponent(autorefresh).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(refresh).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(sortByLabel).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(revertSort).addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED).
@@ -626,7 +694,6 @@ public class ConsoleOutputPane extends JPanel implements Observer {
                 addComponent(notMatch))).
                 addGroup(
                 jPanel2Layout.createParallelGroup(GroupLayout.Alignment.BASELINE).
-                addComponent(autorefresh).
                 addComponent(refresh).
                 addComponent(sortByLabel).addComponent(sortBy, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE).
                 addComponent(revertSort))).addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED).addGroup(
@@ -666,15 +733,20 @@ public class ConsoleOutputPane extends JPanel implements Observer {
                 addGroup(jPanel1Layout.createSequentialGroup().addContainerGap().
                 addGroup(jPanel1Layout.createParallelGroup(GroupLayout.Alignment.LEADING).
                 addComponent(jScrollPane1, GroupLayout.DEFAULT_SIZE, 684, Short.MAX_VALUE).
-                addGroup(jPanel1Layout.createSequentialGroup().addGroup(jPanel1Layout.createParallelGroup(GroupLayout.Alignment.TRAILING).
-                addComponent(showHide, GroupLayout.Alignment.LEADING, GroupLayout.DEFAULT_SIZE, 672, Short.MAX_VALUE).
-                addComponent(jpanel2scrollpane, GroupLayout.Alignment.LEADING, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)).addContainerGap()))));
+                addComponent(jpanel2scrollpane, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE).
+                addGroup(jPanel1Layout.createSequentialGroup().
+                addComponent(play).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
+                addComponent(pause).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
+                addComponent(showHide, GroupLayout.DEFAULT_SIZE, 400, Short.MAX_VALUE))).addContainerGap()));
         jPanel1Layout.setVerticalGroup(
                 jPanel1Layout.createParallelGroup(GroupLayout.Alignment.LEADING).
                 addGroup(GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup().addContainerGap().
                 addComponent(jScrollPane1, GroupLayout.DEFAULT_SIZE, 329, Short.MAX_VALUE).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(jpanel2scrollpane, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
-                addComponent(showHide).addContainerGap()));
+                addGroup(jPanel1Layout.createParallelGroup(GroupLayout.Alignment.BASELINE).
+                addComponent(play).
+                addComponent(pause).
+                addComponent(showHide)).addContainerGap()));
 
         final JMenuItem tab = new JMenuItem("insert \\t");
         tab.addActionListener(new ActionListener() {
@@ -946,6 +1018,8 @@ public class ConsoleOutputPane extends JPanel implements Observer {
 
     private final JButton apply;
     private final JCheckBox autorefresh;
+    private final JButton play;
+    private final JButton pause;
     private final JCheckBox caseSensitive;
     private final JButton copyPlain;
     private final JButton copyRich;

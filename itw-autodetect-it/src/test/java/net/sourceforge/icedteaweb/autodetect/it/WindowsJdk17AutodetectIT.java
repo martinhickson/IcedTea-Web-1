@@ -89,6 +89,33 @@ class WindowsJdk17AutodetectIT {
                 .as("JNLP app should start after Autodetect finds JDK 17 and Apply is pressed")
                 .isTrue();
 
+        // Real javaws path: SQLite catalog under cache/db/ (legacy recently_used ignored).
+        Path sqliteDb = AutodetectTestSupport.sqliteCatalogFile();
+        assertThat(sqliteDb)
+                .as("deployment.cache.catalog.sqlite=true should create cache_catalog.sqlite under db/")
+                .isRegularFile();
+        Path dbRoot = AutodetectTestSupport.userCacheRoot().resolve("db");
+        boolean hasNumberedDir;
+        try (java.util.stream.Stream<Path> stream = Files.list(dbRoot)) {
+            hasNumberedDir = stream.anyMatch(Files::isDirectory);
+        }
+        assertThat(hasNumberedDir)
+                .as("downloaded jars should land under cache/db/<n>/...")
+                .isTrue();
+        Path nativeDir = dbRoot.resolve("native");
+        assertThat(nativeDir)
+                .as("sqlitejdbc should extract under cache/db/native (VDI-safe, not %TEMP%)")
+                .isDirectory();
+        try (java.util.stream.Stream<Path> natives = Files.list(nativeDir)) {
+            assertThat(natives.map(p -> p.getFileName().toString().toLowerCase())
+                    .anyMatch(n -> n.contains("sqlitejdbc")))
+                    .as("expected sqlitejdbc native under " + nativeDir)
+                    .isTrue();
+        }
+        assertThat(AutodetectTestSupport.userCacheRoot().resolve("recently_used"))
+                .as("real javaws sqlite path must not rewrite planted legacy recently_used")
+                .hasContent(AutodetectTestSupport.PLANTED_LEGACY_INDEX);
+
         String markerBody = Files.readString(marker, StandardCharsets.UTF_8);
         assertThat(markerBody.toLowerCase(Locale.ROOT))
                 .contains("jdk=")

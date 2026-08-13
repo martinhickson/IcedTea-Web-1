@@ -372,6 +372,33 @@ public class OutputControllerTest {
     }
 
     @Test
+    public void closeThenFlushQueuedMessagesDoesNotThrow() throws Exception {
+        LogConfig.getLogConfig().setEnableLogging(true);
+        LogConfig.getLogConfig().setLogToFile(true);
+        LogConfig.getLogConfig().setLogToStreams(false);
+        LogConfig.getLogConfig().setLogToSysLog(false);
+
+        ByteArrayOutputStream os1 = new ByteArrayOutputStream();
+        ByteArrayOutputStream os2 = new ByteArrayOutputStream();
+        OutputController oc = new OutputController(new PrintStream(os1), new PrintStream(os2));
+        File logFile = File.createTempFile("oc-close", "itwTest");
+        logFile.deleteOnExit();
+        oc.setFileLog(new WriterBasedFileLog(logFile.getAbsolutePath(), false));
+
+        oc.log(OutputController.Level.MESSAGE_ALL, line1);
+        oc.flush();
+        oc.close();
+        // Mimic consumer draining after JNLPRuntime.exit closed the file log.
+        oc.log(OutputController.Level.MESSAGE_ALL, "post-close");
+        oc.flush();
+        oc.close();
+
+        String logged = StreamUtils.readStreamAsString(new FileInputStream(logFile), true);
+        Assert.assertTrue(r1.evaluate(logged));
+        Assert.assertFalse(logged.contains("post-close"));
+    }
+
+    @Test
     public void logExceptionDialogAlwaysWritesToFileEvenWhenFileLoggingDisabled() throws Exception {
         LogConfig.getLogConfig().setEnableLogging(false);
         LogConfig.getLogConfig().setLogToFile(false);

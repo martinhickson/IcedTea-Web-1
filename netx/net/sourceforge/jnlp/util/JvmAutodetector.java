@@ -16,6 +16,11 @@ public final class JvmAutodetector {
     private JvmAutodetector() {
     }
 
+    /**
+     * Discover candidate JDK homes that look usable ({@code bin/java} present).
+     * Does <em>not</em> process-probe every install — that happens only for the JVM
+     * selected for launch via {@link JvmDescriptor#describe(String)}.
+     */
     public static List<String> discoverValidJvmHomes() {
         LinkedHashSet<String> seen = new LinkedHashSet<>();
         List<String> valid = new ArrayList<>();
@@ -24,7 +29,7 @@ public final class JvmAutodetector {
             if (canonical == null || !seen.add(canonical)) {
                 continue;
             }
-            JvmDescriptor descriptor = JvmDescriptor.describe(canonical);
+            JvmDescriptor descriptor = JvmDescriptor.describeLight(canonical);
             if (descriptor.isValid()) {
                 valid.add(canonical);
             }
@@ -222,10 +227,16 @@ public final class JvmAutodetector {
         if (homePath == null || homePath.trim().isEmpty()) {
             return 0;
         }
-        int major = JvmProbeSupport.probeMajorVersion(homePath.trim());
-        if (major > 0) {
-            return major;
+        String home = homePath.trim();
+        // Cheap sources first — never spawn N processes while ranking candidates.
+        int fromRelease = JvmProbeSupport.readMajorFromReleaseFile(home);
+        if (fromRelease > 0) {
+            return fromRelease;
         }
-        return JvmSelector.parseMajor(JvmDescriptor.describe(homePath.trim()).getVersion());
+        int fromPath = JvmSelector.parseMajor(JvmDescriptor.describeLight(home).getVersion());
+        if (fromPath > 0) {
+            return fromPath;
+        }
+        return JvmProbeSupport.probeMajorVersion(home);
     }
 }

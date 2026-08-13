@@ -434,11 +434,19 @@ public class Defaults {
                         BasicValueValidators.getRangedIntegerValidator(0, 300000),
                         String.valueOf(30000)
                 },
-                /* TLS cipher suite preference (CSV; empty = AES-NI auto-detect) */
+                /* TLS cipher suite preference (CSV; empty = use cipherMode) */
                 {
                         DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_SUITES,
                         null,
                         null
+                },
+                /* probe (default): TLS 1.3 ChaCha, TLS 1.2 ECDHE-ECDSA ChaCha, TLS 1.2 AES-256-GCM, then full */
+                {
+                        DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE,
+                        BasicValueValidators.getStringValidator(new String[] {
+                                "probe", "full"
+                        }),
+                        "probe"
                 },
                 /* HTTP client implementation: "apache" (default) or "oracle" (HttpURLConnection) */
                 {
@@ -525,6 +533,11 @@ public class Defaults {
                         String.valueOf(false)
                 },
                 {
+                        DeploymentConfiguration.KEY_CACHE_CATALOG_SQLITE,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
+                {
                         DeploymentConfiguration.KEY_BACKGROUND_THREADS_COUNT,
                         // Default 6 download threads; allowed range 1–24.
                         BasicValueValidators.getRangedIntegerValidator(1, 24),
@@ -547,6 +560,11 @@ public class Defaults {
                 },
                 {
                         DeploymentConfiguration.KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
+                {
+                        DeploymentConfiguration.KEY_HTTP_SIZE_FIRST_DOWNLOADS,
                         BasicValueValidators.getBooleanValidator(),
                         String.valueOf(true)
                 },

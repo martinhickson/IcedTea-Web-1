@@ -176,4 +176,18 @@ public class FileLogTest {
         Assert.assertTrue(r3.evaluate(s2));
 
     }
+
+    @Test
+    public void logAfterCloseIsIgnoredWithoutThrowing() throws Exception {
+        File f = File.createTempFile("LogBasedFileLogger-closed", "iteTest");
+        f.deleteOnExit();
+        LogBasedFileLog log = new LogBasedFileLog(f.getAbsolutePath(), false);
+        log.log(line1);
+        log.close();
+        log.log("after-close must not throw");
+        log.close();
+        String s = StreamUtils.readStreamAsString(new FileInputStream(f), true);
+        Assert.assertTrue(r1.evaluate(s));
+        Assert.assertFalse(s.contains("after-close must not throw"));
+    }
 }

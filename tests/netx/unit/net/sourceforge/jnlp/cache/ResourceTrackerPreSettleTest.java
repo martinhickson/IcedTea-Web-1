@@ -74,4 +74,79 @@ public class ResourceTrackerPreSettleTest {
         assertEquals(JarState.IN_FLIGHT, group.slot(0).state());
         assertTrue(!group.done().isDone(), "retry-pending must not complete the group");
     }
+
+    @Test
+    public void ghostGoodWithoutLocalFileIsRestartedNotLeftInFlight() throws Exception {
+        URL u = url("http://localhost/ghost.jar");
+        Resource r = Resource.getResource(u, new Version("1.0"), UpdatePolicy.NEVER);
+        r.setTerminalState(JarState.GOOD);
+        r.setLocalFile(tmp.resolve("missing-ghost.jar").toFile()); // does not exist
+
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(u));
+        List<Resource> needsRestart = new ArrayList<>();
+        ResourceTracker.preSettleSlots(new Resource[]{r}, group, needsRestart);
+
+        assertEquals(1, needsRestart.size());
+        assertEquals(null, r.getTerminalState());
+        assertEquals(JarState.IN_FLIGHT, group.slot(0).state());
+        assertTrue(!group.done().isDone(), "ghost GOOD must not absorb the group as success");
+    }
+
+    @Test
+    public void hasUsableLocalFileRejectsMissingEmptyAndNonJarPayload() throws Exception {
+        URL jarUrl = url("http://localhost/lib/app.jar");
+        Resource missing = Resource.getResource(jarUrl, null, UpdatePolicy.NEVER);
+        missing.setLocalFile(tmp.resolve("nope.jar").toFile());
+        assertTrue(!ResourceTracker.hasUsableLocalFile(missing));
+
+        Path empty = tmp.resolve("empty.jar");
+        Files.write(empty, new byte[0]);
+        Resource emptyRes = Resource.getResource(jarUrl, null, UpdatePolicy.NEVER);
+        emptyRes.setLocalFile(empty.toFile());
+        assertTrue(!ResourceTracker.hasUsableLocalFile(emptyRes));
+
+        Path poison = tmp.resolve("poison.jar");
+        Files.write(poison, "11 Could not locate requested version\r\n".getBytes(StandardCharsets.UTF_8));
+        Resource poisonRes = Resource.getResource(jarUrl, null, UpdatePolicy.NEVER);
+        poisonRes.setLocalFile(poison.toFile());
+        assertTrue(!ResourceTracker.hasUsableLocalFile(poisonRes));
+
+        assertTrue(!ResourceTracker.hasUsableLocalFile(null));
+
+        Path plain = tmp.resolve("data.bin");
+        Files.write(plain, "payload".getBytes(StandardCharsets.UTF_8));
+        Resource plainRes = Resource.getResource(url("http://localhost/data.bin"), null, UpdatePolicy.NEVER);
+        plainRes.setLocalFile(plain.toFile());
+        assertTrue(ResourceTracker.hasUsableLocalFile(plainRes));
+    }
+
+    @Test
+    public void canReuseMetricsGroupRequiresSameBoundSlots() throws Exception {
+        URL a = url("http://localhost/a.jar");
+        URL b = url("http://localhost/b.jar");
+        Resource ra = Resource.getResource(a, null, UpdatePolicy.NEVER);
+        Resource rb = Resource.getResource(b, null, UpdatePolicy.NEVER);
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(a, b));
+        ra.setJarSlot(group.slot(0));
+        rb.setJarSlot(group.slot(1));
+
+        assertTrue(ResourceTracker.canReuseMetricsGroup(new Resource[]{ra, rb}, group));
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{ra}, group));
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{ra, rb}, null));
+
+        // Mismatched slot binding → must allocate a fresh metrics group.
+        rb.setJarSlot(null);
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{ra, rb}, group));
+    }
+
+    @Test
+    public void canReuseMetricsGroupRejectsCompletedGroup() throws Exception {
+        URL u = url("http://localhost/done.jar");
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(u));
+        r.setJarSlot(group.slot(0));
+        assertTrue(group.slot(0).settleGood(System.currentTimeMillis(), true));
+        assertTrue(group.done().isDone());
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{r}, group));
+    }
 }

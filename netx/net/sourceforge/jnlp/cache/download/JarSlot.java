@@ -18,6 +18,9 @@ public final class JarSlot {
     final CompletableFuture<Void> settled = new CompletableFuture<>();
 
     volatile long startMillis;
+    /** Wall clock when HTTP connect began ({@code -1} if unknown). */
+    volatile long connectStartMillis = -1;
+    /** Wall clock when HTTP connect finished ({@code -1} if unknown). */
     volatile long connectMillis = -1;
     volatile long firstByteMillis = -1;
     volatile long lastByteMillis  = -1;
@@ -44,7 +47,15 @@ public final class JarSlot {
         transferred.addAndGet(deltaBytes);
     }
 
-    public void onConnect(long now)         { this.connectMillis = now; }
+    /** Record connect completion; treat as zero-duration (reused) when start unknown. */
+    public void onConnect(long now) {
+        onConnect(now, now);
+    }
+
+    public void onConnect(long connectStart, long connectEnd) {
+        this.connectStartMillis = connectStart;
+        this.connectMillis = connectEnd;
+    }
 
     public void onFirstByte(long now) {
         if (firstByteMillis == -1) firstByteMillis = now;
@@ -92,13 +103,14 @@ public final class JarSlot {
     }
 
     /**
-     * Force-settle SETTLED_BAD from IN_FLIGHT (coordinator-side). Used when
-     * pre-settling a fresh slot for a resource whose one-shot retry was ALREADY
-     * consumed — the normal settleUnusable would park in RETRY_PENDING, but no
-     * re-download is allowed, so it must go straight to terminal failure.
+     * Force-settle SETTLED_BAD from {@link JarState#IN_FLIGHT} or
+     * {@link JarState#RETRY_PENDING}. Used when retries are exhausted / fail-fast
+     * (including unexpected {@code Error} after {@link #settleUnusable} parked the
+     * slot) — must absorb so the jar group cannot hang on {@code done}.
      */
     public boolean settleBadFinal(long now) {
-        if (casState(JarState.IN_FLIGHT, JarState.SETTLED_BAD)) {
+        if (casState(JarState.IN_FLIGHT, JarState.SETTLED_BAD)
+                || casState(JarState.RETRY_PENDING, JarState.SETTLED_BAD)) {
             this.kind = MetricKind.FAILED;
             publishSettle(now);
             return true;
@@ -117,13 +129,23 @@ public final class JarSlot {
     }
 
     public long ttfbMillis() {
-        if (firstByteMillis < 0 || startMillis < 0) return -1;
-        return firstByteMillis - startMillis;
+        // HTTP TTFB: first body byte minus connect completion (headers). Never group start —
+        // that made late jars look like 3-minute TTFB while transfer was 80ms.
+        long origin = connectMillis >= 0 ? connectMillis : connectStartMillis;
+        if (firstByteMillis < 0 || origin < 0) {
+            return -1;
+        }
+        return Math.max(0L, firstByteMillis - origin);
     }
 
     public long durationMillis() {
-        if (endMillis < 0 || startMillis < 0) return -1;
-        return endMillis - startMillis;
+        // This jar's own timeline, not time-since-group-start.
+        long origin = connectStartMillis >= 0 ? connectStartMillis
+                : (firstByteMillis >= 0 ? firstByteMillis : startMillis);
+        if (endMillis < 0 || origin < 0) {
+            return -1;
+        }
+        return Math.max(0L, endMillis - origin);
     }
 
     public long transferMillis() {
@@ -135,5 +157,23 @@ public final class JarSlot {
         long tm = transferMillis();
         if (tm <= 0) return -1;
         return transferred.get() / (double) tm * 1000.0 / 1024.0;
+    }
+
+    /** One-line per-jar download stats for logging at settle time. */
+    public String settleStatsLine() {
+        String k = kind == null ? "?" : kind.name();
+        long ttfb = ttfbMillis();
+        long dur = durationMillis();
+        double thr = throughputKBps();
+        return String.format(java.util.Locale.ROOT,
+                "Download complete: %s kind=%s ttfb=%s dur=%s thr=%s bytes=%d decomp=%s retried=%s",
+                location,
+                k,
+                ttfb >= 0 ? ttfb + "ms" : "-",
+                dur >= 0 ? dur + "ms" : "-",
+                thr >= 0 ? String.format(java.util.Locale.ROOT, "%.1fKB/s", thr) : "-",
+                transferred.get(),
+                decompressedBytes >= 0 ? Long.toString(decompressedBytes) : "-",
+                retried.get());
     }
 }

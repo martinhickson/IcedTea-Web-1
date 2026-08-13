@@ -96,7 +96,7 @@ public class ConnectionFactory {
     private URLConnection openHttpsConnection(URL url) throws IOException {
         HttpsURLConnection conn = (HttpsURLConnection) url.openConnection();
         applyTimeouts(conn);
-        conn.setSSLSocketFactory(new ItwSslSocketFactory());
+        conn.setSSLSocketFactory(ItwSslSocketFactory.shared());
         OutputController.getLogger().log("done " + url.toExternalForm());
         return conn;
     }

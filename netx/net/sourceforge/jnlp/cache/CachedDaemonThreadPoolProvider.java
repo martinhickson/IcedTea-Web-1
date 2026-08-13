@@ -38,6 +38,7 @@ package net.sourceforge.jnlp.cache;
 
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -122,13 +123,25 @@ public class CachedDaemonThreadPoolProvider {
         } catch (Exception ignored) {
             adaptive = true;
         }
-        ThreadPoolExecutor pool = new ThreadPoolExecutor(nThreads, nThreads,
+        // Size workers to the adaptive ceiling immediately (default 12). Cold-cache
+        // enqueues every jar before the first success, so doubling later cannot
+        // spawn extra threads against an unbounded queue.
+        int slots = AdaptiveBackgroundThreads.connectionSlots(nThreads, adaptive);
+        ThreadPoolExecutor pool = new ThreadPoolExecutor(slots, slots,
                 60L, TimeUnit.SECONDS,
                 new LinkedBlockingQueue<Runnable>(),
                 new DaemonThreadFactory());
         pool.allowCoreThreadTimeOut(true);
+        pool.prestartAllCoreThreads();
         DAEMON_THREAD_POOL = pool;
         ADAPTIVE = new AdaptiveBackgroundThreads(adaptive, nThreads, pool);
+        try {
+            System.setProperty("http.maxConnections", String.valueOf(slots));
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Download threads: " + slots + " (base " + nThreads
+                            + (adaptive ? ", adaptive ceiling" : "") + ")");
+        } catch (Throwable ignored) {
+        }
     }
 
     /** Test seam — resets the singleton pool/adaptive controller. */
@@ -138,6 +151,7 @@ public class CachedDaemonThreadPoolProvider {
         }
         DAEMON_THREAD_POOL = null;
         ADAPTIVE = null;
+        SizeFirstDownloadQueue.resetForTests();
     }
 
     static AdaptiveBackgroundThreads adaptiveForTests() {

@@ -418,5 +418,5 @@ public class ConsoleOutputPaneModel {
     boolean showThread2;
     boolean showUser;
     int sortBy;
-    boolean wordWrap;
+    boolean wordWrap = true;
 }

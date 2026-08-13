@@ -1,0 +1,567 @@
+/*
+ Copyright (C) 2026 IcedTea-Web contributors
+
+ This file is part of IcedTea-Web.
+*/
+package net.sourceforge.jnlp.cache;
+
+import java.io.File;
+import java.io.IOException;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
+import java.util.AbstractMap;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicLong;
+import java.util.concurrent.locks.ReentrantLock;
+
+import org.sqlite.SQLiteConfig;
+
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.util.logging.OutputController;
+
+/**
+ * SQLite-backed cache catalog under {@code {cachedir}/db/cache_catalog.sqlite}.
+ * Uses WAL and {@code busy_timeout} for multi-process wait/retry.
+ */
+final class SqliteCacheCatalog implements CacheCatalog {
+
+    static final String DB_FILE_NAME = "cache_catalog.sqlite";
+    /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
+    static final String FAILED_MARKER = ".sqlite_catalog_failed";
+    private static final int BUSY_TIMEOUT_MS = 5000;
+    /** Disambiguates same-millisecond {@code lru_key} values (UNIQUE constraint). */
+    private static final AtomicLong LRU_KEY_SEQ = new AtomicLong();
+
+    private final File dbFile;
+    private final ReentrantLock threadLock = new ReentrantLock();
+    private Connection connection;
+    private String openPath;
+
+    SqliteCacheCatalog(File dbDirectory) {
+        if (!dbDirectory.exists() && !dbDirectory.mkdirs()) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "Unable to create sqlite cache dir: " + dbDirectory);
+        }
+        this.dbFile = new File(dbDirectory, DB_FILE_NAME);
+    }
+
+    File getDbFile() {
+        return dbFile;
+    }
+
+    private Connection conn() throws SQLException {
+        String path = dbFile.getAbsolutePath();
+        if (connection != null && !connection.isClosed() && path.equals(openPath)) {
+            return connection;
+        }
+        closeQuietly();
+        ensureParentAndNativeTmpdir();
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            markFailed();
+            throw new SQLException("sqlite-jdbc driver missing", e);
+        }
+        try {
+            return openAndInit(path);
+        } catch (SQLException first) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                    "sqlite catalog open failed, quarantining: " + dbFile);
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, first);
+            closeQuietly();
+            quarantineSidecars();
+            try {
+                return openAndInit(path);
+            } catch (SQLException second) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, second);
+                markFailed();
+                throw second;
+            }
+        }
+    }
+
+    private void ensureParentAndNativeTmpdir() {
+        File parent = dbFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        // Prefer extracting sqlitejdbc under the cache tree (VDI often blocks %TEMP%).
+        if (parent != null && System.getProperty("org.sqlite.tmpdir") == null) {
+            File nativeDir = new File(parent, "native");
+            if (nativeDir.isDirectory() || nativeDir.mkdirs()) {
+                System.setProperty("org.sqlite.tmpdir", nativeDir.getAbsolutePath());
+            }
+        }
+    }
+
+    private Connection openAndInit(String path) throws SQLException {
+        SQLiteConfig config = new SQLiteConfig();
+        config.setBusyTimeout(BUSY_TIMEOUT_MS);
+        connection = DriverManager.getConnection("jdbc:sqlite:" + path, config.toProperties());
+        openPath = path;
+        try (Statement st = connection.createStatement()) {
+            st.execute("PRAGMA journal_mode=WAL");
+            st.execute("PRAGMA busy_timeout=" + BUSY_TIMEOUT_MS);
+            st.execute("PRAGMA synchronous=" + (cacheFsyncEnabled() ? "FULL" : "NORMAL"));
+            st.execute("PRAGMA foreign_keys=ON");
+            st.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
+            try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM schema_version")) {
+                if (rs.next() && rs.getInt(1) == 0) {
+                    st.executeUpdate("INSERT INTO schema_version(version) VALUES (1)");
+                }
+            }
+            st.execute("CREATE TABLE IF NOT EXISTS cache_entry ("
+                    + "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+                    + "lru_key TEXT NOT NULL UNIQUE,"
+                    + "resource_url TEXT NOT NULL,"
+                    + "path TEXT NOT NULL UNIQUE,"
+                    + "folder_id INTEGER NOT NULL,"
+                    + "last_access INTEGER NOT NULL,"
+                    + "state TEXT NOT NULL DEFAULT 'ready'"
+                    + " CHECK (state IN ('reserved','ready','orphan')),"
+                    + "created_at INTEGER NOT NULL"
+                    + ")");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_url_access "
+                    + "ON cache_entry (resource_url, last_access DESC)");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_access "
+                    + "ON cache_entry (last_access ASC)");
+            st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_folder "
+                    + "ON cache_entry (folder_id)");
+        }
+        return connection;
+    }
+
+    private void quarantineSidecars() {
+        File parent = dbFile.getParentFile();
+        if (parent == null) {
+            return;
+        }
+        long ts = System.currentTimeMillis();
+        String[] names = {
+            dbFile.getName(),
+            dbFile.getName() + "-wal",
+            dbFile.getName() + "-shm"
+        };
+        for (String name : names) {
+            File src = new File(parent, name);
+            if (!src.isFile()) {
+                continue;
+            }
+            File dest = new File(parent, name + ".corrupt-" + ts);
+            if (!src.renameTo(dest)) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "unable to quarantine " + src);
+            }
+        }
+    }
+
+    private void markFailed() {
+        File parent = dbFile.getParentFile();
+        if (parent == null) {
+            return;
+        }
+        File marker = new File(parent, FAILED_MARKER);
+        try {
+            if (!marker.exists() && !marker.createNewFile()) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                        "unable to write sqlite sticky-fail marker: " + marker);
+            }
+        } catch (IOException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+    }
+
+    boolean isUsable() {
+        try {
+            return connection != null && !connection.isClosed();
+        } catch (SQLException e) {
+            return false;
+        }
+    }
+
+    /** Package-private for tests: 1=NORMAL, 2=FULL. */
+    int pragmaSynchronous() throws SQLException {
+        try (Statement st = conn().createStatement();
+             ResultSet rs = st.executeQuery("PRAGMA synchronous")) {
+            if (!rs.next()) {
+                throw new SQLException("PRAGMA synchronous returned no row");
+            }
+            return rs.getInt(1);
+        }
+    }
+
+    /** Package-private for tests: EXPLAIN QUERY PLAN of indexed URL lookup. */
+    String explainFindEntriesPlan() throws SQLException {
+        try (Statement st = conn().createStatement();
+             ResultSet rs = st.executeQuery(
+                     "EXPLAIN QUERY PLAN SELECT lru_key, path FROM cache_entry "
+                             + "WHERE resource_url = 'probe' AND state IN ('reserved','ready') "
+                             + "ORDER BY last_access DESC")) {
+            StringBuilder plan = new StringBuilder();
+            while (rs.next()) {
+                if (plan.length() > 0) {
+                    plan.append('\n');
+                }
+                // SQLite: last column is "detail"
+                plan.append(rs.getString("detail"));
+            }
+            return plan.toString();
+        }
+    }
+
+    private void closeQuietly() {
+        if (connection != null) {
+            try {
+                try (Statement st = connection.createStatement()) {
+                    // PASSIVE never waits for other connections. TRUNCATE/FULL deadlock
+                    // dual-JVM shutdown: close() blocks until the other process disconnects.
+                    // sqlite3_close of the last connection still checkpoints WAL.
+                    st.setQueryTimeout(2);
+                    st.execute("PRAGMA wal_checkpoint(PASSIVE)");
+                } catch (SQLException e) {
+                    OutputController.getLogger().log(e);
+                }
+                connection.close();
+            } catch (SQLException e) {
+                OutputController.getLogger().log(e);
+            }
+            connection = null;
+            openPath = null;
+        }
+    }
+
+    @Override
+    public void lock() {
+        threadLock.lock();
+    }
+
+    @Override
+    public boolean tryLock() {
+        return threadLock.tryLock();
+    }
+
+    @Override
+    public void unlock() {
+        if (threadLock.isHeldByCurrentThread()) {
+            threadLock.unlock();
+        }
+    }
+
+    @Override
+    public boolean isHeldByCurrentThread() {
+        return threadLock.isHeldByCurrentThread();
+    }
+
+    @Override
+    public boolean load() {
+        try {
+            conn();
+            return false;
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean store() {
+        // Mutations commit immediately.
+        return isHeldByCurrentThread();
+    }
+
+    @Override
+    public boolean addEntry(String key, String path) {
+        try {
+            Connection c = conn();
+            long now = System.currentTimeMillis();
+            long lastAccess = parseLastAccess(key, now);
+            int folderId = parseFolderId(key);
+            String cacheRoot = parentCacheDirOf(path, folderId);
+            String resourceUrl = CacheUtil.pathToURLPath(path, cacheRoot);
+            try (PreparedStatement exists = c.prepareStatement(
+                    "SELECT 1 FROM cache_entry WHERE lru_key = ?")) {
+                exists.setString(1, key);
+                try (ResultSet rs = exists.executeQuery()) {
+                    if (rs.next()) {
+                        return false;
+                    }
+                }
+            }
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO cache_entry(lru_key, resource_url, path, folder_id, last_access, state, created_at) "
+                            + "VALUES (?,?,?,?,?,'reserved',?)")) {
+                ps.setString(1, key);
+                ps.setString(2, resourceUrl);
+                ps.setString(3, path);
+                ps.setInt(4, folderId);
+                ps.setLong(5, lastAccess);
+                ps.setLong(6, now);
+                ps.executeUpdate();
+            }
+            return true;
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean removeEntry(String key) {
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement("DELETE FROM cache_entry WHERE lru_key = ?")) {
+                ps.setString(1, key);
+                return ps.executeUpdate() > 0;
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean updateEntry(String oldKey, String cacheDirPath) {
+        try {
+            Connection c = conn();
+            int folderId;
+            try (PreparedStatement sel = c.prepareStatement(
+                    "SELECT folder_id FROM cache_entry WHERE lru_key = ?")) {
+                sel.setString(1, oldKey);
+                try (ResultSet rs = sel.executeQuery()) {
+                    if (!rs.next()) {
+                        return false;
+                    }
+                    folderId = rs.getInt(1);
+                }
+            }
+            long now = System.currentTimeMillis();
+            String newKey = lruKey(now, folderId);
+            try (PreparedStatement upd = c.prepareStatement(
+                    "UPDATE cache_entry SET lru_key = ?, last_access = ?, state = 'ready' WHERE lru_key = ?")) {
+                upd.setString(1, newKey);
+                upd.setLong(2, now);
+                upd.setString(3, oldKey);
+                return upd.executeUpdate() > 0;
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    @Override
+    public List<Entry<String, String>> getLRUSortedEntries() {
+        List<Entry<String, String>> entries = new ArrayList<>();
+        try {
+            Connection c = conn();
+            try (Statement st = c.createStatement();
+                 ResultSet rs = st.executeQuery(
+                         "SELECT lru_key, path FROM cache_entry ORDER BY last_access DESC")) {
+                while (rs.next()) {
+                    entries.add(new AbstractMap.SimpleImmutableEntry<>(
+                            rs.getString(1), rs.getString(2)));
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+        return entries;
+    }
+
+    @Override
+    public List<Entry<String, String>> findEntriesByUrlPath(String urlPath, String cacheDirPath) {
+        List<Entry<String, String>> entries = new ArrayList<>();
+        long t0 = System.nanoTime();
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT lru_key, path FROM cache_entry WHERE resource_url = ? "
+                            + "AND state IN ('reserved','ready') ORDER BY last_access DESC")) {
+                ps.setString(1, urlPath);
+                try (ResultSet rs = ps.executeQuery()) {
+                    while (rs.next()) {
+                        entries.add(new AbstractMap.SimpleImmutableEntry<>(
+                                rs.getString(1), rs.getString(2)));
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+        long us = (System.nanoTime() - t0) / 1000L;
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                "sqlite catalog findEntriesByUrlPath us=" + us + " matches=" + entries.size());
+        return entries;
+    }
+
+    @Override
+    public String getValue(String key) {
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT path FROM cache_entry WHERE lru_key = ?")) {
+                ps.setString(1, key);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (rs.next()) {
+                        return rs.getString(1);
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+        return null;
+    }
+
+    @Override
+    public boolean containsKey(String key) {
+        return getValue(key) != null;
+    }
+
+    @Override
+    public boolean containsValue(String value) {
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT 1 FROM cache_entry WHERE path = ?")) {
+                ps.setString(1, value);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next();
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    @Override
+    public void clear() {
+        try {
+            Connection c = conn();
+            try (Statement st = c.createStatement()) {
+                st.executeUpdate("DELETE FROM cache_entry");
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+    }
+
+    @Override
+    public String generateKey(String path, String cacheDirPath) {
+        int folderId = Integer.parseInt(
+                PropertiesCacheCatalog.folderIdFromPath(path, cacheDirPath));
+        return lruKey(System.currentTimeMillis(), folderId);
+    }
+
+    /** {@code millis,folderId,seq} — seq avoids UNIQUE collisions within the same ms. */
+    static String lruKey(long millis, int folderId) {
+        return millis + "," + folderId + "," + LRU_KEY_SEQ.incrementAndGet();
+    }
+
+    @Override
+    public int nextFolderId(File cacheDir) {
+        int candidate = 0;
+        try {
+            Connection c = conn();
+            try (Statement st = c.createStatement();
+                 ResultSet rs = st.executeQuery("SELECT COALESCE(MAX(folder_id), -1) FROM cache_entry")) {
+                if (rs.next()) {
+                    candidate = rs.getInt(1) + 1;
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            candidate = 0;
+        }
+        return CacheCatalog.claimFolderId(cacheDir, candidate);
+    }
+
+    @Override
+    public void close() {
+        closeQuietly();
+    }
+
+    /**
+     * Cache root above the numbered folder. Must not take the first
+     * {@code /{folderId}/} in the absolute path — earlier path segments (home dirs,
+     * worktree names) or later URL path segments can contain the same digits.
+     * Prefer the last match whose next segment looks like a cached URL tree
+     * ({@code http/}, {@code https/}, …).
+     */
+    static String parentCacheDirOf(String path, int folderId) {
+        if (path == null || path.isEmpty()) {
+            return path;
+        }
+        String normalized = path.replace('\\', '/');
+        String marker = "/" + folderId + "/";
+        int chosen = -1;
+        int from = 0;
+        while (from < normalized.length()) {
+            int idx = normalized.indexOf(marker, from);
+            if (idx < 0) {
+                break;
+            }
+            // "/17/" must not match a search for "/7/"
+            if (idx > 0 && Character.isDigit(normalized.charAt(idx - 1))) {
+                from = idx + 1;
+                continue;
+            }
+            int after = idx + marker.length();
+            if (after <= normalized.length() && looksLikeCachedUrlTree(normalized.substring(after))) {
+                chosen = idx;
+            }
+            from = idx + 1;
+        }
+        if (chosen >= 0) {
+            return normalized.substring(0, chosen).replace('/', File.separatorChar);
+        }
+        return new File(path).getParent();
+    }
+
+    private static boolean looksLikeCachedUrlTree(String rest) {
+        String r = rest.toLowerCase(Locale.ROOT);
+        return r.startsWith("http/") || r.startsWith("https/") || r.startsWith("ftp/")
+                || r.startsWith("file/") || r.startsWith("jar/");
+    }
+
+    /** Test hook: when non-null, overrides {@code deployment.enable.cache.fsync}. */
+    static Boolean fsyncOverrideForTests;
+
+    private static boolean cacheFsyncEnabled() {
+        if (fsyncOverrideForTests != null) {
+            return fsyncOverrideForTests.booleanValue();
+        }
+        try {
+            String v = JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_ENABLE_CACHE_FSYNC);
+            return Boolean.parseBoolean(v);
+        } catch (Throwable e) {
+            // Slim dual-JVM workers may not have the full ITW graph (DownloadIndicator, …).
+            return false;
+        }
+    }
+
+    private static long parseLastAccess(String key, long fallback) {
+        try {
+            return Long.parseLong(key.split(",")[0]);
+        } catch (Exception e) {
+            return fallback;
+        }
+    }
+
+    private static int parseFolderId(String key) {
+        try {
+            return Integer.parseInt(key.split(",")[1]);
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+}

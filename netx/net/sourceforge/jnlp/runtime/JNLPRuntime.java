@@ -67,6 +67,9 @@ import net.sourceforge.jnlp.cache.DownloadIndicator;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.PathsAndFiles;
+import net.sourceforge.jnlp.security.HttpClientProvider;
+import net.sourceforge.jnlp.security.ItwSslSocketFactory;
+import net.sourceforge.jnlp.security.ItwTls;
 import net.sourceforge.jnlp.security.JNLPAuthenticator;
 import net.sourceforge.jnlp.security.KeyStores;
 import net.sourceforge.jnlp.security.SecurityDialogMessageHandler;
@@ -332,11 +335,18 @@ public class JNLPRuntime {
             sslSocketFactory = context.getSocketFactory();
             ITW_SSL_CONTEXT = context;
 
-            HttpsURLConnection.setDefaultSSLSocketFactory(sslSocketFactory);
+            // Stamp cipher order on every HTTPS socket (Apache downloads + URLConnection).
+            ItwSslSocketFactory itwFactory = ItwSslSocketFactory.install(sslSocketFactory);
+            HttpsURLConnection.setDefaultSSLSocketFactory(itwFactory);
+            ItwTls.warm();
         } catch (Exception e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "Unable to set SSLSocketfactory (may _prevent_ access to sites that should be trusted)! Continuing anyway...");
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
+
+        // Build the download HTTP client now so the first jar GET already uses
+        // ItwSslSocketFactory (Apache does not consult HttpsURLConnection's default).
+        HttpClientProvider.getDefault();
 
         // plug in a custom authenticator and proxy selector
         Authenticator.setDefault(new JNLPAuthenticator());
