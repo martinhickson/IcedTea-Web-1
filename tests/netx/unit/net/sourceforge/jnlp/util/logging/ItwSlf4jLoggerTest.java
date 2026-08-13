@@ -26,9 +26,23 @@ public class ItwSlf4jLoggerTest {
         assertTrue(log instanceof ItwSlf4jLogger);
         assertFalse(log.isTraceEnabled());
         assertFalse(log.isDebugEnabled());
+        assertFalse(log.isInfoEnabled());
         assertFalse(log.isErrorEnabled());
         log.error("handshake failed", new javax.net.ssl.SSLProtocolException(
                 "Received close_notify during handshake"));
+    }
+
+    @Test
+    public void apacheWireLoggerNeverEnablesBodyDumps() {
+        Logger wire = LoggerFactory.getLogger("org.apache.hc.client5.http.wire");
+        assertTrue(wire instanceof ItwSlf4jLogger);
+        assertFalse(wire.isTraceEnabled());
+        assertFalse(wire.isDebugEnabled());
+        assertFalse(wire.isInfoEnabled());
+        assertFalse(wire.isWarnEnabled());
+        assertFalse(wire.isErrorEnabled());
+        wire.debug("http-outgoing-1 >> \"PK...\"");
+        wire.info("http-outgoing-1 << 200");
     }
 
     @Test

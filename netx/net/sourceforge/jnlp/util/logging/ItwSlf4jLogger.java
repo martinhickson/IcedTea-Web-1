@@ -8,19 +8,24 @@ import org.slf4j.helpers.MarkerIgnoringBase;
 import org.slf4j.helpers.MessageFormatter;
 
 /**
- * SLF4J logger that writes to {@link OutputController}. Apache HttpClient 5
- * logs only when ITW debug is on, and never dumps exception stacks — a cipher
- * probe miss is not an error.
+ * SLF4J logger that writes to {@link OutputController}.
+ * <p>
+ * Apache HttpClient 5 debug/info is always off — {@code http.wire} hex-dumps
+ * every GET body and will OOM a 128M launcher heap when {@code deployment.log}
+ * is on. Cipher-probe handshake misses still arrive as Apache error/warn and
+ * are logged without stacks.
  */
 public final class ItwSlf4jLogger extends MarkerIgnoringBase {
 
     private static final long serialVersionUID = 1L;
 
     private final boolean apacheHc;
+    private final boolean apacheWire;
 
     ItwSlf4jLogger(String name) {
         this.name = name;
         this.apacheHc = name != null && name.startsWith("org.apache.hc");
+        this.apacheWire = apacheHc && (name.contains(".wire") || name.contains(".headers"));
     }
 
     private static boolean debugOn() {
@@ -38,22 +43,22 @@ public final class ItwSlf4jLogger extends MarkerIgnoringBase {
 
     @Override
     public boolean isDebugEnabled() {
-        return debugOn();
+        return !apacheHc && debugOn();
     }
 
     @Override
     public boolean isInfoEnabled() {
-        return debugOn();
+        return !apacheHc && debugOn();
     }
 
     @Override
     public boolean isWarnEnabled() {
-        return debugOn();
+        return !apacheWire && debugOn();
     }
 
     @Override
     public boolean isErrorEnabled() {
-        return debugOn();
+        return !apacheWire && debugOn();
     }
 
     @Override
@@ -78,51 +83,81 @@ public final class ItwSlf4jLogger extends MarkerIgnoringBase {
 
     @Override
     public void debug(String msg) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, msg, null);
     }
 
     @Override
     public void debug(String format, Object arg) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, format, new Object[] { arg }, null);
     }
 
     @Override
     public void debug(String format, Object arg1, Object arg2) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, format, new Object[] { arg1, arg2 }, null);
     }
 
     @Override
     public void debug(String format, Object... arguments) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, format, arguments, null);
     }
 
     @Override
     public void debug(String msg, Throwable t) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, msg, t);
     }
 
     @Override
     public void info(String msg) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, msg, null);
     }
 
     @Override
     public void info(String format, Object arg) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, format, new Object[] { arg }, null);
     }
 
     @Override
     public void info(String format, Object arg1, Object arg2) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, format, new Object[] { arg1, arg2 }, null);
     }
 
     @Override
     public void info(String format, Object... arguments) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, format, arguments, null);
     }
 
     @Override
     public void info(String msg, Throwable t) {
+        if (apacheHc) {
+            return;
+        }
         emit(OutputController.Level.MESSAGE_DEBUG, msg, t);
     }
 
@@ -180,7 +215,7 @@ public final class ItwSlf4jLogger extends MarkerIgnoringBase {
     }
 
     private void emit(OutputController.Level level, String format, Object[] args, Throwable unused) {
-        if (!debugOn()) {
+        if (apacheWire || !debugOn()) {
             return;
         }
         org.slf4j.helpers.FormattingTuple tuple = MessageFormatter.arrayFormat(format, args);
@@ -188,7 +223,7 @@ public final class ItwSlf4jLogger extends MarkerIgnoringBase {
     }
 
     private void emit(OutputController.Level level, String msg, Throwable t) {
-        if (!debugOn()) {
+        if (apacheWire || !debugOn()) {
             return;
         }
         String text = msg != null ? msg : "";
