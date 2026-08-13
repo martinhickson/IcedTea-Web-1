@@ -197,6 +197,17 @@ public final class ApacheHttpClient implements ItwHttpClient {
         @Override
         public long getContentLength() {
             HttpEntity entity = response.getEntity();
+            if (entity != null && entity.getContentLength() >= 0) {
+                return entity.getContentLength();
+            }
+            // HEAD responses often have no entity; the length is still on the header.
+            Header h = response.getFirstHeader("Content-Length");
+            if (h != null && h.getValue() != null) {
+                try {
+                    return Long.parseLong(h.getValue().trim());
+                } catch (NumberFormatException ignored) {
+                }
+            }
             return entity != null ? entity.getContentLength() : -1;
         }
 

@@ -563,6 +563,11 @@ public class Defaults {
                         BasicValueValidators.getBooleanValidator(),
                         String.valueOf(true)
                 },
+                {
+                        DeploymentConfiguration.KEY_HTTP_SIZE_FIRST_DOWNLOADS,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
                 //**************
                 //* Native (rust) only - beggin
                 //**************

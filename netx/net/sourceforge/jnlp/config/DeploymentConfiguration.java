@@ -364,6 +364,11 @@ public final class DeploymentConfiguration {
     public static final String KEY_HTTP_USE_GZIP = "deployment.http.useGZip";
     /** Boolean. If true, skip the HEAD cache-validation request when the resource is not in cache. */
     public static final String KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED = "deployment.http.skipHeadIfNotCached";
+    /**
+     * Boolean. If true (default), HEAD uncached jars 12-wide then start GETs
+     * largest-first so fat transfers overlap on a saturated pipe.
+     */
+    public static final String KEY_HTTP_SIZE_FIRST_DOWNLOADS = "deployment.http.sizeFirstDownloads";
 
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     

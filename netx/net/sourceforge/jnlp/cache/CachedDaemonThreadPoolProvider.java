@@ -151,6 +151,7 @@ public class CachedDaemonThreadPoolProvider {
         }
         DAEMON_THREAD_POOL = null;
         ADAPTIVE = null;
+        SizeFirstDownloadQueue.resetForTests();
     }
 
     static AdaptiveBackgroundThreads adaptiveForTests() {

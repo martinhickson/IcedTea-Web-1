@@ -570,6 +570,10 @@ public class ResourceTracker {
      * @param resource  resource to be download
      */
     protected void startDownloadThread(Resource resource) {
+        if (SizeFirstDownloadQueue.isEnabled()) {
+            SizeFirstDownloadQueue.enqueue(resource);
+            return;
+        }
         CachedDaemonThreadPoolProvider.noteJarDownloadStarting();
         CachedDaemonThreadPoolProvider.getThreadPool().execute(new ResourceDownloader(resource, null));
     }
@@ -688,6 +692,10 @@ public class ResourceTracker {
         for (Resource resource : needsRestart) {
             startResource(resource);
         }
+
+        // HEAD pending jars (12-wide) then submit GETs largest-first. No-op when
+        // size-first is off (downloads already started from startDownloadThread).
+        SizeFirstDownloadQueue.flush();
 
         // wait for completion — PURE EVENT BARRIER. The download thread drives its
         // own one-shot retry (see ResourceDownloader.run), so RETRY_PENDING never
