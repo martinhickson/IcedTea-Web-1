@@ -662,7 +662,8 @@ public class ResourceDownloader implements Runnable {
         return response;
     }
 
-    private void settleSlotGood(boolean fromCache) {
+    /** Package-visible for Groovy probes / unit tests. */
+    void settleSlotGood(boolean fromCache) {
         resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
         // Final gate: jars must pass signature/digest integrity before GOOD.
         File local = resource.getLocalFile();

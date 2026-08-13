@@ -5,14 +5,21 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.net.URL;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.Arrays;
 import net.sourceforge.jnlp.Version;
 import net.sourceforge.jnlp.cache.download.JarGroupState;
 import net.sourceforge.jnlp.cache.download.JarSlot;
 import net.sourceforge.jnlp.cache.download.JarState;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 class ResourceDownloaderSettleTest {
+
+    @TempDir
+    Path tmp;
 
     private static URL url(String s) {
         try {
@@ -20,6 +27,30 @@ class ResourceDownloaderSettleTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    @Test
+    void settleSlotGoodWithoutSlotMarksTerminalGoodForNonJar() throws Exception {
+        URL u = url("http://localhost/plain-" + System.nanoTime() + ".bin");
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        Path file = tmp.resolve("plain.bin");
+        Files.write(file, "hello".getBytes(StandardCharsets.UTF_8));
+        r.setLocalFile(file.toFile());
+        r.setJarSlot(null);
+        new ResourceDownloader(r, new Object()).settleSlotGood(false);
+        assertEquals(JarState.GOOD, r.getTerminalState());
+    }
+
+    @Test
+    void settleSlotGoodFromCacheGhostParksRetryPending() throws Exception {
+        URL u = url("http://localhost/ghost-" + System.nanoTime() + ".jar");
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(u));
+        r.setJarSlot(group.slot(0));
+        r.setLocalFile(null);
+        new ResourceDownloader(r, new Object()).settleSlotGood(true);
+        assertEquals(JarState.RETRY_PENDING, group.slot(0).state());
+        assertEquals(null, r.getTerminalState());
     }
 
     @Test
