@@ -213,6 +213,58 @@ class PackUnpackAdmissionTest {
     }
 
     @Test
+    void twoDefaultReservesCannotStackUnderMaxBudget() throws Exception {
+        // Regression: empty-path used to set active before inFlight, letting a busy-path
+        // thread admit a second DEFAULT_RESERVE while inFlight was still 0.
+        admission.setBudgetOverrideBytes(PackUnpackAdmission.MAX_BUDGET_BYTES);
+        long reserve = PackUnpackAdmission.DEFAULT_RESERVE_BYTES;
+        CountDownLatch firstInside = new CountDownLatch(1);
+        CountDownLatch releaseFirst = new CountDownLatch(1);
+        AtomicInteger maxActive = new AtomicInteger();
+        AtomicInteger secondStarted = new AtomicInteger();
+
+        Thread t1 = new Thread(() -> {
+            try {
+                admission.runUnpack(reserve, () -> {
+                    bumpMax(maxActive);
+                    firstInside.countDown();
+                    try {
+                        releaseFirst.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "default-a");
+        Thread t2 = new Thread(() -> {
+            try {
+                assertTrue(firstInside.await(5, TimeUnit.SECONDS));
+                admission.runUnpack(reserve, () -> {
+                    secondStarted.incrementAndGet();
+                    bumpMax(maxActive);
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "default-b");
+
+        t1.start();
+        assertTrue(firstInside.await(5, TimeUnit.SECONDS));
+        t2.start();
+        Thread.sleep(80);
+        assertEquals(1, admission.activeUnpackers());
+        assertEquals(0, secondStarted.get());
+        releaseFirst.countDown();
+        t1.join(5000);
+        t2.join(5000);
+        assertEquals(1, secondStarted.get());
+        assertEquals(1, maxActive.get());
+    }
+
+    @Test
     void measuredLargePackReservesCannotRunConcurrentlyUnderProductionBudget() throws Exception {
         // Same budget cap as production (512 MiB); two large class-heavy reserves must serialize.
         admission.setBudgetOverrideBytes(PackUnpackAdmission.MAX_BUDGET_BYTES);

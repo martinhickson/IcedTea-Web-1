@@ -275,9 +275,15 @@ public class ResourceDownloader implements Runnable {
         } catch (Throwable t) {
             // never leave the group hanging: settle bad on any unexpected failure
             OutputController.getLogger().log(t);
-            settleSlotBad();
-            if (!resource.isTerminal()) {
+            if (t instanceof Error) {
+                // OOM / linkage / etc.: retry rarely helps and settleUnusable→RETRY_PENDING
+                // used to strand the group when settleBadFinal only accepted IN_FLIGHT.
                 failFastOutOfRetries();
+            } else {
+                settleSlotBad();
+                if (!resource.isTerminal()) {
+                    failFastOutOfRetries();
+                }
             }
         }
     }
@@ -801,7 +807,8 @@ public class ResourceDownloader implements Runnable {
             boolean wrote = false;
             File writtenFile = null;
             try {
-                writtenFile = writeDownloadStream(cacheLocation, response.getBody(), packGZ);
+                writtenFile = writeDownloadStream(cacheLocation, response.getBody(), packGZ,
+                        response.getContentLength());
                 wrote = true;
             } catch (IOException ex) {
                 if (isFavIconUrl(downloadLocation)) {
@@ -818,7 +825,8 @@ public class ResourceDownloader implements Runnable {
                     byte[] body = (byte[]) result[1];
                     OutputController.getLogger().log(head);
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
-                    writtenFile = writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ);
+                    writtenFile = writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ,
+                            body != null ? body.length : -1L);
                     wrote = true;
                 } else {
                     logDownloadFailure(downloadLocation, ex);
@@ -878,10 +886,15 @@ public class ResourceDownloader implements Runnable {
      * @return the cache file that was written
      */
     private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ) throws IOException {
+        return writeDownloadStream(cacheLocation, raw, packGZ, -1L);
+    }
+
+    private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ, long contentLength)
+            throws IOException {
         // Validate the exact file we wrote — a second getCacheFile() can resolve a different
         // LRU slot and falsely reject a good pack200 unpack (or leave poison on disk).
         File written = packGZ
-                ? unpackPackGzToCacheFile(cacheLocation, raw)
+                ? unpackPackGzToCacheFile(cacheLocation, raw, contentLength)
                 : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw));
         // compressionRatio metric: on-disk decompressed size vs wire bytes
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
@@ -917,12 +930,24 @@ public class ResourceDownloader implements Runnable {
      * always keeping at least one unpack running.
      */
     private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream) throws IOException {
+        return unpackPackGzToCacheFile(cacheLocation, packGzStream, -1L);
+    }
+
+    private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream, long contentLength)
+            throws IOException {
         File localFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
         final net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         // Pack200 working-set reserve (not jar bytes): calibrated from live OOM dump
-        // where class-heavy packs peaked ~30–34× pack.gz wire.
+        // where class-heavy packs peaked ~30–34× pack.gz wire. Prefer HTTP Content-Length
+        // — slot.transferred() is still 0 at stream start, and resource size may be -1.
         long sizeHint = resource.getSize();
         long wireHint = slot != null ? slot.transferred() : 0L;
+        if (wireHint <= 0L && contentLength > 0L) {
+            wireHint = contentLength;
+        }
+        if (wireHint <= 0L && sizeHint > 0L) {
+            wireHint = sizeHint;
+        }
         long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
                 .estimateReserveBytes(wireHint, sizeHint);
         net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
@@ -993,7 +1018,8 @@ public class ResourceDownloader implements Runnable {
         // raw gzip bytes under names like sonata-dao__V....jar while JarCertVerifier opened the
         // missing unversioned sonata-dao.jar (Windows production launch failure).
         try {
-            return writeDownloadStream(downloadEntry.getLocation(), retried.getBody(), packGZ);
+            return writeDownloadStream(downloadEntry.getLocation(), retried.getBody(), packGZ,
+                    retried.getContentLength());
         } finally {
             retried.close();
         }

@@ -92,13 +92,14 @@ public final class JarSlot {
     }
 
     /**
-     * Force-settle SETTLED_BAD from IN_FLIGHT (coordinator-side). Used when
-     * pre-settling a fresh slot for a resource whose one-shot retry was ALREADY
-     * consumed — the normal settleUnusable would park in RETRY_PENDING, but no
-     * re-download is allowed, so it must go straight to terminal failure.
+     * Force-settle SETTLED_BAD from {@link JarState#IN_FLIGHT} or
+     * {@link JarState#RETRY_PENDING}. Used when retries are exhausted / fail-fast
+     * (including unexpected {@code Error} after {@link #settleUnusable} parked the
+     * slot) — must absorb so the jar group cannot hang on {@code done}.
      */
     public boolean settleBadFinal(long now) {
-        if (casState(JarState.IN_FLIGHT, JarState.SETTLED_BAD)) {
+        if (casState(JarState.IN_FLIGHT, JarState.SETTLED_BAD)
+                || casState(JarState.RETRY_PENDING, JarState.SETTLED_BAD)) {
             this.kind = MetricKind.FAILED;
             publishSettle(now);
             return true;

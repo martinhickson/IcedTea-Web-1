@@ -56,6 +56,18 @@ public class JarSlotTest {
     }
 
     @Test
+    public void settleBadFinalAbsorbsFromRetryPending() {
+        // fail-fast / Error path: settleUnusable parks RETRY_PENDING; must still absorb.
+        JarSlot s = slot(0, url("http://localhost/oom.jar"));
+        assertFalse(s.settleUnusable(1000L));
+        assertEquals(JarState.RETRY_PENDING, s.state());
+        assertTrue(s.settleBadFinal(1100L));
+        assertEquals(JarState.SETTLED_BAD, s.state());
+        assertTrue(s.settled().isDone());
+        assertTrue(s.state().isAbsorbing());
+    }
+
+    @Test
     public void settleGoodIsIdempotent() {
         JarSlot s = slot(0, url("http://localhost/a.jar"));
         assertTrue(s.settleGood(1000L, false));

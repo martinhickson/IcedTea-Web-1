@@ -128,13 +128,17 @@ public final class PackUnpackAdmission {
                 long inflight = inFlightBytes.get();
                 long budget = budgetBytes();
                 if (a == 0) {
-                    // Empty pipeline: always admit exactly one unpacker (CAS), even if
-                    // reserve alone exceeds budget. Do NOT use a plain a==0 check +
-                    // separate byte CAS — two threads can both observe a==0 and both enter.
-                    if (!active.compareAndSet(0, 1)) {
+                    // Empty pipeline: always admit exactly one unpacker, even if reserve
+                    // alone exceeds budget. Claim inFlight BEFORE active so a busy-path
+                    // thread cannot observe active>=1 with inFlight==0 and also admit
+                    // (that race stacked two DEFAULT_RESERVE under MAX_BUDGET).
+                    if (!inFlightBytes.compareAndSet(0L, reserve)) {
                         continue;
                     }
-                    inFlightBytes.addAndGet(reserve);
+                    if (!active.compareAndSet(0, 1)) {
+                        inFlightBytes.addAndGet(-reserve);
+                        continue;
+                    }
                     if (spins > 0) {
                         logDebug("PackUnpackAdmission admitted first unpacker after wait spins=" + spins
                                 + " reserve=" + reserve + " budget=" + budget);
