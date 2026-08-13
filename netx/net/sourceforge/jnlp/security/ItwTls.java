@@ -19,7 +19,7 @@ import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLContext;
-import javax.net.ssl.SSLHandshakeException;
+import javax.net.ssl.SSLException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLPeerUnverifiedException;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
@@ -44,8 +44,9 @@ public final class ItwTls {
      *   <li>TLS 1.2 {@code TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256}</li>
      *   <li>full ChaCha-first multi-suite list</li>
      * </ol>
-     * Each handshake failure advances one stage; the chosen stage is cached
-     * per host. {@code full}: skip probing and use the multi-suite list.
+     * Each SSL handshake abort (cipher miss, {@code close_notify}, protocol
+     * alert) advances one stage; the chosen stage is cached per host.
+     * {@code full}: skip probing and use the multi-suite list.
      */
     public static final String CIPHER_MODE_PROBE = "probe";
     public static final String CIPHER_MODE_FULL = "full";
@@ -361,11 +362,15 @@ public final class ItwTls {
                 }
                 if (l.contains("no cipher suites in common")
                         || l.contains("handshake_failure")
-                        || l.contains("received fatal alert: handshake")) {
+                        || l.contains("received fatal alert: handshake")
+                        || l.contains("close_notify")) {
                     handshake = true;
                 }
             }
-            if (c instanceof SSLHandshakeException) {
+            // SSLHandshakeException, SSLProtocolException (close_notify), and
+            // other handshake SSLExceptions are probe misses — not only the
+            // handshake_failure alert string.
+            if (c instanceof SSLException) {
                 handshake = true;
             }
         }

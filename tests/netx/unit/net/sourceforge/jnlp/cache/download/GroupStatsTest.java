@@ -102,6 +102,7 @@ public class GroupStatsTest {
         GroupStats s = g.stats();
         assertEquals(1, s.reusedConnections);
         assertEquals(0, s.handshakes);
+        assertEquals(1.0, s.meanTTFBMillis, 0.001);
     }
 
     @Test

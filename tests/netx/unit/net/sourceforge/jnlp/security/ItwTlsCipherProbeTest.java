@@ -3,6 +3,7 @@ package net.sourceforge.jnlp.security;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -12,6 +13,7 @@ import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLPeerUnverifiedException;
+import javax.net.ssl.SSLProtocolException;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import org.junit.jupiter.api.AfterEach;
@@ -110,6 +112,31 @@ public class ItwTlsCipherProbeTest {
     }
 
     @Test
+    public void closeNotifyDuringHandshakeAdvancesTls13ThenTls12ThenFull() {
+        SSLProtocolException fail = new SSLProtocolException("Received close_notify during handshake");
+        assertTrue(ItwTls.isCipherNegotiationFailure(fail));
+        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("app.example").get());
+        assertArrayEquals(ItwTls.tls12Ciphers(), ItwTls.suitesFor("app.example"));
+        assertArrayEquals(new String[] { "TLSv1.2" }, ItwTls.protocolsFor("app.example"));
+
+        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        assertEquals(ItwTls.OFFER_FULL, ItwTls.offerState("app.example").get());
+        assertArrayEquals(ItwTls.fullCiphers(), ItwTls.suitesFor("app.example"));
+        assertFalse(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+    }
+
+    @Test
+    public void wrappedCloseNotifyStillRetries() {
+        IOException wrapped = new IOException("I/O",
+                new SSLProtocolException("Received close_notify during handshake"));
+        assertTrue(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
+        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState("nested.example").get());
+        assertTrue(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
+        assertFalse(ItwTls.shouldRetryWithNextOffer("nested.example", wrapped));
+    }
+
+    @Test
     public void certFailuresDoNotTriggerCipherFallback() {
         assertFalse(ItwTls.shouldRetryWithNextOffer("app.example",
                 new SSLPeerUnverifiedException("peer not authenticated")));
@@ -194,5 +221,79 @@ public class ItwTlsCipherProbeTest {
         assertFalse(ItwTls.isPreferredCipher("TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"));
         assertFalse(ItwTls.isPreferredCipher("TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"));
         assertFalse(ItwTls.isPreferredCipher(null));
+    }
+
+    @Test
+    public void rsaChaChaIsNotAProbeHold() {
+        ItwTls.noteNegotiated("rsa.example", "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256", "TLSv1.2");
+        assertEquals(ItwTls.OFFER_FULL, ItwTls.offerState("rsa.example").get());
+        assertArrayEquals(ItwTls.fullCiphers(), ItwTls.suitesFor("rsa.example"));
+        assertEquals(ItwTls.OFFER_FULL, ItwTls.stageForNegotiatedCipher(
+                "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"));
+    }
+
+    @Test
+    public void noteNegotiatedWithoutProtocolStillCachesTls13() {
+        ItwTls.noteNegotiated("cdn.example", ItwTls.TLS13_CHACHA);
+        assertEquals(ItwTls.OFFER_TLS13, ItwTls.offerState("cdn.example").get());
+        assertArrayEquals(ItwTls.tls13Ciphers(), ItwTls.suitesFor("cdn.example"));
+    }
+
+    @Test
+    public void parametersForAfterTls12AdvanceOffersTls12Only() {
+        SSLHandshakeException fail = new SSLHandshakeException("handshake_failure");
+        assertTrue(ItwTls.shouldRetryWithNextOffer("app.example", fail));
+        SSLParameters p = ItwTls.parametersFor("app.example");
+        assertArrayEquals(ItwTls.tls12Ciphers(), p.getCipherSuites());
+        assertArrayEquals(new String[] { "TLSv1.2" }, p.getProtocols());
+    }
+
+    @Test
+    public void parametersAndCiphersAndSummaryFollowUnknownHostProbe() {
+        ItwTls.warm();
+        assertArrayEquals(ItwTls.tls13Ciphers(), ItwTls.parameters().getCipherSuites());
+        assertArrayEquals(ItwTls.tls13Ciphers(), ItwTls.ciphers());
+        assertEquals(ItwTls.TLS13_CHACHA, ItwTls.offeredCipherSummary());
+        assertEquals(ItwTls.TLS13_CHACHA, ItwTls.offeredCipherSummary("fresh.example"));
+        assertEquals("tls13", ItwTls.stageName(ItwTls.OFFER_TLS13));
+        assertEquals("tls12", ItwTls.stageName(ItwTls.OFFER_TLS12));
+        assertEquals("full", ItwTls.stageName(ItwTls.OFFER_FULL));
+        assertNotNull(ItwTls.context());
+    }
+
+    @Test
+    public void emptyAndNullHostShareTheUnknownOffer() {
+        ItwTls.noteNegotiated("", ItwTls.TLS12_CHACHA, "TLSv1.2");
+        assertEquals(ItwTls.OFFER_TLS12, ItwTls.offerState(null).get());
+        assertArrayEquals(ItwTls.tls12Ciphers(), ItwTls.suitesFor(null));
+        assertArrayEquals(ItwTls.tls12Ciphers(), ItwTls.suitesFor(""));
+    }
+
+    @Test
+    public void certAlertMessagesDoNotTriggerCipherFallback() {
+        assertFalse(ItwTls.shouldRetryWithNextOffer("app.example",
+                new SSLHandshakeException("Received fatal alert: certificate_unknown")));
+        assertFalse(ItwTls.shouldRetryWithNextOffer("app.example",
+                new SSLHandshakeException("certificate_expired")));
+        assertEquals(ItwTls.OFFER_UNKNOWN, ItwTls.offerState("app.example").get());
+    }
+
+    @Test
+    public void nextStageFromFullDoesNotRetry() {
+        ItwTls.offerState("done.example").set(ItwTls.OFFER_FULL);
+        assertEquals(ItwTls.OFFER_FULL, ItwTls.nextStage(ItwTls.OFFER_FULL));
+        assertFalse(ItwTls.shouldRetryWithNextOffer("done.example",
+                new SSLHandshakeException("handshake_failure")));
+    }
+
+    @Test
+    public void parametersForIpv6DoesNotThrow() {
+        SSLParameters p = ItwTls.parametersFor("::1");
+        assertArrayEquals(ItwTls.tls13Ciphers(), p.getCipherSuites());
+    }
+
+    @Test
+    public void probeCiphersIsTheTls13Suite() {
+        assertArrayEquals(ItwTls.tls13Ciphers(), ItwTls.probeCiphers());
     }
 }

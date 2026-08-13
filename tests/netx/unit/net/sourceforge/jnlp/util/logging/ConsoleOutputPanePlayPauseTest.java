@@ -37,6 +37,16 @@ class ConsoleOutputPanePlayPauseTest {
     }
 
     @Test
+    void setAutoRefreshLiveIsIdempotentWhenAlreadyLive() {
+        ConsoleOutputPane pane = new ConsoleOutputPane(new EmptyProvider());
+        pane.setAutoRefreshLive(true);
+        pane.setAutoRefreshLive(true);
+        assertTrue(pane.isAutoRefreshLive());
+        assertFalse(pane.isPlayEnabled());
+        assertTrue(pane.isPauseEnabled());
+    }
+
+    @Test
     void playAndPauseStayOnMainChromeWhenDetailsStartHidden() {
         ConsoleOutputPane pane = new ConsoleOutputPane(new EmptyProvider());
         assertTrue(pane.isPlayPauseOnMainPanel());

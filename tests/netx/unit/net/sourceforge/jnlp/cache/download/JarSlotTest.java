@@ -180,4 +180,32 @@ public class JarSlotTest {
         assertEquals(200, s.durationMillis());  // 5200 - 5000 connect start
         assertEquals(65, s.transferMillis());   // 5100 - 5035
     }
+
+    @Test
+    public void ttfbIsUnknownUntilConnectEvenIfGroupStartAndFirstByteExist() {
+        JarSlot s = slot(0, url("http://localhost/queued.jar"));
+        s.startMillis = 0L;
+        s.onFirstByte(180_000L);
+        assertEquals(-1, s.ttfbMillis(), "TTFB must not fall back to firstByte-groupStart");
+    }
+
+    @Test
+    public void onFirstByteKeepsTheFirstStamp() {
+        JarSlot s = slot(0, url("http://localhost/a.jar"));
+        s.onConnect(100L, 110L);
+        s.onFirstByte(120L);
+        s.onFirstByte(999L);
+        assertEquals(10, s.ttfbMillis());
+    }
+
+    @Test
+    public void durationUsesConnectStartNotGroupStart() {
+        JarSlot s = slot(0, url("http://localhost/late.jar"));
+        s.startMillis = 0L;
+        s.onConnect(10_000L, 10_010L);
+        s.onFirstByte(10_020L);
+        s.onLastByte(10_100L);
+        assertTrue(s.settleGood(10_200L, false));
+        assertEquals(200, s.durationMillis());
+    }
 }

@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Collections;
 import javax.net.ssl.SNIHostName;
@@ -38,6 +39,31 @@ public class ItwSslSocketFactoryTest {
 
             ItwSslSocketFactory.applyParameters(sock);
             assertArrayEquals(ItwTls.suitesFor("cdn.example"), sock.getSSLParameters().getCipherSuites());
+        } finally {
+            sock.close();
+        }
+    }
+
+    @Test
+    public void applyParametersStampsTls13ProbeProtocol() throws Exception {
+        SSLSocket sock = (SSLSocket) SSLContext.getDefault().getSocketFactory().createSocket();
+        try {
+            SSLParameters p = sock.getSSLParameters();
+            p.setServerNames(Collections.singletonList(new SNIHostName("cdn.example")));
+            sock.setSSLParameters(p);
+            ItwSslSocketFactory.applyParameters(sock);
+            assertArrayEquals(new String[] { "TLSv1.3" }, sock.getSSLParameters().getProtocols());
+        } finally {
+            sock.close();
+        }
+    }
+
+    @Test
+    public void peerHostWithoutSniDoesNotThrow() throws Exception {
+        SSLSocket sock = (SSLSocket) SSLContext.getDefault().getSocketFactory().createSocket();
+        try {
+            ItwSslSocketFactory.peerHost(sock);
+            assertTrue(ItwSslSocketFactory.shared().getSupportedCipherSuites().length > 0);
         } finally {
             sock.close();
         }
