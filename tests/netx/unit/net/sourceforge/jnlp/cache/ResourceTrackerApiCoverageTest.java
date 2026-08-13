@@ -117,4 +117,59 @@ class ResourceTrackerApiCoverageTest {
         rt.removeResource(u);
         assertThrows(IllegalResourceDescriptorException.class, () -> rt.checkResource(u));
     }
+
+    /**
+     * Avoids spawning HTTP download threads while covering wait / cache-file /
+     * requeue paths that would otherwise enqueue {@code ResourceDownloader}.
+     */
+    static final class NoDownloadTracker extends ResourceTracker {
+        final AtomicInteger downloadStarts = new AtomicInteger();
+
+        @Override
+        protected void startDownloadThread(Resource resource) {
+            downloadStarts.incrementAndGet();
+        }
+    }
+
+    @Test
+    void waitAndGetCacheFileOnAlreadyGoodLocalFile() throws Exception {
+        Path file = tmp.resolve("ready.bin");
+        Files.write(file, "payload".getBytes(StandardCharsets.UTF_8));
+        URL u = file.toUri().toURL();
+        NoDownloadTracker rt = new NoDownloadTracker();
+        rt.addResource(u, null, null, UpdatePolicy.NEVER);
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        r.setLocalFile(file.toFile());
+        r.setTerminalState(JarState.GOOD);
+
+        assertTrue(rt.waitForResource(u, 2_000L));
+        assertEquals(file.toFile().getCanonicalFile(), rt.getCacheFile(u).getCanonicalFile());
+        assertTrue(rt.getCacheURL(u).toString().contains("ready.bin"));
+        assertTrue(rt.startResource(u), "already GOOD+usable must not enqueue");
+        assertEquals(0, rt.downloadStarts.get());
+        rt.logDownloadStats();
+    }
+
+    @Test
+    void resolveUsableLocalFileAndRequeueUnusableTerminal() throws Exception {
+        Path file = tmp.resolve("ok.bin");
+        Files.write(file, "x".getBytes(StandardCharsets.UTF_8));
+        URL u = url("http://localhost/requeue-" + System.nanoTime() + ".bin");
+        NoDownloadTracker rt = new NoDownloadTracker();
+        rt.addResource(u, null, null, UpdatePolicy.NEVER);
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        r.setLocalFile(file.toFile());
+        r.setTerminalState(JarState.GOOD);
+
+        assertEquals(file.toFile(), rt.resolveUsableLocalFile(r, u));
+        assertFalse(rt.requeueUnusableTerminal(r), "usable DOWNLOADED must not requeue");
+
+        r.setLocalFile(tmp.resolve("missing.bin").toFile());
+        r.setTerminalState(JarState.SETTLED_BAD);
+        assertEquals(null, rt.resolveUsableLocalFile(r, u));
+        assertTrue(rt.requeueUnusableTerminal(r));
+        assertEquals(null, r.getTerminalState());
+        assertEquals(1, rt.downloadStarts.get());
+        assertFalse(rt.requeueUnusableTerminal(r), "one-shot retry already consumed");
+    }
 }

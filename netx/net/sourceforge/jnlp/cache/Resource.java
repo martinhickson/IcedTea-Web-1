@@ -436,11 +436,14 @@ public class Resource {
     }
 
     /**
-     * Clear status and local file so {@link ResourceTracker} can enqueue a fresh download.
+     * Clear terminal status, slot binding, and enqueue flag so
+     * {@link ResourceTracker} can start a fresh download.
      */
     void prepareRedownloadAfterUnusableTerminal() {
         localFile = null;
-        resetStatus();
+        terminalState = null;
+        jarSlot = null;
+        clearEnqueued();
     }
 
     /**

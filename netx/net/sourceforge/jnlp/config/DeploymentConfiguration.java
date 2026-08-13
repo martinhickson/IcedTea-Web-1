@@ -288,6 +288,12 @@ public final class DeploymentConfiguration {
     public static final String KEY_HTTPCONNECTION_CONNECT_TIMEOUT = "deployment.http.connection.connectTimeout";
     public static final String KEY_HTTPCONNECTION_READ_TIMEOUT = "deployment.http.connection.readTimeout";
     public static final String KEY_TLS_CLIENT_CIPHER_SUITES = "deployment.tls.client.cipherSuites";
+    /**
+     * TLS cipher offer mode: {@code probe} (default) offers only the fastest
+     * ChaCha20-Poly1305 suite and falls back to the full list on handshake
+     * failure; {@code full} is the previous ChaCha-first multi-suite list.
+     */
+    public static final String KEY_TLS_CLIENT_CIPHER_MODE = "deployment.tls.client.cipherMode";
     public static final String KEY_HTTP_CLIENT = "deployment.http.client";
     public static final String KEY_ITW_DOWNLOAD_JVM = "deployment.itw.download.jvm";
     

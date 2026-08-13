@@ -392,7 +392,8 @@ public class ResourceTracker {
         return !CacheUtil.isJarResourceUrl(location) || CacheUtil.isValidJarFile(local);
     }
 
-    private File resolveUsableLocalFile(Resource resource, URL location) {
+    /** Visible for Groovy probes / unit tests. */
+    protected File resolveUsableLocalFile(Resource resource, URL location) {
         if (resource.getLocalFile() != null) {
             File local = resource.getLocalFile();
             boolean usable = local.isFile() && local.length() > 0
@@ -420,7 +421,8 @@ public class ResourceTracker {
      *
      * @return true if a re-download was started
      */
-    private boolean requeueUnusableTerminal(Resource resource) {
+    /** Visible for Groovy probes / unit tests. */
+    protected boolean requeueUnusableTerminal(Resource resource) {
         if (hasUsableLocalFile(resource) && resource.isSet(DOWNLOADED)) {
             return false;
         }
@@ -733,7 +735,8 @@ public class ResourceTracker {
         return true;
     }
 
-    private void logDownloadStats() {
+    /** Visible for Groovy probes / unit tests. */
+    protected void logDownloadStats() {
         if (lastMetricsGroup == null) return;
         try {
             net.sourceforge.jnlp.cache.download.GroupStats stats = lastMetricsGroup.stats();

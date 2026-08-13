@@ -434,11 +434,19 @@ public class Defaults {
                         BasicValueValidators.getRangedIntegerValidator(0, 300000),
                         String.valueOf(30000)
                 },
-                /* TLS cipher suite preference (CSV; empty = AES-NI auto-detect) */
+                /* TLS cipher suite preference (CSV; empty = use cipherMode) */
                 {
                         DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_SUITES,
                         null,
                         null
+                },
+                /* probe (default): one ChaCha suite then fallback; full: previous multi-suite list */
+                {
+                        DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE,
+                        BasicValueValidators.getStringValidator(new String[] {
+                                "probe", "full"
+                        }),
+                        "probe"
                 },
                 /* HTTP client implementation: "apache" (default) or "oracle" (HttpURLConnection) */
                 {

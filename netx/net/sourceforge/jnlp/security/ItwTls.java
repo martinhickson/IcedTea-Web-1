@@ -6,23 +6,54 @@ import java.nio.file.Paths;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
+import javax.net.ssl.SNIHostName;
 import javax.net.ssl.SSLContext;
+import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLParameters;
+import javax.net.ssl.SSLPeerUnverifiedException;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 public final class ItwTls {
 
+    static final int OFFER_UNKNOWN = 0;
+    static final int OFFER_PREFERRED = 1;
+    static final int OFFER_FULL = 2;
+
+    /**
+     * Default ({@code probe}): offer only the fastest ChaCha20-Poly1305 suite.
+     * TLS 1.3 {@code TLS_CHACHA20_POLY1305_SHA256} is AEAD-only; the typical
+     * ECDH group on current JDKs is X25519 (Ed25519 is a signature algorithm,
+     * not a TLS 1.3 cipher). If that handshake fails, fall back to the full
+     * list and cache the result per host.
+     * {@code full}: previous behaviour (ChaCha-first multi-suite list).
+     */
+    public static final String CIPHER_MODE_PROBE = "probe";
+    public static final String CIPHER_MODE_FULL = "full";
+
     private static final String[] PROTOCOLS = { "TLSv1.3", "TLSv1.2" };
+
+    /**
+     * Single-suite probe order: first supported candidate is the only offer.
+     * TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then ECDHE-RSA ChaCha.
+     */
+    private static final String[] PREFERRED_CANDIDATES = {
+        "TLS_CHACHA20_POLY1305_SHA256",
+        "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256",
+        "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256",
+    };
 
     private static final String[] AES_NIO_ORDER = {
         "TLS_AES_128_GCM_SHA256",
@@ -51,12 +82,15 @@ public final class ItwTls {
     private static final SSLContext CTX = build();
 
     /**
-     * Cipher-order strategy: default to ChaCha20-first and DISABLE AES-NI
-     * auto-detection (benchmark + CPUID flags). Rationale: ChaCha20-Poly1305 is
-     * fast in software on hardware without AES-NI (EKS/Graviton/VMs), robust to
-     * AES execution-unit contention on shared cores, and side-channel immune.
-     * The cost is only ~2-4x slower client decrypt than AES-NI AES on Win11.
-     * Set to true to re-enable detection. An explicit
+     * Per-host offer state. 0 unknown (probe), 1 preferred negotiated, 2 must
+     * use the full list. ConcurrentHashMap + AtomicInteger: no locks on the
+     * handshake path.
+     */
+    private static final ConcurrentHashMap<String, AtomicInteger> HOST_OFFER = new ConcurrentHashMap<>();
+
+    /**
+     * Cipher-order strategy for {@code full} mode: default to ChaCha20-first
+     * and DISABLE AES-NI auto-detection. An explicit
      * deployment.tls.client.cipherSuites override ALWAYS wins regardless.
      */
     private static final boolean ENABLE_AES_NI_DETECTION = false;
@@ -70,11 +104,38 @@ public final class ItwTls {
      * resolveCipherSuites() at class-load time could see the pre-merge config
      * and silently ignore the override.
      */
-    private static class CiphersHolder {
-        static final String[] VALUE = resolveCipherSuites();
+    private static class Lists {
+        static final String[] FULL = resolveFullCipherSuites();
+        static final String[] PROBE = resolveProbeCipher(FULL);
+        static {
+            logResolved();
+        }
     }
 
-    static String[] ciphers() { return CiphersHolder.VALUE; }
+    /** Force cipher-list resolution and log the mode before the first GET. */
+    public static void warm() {
+        Lists.class.getName();
+        try {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "ItwTls ready: mode=" + (isProbeMode() ? CIPHER_MODE_PROBE : CIPHER_MODE_FULL)
+                    + " preferred=" + String.join(",", Lists.PROBE)
+                    + (isProbeMode()
+                            ? " (single suite; fallback to full list on handshake failure)"
+                            : " (legacy multi-suite list)"));
+        } catch (Exception ignored) {}
+    }
+
+    static String[] fullCiphers() {
+        return Lists.FULL;
+    }
+
+    static String[] probeCiphers() {
+        return Lists.PROBE;
+    }
+
+    static String[] ciphers() {
+        return suitesFor(null);
+    }
 
     private static SSLContext build() {
         try {
@@ -89,25 +150,154 @@ public final class ItwTls {
     public static SSLContext context() { return CTX; }
 
     public static SSLParameters parameters() {
+        return parametersFor(null);
+    }
+
+    public static SSLParameters parametersFor(String host) {
         SSLParameters p = CTX.getDefaultSSLParameters();
         p.setProtocols(PROTOCOLS);
-        p.setCipherSuites(ciphers());
+        p.setCipherSuites(suitesFor(host));
+        if (host != null && !host.isEmpty()) {
+            try {
+                p.setServerNames(Collections.singletonList(new SNIHostName(host)));
+            } catch (IllegalArgumentException ignored) {
+                // literal IPv4/IPv6: SNI host names are not used
+            }
+        }
         return p;
     }
 
     static String offeredCipherSummary() {
-        return String.join(",", ciphers());
+        return offeredCipherSummary(null);
     }
 
-    private static String[] resolveCipherSuites() {
-        String override = null;
+    static String offeredCipherSummary(String host) {
+        return String.join(",", suitesFor(host));
+    }
+
+    static String[] suitesFor(String host) {
+        if (!isProbeMode()) {
+            return Lists.FULL;
+        }
+        int state = offerState(host).get();
+        if (state == OFFER_FULL) {
+            return Lists.FULL;
+        }
+        return Lists.PROBE;
+    }
+
+    static boolean isProbeMode() {
+        if (cipherSuitesOverride() != null) {
+            return false;
+        }
+        String mode = null;
         try {
-            override = JNLPRuntime.getConfiguration()
-                    .getProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_SUITES);
+            mode = JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE);
         } catch (Exception ignored) {}
+        if (mode == null || mode.trim().isEmpty()) {
+            return true;
+        }
+        return CIPHER_MODE_PROBE.equalsIgnoreCase(mode.trim());
+    }
+
+    static AtomicInteger offerState(String host) {
+        return HOST_OFFER.computeIfAbsent(hostKey(host), h -> new AtomicInteger(OFFER_UNKNOWN));
+    }
+
+    static void noteNegotiated(String host, String cipher) {
+        if (!isProbeMode() || cipher == null) {
+            return;
+        }
+        offerState(host).set(isPreferredCipher(cipher) ? OFFER_PREFERRED : OFFER_FULL);
+    }
+
+    /**
+     * @return true if the caller should retry this host with the full cipher list
+     */
+    static boolean shouldRetryWithFullCiphers(String host, Throwable failure) {
+        if (!isProbeMode() || !isCipherNegotiationFailure(failure)) {
+            return false;
+        }
+        int previous = offerState(host).getAndSet(OFFER_FULL);
+        if (previous == OFFER_FULL) {
+            return false;
+        }
+        try {
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                    "ItwTls: preferred suite not negotiated for " + hostKey(host)
+                    + " (" + failure.getClass().getSimpleName() + "); retrying with full cipher list");
+        } catch (Exception ignored) {}
+        return true;
+    }
+
+    static boolean isPreferredCipher(String cipher) {
+        if (cipher == null) {
+            return false;
+        }
+        for (String c : Lists.PROBE) {
+            if (cipher.equals(c)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static void resetHostOfferForTest() {
+        HOST_OFFER.clear();
+    }
+
+    private static String hostKey(String host) {
+        if (host == null || host.isEmpty()) {
+            return "";
+        }
+        return host.toLowerCase(Locale.ROOT);
+    }
+
+    static boolean isCipherNegotiationFailure(Throwable t) {
+        boolean handshake = false;
+        for (Throwable c = t; c != null; c = c.getCause()) {
+            if (c instanceof SSLPeerUnverifiedException) {
+                return false;
+            }
+            String m = c.getMessage();
+            if (m != null) {
+                String l = m.toLowerCase(Locale.ROOT);
+                if (l.contains("pkix")
+                        || l.contains("unable to find valid certification")
+                        || l.contains("certificate_unknown")
+                        || l.contains("certificate_expired")) {
+                    return false;
+                }
+                if (l.contains("no cipher suites in common")
+                        || l.contains("handshake_failure")
+                        || l.contains("received fatal alert: handshake")) {
+                    handshake = true;
+                }
+            }
+            if (c instanceof SSLHandshakeException) {
+                handshake = true;
+            }
+        }
+        return handshake;
+    }
+
+    private static String cipherSuitesOverride() {
+        try {
+            String override = JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_SUITES);
+            if (override != null && !override.trim().isEmpty()) {
+                return override;
+            }
+        } catch (Exception ignored) {}
+        return null;
+    }
+
+    private static String[] resolveFullCipherSuites() {
+        String override = cipherSuitesOverride();
         String[] order;
         String source;
-        if (override != null && !override.trim().isEmpty()) {
+        if (override != null) {
             order = splitCsv(override);
             source = "override";
         } else if (!ENABLE_AES_NI_DETECTION) {
@@ -121,9 +311,31 @@ public final class ItwTls {
         String resolved = String.join(",", order);
         try {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
-                    "ItwTls cipher order [" + source + "]: " + resolved);
+                    "ItwTls full cipher order [" + source + "]: " + resolved);
         } catch (Exception ignored) {}
         return validateOrFail(order);
+    }
+
+    private static String[] resolveProbeCipher(String[] full) {
+        Set<String> supported = new HashSet<>(Arrays.asList(
+                CTX.getSocketFactory().getSupportedCipherSuites()));
+        for (String c : PREFERRED_CANDIDATES) {
+            if (supported.contains(c)) {
+                return new String[] { c };
+            }
+        }
+        try {
+            OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+                    "ItwTls: no ChaCha probe suite on this JDK; using full list");
+        } catch (Exception ignored) {}
+        return full;
+    }
+
+    private static void logResolved() {
+        try {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                    "ItwTls probe cipher: " + String.join(",", Lists.PROBE));
+        } catch (Exception ignored) {}
     }
 
     private static String[] validateOrFail(String[] requested) {

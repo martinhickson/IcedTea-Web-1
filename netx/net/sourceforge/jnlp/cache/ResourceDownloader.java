@@ -897,7 +897,7 @@ public class ResourceDownloader implements Runnable {
         // Validate the exact file we wrote — a second getCacheFile() can resolve a different
         // LRU slot and falsely reject a good pack200 unpack (or leave poison on disk).
         File written = packGZ
-                ? unpackPackGzToCacheFile(cacheLocation, raw, contentLength)
+                ? drainThenUnpackPackGz(cacheLocation, raw)
                 : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw));
         // compressionRatio metric: on-disk decompressed size vs wire bytes
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
@@ -921,92 +921,31 @@ public class ResourceDownloader implements Runnable {
     }
 
     /**
-     * Pack200-gzip decode directly to the cache jar path.
-     * Avoids buffering the entire unpacked jar in a {@code ByteArrayOutputStream}.
-     * Wire bytes (pre-gunzip) are counted into {@link Resource#incrementTransferred}
-     * and {@link net.sourceforge.jnlp.cache.download.JarSlot} the same way as
-     * {@link #writeDownloadToFile} — otherwise Download stats stay at thr=-1 / bytes=0
-     * for every pack.gz artifact.
-     * <p>
-     * Unpacks go through {@link net.sourceforge.jnlp.cache.download.PackUnpackAdmission}
-     * so concurrent pack.gz expansion stays under a heap-derived byte budget while
-     * always keeping at least one unpack running.
+     * Drain the HTTP pack.gz body to disk first (records real TTFB, releases the
+     * connection), then Pack200-unpack under admission using the exact wire size.
+     * Waiting for a heap slot with the response unread made mean TTFB ≈ wall clock.
      */
-    /**
-     * Prefer already-counted wire bytes, else HTTP Content-Length, else declared resource size.
-     * Package-visible for unit tests.
-     */
-    static long packWireHintBytes(long slotTransferred, long contentLength, long resourceSize) {
-        if (slotTransferred > 0L) {
-            return slotTransferred;
+    private File drainThenUnpackPackGz(URL cacheLocation, InputStream packGzStream) throws IOException {
+        File jarFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
+        File packed = new File(jarFile.getPath() + ".pack.gz.download");
+        try {
+            writeCountedStreamToFile(packed, new BufferedInputStream(packGzStream));
+            long wire = packed.isFile() ? packed.length() : 0L;
+            long sizeHint = resource.getSize();
+            long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
+                    .estimateReserveBytes(wire, sizeHint);
+            net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
+                try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
+                     OutputStream fileOut = Files.newOutputStream(jarFile.toPath(),
+                             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                     JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+                    Pack200.newUnpacker().unpack(in, jarOut);
+                }
+            });
+            return jarFile;
+        } finally {
+            deleteCorruptLocal(packed);
         }
-        if (contentLength > 0L) {
-            return contentLength;
-        }
-        if (resourceSize > 0L) {
-            return resourceSize;
-        }
-        return 0L;
-    }
-
-    private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream) throws IOException {
-        return unpackPackGzToCacheFile(cacheLocation, packGzStream, -1L);
-    }
-
-    private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream, long contentLength)
-            throws IOException {
-        File localFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
-        final net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        // Pack200 working-set reserve (not jar bytes): calibrated from live OOM dump
-        // where class-heavy packs peaked ~30–34× pack.gz wire. Prefer HTTP Content-Length
-        // — slot.transferred() is still 0 at stream start, and resource size may be -1.
-        long sizeHint = resource.getSize();
-        long wireHint = packWireHintBytes(slot != null ? slot.transferred() : 0L, contentLength, sizeHint);
-        long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
-                .estimateReserveBytes(wireHint, sizeHint);
-        net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
-            InputStream countedWire = new InputStream() {
-                private final InputStream delegate = packGzStream;
-                @Override
-                public int read() throws IOException {
-                    int b = delegate.read();
-                    if (b >= 0) {
-                        noteWireBytes(1);
-                    }
-                    return b;
-                }
-                @Override
-                public int read(byte[] b, int off, int len) throws IOException {
-                    int n = delegate.read(b, off, len);
-                    if (n > 0) {
-                        noteWireBytes(n);
-                    }
-                    return n;
-                }
-                @Override
-                public void close() throws IOException {
-                    delegate.close();
-                }
-                private void noteWireBytes(int n) {
-                    resource.incrementTransferred(n);
-                    if (slot != null) {
-                        long now = System.currentTimeMillis();
-                        slot.onFirstByte(now);
-                        slot.addTransferred(n);
-                    }
-                }
-            };
-            try (InputStream in = new GZIPInputStream(new BufferedInputStream(countedWire));
-                 OutputStream fileOut = Files.newOutputStream(localFile.toPath(),
-                         StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                 JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
-                Pack200.newUnpacker().unpack(in, jarOut);
-            }
-            if (slot != null) {
-                slot.onLastByte(System.currentTimeMillis());
-            }
-        });
-        return localFile;
     }
 
     private File retryDownload(net.sourceforge.jnlp.security.HttpResponse response, URL downloadLocation, CacheEntry downloadEntry,
@@ -1062,12 +1001,35 @@ public class ResourceDownloader implements Runnable {
         }
     }
 
+    /**
+     * Prefer already-counted wire bytes, else HTTP Content-Length, else declared resource size.
+     * Package-visible for unit tests.
+     */
+    static long packWireHintBytes(long slotTransferred, long contentLength, long resourceSize) {
+        if (slotTransferred > 0L) {
+            return slotTransferred;
+        }
+        if (contentLength > 0L) {
+            return contentLength;
+        }
+        if (resourceSize > 0L) {
+            return resourceSize;
+        }
+        return 0L;
+    }
+
     private File writeDownloadToFile(URL downloadLocation, InputStream in) throws IOException {
         File localFile = CacheUtil.getCacheFile(downloadLocation, resource.getDownloadVersion());
-        byte buf[] = new byte[1024];
+        writeCountedStreamToFile(localFile, in);
+        return localFile;
+    }
+
+    /** Copy HTTP bytes to {@code dest} immediately; first/last-byte clocks follow the wire, not unpack. */
+    private void writeCountedStreamToFile(File dest, InputStream in) throws IOException {
+        byte buf[] = new byte[8192];
         int rlen;
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(localFile))) {
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest))) {
             while (-1 != (rlen = in.read(buf))) {
                 resource.incrementTransferred(rlen);
                 if (slot != null) {
@@ -1082,7 +1044,6 @@ public class ResourceDownloader implements Runnable {
             }
             in.close();
         }
-        return localFile;
     }
 
     private void uncompressGzip(URL compressedLocation, URL uncompressedLocation, Version version) throws IOException {

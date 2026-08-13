@@ -162,8 +162,22 @@ public class JarSlotTest {
         s.addTransferred(100);
         s.onLastByte(30);
         assertTrue(s.settleGood(40, false));
-        assertEquals(10, s.ttfbMillis());        // 20 - 10 (start)
-        assertEquals(30, s.durationMillis());    // 40 - 10
+        assertEquals(10, s.ttfbMillis());        // 20 - 10 (connect end)
+        assertEquals(30, s.durationMillis());    // 40 - 10 (connect start)
         assertEquals(10, s.transferMillis());    // 30 - 20
+    }
+
+    @Test
+    public void ttfbIsFromConnectNotGroupStart() {
+        JarSlot s = slot(0, url("http://localhost/late.jar"));
+        s.startMillis = 0; // group started long before this jar connected
+        s.onConnect(5000L, 5020L);
+        s.onFirstByte(5035L);
+        s.onLastByte(5100L);
+        s.addTransferred(100);
+        assertTrue(s.settleGood(5200L, false));
+        assertEquals(15, s.ttfbMillis());       // 5035 - 5020
+        assertEquals(200, s.durationMillis());  // 5200 - 5000 connect start
+        assertEquals(65, s.transferMillis());   // 5100 - 5035
     }
 }

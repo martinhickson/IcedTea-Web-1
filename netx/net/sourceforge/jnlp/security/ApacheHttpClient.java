@@ -7,6 +7,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import javax.net.ssl.SSLSocket;
 import net.sourceforge.jnlp.cache.download.ConnectionTiming;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
@@ -18,17 +19,18 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
-import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactoryBuilder;
-import org.apache.hc.core5.http.ClassicHttpRequest;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.protocol.HttpContext;
 
 /**
  * Apache HttpClient 5 (httpclient5) implementation of {@link ItwHttpClient} —
  * the default. Provides explicit connection pooling (max 6 per route, matching
  * the parallel download thread count), client-level connect/read timeouts, and
- * uses ITW's SSL context (VariableX509TrustManager chain) for TLS.
+ * uses {@link ItwSslSocketFactory} (ITW trust chain + cipher probe/fallback).
+ * Passing only {@code SSLContext} skips cipher stamping — jar downloads would
+ * then use the JDK default order until a later {@code HttpURLConnection} path.
  */
 public final class ApacheHttpClient implements ItwHttpClient {
 
@@ -37,14 +39,15 @@ public final class ApacheHttpClient implements ItwHttpClient {
     private final CloseableHttpClient client;
 
     public ApacheHttpClient() {
-        SSLConnectionSocketFactory sslsf;
-        try {
-            sslsf = SSLConnectionSocketFactoryBuilder.create()
-                    .setSslContext(JNLPRuntime.getSslContext())
-                    .build();
-        } catch (Exception e) {
-            throw new IllegalStateException("Unable to build Apache SSL connection socket factory", e);
-        }
+        // Wrap the ITW factory so probe/full cipher selection applies to every
+        // layered TLS socket. prepareSocket re-stamps after HC5 excludeWeak.
+        SSLConnectionSocketFactory sslsf = new SSLConnectionSocketFactory(
+                ItwSslSocketFactory.shared(), null) {
+            @Override
+            protected void prepareSocket(SSLSocket socket, HttpContext context) throws IOException {
+                ItwSslSocketFactory.applyParameters(socket);
+            }
+        };
 
         int connectTimeout = timeout(DeploymentConfiguration.KEY_HTTPCONNECTION_CONNECT_TIMEOUT, 30000);
         int readTimeout = timeout(DeploymentConfiguration.KEY_HTTPCONNECTION_READ_TIMEOUT, 30000);
@@ -68,7 +71,7 @@ public final class ApacheHttpClient implements ItwHttpClient {
         // Content-Encoding: pack200-gzip (and sometimes gzip) for jar.pack.gz /
         // negotiated payloads. HC5 only understands gzip/deflate and throws
         // "Unsupported Content-Encoding: pack200-gzip", which made ResourceDownloader
-        // log "GET failed" and skip the only working Alta02 artifact. ITW unpacks
+        // log "GET failed" and skip the only working artifact. ITW unpacks
         // pack200-gzip itself in ResourceDownloader.
         this.client = HttpClients.custom()
                 .setConnectionManager(pool)
@@ -105,6 +108,27 @@ public final class ApacheHttpClient implements ItwHttpClient {
         if (!"GET".equalsIgnoreCase(method) && !"HEAD".equalsIgnoreCase(method)) {
             throw new java.net.ProtocolException("Unsupported request method: " + method);
         }
+        HttpUriRequestBase request = newRequest(uri, method, requestHeaders);
+
+        if (timing != null) {
+            timing.connectStartMillis = System.currentTimeMillis();
+        }
+        ClassicHttpResponse response;
+        try {
+            response = client.execute(request);
+        } catch (IOException e) {
+            if (!ItwTls.shouldRetryWithFullCiphers(url.getHost(), e)) {
+                throw e;
+            }
+            response = client.execute(newRequest(uri, method, requestHeaders));
+        }
+        if (timing != null) {
+            timing.connectEndMillis = System.currentTimeMillis();
+        }
+        return new ApacheResponse(url, response);
+    }
+
+    private static HttpUriRequestBase newRequest(URI uri, String method, Map<String, String> requestHeaders) {
         HttpUriRequestBase request;
         if ("HEAD".equalsIgnoreCase(method)) {
             request = new org.apache.hc.client5.http.classic.methods.HttpHead(uri);
@@ -116,15 +140,7 @@ public final class ApacheHttpClient implements ItwHttpClient {
                 request.addHeader(h.getKey(), h.getValue());
             }
         }
-
-        if (timing != null) {
-            timing.connectStartMillis = System.currentTimeMillis();
-        }
-        ClassicHttpResponse response = client.execute(request);
-        if (timing != null) {
-            timing.connectEndMillis = System.currentTimeMillis();
-        }
-        return new ApacheResponse(url, response);
+        return request;
     }
 
     private static final class ApacheResponse implements HttpResponse {

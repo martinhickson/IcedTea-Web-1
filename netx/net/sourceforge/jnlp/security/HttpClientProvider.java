@@ -1,12 +1,12 @@
 package net.sourceforge.jnlp.security;
 
-import java.util.Locale;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
  * Provides the configured {@link ItwHttpClient} implementation.
- * Default "apache"; "oracle" selects {@link HttpURLConnection}.
+ * Default "apache"; "oracle" selects {@link java.net.HttpURLConnection}.
  */
 public final class HttpClientProvider {
 
@@ -26,14 +26,24 @@ public final class HttpClientProvider {
             }
         } catch (Exception ignored) {
         }
+        ItwHttpClient client;
         if ("oracle".equalsIgnoreCase(name)) {
-            return new OracleHttpClient();
+            client = new OracleHttpClient();
+        } else if ("apache".equalsIgnoreCase(name)) {
+            client = new ApacheHttpClient();
+        } else {
+            throw new IllegalStateException(
+                    "deployment.http.client: unsupported value '" + name + "' (expected 'apache' or 'oracle')");
         }
-        if ("apache".equalsIgnoreCase(name)) {
-            return new ApacheHttpClient();
+        try {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "HTTP downloads using " + name + " client"
+                    + ("apache".equalsIgnoreCase(name)
+                            ? " (Apache HttpClient 5 + ItwSslSocketFactory)"
+                            : " (HttpURLConnection + ItwSslSocketFactory)"));
+        } catch (Exception ignored) {
         }
-        throw new IllegalStateException(
-                "deployment.http.client: unsupported value '" + name + "' (expected 'apache' or 'oracle')");
+        return client;
     }
 
     public static ItwHttpClient getDefault() {

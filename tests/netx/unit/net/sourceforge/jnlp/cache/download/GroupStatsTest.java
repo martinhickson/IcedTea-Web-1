@@ -29,7 +29,7 @@ public class GroupStatsTest {
         // Late jar relative to group start, but connect itself is instant → reused.
         dl.onConnect(dl.startMillis + 5_000, dl.startMillis + 5_000);
         dl.onFirstByte(dl.startMillis + 5_005);
-        dl.onLastByte(dl.startMillis + 25);
+        dl.onLastByte(dl.startMillis + 5_025);
         dl.addTransferred(2048);
         dl.onDecompressed(4096, true);
         assertTrue(dl.settleGood(dl.startMillis + 30, false));

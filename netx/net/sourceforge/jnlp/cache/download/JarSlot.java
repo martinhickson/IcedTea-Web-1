@@ -129,13 +129,23 @@ public final class JarSlot {
     }
 
     public long ttfbMillis() {
-        if (firstByteMillis < 0 || startMillis < 0) return -1;
-        return firstByteMillis - startMillis;
+        // HTTP TTFB: first body byte minus connect completion (headers). Never group start —
+        // that made late jars look like 3-minute TTFB while transfer was 80ms.
+        long origin = connectMillis >= 0 ? connectMillis : connectStartMillis;
+        if (firstByteMillis < 0 || origin < 0) {
+            return -1;
+        }
+        return Math.max(0L, firstByteMillis - origin);
     }
 
     public long durationMillis() {
-        if (endMillis < 0 || startMillis < 0) return -1;
-        return endMillis - startMillis;
+        // This jar's own timeline, not time-since-group-start.
+        long origin = connectStartMillis >= 0 ? connectStartMillis
+                : (firstByteMillis >= 0 ? firstByteMillis : startMillis);
+        if (endMillis < 0 || origin < 0) {
+            return -1;
+        }
+        return Math.max(0L, endMillis - origin);
     }
 
     public long transferMillis() {
