@@ -501,12 +501,10 @@ public final class Boot implements PrivilegedAction<Void> {
         JNLPRuntime.initialize(true);
 
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.LISTCACHEIDS)) {
-            List<String> optionArgs = optionParser.getMainArgs();
+            List<String> optionArgs = firstOptionOrMainArgs(OptionsDefinitions.OPTIONS.LISTCACHEIDS);
             if (optionArgs.size() > 0) {
-                //clear one app 
                 CacheUtil.listCacheIds(optionArgs.get(0), true, true);
             } else {
-                // clear all cache
                 CacheUtil.listCacheIds(".*", true, true);
             }
             return null;
@@ -519,12 +517,10 @@ public final class Boot implements PrivilegedAction<Void> {
          * and baseDir is initialized here
          */
         if (optionParser.hasOption(OptionsDefinitions.OPTIONS.CLEARCACHE)) {
-            List<String> optionArgs = optionParser.getMainArgs();
+            List<String> optionArgs = firstOptionOrMainArgs(OptionsDefinitions.OPTIONS.CLEARCACHE);
             if (optionArgs.size() > 0) {
-                //clear one app 
                 CacheUtil.clearCache(optionArgs.get(0), true, true);
             } else {
-                // clear all cache
                 CacheUtil.clearCache();
             }
             return null;
@@ -540,6 +536,18 @@ public final class Boot implements PrivilegedAction<Void> {
     private static boolean isCliModeEnvEnabled() {
         String value = System.getenv("ITW_CLI_MODE");
         return value != null && value.trim().equalsIgnoreCase("true");
+    }
+
+    /**
+     * {@code NONE_OR_ONE} options historically leave the optional value in main
+     * args; prefer an explicit option param when present.
+     */
+    private static List<String> firstOptionOrMainArgs(OptionsDefinitions.OPTIONS option) {
+        List<String> params = optionParser.getParams(option);
+        if (params != null && !params.isEmpty()) {
+            return params;
+        }
+        return optionParser.getMainArgs();
     }
 
 }
