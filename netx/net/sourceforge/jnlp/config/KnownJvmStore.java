@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 import net.sourceforge.jnlp.util.JvmAutodetector;
 import net.sourceforge.jnlp.util.JvmDescriptor;
 import net.sourceforge.jnlp.util.JvmSelector;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 public final class KnownJvmStore {
 
@@ -20,6 +21,8 @@ public final class KnownJvmStore {
     public static final String KEY_MATCH_STRATEGY = "deployment.jdk.matchStrategy";
 
     private static final int MAX_JDK_ENTRIES = 64;
+    /** Java 8 (1.8) and other pre-11 homes are not migrated; ITW requires JDK 11+. */
+    static final int MIN_MIGRATED_JDK_MAJOR = 11;
     private static final Pattern JDK_KEY = Pattern.compile("^deployment\\.jdk\\.(\\d+)$");
     private static final Pattern JDK_ASSIGNMENT_KEY = Pattern.compile("^deployment\\.jdk\\d+\\.assignment\\d+$");
 
@@ -79,6 +82,123 @@ public final class KnownJvmStore {
             return null;
         }
         return legacy.trim();
+    }
+
+    /**
+     * Splits a legacy {@code deployment.jre.dirs} value (pipe-separated JVM homes).
+     */
+    static List<String> parseJreDirs(String value) {
+        List<String> homes = new ArrayList<>();
+        if (value == null || value.trim().isEmpty()) {
+            return homes;
+        }
+        for (String part : value.split("\\|")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                homes.add(trimmed);
+            }
+        }
+        return homes;
+    }
+
+    /**
+     * Migrates {@code deployment.jre.dirs} into {@code deployment.jre.dir} / {@code deployment.jdk.N}
+     * and drops the legacy key. No-op unless {@link DeploymentConfiguration#KEY_JRE_DIRS_MIGRATE}
+     * is {@code true}. Only homes that pass {@link #isMigratableJvmHome} are written;
+     * Java 8 (1.8) and missing {@code bin/java} are skipped. Failures are debug-only so
+     * configuration load still succeeds.
+     *
+     * @return true if the configuration was modified (caller should persist)
+     */
+    public static boolean migrateLegacyJreDirs(DeploymentConfiguration config) {
+        try {
+            if (!isJreDirsMigrateEnabled(config)) {
+                return false;
+            }
+            return migrateLegacyJreDirsUnchecked(config);
+        } catch (Throwable t) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                    "Skipping deployment.jre.dirs migration: " + t);
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, t);
+            return false;
+        }
+    }
+
+    static boolean isJreDirsMigrateEnabled(DeploymentConfiguration config) {
+        if (config == null) {
+            return false;
+        }
+        String flag = config.getProperty(DeploymentConfiguration.KEY_JRE_DIRS_MIGRATE);
+        return flag != null && Boolean.parseBoolean(flag.trim());
+    }
+
+    private static boolean migrateLegacyJreDirsUnchecked(DeploymentConfiguration config) {
+        if (config == null) {
+            return false;
+        }
+        String raw = config.getProperty(DeploymentConfiguration.KEY_JRE_DIRS);
+        if (raw == null) {
+            return false;
+        }
+        List<String> fromDirs = filterMigratableJvmHomes(parseJreDirs(raw));
+        List<String> existingRaw = getKnownJvmHomes(config);
+        List<String> existing = filterMigratableJvmHomes(existingRaw);
+        LinkedHashSet<String> merged = new LinkedHashSet<>();
+        if (existing.isEmpty()) {
+            merged.addAll(fromDirs);
+        } else {
+            merged.addAll(existing);
+            merged.addAll(fromDirs);
+        }
+        List<String> next = new ArrayList<>(merged);
+        if (!next.equals(existingRaw)) {
+            setKnownJvmHomes(config, next);
+        }
+        config.removeProperty(DeploymentConfiguration.KEY_JRE_DIRS);
+        return true;
+    }
+
+    private static List<String> filterMigratableJvmHomes(List<String> homes) {
+        List<String> valid = new ArrayList<>();
+        for (String home : homes) {
+            if (isMigratableJvmHome(home)) {
+                valid.add(home);
+            }
+        }
+        return valid;
+    }
+
+    /**
+     * Light check used when copying a path into the known-JVM list: {@code bin/java} must
+     * exist and the detected major must be {@link #MIN_MIGRATED_JDK_MAJOR} or higher
+     * (Java 8 / {@code 1.8} is not accepted). Does not spawn a JVM process.
+     */
+    static boolean isMigratableJvmHome(String home) {
+        if (home == null || home.trim().isEmpty()) {
+            return false;
+        }
+        try {
+            JvmDescriptor descriptor = JvmDescriptor.describeLight(home.trim());
+            if (!descriptor.isValid()) {
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                        "Skipping invalid JVM home during deployment.jre.dirs migration: " + home);
+                return false;
+            }
+            int major = JvmSelector.parseMajor(descriptor.getVersion());
+            if (major < MIN_MIGRATED_JDK_MAJOR) {
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                        "Skipping JVM home (major " + major + " < " + MIN_MIGRATED_JDK_MAJOR
+                                + ", Java 8/1.8 is not valid) during deployment.jre.dirs migration: "
+                                + home);
+                return false;
+            }
+            return true;
+        } catch (Throwable t) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                    "Skipping JVM home during deployment.jre.dirs migration: " + home + " (" + t + ")");
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, t);
+            return false;
+        }
     }
 
     /**

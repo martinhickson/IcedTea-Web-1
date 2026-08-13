@@ -289,10 +289,17 @@ public final class DeploymentConfiguration {
     public static final String KEY_HTTPCONNECTION_READ_TIMEOUT = "deployment.http.connection.readTimeout";
     public static final String KEY_TLS_CLIENT_CIPHER_SUITES = "deployment.tls.client.cipherSuites";
     /**
-     * TLS cipher offer mode: {@code probe} (default) tries TLS 1.3 ChaCha,
-     * then TLS 1.2 ECDHE-ECDSA ChaCha, then TLS 1.2 ECDHE-RSA AES-256-GCM,
-     * then the full list (inner short-circuit in HTTP open, not IO retries);
-     * {@code full} is the ChaCha-first multi-suite list with no probing.
+     * When {@code true}, TLS offers a short fastest-cipher probe (see
+     * {@link #KEY_TLS_CLIENT_CIPHER_MODE}) instead of the full suite list.
+     * Default {@code false}: normal full-set behaviour.
+     */
+    public static final String KEY_USE_FASTEST_CIPHER = "deployment.use.fastest.cipher";
+    /**
+     * TLS cipher offer mode when {@link #KEY_USE_FASTEST_CIPHER} is {@code true}:
+     * {@code probe} tries TLS 1.3 ChaCha, then TLS 1.2 ECDHE-ECDSA ChaCha, then
+     * TLS 1.2 ECDHE-RSA AES-256-GCM, then the full list (inner short-circuit in
+     * HTTP open, not IO retries); {@code full} is the ChaCha-first multi-suite
+     * list with no probing. Ignored while {@link #KEY_USE_FASTEST_CIPHER} is false.
      */
     public static final String KEY_TLS_CLIENT_CIPHER_MODE = "deployment.tls.client.cipherMode";
     public static final String KEY_HTTP_CLIENT = "deployment.http.client";
@@ -315,6 +322,17 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_JVM_IP_TYPE = "deployment.jvm.ip.type";
     public static final String KEY_JRE_DIR= "deployment.jre.dir";
+    /**
+     * Legacy pipe-separated JVM home list. Not a first-class setting: by default it is
+     * treated as an unknown property. Copied into {@link #KEY_JRE_DIR} / {@code deployment.jdk.N}
+     * only when {@link #KEY_JRE_DIRS_MIGRATE} is {@code true}.
+     */
+    public static final String KEY_JRE_DIRS = "deployment.jre.dirs";
+    /**
+     * Opt-in. When {@code true}, load migrates {@link #KEY_JRE_DIRS} into the known-JVM list
+     * and drops the legacy key. Default {@code false}: unknown-property handling only.
+     */
+    public static final String KEY_JRE_DIRS_MIGRATE = "deployment.jre.dirs.migrate";
     public static final String KEY_AUTODETECT_JDKS = "deployment.autodetectJDKs";
     public static final String KEY_KEEP_JAVAWS_PROCESS = "deployment.keepJavawsProcess";
     public static final String KEY_KEEP_JAVA_PRELAUNCH_PROCESS = "deployment.keepjavaPrelaunchProcess";
@@ -536,6 +554,13 @@ public final class DeploymentConfiguration {
         }
 
         currentConfiguration = initialProperties;
+        try {
+            if (KnownJvmStore.migrateLegacyJreDirs(this)) {
+                save();
+            }
+        } catch (IOException ex) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, ex);
+        }
         // Snapshot post-load state for Revert/pending tracking. Do not copy into
         // unchangeableConfiguration — that must stay defaults+system for save().
         persistedConfiguration = copySettingsMap(currentConfiguration);
@@ -803,6 +828,16 @@ public final class DeploymentConfiguration {
         }
     }
 
+    /**
+     * Drops a user-only key from the live configuration so the next {@link #save()}
+     * does not rewrite it (used when migrating legacy properties).
+     */
+    void removeProperty(String key) {
+        if (currentConfiguration != null) {
+            currentConfiguration.remove(key);
+        }
+    }
+
     private void recordPendingChange(String key, String value) {
         if (editorSession && pendingChanges != null && suppressPendingRecording == 0) {
             boolean changed = pendingChanges.recordChangeReturningChanged(
@@ -868,7 +903,7 @@ public final class DeploymentConfiguration {
             } else if (isKnownDynamicDeploymentKey(key)) {
                 // JDK lists and assignments are user-managed.
             } else if (!defaults.containsKey(key)) {
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, R("DCUnknownSettingWithName", key));
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, R("DCUnknownSettingWithName", key));
             } else {
                 ValueValidator checker = defaults.get(key).getValidator();
                 if (checker == null) {

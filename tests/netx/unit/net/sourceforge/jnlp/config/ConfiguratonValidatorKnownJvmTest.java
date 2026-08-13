@@ -1,7 +1,10 @@
 package net.sourceforge.jnlp.config;
 
+import java.util.Arrays;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
 import org.junit.Assert;
 import org.junit.Test;
@@ -19,11 +22,17 @@ public class ConfiguratonValidatorKnownJvmTest extends NoStdOutErrTest {
                 new Setting<>(KnownJvmStore.KEY_MATCH_STRATEGY, null, false, null, null, "exact", null));
         settings.put("deployment.totally.unknown",
                 new Setting<>("deployment.totally.unknown", null, false, null, null, "x", null));
+        settings.put(DeploymentConfiguration.KEY_JRE_DIRS,
+                new Setting<>(DeploymentConfiguration.KEY_JRE_DIRS, null, false, null, null, "/opt/jdk", null));
 
         ConfiguratonValidator validator = new ConfiguratonValidator(settings);
         validator.validate();
 
-        Assert.assertEquals(1, validator.getUnrecognizedSetting().size());
-        Assert.assertEquals("deployment.totally.unknown", validator.getUnrecognizedSetting().get(0).getName());
+        Set<String> unrecognized = new HashSet<>();
+        for (Setting<String> setting : validator.getUnrecognizedSetting()) {
+            unrecognized.add(setting.getName());
+        }
+        Assert.assertEquals(new HashSet<>(Arrays.asList(
+                "deployment.totally.unknown", DeploymentConfiguration.KEY_JRE_DIRS)), unrecognized);
     }
 }

@@ -40,7 +40,8 @@ public final class ItwTls {
     static final int OFFER_FULL = 3;
 
     /**
-     * Default ({@code probe}): three single-suite tries, then the full list.
+     * Default ({@code probe}, only when {@code deployment.use.fastest.cipher} is
+     * {@code true}): three single-suite tries, then the full list.
      * <ol>
      *   <li>TLS 1.3 {@code TLS_CHACHA20_POLY1305_SHA256}</li>
      *   <li>TLS 1.2 {@code TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256}</li>
@@ -49,7 +50,8 @@ public final class ItwTls {
      * </ol>
      * Cipher misses short-circuit to the next stage inside the HTTP open;
      * they are not download IO retries. The chosen stage is cached per host.
-     * {@code full}: skip probing and use the multi-suite list.
+     * {@code full}, and the default {@code deployment.use.fastest.cipher=false},
+     * skip probing and use the multi-suite list.
      */
     public static final String CIPHER_MODE_PROBE = "probe";
     public static final String CIPHER_MODE_FULL = "full";
@@ -268,6 +270,9 @@ public final class ItwTls {
         if (cipherSuitesOverride() != null) {
             return false;
         }
+        if (!isUseFastestCipher()) {
+            return false;
+        }
         String mode = null;
         try {
             mode = JNLPRuntime.getConfiguration()
@@ -276,7 +281,17 @@ public final class ItwTls {
         if (mode == null || mode.trim().isEmpty()) {
             return true;
         }
-        return CIPHER_MODE_PROBE.equalsIgnoreCase(mode.trim());
+        return !CIPHER_MODE_FULL.equalsIgnoreCase(mode.trim());
+    }
+
+    static boolean isUseFastestCipher() {
+        try {
+            String flag = JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER);
+            return flag != null && Boolean.parseBoolean(flag.trim());
+        } catch (Exception ignored) {
+            return false;
+        }
     }
 
     static AtomicInteger offerState(String host) {

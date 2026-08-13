@@ -13,6 +13,8 @@ public final class TlsProbeAccess {
 
     public static void forceProbeMode() {
         JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, "true");
+        JNLPRuntime.getConfiguration()
                 .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, ItwTls.CIPHER_MODE_PROBE);
         JNLPRuntime.getConfiguration()
                 .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_SUITES, "");

@@ -48,6 +48,15 @@ public class ItwSslSocketFactoryTest {
 
     @Test
     public void applyParametersStampsTls13ProbeProtocol() throws Exception {
+        String savedFastest = JNLPRuntime.getConfiguration()
+                .getProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER);
+        String savedMode = JNLPRuntime.getConfiguration()
+                .getProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE);
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, "true");
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, ItwTls.CIPHER_MODE_PROBE);
+        ItwTls.resetHostOfferForTest();
         SSLSocket sock = (SSLSocket) SSLContext.getDefault().getSocketFactory().createSocket();
         try {
             SSLParameters p = sock.getSSLParameters();
@@ -57,6 +66,15 @@ public class ItwSslSocketFactoryTest {
             assertArrayEquals(new String[] { "TLSv1.3" }, sock.getSSLParameters().getProtocols());
         } finally {
             sock.close();
+            if (savedFastest != null) {
+                JNLPRuntime.getConfiguration()
+                        .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, savedFastest);
+            }
+            if (savedMode != null) {
+                JNLPRuntime.getConfiguration()
+                        .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, savedMode);
+            }
+            ItwTls.resetHostOfferForTest();
         }
     }
 
@@ -64,6 +82,10 @@ public class ItwSslSocketFactoryTest {
     public void applyParametersFollowsHostOfferAfterCipherFallback() throws Exception {
         String saved = JNLPRuntime.getConfiguration()
                 .getProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE);
+        String savedFastest = JNLPRuntime.getConfiguration()
+                .getProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER);
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, "true");
         JNLPRuntime.getConfiguration()
                 .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, ItwTls.CIPHER_MODE_PROBE);
         ItwTls.resetHostOfferForTest();
@@ -85,6 +107,10 @@ public class ItwSslSocketFactoryTest {
             if (saved != null) {
                 JNLPRuntime.getConfiguration()
                         .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, saved);
+            }
+            if (savedFastest != null) {
+                JNLPRuntime.getConfiguration()
+                        .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, savedFastest);
             }
             ItwTls.resetHostOfferForTest();
         }

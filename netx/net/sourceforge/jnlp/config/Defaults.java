@@ -440,7 +440,14 @@ public class Defaults {
                         null,
                         null
                 },
-                /* probe (default): TLS 1.3 ChaCha, TLS 1.2 ECDHE-ECDSA ChaCha, TLS 1.2 AES-256-GCM, then full */
+                /* Opt-in fastest-cipher probe; default false = full suite list */
+                {
+                        DeploymentConfiguration.KEY_USE_FASTEST_CIPHER,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(false)
+                },
+                /* probe: TLS 1.3 ChaCha, TLS 1.2 ECDHE-ECDSA ChaCha, TLS 1.2 AES-256-GCM, then full.
+                   Only applied when deployment.use.fastest.cipher is true. */
                 {
                         DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE,
                         BasicValueValidators.getStringValidator(new String[] {
@@ -490,6 +497,11 @@ public class Defaults {
                         DeploymentConfiguration.KEY_JRE_DIR,
                         null,
                         null
+                },
+                {
+                        DeploymentConfiguration.KEY_JRE_DIRS_MIGRATE,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(false)
                 },
                 {
                         DeploymentConfiguration.KEY_AUTODETECT_JDKS,

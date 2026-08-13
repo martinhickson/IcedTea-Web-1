@@ -27,11 +27,16 @@ import org.junit.jupiter.api.Test;
 public class ItwTlsCipherProbeTest {
 
     private String savedMode;
+    private String savedFastest;
 
     @BeforeEach
     void saveAndReset() {
         savedMode = JNLPRuntime.getConfiguration()
                 .getProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE);
+        savedFastest = JNLPRuntime.getConfiguration()
+                .getProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER);
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, "true");
         JNLPRuntime.getConfiguration()
                 .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, ItwTls.CIPHER_MODE_PROBE);
         ItwTls.resetHostOfferForTest();
@@ -42,6 +47,10 @@ public class ItwTlsCipherProbeTest {
         if (savedMode != null) {
             JNLPRuntime.getConfiguration()
                     .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, savedMode);
+        }
+        if (savedFastest != null) {
+            JNLPRuntime.getConfiguration()
+                    .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, savedFastest);
         }
         ItwTls.resetHostOfferForTest();
     }
@@ -60,6 +69,25 @@ public class ItwTlsCipherProbeTest {
         String[] tls12 = ItwTls.tls12Ciphers();
         assertEquals(1, tls12.length);
         assertEquals(ItwTls.TLS12_CHACHA, tls12[0]);
+    }
+
+    @Test
+    public void fastestCipherDisabledUsesFullSetEvenWhenCipherModeIsProbe() {
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, "false");
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_TLS_CLIENT_CIPHER_MODE, ItwTls.CIPHER_MODE_PROBE);
+        assertFalse(ItwTls.isUseFastestCipher());
+        assertFalse(ItwTls.isProbeMode());
+        assertArrayEquals(ItwTls.fullCiphers(), ItwTls.suitesFor("example.test"));
+        assertArrayEquals(new String[] { "TLSv1.3", "TLSv1.2" }, ItwTls.protocolsFor("example.test"));
+    }
+
+    @Test
+    public void fastestCipherEnabledWithProbeModeOffersSingleSuite() {
+        assertTrue(ItwTls.isUseFastestCipher());
+        assertTrue(ItwTls.isProbeMode());
+        assertArrayEquals(ItwTls.tls13Ciphers(), ItwTls.suitesFor("example.test"));
     }
 
     @Test
