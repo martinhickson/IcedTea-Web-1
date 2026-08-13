@@ -329,9 +329,14 @@ public class JNLPFile {
             ResourceTracker tracker = new ResourceTracker(false); // no prefetch
             tracker.addResource(location, version, null, policy);
             File f = tracker.getCacheFile(location);
+            if (f == null) {
+                throw new IOException(R("LCantDownloadJnlp", location.toString()));
+            }
             return new FileInputStream(f);
+        } catch (IOException ex) {
+            throw ex;
         } catch (Exception ex) {
-            throw new IOException(ex);
+            throw new IOException(R("LCantDownloadJnlp", String.valueOf(location)), ex);
         }
     }
 
