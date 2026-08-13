@@ -387,15 +387,18 @@
                       <zipfileset dir="${project.build.directory}/dist">
                         <exclude name="**/bin/*"/>
                         <exclude name="**/runtime/temurin-*/**/bin/*"/>
+                        <exclude name="**/runtime/temurin-*/**/lib/jspawnhelper"/>
                       </zipfileset>
                       <zipfileset dir="${project.build.directory}/dist" filemode="755">
                         <include name="**/bin/*"/>
                         <include name="**/runtime/temurin-*/**/bin/*"/>
+                        <include name="**/runtime/temurin-*/**/lib/jspawnhelper"/>
                       </zipfileset>
                     </zip>
                     <chmod perm="ugo+rx">
                       <fileset dir="${itw.distribution.root}/runtime">
                         <include name="temurin-*/**/bin/*"/>
+                        <include name="temurin-*/**/lib/jspawnhelper"/>
                       </fileset>
                     </chmod>
                   </target>
@@ -482,17 +485,23 @@
                         <exclude name="**/bin/*"/>
                         <exclude name="**/runtime/temurin-*/**/bin/*"/>
                         <exclude name="**/runtime/temurin-*/**/Contents/Home/bin/*"/>
+                        <exclude name="**/runtime/temurin-*/**/lib/jspawnhelper"/>
+                        <exclude name="**/runtime/temurin-*/**/Contents/Home/lib/jspawnhelper"/>
                       </zipfileset>
                       <zipfileset dir="${project.build.directory}/dist" filemode="755">
                         <include name="**/bin/*"/>
                         <include name="**/runtime/temurin-*/**/bin/*"/>
                         <include name="**/runtime/temurin-*/**/Contents/Home/bin/*"/>
+                        <include name="**/runtime/temurin-*/**/lib/jspawnhelper"/>
+                        <include name="**/runtime/temurin-*/**/Contents/Home/lib/jspawnhelper"/>
                       </zipfileset>
                     </zip>
                     <chmod perm="ugo+rx">
                       <fileset dir="${itw.distribution.root}/runtime">
                         <include name="temurin-*/**/bin/*"/>
                         <include name="temurin-*/**/Contents/Home/bin/*"/>
+                        <include name="temurin-*/**/lib/jspawnhelper"/>
+                        <include name="temurin-*/**/Contents/Home/lib/jspawnhelper"/>
                       </fileset>
                     </chmod>
                   </target>

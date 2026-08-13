@@ -407,6 +407,14 @@ jobs:
           Write-Host "Verified distribution launchers: $($required -join ', ')"
         shell: pwsh
 
+      - name: Assert bundled jspawnhelper is executable
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x scripts/assert-jspawnhelper-executable.sh
+          DIST_DIR="$(find icedtea-web-distribution/target/dist -mindepth 1 -maxdepth 1 -type d | head -n 1)"
+          scripts/assert-jspawnhelper-executable.sh "$DIST_DIR"
+        shell: bash
+
       - name: Build signed headless JNLP app
         env:
           MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml

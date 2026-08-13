@@ -206,6 +206,13 @@ jobs:
           scripts/run-linux-control-panel-smoke.sh
         shell: bash
 
+      - name: Assert bundled jspawnhelper is executable
+        if: runner.os == 'Linux'
+        run: |
+          chmod +x scripts/assert-jspawnhelper-executable.sh
+          scripts/assert-jspawnhelper-executable.sh "${{ github.workspace }}/icedtea-web-distribution/target/dist/icedtea-web-2.0.1-SNAPSHOT"
+        shell: bash
+
       - name: Build Linux native packages in Docker
         if: runner.os == 'Linux'
         run: |

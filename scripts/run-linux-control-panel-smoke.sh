@@ -71,6 +71,9 @@ EOF
     chmod -R u+rwX "$DIST_DIR/runtime/corretto"
     chmod -R ugo+rx "$DIST_DIR/runtime/corretto"/*/bin 2>/dev/null || true
   fi
+  if [ -d "$DIST_DIR/runtime" ]; then
+    find "$DIST_DIR/runtime" -type f -name jspawnhelper -exec chmod 755 {} +
+  fi
   if [ ! -x "$SETTINGS_BIN" ]; then
     echo "Extracted artifact does not contain executable bin/icedtea-web-settings: $SETTINGS_BIN" >&2
     exit 1

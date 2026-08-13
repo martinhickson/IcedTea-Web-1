@@ -60,6 +60,9 @@ create_payload_root() {
   mkdir -p "$payload_root$INSTALL_ROOT" "$payload_root/usr/bin" "$payload_root/usr/share/applications" "$payload_root/usr/share/pixmaps"
   cp -a "$DIST_DIR/." "$payload_root$INSTALL_ROOT/"
   chmod +x "$payload_root$INSTALL_ROOT/bin/javaws" "$payload_root$INSTALL_ROOT/bin/javawsc" "$payload_root$INSTALL_ROOT/bin/icedtea-web-settings" "$payload_root$INSTALL_ROOT/bin/policyeditor"
+  # Temurin ProcessBuilder helper lives in lib/, not bin/.
+  find "$payload_root$INSTALL_ROOT/runtime" -type f -name jspawnhelper -exec chmod 755 {} +
+  "$ROOT_DIR/scripts/assert-jspawnhelper-executable.sh" "$payload_root$INSTALL_ROOT"
   ln -s "$INSTALL_ROOT/bin/javaws" "$payload_root/usr/bin/javaws"
   ln -s "$INSTALL_ROOT/bin/javawsc" "$payload_root/usr/bin/javawsc"
   ln -s "$INSTALL_ROOT/bin/icedtea-web-settings" "$payload_root/usr/bin/icedtea-web-settings"
