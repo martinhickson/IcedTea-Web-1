@@ -112,5 +112,41 @@ public class ResourceTrackerPreSettleTest {
         assertTrue(!ResourceTracker.hasUsableLocalFile(poisonRes));
 
         assertTrue(!ResourceTracker.hasUsableLocalFile(null));
+
+        Path plain = tmp.resolve("data.bin");
+        Files.write(plain, "payload".getBytes(StandardCharsets.UTF_8));
+        Resource plainRes = Resource.getResource(url("http://localhost/data.bin"), null, UpdatePolicy.NEVER);
+        plainRes.setLocalFile(plain.toFile());
+        assertTrue(ResourceTracker.hasUsableLocalFile(plainRes));
+    }
+
+    @Test
+    public void canReuseMetricsGroupRequiresSameBoundSlots() throws Exception {
+        URL a = url("http://localhost/a.jar");
+        URL b = url("http://localhost/b.jar");
+        Resource ra = Resource.getResource(a, null, UpdatePolicy.NEVER);
+        Resource rb = Resource.getResource(b, null, UpdatePolicy.NEVER);
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(a, b));
+        ra.setJarSlot(group.slot(0));
+        rb.setJarSlot(group.slot(1));
+
+        assertTrue(ResourceTracker.canReuseMetricsGroup(new Resource[]{ra, rb}, group));
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{ra}, group));
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{ra, rb}, null));
+
+        // Mismatched slot binding → must allocate a fresh metrics group.
+        rb.setJarSlot(null);
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{ra, rb}, group));
+    }
+
+    @Test
+    public void canReuseMetricsGroupRejectsCompletedGroup() throws Exception {
+        URL u = url("http://localhost/done.jar");
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(u));
+        r.setJarSlot(group.slot(0));
+        assertTrue(group.slot(0).settleGood(System.currentTimeMillis(), true));
+        assertTrue(group.done().isDone());
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{r}, group));
     }
 }
