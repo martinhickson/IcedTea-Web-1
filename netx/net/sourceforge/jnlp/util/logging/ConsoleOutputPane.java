@@ -110,6 +110,8 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         sortBy = new JComboBox<>();
         searchLabel = new JLabel();
         autorefresh = new JCheckBox();
+        play = new JButton();
+        pause = new JButton();
         refresh = new JButton();
         apply = new JButton();
         regExFilter = new JTextField();
@@ -144,7 +146,7 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         showHeaders.setSelected(LogConfig.getLogConfig().isEnableHeaders());
         setHeadersCheckBoxesEnabled(showHeaders.isSelected());
         setMessagesCheckBoxesEnabled(showMessage.isSelected());
-        refresh.setEnabled(!autorefresh.isSelected());
+        syncPlayPauseButtons();
         if (JNLPRuntime.isWebstartApplication()) {
             showPlugin.setSelected(false);
             showPreInit.setSelected(false);
@@ -249,11 +251,32 @@ public class ConsoleOutputPane extends JPanel implements Observer {
                 } else if (source == showMessage) {
                     setMessagesCheckBoxesEnabled(showMessage.isSelected());
                 } else if (source == autorefresh) {
-                    refresh.setEnabled(!autorefresh.isSelected());
+                    syncPlayPauseButtons();
                 }
                 refreshAction();
             }
         };
+    }
+
+    private void syncPlayPauseButtons() {
+        final boolean live = autorefresh.isSelected();
+        play.setEnabled(!live);
+        pause.setEnabled(live);
+        refresh.setEnabled(!live);
+    }
+
+    private void setAutoRefreshLive(final boolean live) {
+        if (autorefresh.isSelected() == live) {
+            syncPlayPauseButtons();
+            return;
+        }
+        autorefresh.setSelected(live);
+        syncPlayPauseButtons();
+        if (live) {
+            refreshAction();
+        } else {
+            statistics.setText(model.createStatisticHint());
+        }
     }
 
     final ActionListener defaultActionSingleton = createDefaultAction();
@@ -407,7 +430,33 @@ public class ConsoleOutputPane extends JPanel implements Observer {
 
         autorefresh.setSelected(true);
         autorefresh.setText(Translator.R("COPautoRefresh"));
+        autorefresh.setVisible(false); // play/pause buttons own this state in the UI
         autorefresh.addActionListener(getDefaultActionSingleton());
+
+        play.setText("\u25B6 " + Translator.R("COPplay"));
+        play.setToolTipText(Translator.R("COPplayTip"));
+        play.setForeground(new Color(0x1B7A2F));
+        play.setBackground(new Color(0xD9F2DE));
+        play.setOpaque(true);
+        play.addActionListener(new ActionListener() {
+            @Override
+            public final void actionPerformed(final ActionEvent evt) {
+                setAutoRefreshLive(true);
+            }
+        });
+
+        pause.setText("\u23F8 " + Translator.R("COPpause"));
+        pause.setToolTipText(Translator.R("COPpauseTip"));
+        pause.setForeground(new Color(0xA65F00));
+        pause.setBackground(new Color(0xFFE2B8));
+        pause.setOpaque(true);
+        pause.addActionListener(new ActionListener() {
+            @Override
+            public final void actionPerformed(final ActionEvent evt) {
+                setAutoRefreshLive(false);
+            }
+        });
+        syncPlayPauseButtons();
 
         refresh.setText(Translator.R("COPrefresh"));
         refresh.addActionListener(getDefaultActionSingleton());
@@ -576,7 +625,8 @@ public class ConsoleOutputPane extends JPanel implements Observer {
                 addComponent(showIncomplete).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(showComplete)).
                 addGroup(jPanel2Layout.createSequentialGroup().
-                addComponent(autorefresh).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
+                addComponent(play).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
+                addComponent(pause).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(refresh).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(sortByLabel).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
                 addComponent(revertSort).addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED).
@@ -627,7 +677,8 @@ public class ConsoleOutputPane extends JPanel implements Observer {
                 addComponent(notMatch))).
                 addGroup(
                 jPanel2Layout.createParallelGroup(GroupLayout.Alignment.BASELINE).
-                addComponent(autorefresh).
+                addComponent(play).
+                addComponent(pause).
                 addComponent(refresh).
                 addComponent(sortByLabel).addComponent(sortBy, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE).
                 addComponent(revertSort))).addPreferredGap(LayoutStyle.ComponentPlacement.UNRELATED).addGroup(
@@ -947,6 +998,8 @@ public class ConsoleOutputPane extends JPanel implements Observer {
 
     private final JButton apply;
     private final JCheckBox autorefresh;
+    private final JButton play;
+    private final JButton pause;
     private final JCheckBox caseSensitive;
     private final JButton copyPlain;
     private final JButton copyRich;

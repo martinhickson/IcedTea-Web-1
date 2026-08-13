@@ -16,7 +16,9 @@ import java.sql.Statement;
 import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map.Entry;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.sqlite.SQLiteConfig;
@@ -35,6 +37,8 @@ final class SqliteCacheCatalog implements CacheCatalog {
     /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
     static final String FAILED_MARKER = ".sqlite_catalog_failed";
     private static final int BUSY_TIMEOUT_MS = 5000;
+    /** Disambiguates same-millisecond {@code lru_key} values (UNIQUE constraint). */
+    private static final AtomicLong LRU_KEY_SEQ = new AtomicLong();
 
     private final File dbFile;
     private final ReentrantLock threadLock = new ReentrantLock();
@@ -339,7 +343,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
                 }
             }
             long now = System.currentTimeMillis();
-            String newKey = now + "," + folderId;
+            String newKey = lruKey(now, folderId);
             try (PreparedStatement upd = c.prepareStatement(
                     "UPDATE cache_entry SET lru_key = ?, last_access = ?, state = 'ready' WHERE lru_key = ?")) {
                 upd.setString(1, newKey);
@@ -453,8 +457,14 @@ final class SqliteCacheCatalog implements CacheCatalog {
 
     @Override
     public String generateKey(String path, String cacheDirPath) {
-        return System.currentTimeMillis() + ","
-                + PropertiesCacheCatalog.folderIdFromPath(path, cacheDirPath);
+        int folderId = Integer.parseInt(
+                PropertiesCacheCatalog.folderIdFromPath(path, cacheDirPath));
+        return lruKey(System.currentTimeMillis(), folderId);
+    }
+
+    /** {@code millis,folderId,seq} — seq avoids UNIQUE collisions within the same ms. */
+    static String lruKey(long millis, int folderId) {
+        return millis + "," + folderId + "," + LRU_KEY_SEQ.incrementAndGet();
     }
 
     @Override
@@ -480,14 +490,47 @@ final class SqliteCacheCatalog implements CacheCatalog {
         closeQuietly();
     }
 
-    private static String parentCacheDirOf(String path, int folderId) {
+    /**
+     * Cache root above the numbered folder. Must not take the first
+     * {@code /{folderId}/} in the absolute path — earlier path segments (home dirs,
+     * worktree names) or later URL path segments can contain the same digits.
+     * Prefer the last match whose next segment looks like a cached URL tree
+     * ({@code http/}, {@code https/}, …).
+     */
+    static String parentCacheDirOf(String path, int folderId) {
+        if (path == null || path.isEmpty()) {
+            return path;
+        }
         String normalized = path.replace('\\', '/');
         String marker = "/" + folderId + "/";
-        int idx = normalized.indexOf(marker);
-        if (idx < 0) {
-            return new File(path).getParent();
+        int chosen = -1;
+        int from = 0;
+        while (from < normalized.length()) {
+            int idx = normalized.indexOf(marker, from);
+            if (idx < 0) {
+                break;
+            }
+            // "/17/" must not match a search for "/7/"
+            if (idx > 0 && Character.isDigit(normalized.charAt(idx - 1))) {
+                from = idx + 1;
+                continue;
+            }
+            int after = idx + marker.length();
+            if (after <= normalized.length() && looksLikeCachedUrlTree(normalized.substring(after))) {
+                chosen = idx;
+            }
+            from = idx + 1;
         }
-        return normalized.substring(0, idx).replace('/', File.separatorChar);
+        if (chosen >= 0) {
+            return normalized.substring(0, chosen).replace('/', File.separatorChar);
+        }
+        return new File(path).getParent();
+    }
+
+    private static boolean looksLikeCachedUrlTree(String rest) {
+        String r = rest.toLowerCase(Locale.ROOT);
+        return r.startsWith("http/") || r.startsWith("https/") || r.startsWith("ftp/")
+                || r.startsWith("file/") || r.startsWith("jar/");
     }
 
     /** Test hook: when non-null, overrides {@code deployment.enable.cache.fsync}. */

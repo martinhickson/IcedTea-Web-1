@@ -74,4 +74,43 @@ public class ResourceTrackerPreSettleTest {
         assertEquals(JarState.IN_FLIGHT, group.slot(0).state());
         assertTrue(!group.done().isDone(), "retry-pending must not complete the group");
     }
+
+    @Test
+    public void ghostGoodWithoutLocalFileIsRestartedNotLeftInFlight() throws Exception {
+        URL u = url("http://localhost/ghost.jar");
+        Resource r = Resource.getResource(u, new Version("1.0"), UpdatePolicy.NEVER);
+        r.setTerminalState(JarState.GOOD);
+        r.setLocalFile(tmp.resolve("missing-ghost.jar").toFile()); // does not exist
+
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(u));
+        List<Resource> needsRestart = new ArrayList<>();
+        ResourceTracker.preSettleSlots(new Resource[]{r}, group, needsRestart);
+
+        assertEquals(1, needsRestart.size());
+        assertEquals(null, r.getTerminalState());
+        assertEquals(JarState.IN_FLIGHT, group.slot(0).state());
+        assertTrue(!group.done().isDone(), "ghost GOOD must not absorb the group as success");
+    }
+
+    @Test
+    public void hasUsableLocalFileRejectsMissingEmptyAndNonJarPayload() throws Exception {
+        URL jarUrl = url("http://localhost/lib/app.jar");
+        Resource missing = Resource.getResource(jarUrl, null, UpdatePolicy.NEVER);
+        missing.setLocalFile(tmp.resolve("nope.jar").toFile());
+        assertTrue(!ResourceTracker.hasUsableLocalFile(missing));
+
+        Path empty = tmp.resolve("empty.jar");
+        Files.write(empty, new byte[0]);
+        Resource emptyRes = Resource.getResource(jarUrl, null, UpdatePolicy.NEVER);
+        emptyRes.setLocalFile(empty.toFile());
+        assertTrue(!ResourceTracker.hasUsableLocalFile(emptyRes));
+
+        Path poison = tmp.resolve("poison.jar");
+        Files.write(poison, "11 Could not locate requested version\r\n".getBytes(StandardCharsets.UTF_8));
+        Resource poisonRes = Resource.getResource(jarUrl, null, UpdatePolicy.NEVER);
+        poisonRes.setLocalFile(poison.toFile());
+        assertTrue(!ResourceTracker.hasUsableLocalFile(poisonRes));
+
+        assertTrue(!ResourceTracker.hasUsableLocalFile(null));
+    }
 }

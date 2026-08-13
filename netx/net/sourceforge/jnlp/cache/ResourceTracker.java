@@ -776,6 +776,12 @@ public class ResourceTracker {
             r.setJarSlot(s);
             if (terminal == net.sourceforge.jnlp.cache.download.JarState.GOOD && hasUsableLocalFile(r)) {
                 s.settleGood(System.currentTimeMillis(), true);
+            } else if (terminal == net.sourceforge.jnlp.cache.download.JarState.GOOD) {
+                // Ghost: prior wait marked GOOD but local file is missing/corrupt.
+                // Leaving the fresh slot IN_FLIGHT would hang done() forever.
+                r.setTerminalState(null);
+                r.prepareRedownloadAfterUnusableTerminal();
+                needsRestart.add(r);
             } else if (terminal == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD
                     && r.isUnusableTerminalRetried()) {
                 s.settleBadFinal(System.currentTimeMillis()); // retry already spent → terminal FAILED

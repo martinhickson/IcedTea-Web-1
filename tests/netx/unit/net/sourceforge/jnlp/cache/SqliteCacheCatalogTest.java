@@ -645,6 +645,76 @@ public class SqliteCacheCatalogTest {
     }
 
     @Test
+    public void parentCacheDirOfPrefersCacheFolderNotEarlierOrLaterDigitSegments() {
+        // Earlier path segment "3" must not win; later URL path "/7/" must not truncate.
+        String path = "C:/Users/3/work/cache/db/3/https/cdn.example.com/7/lib/app.jar";
+        String parent = SqliteCacheCatalog.parentCacheDirOf(path, 3);
+        assertEquals(new File("C:/Users/3/work/cache/db").getPath(), new File(parent).getPath());
+
+        String resourceUrl = CacheUtil.pathToURLPath(
+                path.replace('/', File.separatorChar), parent);
+        String normalized = resourceUrl.replace('\\', '/');
+        assertTrue("resource_url should keep URL path including /7/: " + normalized,
+                normalized.contains("cdn.example.com/7/lib/app.jar"));
+    }
+
+    @Test
+    public void parentCacheDirOfRejectsEmbeddedDigitsInLargerFolderId() {
+        String path = "C:/cache/db/17/https/host/a.jar";
+        // Searching for folder 7 must not match inside "17"
+        String parent = SqliteCacheCatalog.parentCacheDirOf(path, 7);
+        String norm = parent == null ? "" : parent.replace('\\', '/');
+        assertFalse("must not treat /17/ as folder 7: " + norm, norm.endsWith("/db"));
+    }
+
+    @Test
+    public void addEntryResourceUrlSurvivesFolderIdDigitsInUrlPath() throws Exception {
+        File jar = new File(dbRoot, "3/https/cdn.example.com/7/lib/app.jar");
+        assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+        assertTrue(jar.createNewFile());
+        wrapper.lock();
+        try {
+            wrapper.load();
+            String key = SqliteCacheCatalog.lruKey(System.currentTimeMillis(), 3);
+            assertTrue(wrapper.addEntry(key, jar.getAbsolutePath()));
+            String url = CacheUtil.pathToURLPath(jar.getAbsolutePath(), dbRoot.getAbsolutePath());
+            List<Entry<String, String>> found = wrapper.findEntriesByUrlPath(url);
+            assertEquals(1, found.size());
+            assertEquals(jar.getAbsolutePath(), found.get(0).getValue());
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test
+    public void sameMillisecondLruKeysRemainUniqueAcrossGenerateAndUpdate() throws Exception {
+        File jarA = new File(dbRoot, "7/http/collide.example/a.jar");
+        File jarB = new File(dbRoot, "7/http/collide.example/b.jar");
+        assertTrue(jarA.getParentFile().mkdirs() || jarA.getParentFile().isDirectory());
+        assertTrue(jarB.createNewFile() || jarB.isFile());
+        assertTrue(jarA.createNewFile() || jarA.isFile());
+
+        long fixed = 1_700_000_000_000L;
+        String k1 = SqliteCacheCatalog.lruKey(fixed, 7);
+        String k2 = SqliteCacheCatalog.lruKey(fixed, 7);
+        assertFalse("seq must disambiguate same-ms keys", k1.equals(k2));
+        assertTrue(k1.startsWith(fixed + ",7,"));
+        assertTrue(k2.startsWith(fixed + ",7,"));
+
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(wrapper.addEntry(k1, jarA.getAbsolutePath()));
+            assertTrue(wrapper.addEntry(k2, jarB.getAbsolutePath()));
+            assertTrue(wrapper.updateEntry(k1));
+            assertTrue(wrapper.updateEntry(k2));
+            assertEquals(2, wrapper.getLRUSortedEntries().size());
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test
     public void removeContainsClearAndGetValueRoundTrip() throws Exception {
         File jarA = new File(dbRoot, "4/http/round.example/a.jar");
         File jarB = new File(dbRoot, "5/http/round.example/b.jar");

@@ -14,20 +14,33 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  * jars do not expand at once and OOM the launcher. While work remains, at least
  * one unpack is always admitted (even if a single jar exceeds the budget) so the
  * pipeline never stalls with zero unpackers.
+ * <p>
+ * Reserve sizing is calibrated from a live {@code -Xmx1800m} OOM heap dump where
+ * two concurrent class-heavy Pack200 unpacks retained ~725 MiB and ~579 MiB.
+ * Wire→heap ratios for those packs were ~30–34×; {@link #WIRE_TO_HEAP_MULTIPLIER}
+ * is 40× so two such unpacks cannot both clear the budget.
  */
-public final class PackUnpackFunnel {
+public final class PackUnpackAdmission {
 
     @FunctionalInterface
     public interface UnpackAction {
         void run() throws IOException;
     }
 
-    private static final PackUnpackFunnel INSTANCE = new PackUnpackFunnel();
+    private static final PackUnpackAdmission INSTANCE = new PackUnpackAdmission();
 
     /** Minimum reservation so tiny/unknown sizes still serialize somewhat. */
     static final long MIN_RESERVE_BYTES = 1L << 20; // 1 MiB
     static final long MIN_BUDGET_BYTES = 64L << 20;  // 64 MiB
+    /** Cap concurrent estimated working set (~one large class-heavy unpack). */
     static final long MAX_BUDGET_BYTES = 512L << 20; // 512 MiB
+    /**
+     * Measured peak retained / pack.gz wire on OOM dump ≈ 30–34×.
+     * Use 40× so those reserves exceed {@link #MAX_BUDGET_BYTES} and serialize.
+     */
+    static final int WIRE_TO_HEAP_MULTIPLIER = 40;
+    /** When wire/size unknown, reserve enough that only one unknown unpack fits the budget. */
+    static final long DEFAULT_RESERVE_BYTES = 256L << 20; // 256 MiB
 
     private final AtomicLong inFlightBytes = new AtomicLong();
     private final AtomicInteger active = new AtomicInteger();
@@ -36,11 +49,11 @@ public final class PackUnpackFunnel {
     /** Override for tests; {@code null} → heap-derived budget. */
     private volatile Long budgetOverrideBytes;
 
-    public static PackUnpackFunnel getInstance() {
+    public static PackUnpackAdmission getInstance() {
         return INSTANCE;
     }
 
-    PackUnpackFunnel() {
+    PackUnpackAdmission() {
     }
 
     void setBudgetOverrideBytes(Long bytes) {
@@ -74,6 +87,25 @@ public final class PackUnpackFunnel {
     }
 
     /**
+     * Pack200 heap reserve from wire size and/or a size hint (jar or Content-Length).
+     * Uses {@link #WIRE_TO_HEAP_MULTIPLIER} on the best available packed-size signal.
+     */
+    public static long estimateReserveBytes(long packedWireBytes, long sizeHintBytes) {
+        long packed = Math.max(0L, packedWireBytes);
+        long hint = Math.max(0L, sizeHintBytes);
+        long basis = Math.max(packed, hint);
+        if (basis <= 0L) {
+            return DEFAULT_RESERVE_BYTES;
+        }
+        long scaled = basis * (long) WIRE_TO_HEAP_MULTIPLIER;
+        if (scaled < basis) {
+            // overflow → treat as exclusive / oversized
+            return Long.MAX_VALUE / 4;
+        }
+        return Math.max(MIN_RESERVE_BYTES, scaled);
+    }
+
+    /**
      * Run {@code action} after admitting {@code estimatedBytes} against the budget.
      * Always admits when no unpack is active (keep ≥1 unpacking while work exists).
      */
@@ -104,13 +136,14 @@ public final class PackUnpackFunnel {
                     }
                     inFlightBytes.addAndGet(reserve);
                     if (spins > 0) {
-                        logDebug("PackUnpackFunnel admitted first unpacker after wait spins=" + spins
+                        logDebug("PackUnpackAdmission admitted first unpacker after wait spins=" + spins
                                 + " reserve=" + reserve + " budget=" + budget);
                     }
                     return;
                 }
-                // Pipeline busy: require budget headroom, then claim bytes + slot.
-                if (inflight + reserve > budget) {
+                // Pipeline busy: require strict headroom ( >= so two DEFAULT_RESERVE
+                // halves cannot both fit exactly on MAX_BUDGET ).
+                if (inflight + reserve >= budget) {
                     spins++;
                     LockSupport.parkNanos(5_000_000L); // 5ms
                     continue;
@@ -120,7 +153,7 @@ public final class PackUnpackFunnel {
                 }
                 active.incrementAndGet();
                 if (spins > 0) {
-                    logDebug("PackUnpackFunnel admitted after wait spins=" + spins
+                    logDebug("PackUnpackAdmission admitted after wait spins=" + spins
                             + " reserve=" + reserve + " inFlight=" + (inflight + reserve)
                             + " active=" + active.get() + " budget=" + budget);
                 }
@@ -132,8 +165,15 @@ public final class PackUnpackFunnel {
     }
 
     private void release(long reserve) {
-        inFlightBytes.addAndGet(-reserve);
-        active.decrementAndGet();
+        long left = inFlightBytes.addAndGet(-reserve);
+        if (left < 0) {
+            // Defensive: never leave a poisoned negative budget if release is mismatched.
+            inFlightBytes.compareAndSet(left, 0L);
+        }
+        int a = active.decrementAndGet();
+        if (a < 0) {
+            active.compareAndSet(a, 0);
+        }
     }
 
     private static void logDebug(String msg) {

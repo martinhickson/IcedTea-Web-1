@@ -123,6 +123,19 @@ class JvmSelectorTest {
         assertEquals("11", selected);
     }
 
+    @Test
+    void parseMajorAndStripPlusModifier() {
+        assertEquals(17, JvmSelector.parseMajor("17.0.16"));
+        assertEquals(8, JvmSelector.parseMajor("1.8.0_412"));
+        assertEquals(11, JvmSelector.parseMajor("11+"));
+        assertEquals(0, JvmSelector.parseMajor(null));
+        assertEquals(0, JvmSelector.parseMajor(""));
+        assertEquals("17", JvmSelector.stripPlusModifier("17+"));
+        assertEquals("1.8", JvmSelector.stripPlusModifier("1.8"));
+        assertEquals("", JvmSelector.stripPlusModifier(null));
+        assertTrue(JvmSelector.matchesStrategy(descriptor("C:\\jdk17", "17", true), "17+", JdkMatchStrategy.EXACT));
+    }
+
     private static JvmDescriptor descriptor(String home, String version, boolean valid) {
         return new JvmDescriptor(home, "Test JDK", version, valid, null);
     }

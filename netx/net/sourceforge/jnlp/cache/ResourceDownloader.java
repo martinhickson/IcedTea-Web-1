@@ -912,18 +912,20 @@ public class ResourceDownloader implements Runnable {
      * {@link #writeDownloadToFile} — otherwise Download stats stay at thr=-1 / bytes=0
      * for every pack.gz artifact.
      * <p>
-     * Unpacks go through {@link net.sourceforge.jnlp.cache.download.PackUnpackFunnel}
+     * Unpacks go through {@link net.sourceforge.jnlp.cache.download.PackUnpackAdmission}
      * so concurrent pack.gz expansion stays under a heap-derived byte budget while
      * always keeping at least one unpack running.
      */
     private File unpackPackGzToCacheFile(URL cacheLocation, InputStream packGzStream) throws IOException {
         File localFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
         final net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
-        // Estimate expanded size: known size, else wire hint * 4, else 16 MiB default.
+        // Pack200 working-set reserve (not jar bytes): calibrated from live OOM dump
+        // where class-heavy packs peaked ~30–34× pack.gz wire.
         long sizeHint = resource.getSize();
-        long estimate = sizeHint > 0 ? sizeHint
-                : (slot != null && slot.transferred() > 0 ? slot.transferred() * 4 : 16L << 20);
-        net.sourceforge.jnlp.cache.download.PackUnpackFunnel.getInstance().runUnpack(estimate, () -> {
+        long wireHint = slot != null ? slot.transferred() : 0L;
+        long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
+                .estimateReserveBytes(wireHint, sizeHint);
+        net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
             InputStream countedWire = new InputStream() {
                 private final InputStream delegate = packGzStream;
                 @Override
@@ -1069,8 +1071,9 @@ public class ResourceDownloader implements Runnable {
 
         File packed = CacheUtil.getCacheFile(compressedLocation, version);
         File unpacked = CacheUtil.getCacheFile(uncompressedLocation, version);
-        long estimate = packed.isFile() ? Math.max(packed.length() * 4, 16L << 20) : 16L << 20;
-        net.sourceforge.jnlp.cache.download.PackUnpackFunnel.getInstance().runUnpack(estimate, () -> {
+        long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
+                .estimateReserveBytes(packed.isFile() ? packed.length() : 0L, 0L);
+        net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
             try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
                  OutputStream fileOut = Files.newOutputStream(unpacked.toPath(),
                          StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
