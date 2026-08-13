@@ -106,8 +106,8 @@ import javax.swing.event.ListSelectionListener;
 import net.sourceforge.jnlp.about.AboutDialog;
 import net.sourceforge.jnlp.OptionsDefinitions;
 import net.sourceforge.jnlp.config.PathsAndFiles;
+import net.sourceforge.jnlp.runtime.Boot;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
-
 import net.sourceforge.jnlp.runtime.Translator;
 import net.sourceforge.jnlp.security.policyeditor.PolicyEditorPermissions.Group;
 import net.sourceforge.jnlp.util.FileUtils;
@@ -1711,8 +1711,15 @@ public class PolicyEditor extends JPanel {
      * -file specifies a file path to be opened by the editor. If none is provided, the default
      * policy file location for the user is opened.
      * -help will print a help message and immediately return (no editor instance opens)
+     * -version / --version print the IcedTea-Web version and exit without starting the GUI
      */
     public static void main(final String[] args) {
+        // Match javaws: print version and halt before AWT so CLI checks do not hang.
+        if (hasVersionOption(args)) {
+            System.out.println(Boot.name + " " + Boot.version);
+            Runtime.getRuntime().halt(0);
+        }
+
         // setup Swing EDT tracing:
         SwingUtils.setup();
 
@@ -1758,6 +1765,18 @@ public class PolicyEditor extends JPanel {
                 frame.asWindow().setVisible(true);
             }
         });
+    }
+
+    static boolean hasVersionOption(final String[] args) {
+        if (args == null) {
+            return false;
+        }
+        for (final String arg : args) {
+            if ("-version".equals(arg) || "--version".equals(arg)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     static String getCodebaseArgument(final OptionParser optionParser) {

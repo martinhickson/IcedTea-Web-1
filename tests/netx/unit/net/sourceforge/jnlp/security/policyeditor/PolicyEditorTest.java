@@ -464,4 +464,33 @@ public class PolicyEditorTest {
         OptionParser optionParser = new OptionParser(args, OptionsDefinitions.getPolicyEditorOptions());
         PolicyEditor.getSignedByArgument(optionParser);
     }
+
+    @Test
+    public void testVersionIsAPolicyEditorOption() {
+        assertTrue(OptionsDefinitions.getPolicyEditorOptions().contains(OptionsDefinitions.OPTIONS.VERSION));
+    }
+
+    @Test
+    public void testHasVersionOptionDashAndLongForm() {
+        assertTrue(PolicyEditor.hasVersionOption(new String[] { "-version" }));
+        assertTrue(PolicyEditor.hasVersionOption(new String[] { "--version" }));
+        assertFalse(PolicyEditor.hasVersionOption(new String[] { "-help" }));
+        assertFalse(PolicyEditor.hasVersionOption(new String[] { "-file", "foo" }));
+        assertFalse(PolicyEditor.hasVersionOption(new String[0]));
+        assertFalse(PolicyEditor.hasVersionOption(null));
+    }
+
+    @Test
+    public void testVersionIsNotTreatedAsPolicyFilePath() {
+        OptionParser optionParser = new OptionParser(new String[] { "-version" },
+                OptionsDefinitions.getPolicyEditorOptions());
+        assertTrue(optionParser.hasOption(OptionsDefinitions.OPTIONS.VERSION));
+        assertFalse(optionParser.mainArgExists());
+        assertEquals(null, PolicyEditor.getFilePathArgument(optionParser));
+
+        optionParser = new OptionParser(new String[] { "--version" },
+                OptionsDefinitions.getPolicyEditorOptions());
+        assertTrue(optionParser.hasOption(OptionsDefinitions.OPTIONS.VERSION));
+        assertFalse(optionParser.mainArgExists());
+    }
 }

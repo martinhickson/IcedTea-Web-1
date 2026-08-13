@@ -186,6 +186,7 @@ public class OptionsDefinitions {
     public static List<OPTIONS> getPolicyEditorOptions() {
         return Arrays.asList(new OPTIONS[]{
             OPTIONS.HELP1,
+            OPTIONS.VERSION,
             OPTIONS.FILE,
             OPTIONS.DEFAULTFILE,
             OPTIONS.CODEBASE,
