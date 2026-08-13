@@ -8,9 +8,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 import javax.net.ssl.SSLSocket;
+import net.sourceforge.jnlp.cache.AdaptiveBackgroundThreads;
 import net.sourceforge.jnlp.cache.download.ConnectionTiming;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.util.logging.OutputController;
 import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -26,15 +28,13 @@ import org.apache.hc.core5.http.protocol.HttpContext;
 
 /**
  * Apache HttpClient 5 (httpclient5) implementation of {@link ItwHttpClient} —
- * the default. Provides explicit connection pooling (max 6 per route, matching
- * the parallel download thread count), client-level connect/read timeouts, and
+ * the default. Provides explicit connection pooling (per-route slots match the
+ * adaptive download-thread ceiling, default 12), client-level connect/read timeouts, and
  * uses {@link ItwSslSocketFactory} (ITW trust chain + cipher probe/fallback).
  * Passing only {@code SSLContext} skips cipher stamping — jar downloads would
  * then use the JDK default order until a later {@code HttpURLConnection} path.
  */
 public final class ApacheHttpClient implements ItwHttpClient {
-
-    private static final int MAX_PER_ROUTE = 6;
 
     private final CloseableHttpClient client;
 
@@ -60,12 +60,20 @@ public final class ApacheHttpClient implements ItwHttpClient {
                 .setResponseTimeout(readTimeout, TimeUnit.MILLISECONDS)
                 .build();
 
+        int perRoute = downloadSlots();
+        int maxTotal = Math.max(perRoute * 2, perRoute);
+        System.setProperty("http.maxConnections", String.valueOf(perRoute));
         PoolingHttpClientConnectionManager pool = PoolingHttpClientConnectionManagerBuilder.create()
                 .setSSLSocketFactory(sslsf)
-                .setMaxConnTotal(MAX_PER_ROUTE)
-                .setMaxConnPerRoute(MAX_PER_ROUTE)
+                .setMaxConnTotal(maxTotal)
+                .setMaxConnPerRoute(perRoute)
                 .setDefaultConnectionConfig(connectionConfig)
                 .build();
+        try {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "HTTP connection pool maxPerRoute=" + perRoute + " maxTotal=" + maxTotal);
+        } catch (Exception ignored) {
+        }
 
         // Disable HC5 content-decoding. JNLP servers commonly return
         // Content-Encoding: pack200-gzip (and sometimes gzip) for jar.pack.gz /
@@ -78,6 +86,25 @@ public final class ApacheHttpClient implements ItwHttpClient {
                 .setDefaultRequestConfig(requestConfig)
                 .disableContentCompression()
                 .build();
+    }
+
+    private static int downloadSlots() {
+        int n = 6;
+        boolean adaptive = true;
+        try {
+            n = Integer.parseInt(JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_BACKGROUND_THREADS_COUNT));
+        } catch (Exception ignored) {
+        }
+        try {
+            String a = JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_BACKGROUND_THREADS_ADAPTIVE);
+            if (a != null && !a.trim().isEmpty()) {
+                adaptive = Boolean.parseBoolean(a.trim());
+            }
+        } catch (Exception ignored) {
+        }
+        return AdaptiveBackgroundThreads.connectionSlots(n, adaptive);
     }
 
     private static int timeout(String key, int fallback) {

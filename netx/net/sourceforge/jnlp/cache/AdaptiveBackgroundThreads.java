@@ -19,6 +19,19 @@ public final class AdaptiveBackgroundThreads {
     /** Matches {@code DeploymentConfiguration} thread-count validator upper bound. */
     static final int MAX_THREADS = 24;
 
+    /**
+     * Real parallel download slots: worker threads and HTTP connections per route.
+     * Adaptive mode uses the doubled ceiling from the first jar (default 6 → 12)
+     * so the Apache pool is not left at 6 while extra workers wait.
+     */
+    public static int connectionSlots(int baseThreads, boolean adaptive) {
+        int base = Math.max(1, Math.min(baseThreads, MAX_THREADS));
+        if (!adaptive) {
+            return base;
+        }
+        return Math.min(base * 2, MAX_THREADS);
+    }
+
     private final boolean enabled;
     private final int baseThreads;
     private final ThreadPoolExecutor pool;
@@ -132,6 +145,9 @@ public final class AdaptiveBackgroundThreads {
         if (target > current) {
             pool.setMaximumPoolSize(target);
             pool.setCorePoolSize(target);
+            // Unbounded queue: extra core threads are not created for work already
+            // queued. Start them so they drain the existing download queue.
+            pool.prestartAllCoreThreads();
         } else {
             pool.setCorePoolSize(target);
             pool.setMaximumPoolSize(target);

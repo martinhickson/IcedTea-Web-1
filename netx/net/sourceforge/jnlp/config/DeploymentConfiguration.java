@@ -351,10 +351,11 @@ public final class DeploymentConfiguration {
     public static final String KEY_CACHE_CATALOG_SQLITE = "deployment.cache.catalog.sqlite";
     public static final String KEY_BACKGROUND_THREADS_COUNT = "deployment.background.threads.count";
     /**
-     * Boolean. If true (default), temporarily double {@link #KEY_BACKGROUND_THREADS_COUNT}
-     * after the first successful jar download while more jars are still downloading;
-     * if any pack200-gzip download is observed after that doubling, shrink back to the
-     * configured count. At most one double and one half.
+     * Boolean. If true (default), size download workers and the HTTP per-route
+     * pool to twice {@link #KEY_BACKGROUND_THREADS_COUNT} from the start (default
+     * 6 → 12 real slots). After the first successful jar the executor may still
+     * latch as doubled; if any pack200-gzip download is observed after that,
+     * shrink workers back to the configured count. At most one double and one half.
      */
     public static final String KEY_BACKGROUND_THREADS_ADAPTIVE = "deployment.background.threads.adaptive";
     public static final String KEY_MAX_URLS_DOWNLOAD_INDICATOR = "deployment.max.urls.download.indicator";

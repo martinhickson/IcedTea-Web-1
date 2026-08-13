@@ -39,7 +39,7 @@ public final class HttpClientProvider {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
                     "HTTP downloads using " + name + " client"
                     + ("apache".equalsIgnoreCase(name)
-                            ? " (Apache HttpClient 5 + ItwSslSocketFactory)"
+                            ? " (Apache HttpClient 5 + ItwSslSocketFactory, pool sized to download slots)"
                             : " (HttpURLConnection + ItwSslSocketFactory)"));
         } catch (Exception ignored) {
         }
