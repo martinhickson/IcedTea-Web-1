@@ -84,7 +84,7 @@ internal static class Program
                 javaArgs,
                 javawsArgs);
 
-            exitCode = RunJava(javaExecutable, command, preserveStdio, javawsArgs);
+            exitCode = RunJava(javaExecutable, command, preserveStdio, launcherName, javawsArgs);
         }
         catch (Exception ex)
         {
@@ -564,6 +564,7 @@ internal static class Program
         string javaExecutable,
         IReadOnlyList<string> command,
         bool preserveStdio,
+        string launcherName,
         IReadOnlyCollection<string> javawsArgs)
     {
 #if ITW_LAUNCHER_CONSOLE
@@ -576,7 +577,7 @@ internal static class Program
         }
 #pragma warning restore CS0162
 
-        if (!ShouldKeepJavawsProcess() && !IsConsoleOnlyLaunch(javawsArgs))
+        if (!ShouldKeepJavawsProcess() && !ShouldWaitForCliChild(launcherName, javawsArgs))
         {
             return LaunchJavaDetachedAndExit(javaExecutable, command, "main");
         }
@@ -615,9 +616,41 @@ internal static class Program
         return process.ExitCode;
     }
 
-    private static bool IsConsoleOutputArg(string arg)
+    /// <summary>
+    /// True when argv is a text CLI / control operation that must wait and inherit stdio.
+    /// Detach remains the default for GUI JNLP launches and bare settings/policyeditor.
+    /// </summary>
+    private static bool ShouldWaitForCliChild(string launcherName, IReadOnlyCollection<string> javawsArgs)
     {
-        if (arg.StartsWith("-J", StringComparison.Ordinal))
+        if (javawsArgs == null || javawsArgs.Count == 0)
+        {
+            return false;
+        }
+
+        if (IsSettingsLauncher(launcherName))
+        {
+            return true;
+        }
+
+        foreach (var arg in javawsArgs)
+        {
+            if (IsJavawsTextControlOption(arg))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static bool IsSettingsLauncher(string launcherName) =>
+        launcherName.Equals("icedtea-web-settings", StringComparison.OrdinalIgnoreCase)
+        || launcherName.Equals("icedtea_web_settings", StringComparison.OrdinalIgnoreCase)
+        || launcherName.Equals("itweb-settings", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsJavawsTextControlOption(string arg)
+    {
+        if (string.IsNullOrEmpty(arg) || arg.StartsWith("-J", StringComparison.Ordinal))
         {
             return false;
         }
@@ -625,12 +658,13 @@ internal static class Program
         var key = arg.Split(':', 2)[0];
         return key.Equals("-version", StringComparison.OrdinalIgnoreCase)
             || key.Equals("--version", StringComparison.OrdinalIgnoreCase)
-            || key.Equals("-about", StringComparison.OrdinalIgnoreCase)
-            || key.Equals("--about", StringComparison.OrdinalIgnoreCase)
-            || key.Equals("-verbose", StringComparison.OrdinalIgnoreCase)
             || key.Equals("-help", StringComparison.OrdinalIgnoreCase)
             || key.Equals("--help", StringComparison.OrdinalIgnoreCase)
-            || key.Equals("-?", StringComparison.OrdinalIgnoreCase);
+            || key.Equals("-?", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("-license", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("--license", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("-Xcacheids", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("-Xclearcache", StringComparison.OrdinalIgnoreCase);
     }
 
     private static string NormalizeLauncherArg(string arg) =>
@@ -1137,9 +1171,6 @@ internal static class Program
             return ProbeJavaMajorVersionFromJavaExecutable(javaExecutable);
         }
     }
-
-    private static bool IsConsoleOnlyLaunch(IReadOnlyCollection<string> javawsArgs) =>
-        javawsArgs.Count > 0 && javawsArgs.All(IsConsoleOutputArg);
 
     private static int ProbeJavaMajorVersionFromJavaExecutable(string javaExecutable)
     {

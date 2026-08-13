@@ -59,8 +59,12 @@ Local dev shortcut (Windows): `scripts/publish-dotnet-launchers.ps1`
 ## CLI usage
 
 ```
-javaws.exe --version    # works from cmd (Rust-compatible); use javawsc for scripts that must block/wait
+javaws.exe --version    # waits and prints; scripts should prefer javawsc
 javawsc.exe --version   # canonical console entry; cmd waits on this binary
 javawsc.exe -help
+javaws.exe -Xcacheids   # text control ops wait and inherit stdio (not detached)
 javaws.exe foo.jnlp
+icedtea-web-settings -list   # any settings argv waits; no args still opens the GUI
 ```
+
+GUI `javaws` still detaches for JNLP / desktop launches. Detach is skipped for javaws text control options (`-help`, `-version`, `-license`, `-Xcacheids`, `-Xclearcache`) and for any `icedtea-web-settings` command-line invocation. `javawsc` always waits.
