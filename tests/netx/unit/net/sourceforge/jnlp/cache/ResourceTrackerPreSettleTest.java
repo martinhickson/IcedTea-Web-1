@@ -72,6 +72,8 @@ public class ResourceTrackerPreSettleTest {
         assertEquals(1, needsRestart.size());
         assertTrue(r.isUnusableTerminalRetried(), "one-shot retry must be consumed");
         assertEquals(JarState.IN_FLIGHT, group.slot(0).state());
+        assertEquals(group.slot(0), r.getJarSlot(),
+                "prepareRedownload must not unbind the wait() group slot");
         assertTrue(!group.done().isDone(), "retry-pending must not complete the group");
     }
 
@@ -89,6 +91,8 @@ public class ResourceTrackerPreSettleTest {
         assertEquals(1, needsRestart.size());
         assertEquals(null, r.getTerminalState());
         assertEquals(JarState.IN_FLIGHT, group.slot(0).state());
+        assertEquals(group.slot(0), r.getJarSlot(),
+                "ghost restart must stay bound to the wait() group slot");
         assertTrue(!group.done().isDone(), "ghost GOOD must not absorb the group as success");
     }
 

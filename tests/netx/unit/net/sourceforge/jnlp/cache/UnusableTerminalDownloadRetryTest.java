@@ -42,6 +42,7 @@ public class UnusableTerminalDownloadRetryTest extends NoStdOutErrTest {
                 "itw-unusable-terminal-" + System.nanoTime());
         tempCache.mkdirs();
         PathsAndFiles.CACHE_DIR.setValue(tempCache.getAbsolutePath());
+        SizeFirstDownloadQueue.resetForTests();
 
         File web = new File(System.getProperty("java.io.tmpdir"),
                 "itw-unusable-terminal-web-" + System.nanoTime());

@@ -104,6 +104,21 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
         Assert.assertTrue(otherFile.isFile());
     }
 
+    @Test
+    public void cachedResourceMatchesApplicationAfterCanonicalizingCacheRoot() throws Exception {
+        URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
+        File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
+        File info = new File(jnlpFile.getPath() + CacheDirectory.INFO_SUFFIX);
+        Assert.assertTrue(info.isFile());
+
+        String nonCanonicalRoot = new File(tempCache, ".." + File.separator + tempCache.getName())
+                .getAbsolutePath();
+        PathsAndFiles.CACHE_DIR.setValue(nonCanonicalRoot);
+
+        Assert.assertTrue(CacheUtil.cachedResourceMatchesApplication(
+                info.getCanonicalFile().toPath(), jnlp.toString()));
+    }
+
     private static File writeCachedResource(URL source, String contents) throws Exception {
         File cacheFile = CacheUtil.makeNewCacheFile(source, null);
         Files.write(cacheFile.toPath(), contents.getBytes(StandardCharsets.UTF_8));

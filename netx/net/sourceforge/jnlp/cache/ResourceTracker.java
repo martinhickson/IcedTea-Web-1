@@ -791,8 +791,7 @@ public class ResourceTracker {
                 // Ghost: prior wait marked GOOD but local file is missing/corrupt.
                 // Leaving the fresh slot IN_FLIGHT would hang done() forever.
                 r.setTerminalState(null);
-                r.prepareRedownloadAfterUnusableTerminal();
-                needsRestart.add(r);
+                prepareRestartKeepingSlot(r, s, needsRestart);
             } else if (terminal == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD
                     && r.isUnusableTerminalRetried()) {
                 s.settleBadFinal(System.currentTimeMillis()); // retry already spent → terminal FAILED
@@ -800,11 +799,23 @@ public class ResourceTracker {
                 // premature ERROR with the one-shot retry still available — consume and
                 // re-enqueue so a fresh download settles the slot (old wait() requeued here)
                 if (r.consumeUnusableTerminalRetry()) {
-                    r.prepareRedownloadAfterUnusableTerminal();
-                    needsRestart.add(r);
+                    prepareRestartKeepingSlot(r, s, needsRestart);
                 }
             }
         }
+    }
+
+    /**
+     * {@link Resource#prepareRedownloadAfterUnusableTerminal()} clears the
+     * JarSlot binding. Re-bind the wait() group's slot afterwards so
+     * ResourceDownloader settles that slot; otherwise {@code group.done()}
+     * stays IN_FLIGHT and wait() times out (or hangs forever when timeout is 0).
+     */
+    private static void prepareRestartKeepingSlot(Resource r,
+            net.sourceforge.jnlp.cache.download.JarSlot s, List<Resource> needsRestart) {
+        r.prepareRedownloadAfterUnusableTerminal();
+        r.setJarSlot(s);
+        needsRestart.add(r);
     }
 
     interface Filter<T> {

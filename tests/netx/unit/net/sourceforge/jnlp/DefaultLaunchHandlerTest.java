@@ -46,6 +46,7 @@ import java.lang.reflect.Field;
 import net.sourceforge.jnlp.util.logging.LogConfig;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
+import org.junit.Before;
 import org.junit.Test;
 
 public class DefaultLaunchHandlerTest {
@@ -53,6 +54,15 @@ public class DefaultLaunchHandlerTest {
     /** Normalize Windows CRLF so assertions match product messages that use PrintStream platform newlines. */
     private static String normalizeNewlines(String s) {
         return s.replace("\r\n", "\n");
+    }
+
+    @Before
+    public void resetParserStatics() {
+        // Parser.getParserInstance() leaves expected/used on ParseException. A
+        // prior test that fell back from TagSoup to the normal parser would
+        // otherwise prefix every new ParseException with the TAGSOUP warning.
+        ParseException.setExpected(null);
+        ParseException.setUsed(null);
     }
 
 

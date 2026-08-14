@@ -1478,7 +1478,15 @@ public class CacheUtil {
             return null;
         }
         String resourceAbs = abs.substring(0, abs.length() - CacheDirectory.INFO_SUFFIX.length());
-        return normalizeCacheRelativePath(pathToURLPath(resourceAbs));
+        String cacheRoot = CacheLRUWrapper.getInstance().getCacheDir().getFullPath();
+        try {
+            resourceAbs = new File(resourceAbs).getCanonicalPath();
+            if (cacheRoot != null) {
+                cacheRoot = new File(cacheRoot).getCanonicalPath();
+            }
+        } catch (IOException ignored) {
+        }
+        return normalizeCacheRelativePath(pathToURLPath(resourceAbs, cacheRoot));
     }
 
     private static String normalizeCacheRelativePath(String path) {
