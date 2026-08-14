@@ -50,6 +50,30 @@ class ConsoleOutputPanePlayPauseTest {
     void playAndPauseStayOnMainChromeWhenDetailsStartHidden() {
         ConsoleOutputPane pane = new ConsoleOutputPane(new EmptyProvider());
         assertTrue(pane.isPlayPauseOnMainPanel());
+        assertTrue(pane.isPlayVisible());
+        assertTrue(pane.isPauseVisible());
+    }
+
+    @Test
+    void playAndPauseStayVisibleWhenDetailsOpenAtShortHeight() {
+        ConsoleOutputPane pane = new ConsoleOutputPane(new EmptyProvider());
+        pane.setDetailsVisible(true);
+        pane.setSize(640, 280);
+        pane.doLayout();
+        pane.validate();
+        assertTrue(pane.isPlayPauseOnMainPanel());
+        assertTrue(pane.isPlayPauseFullyVisibleInPane());
+    }
+
+    @Test
+    void playAndPauseStayVisibleWhenDetailsHiddenAtShortHeight() {
+        ConsoleOutputPane pane = new ConsoleOutputPane(new EmptyProvider());
+        pane.setDetailsVisible(false);
+        pane.setSize(640, 220);
+        pane.doLayout();
+        pane.validate();
+        assertTrue(pane.isPlayPauseOnMainPanel());
+        assertTrue(pane.isPlayPauseFullyVisibleInPane());
     }
 
     private static final class EmptyProvider extends Observable implements ObservableMessagesProvider {

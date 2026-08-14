@@ -2,6 +2,7 @@ package net.sourceforge.jnlp.util.logging;
 
 import java.awt.Color;
 import java.awt.BorderLayout;
+import java.awt.FlowLayout;
 import java.awt.EventQueue;
 import java.awt.Toolkit;
 import java.awt.datatransfer.Clipboard;
@@ -35,6 +36,7 @@ import javax.swing.JScrollPane;
 import javax.swing.JTextField;
 import javax.swing.JTextPane;
 import javax.swing.LayoutStyle;
+import javax.swing.SwingUtilities;
 import javax.swing.event.DocumentEvent;
 import javax.swing.event.DocumentListener;
 import javax.swing.text.BadLocationException;
@@ -292,8 +294,41 @@ public class ConsoleOutputPane extends JPanel implements Observer {
         return pause.isEnabled();
     }
 
+    boolean isPlayVisible() {
+        return play.isVisible();
+    }
+
+    boolean isPauseVisible() {
+        return pause.isVisible();
+    }
+
     boolean isPlayPauseOnMainPanel() {
-        return play.getParent() == this && pause.getParent() == this;
+        return play.isVisible() && pause.isVisible()
+                && play.getParent() != null && pause.getParent() != null
+                && !jPanel2.isAncestorOf(play) && !jPanel2.isAncestorOf(pause);
+    }
+
+    boolean isPlayPauseFullyVisibleInPane() {
+        if (!isPlayPauseOnMainPanel()) {
+            return false;
+        }
+        java.awt.Point playLoc = SwingUtilities.convertPoint(play, 0, 0, this);
+        java.awt.Point pauseLoc = SwingUtilities.convertPoint(pause, 0, 0, this);
+        int paneH = getHeight();
+        int paneW = getWidth();
+        return playLoc.y >= 0 && pauseLoc.y >= 0
+                && playLoc.y + play.getHeight() <= paneH
+                && pauseLoc.y + pause.getHeight() <= paneH
+                && playLoc.x >= 0 && pauseLoc.x >= 0
+                && playLoc.x + play.getWidth() <= paneW
+                && pauseLoc.x + pause.getWidth() <= paneW;
+    }
+
+    void setDetailsVisible(boolean visible) {
+        if (jpanel2scrollpane.isVisible() == visible) {
+            return;
+        }
+        showHideActionPerformed(new ActionEvent(showHide, ActionEvent.ACTION_PERFORMED, "test"));
     }
 
     final ActionListener defaultActionSingleton = createDefaultAction();
@@ -452,10 +487,6 @@ public class ConsoleOutputPane extends JPanel implements Observer {
 
         play.setText(Translator.R("COPplay"));
         play.setToolTipText(Translator.R("COPplayTip"));
-        play.setForeground(new Color(0x1B7A2F));
-        play.setBackground(new Color(0xD9F2DE));
-        play.setOpaque(true);
-        play.setContentAreaFilled(true);
         play.addActionListener(new ActionListener() {
             @Override
             public final void actionPerformed(final ActionEvent evt) {
@@ -465,10 +496,6 @@ public class ConsoleOutputPane extends JPanel implements Observer {
 
         pause.setText(Translator.R("COPpause"));
         pause.setToolTipText(Translator.R("COPpauseTip"));
-        pause.setForeground(new Color(0xA65F00));
-        pause.setBackground(new Color(0xFFE2B8));
-        pause.setOpaque(true);
-        pause.setContentAreaFilled(true);
         pause.addActionListener(new ActionListener() {
             @Override
             public final void actionPerformed(final ActionEvent evt) {
@@ -726,27 +753,28 @@ public class ConsoleOutputPane extends JPanel implements Observer {
             }
         });
 
+        chromeBar.setLayout(new FlowLayout(FlowLayout.LEADING, 6, 4));
+        chromeBar.add(play);
+        chromeBar.add(pause);
+        chromeBar.add(showHide);
+
         final GroupLayout jPanel1Layout = new GroupLayout(this);
         super.setLayout(jPanel1Layout);
+        jPanel1Layout.setHonorsVisibility(true);
         jPanel1Layout.setHorizontalGroup(
                 jPanel1Layout.createParallelGroup(GroupLayout.Alignment.LEADING).
                 addGroup(jPanel1Layout.createSequentialGroup().addContainerGap().
                 addGroup(jPanel1Layout.createParallelGroup(GroupLayout.Alignment.LEADING).
                 addComponent(jScrollPane1, GroupLayout.DEFAULT_SIZE, 684, Short.MAX_VALUE).
                 addComponent(jpanel2scrollpane, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE).
-                addGroup(jPanel1Layout.createSequentialGroup().
-                addComponent(play).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
-                addComponent(pause).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
-                addComponent(showHide, GroupLayout.DEFAULT_SIZE, 400, Short.MAX_VALUE))).addContainerGap()));
+                addComponent(chromeBar, GroupLayout.DEFAULT_SIZE, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE)).addContainerGap()));
         jPanel1Layout.setVerticalGroup(
                 jPanel1Layout.createParallelGroup(GroupLayout.Alignment.LEADING).
                 addGroup(GroupLayout.Alignment.TRAILING, jPanel1Layout.createSequentialGroup().addContainerGap().
-                addComponent(jScrollPane1, GroupLayout.DEFAULT_SIZE, 329, Short.MAX_VALUE).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
-                addComponent(jpanel2scrollpane, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
-                addGroup(jPanel1Layout.createParallelGroup(GroupLayout.Alignment.BASELINE).
-                addComponent(play).
-                addComponent(pause).
-                addComponent(showHide)).addContainerGap()));
+                addComponent(jScrollPane1, 0, 329, Short.MAX_VALUE).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
+                addComponent(jpanel2scrollpane, 0, GroupLayout.DEFAULT_SIZE, Short.MAX_VALUE).addPreferredGap(LayoutStyle.ComponentPlacement.RELATED).
+                addComponent(chromeBar, GroupLayout.PREFERRED_SIZE, GroupLayout.DEFAULT_SIZE, GroupLayout.PREFERRED_SIZE).
+                addContainerGap()));
 
         final JMenuItem tab = new JMenuItem("insert \\t");
         tab.addActionListener(new ActionListener() {
@@ -938,6 +966,8 @@ public class ConsoleOutputPane extends JPanel implements Observer {
             jpanel2scrollpane.setVisible(true);
             showHide.setText(Translator.R("ButHideDetails"));
         }
+        revalidate();
+        repaint();
     }
 
     private final void copyPlainActionPerformed(final ActionEvent evt) {
@@ -1020,6 +1050,7 @@ public class ConsoleOutputPane extends JPanel implements Observer {
     private final JCheckBox autorefresh;
     private final JButton play;
     private final JButton pause;
+    private final JPanel chromeBar = new JPanel();
     private final JCheckBox caseSensitive;
     private final JButton copyPlain;
     private final JButton copyRich;
