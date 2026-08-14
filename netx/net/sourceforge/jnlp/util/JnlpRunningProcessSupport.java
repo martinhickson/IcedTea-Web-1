@@ -267,13 +267,6 @@ public final class JnlpRunningProcessSupport {
                 }
                 continue;
             }
-            if (lease.processStart != null && !isSameProcess(lease.pid, lease.processStart)) {
-                try {
-                    net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance().unregisterRunningApp(lease.pid);
-                } catch (Exception ignored) {
-                }
-                continue;
-            }
             RunningProcess existing = byPid.get(lease.pid);
             if (existing != null && existing.getJnlpPath() != null && !existing.getJnlpPath().trim().isEmpty()) {
                 continue;

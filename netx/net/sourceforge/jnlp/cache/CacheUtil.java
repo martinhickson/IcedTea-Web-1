@@ -334,8 +334,40 @@ public class CacheUtil {
         if (application == null || application.trim().isEmpty()) {
             return false;
         }
-        return !net.sourceforge.jnlp.util.JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(application)
-                && CacheLRUWrapper.getInstance().getCacheDir().getFile().isDirectory();
+        if (net.sourceforge.jnlp.util.JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(application)) {
+            return false;
+        }
+        if (catalogRowsForClearIdBlocked(application)) {
+            return false;
+        }
+        return CacheLRUWrapper.getInstance().getCacheDir().getFile().isDirectory();
+    }
+
+    /**
+     * Jar / domain ids never appear on the process command line. If a catalog
+     * row for this id belongs to a running JNLP (stored {@code jnlp-path} or
+     * href), treat the id as busy.
+     */
+    static boolean catalogRowsForClearIdBlocked(String application) {
+        try {
+            for (CacheEntryMeta row : CacheLRUWrapper.getInstance().listAllMeta()) {
+                if (!catalogRowExactMatch(row, application, true, true)) {
+                    continue;
+                }
+                if (row.jnlpPath != null && !row.jnlpPath.trim().isEmpty()
+                        && net.sourceforge.jnlp.util.JnlpRunningProcessSupport
+                                .cacheClearBlockedByRunningApps(row.jnlpPath.trim())) {
+                    return true;
+                }
+                String href = hrefFromCacheRelativePath(row.resourceUrl);
+                if (href != null
+                        && net.sourceforge.jnlp.util.JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(href)) {
+                    return true;
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return false;
     }
 
     /**
