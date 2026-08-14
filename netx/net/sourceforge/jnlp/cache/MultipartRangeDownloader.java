@@ -40,6 +40,16 @@ final class MultipartRangeDownloader {
 
     /** Cap on concurrent chunk fetches (chunk count can be higher; extra chunks queue). */
     private static final int MAX_PARALLEL = 8;
+    /**
+     * Shared daemon pool for ALL multipart chunk fetches across all resources, so concurrent
+     * splits can't multiply into one-threadpool-per-download (which would overrun the HTTP
+     * connection pool's per-route limit). Sized below the default maxPerRoute (12).
+     */
+    private static final ExecutorService CHUNK_POOL = Executors.newFixedThreadPool(MAX_PARALLEL, r -> {
+        Thread t = new Thread(r, "itw-multipart-range");
+        t.setDaemon(true);
+        return t;
+    });
     /** Safety valve against pathological slot sizes (e.g. a few-byte slot on a huge file). */
     private static final int MAX_CHUNKS = 100_000;
     /** Per-chunk retries on a transient failure before aborting the whole transfer. */
@@ -94,7 +104,6 @@ final class MultipartRangeDownloader {
         File[] parts = new File[n];
         long[] written = new long[n];
 
-        ExecutorService pool = null;
         boolean success = false;
         try {
             // Chunk 0: drain the already-fetched probe response — unless a prior attempt already
@@ -119,12 +128,6 @@ final class MultipartRangeDownloader {
             }
 
             if (n > 1) {
-                int parallel = Math.min(MAX_PARALLEL, n - 1);
-                pool = Executors.newFixedThreadPool(parallel, r -> {
-                    Thread t = new Thread(r, "itw-multipart-range");
-                    t.setDaemon(true);
-                    return t;
-                });
                 List<Future<Long>> futures = new ArrayList<>();
                 List<Integer> submitted = new ArrayList<>();
                 for (int i = 1; i < n; i++) {
@@ -142,7 +145,7 @@ final class MultipartRangeDownloader {
                         continue;
                     }
                     submitted.add(idx);
-                    futures.add(pool.submit(() -> fetchChunk(idx, part)));
+                    futures.add(CHUNK_POOL.submit(() -> fetchChunk(idx, part)));
                 }
                 for (int j = 0; j < futures.size(); j++) {
                     int idx = submitted.get(j);
@@ -174,14 +177,7 @@ final class MultipartRangeDownloader {
             deleteCorruptLocal(dest);
             throw (e instanceof IOException) ? (IOException) e : new IOException("Multipart download failed", e);
         } finally {
-            if (pool != null) {
-                pool.shutdownNow();
-                try {
-                    pool.awaitTermination(2, TimeUnit.SECONDS);
-                } catch (InterruptedException ignored) {
-                    Thread.currentThread().interrupt();
-                }
-            }
+            // CHUNK_POOL is shared and long-lived; never shut it down here.
             // Keep the parts on a transfer failure so a retry resumes from them; clean up only
             // once the full file has been reassembled successfully.
             if (success) {
