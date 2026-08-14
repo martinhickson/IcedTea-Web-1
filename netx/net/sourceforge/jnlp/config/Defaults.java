@@ -590,6 +590,21 @@ public class Defaults {
                         BasicValueValidators.getBooleanValidator(),
                         String.valueOf(false)
                 },
+                {
+                        DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_WIRE_MULTIPLIER,
+                        BasicValueValidators.getRangedIntegerValidator(1, 200),
+                        String.valueOf(30)
+                },
+                {
+                        DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_HEAP_PERCENT,
+                        BasicValueValidators.getRangedIntegerValidator(1, 100),
+                        String.valueOf(100)
+                },
+                {
+                        DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_DEFAULT_RESERVE_MIB,
+                        BasicValueValidators.getRangedIntegerValidator(0, 65536),
+                        String.valueOf(0)
+                },
                 //**************
                 //* Native (rust) only - beggin
                 //**************

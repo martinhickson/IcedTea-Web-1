@@ -31,6 +31,8 @@ public final class DownloadProgress {
     private static final ThreadLocal<Integer> LANE = new ThreadLocal<Integer>();
     private static volatile boolean active;
     private static volatile DownloadProgress instance;
+    /** Old CacheUtil calls markComplete/end after wait; only finishLaunch may close. */
+    private static volatile boolean closeAllowed;
 
     final Slot[] slots;
     final AtomicLong bytes = new AtomicLong();
@@ -122,10 +124,14 @@ public final class DownloadProgress {
         next.resources = resources;
         instance = next;
         active = true;
+        closeAllowed = false;
         DownloadProgressWindow.open(next);
     }
 
     public static void markComplete() {
+        if (!closeAllowed) {
+            return;
+        }
         DownloadProgress p = instance;
         if (p != null) {
             p.complete = true;
@@ -134,15 +140,23 @@ public final class DownloadProgress {
 
     /** Close the window a few instructions before {@code main}. */
     public static void finishLaunch() {
-        markComplete();
+        closeAllowed = true;
+        DownloadProgress p = instance;
+        if (p != null) {
+            p.complete = true;
+        }
         end();
     }
 
     public static void end() {
+        if (!closeAllowed) {
+            return;
+        }
         active = false;
         instance = null;
         LANE.remove();
         DownloadProgressWindow.close();
+        closeAllowed = false;
     }
 
     public static void bindLane(int index, Resource resource) {
@@ -335,8 +349,10 @@ public final class DownloadProgress {
         // Never paint 100% until wait() returns or users think it hung.
         int pct = complete ? 100 : Math.min(99, wirePct);
         UnpackSnap unpack = unpackSnapshot();
-        boolean unpacking = !complete && (deferredUnpack || unpack.active
-                || (unpack.queued > 0 && wirePct >= 99));
+        // Pack200 runs on the download workers. That is still Downloading.
+        // Unpacking is only the post-wire hold (99%) before launch.
+        boolean unpacking = !complete && wirePct >= 99
+                && (deferredUnpack || unpack.active || unpack.queued > 0);
         String finishing = "";
         if (isAdvanced()) {
             if (unpack.active) {

@@ -1,18 +1,29 @@
 #!/usr/bin/env groovy
 /**
- * Fast probe: PackUnpackAdmission reserve math + default-reserve serialization.
+ * Fast probe: PackUnpackAdmission reserve math — two largest fit, third waits.
  * Run: scripts/run-itw-groovy.sh pack-admission
  */
 import net.sourceforge.jnlp.cache.download.PackUnpackAdmission
 
 def admit = PackUnpackAdmission.getInstance()
-long wire = 17_200_000L
-long reserve = PackUnpackAdmission.estimateReserveBytes(wire, -1L)
-assert reserve == wire * 40L : "expected 40× wire, got ${reserve}"
+admit.setWireMultiplierOverride(30)
+admit.setBudgetOverrideBytes(1800L << 20)
 
-long unknown = PackUnpackAdmission.estimateReserveBytes(0L, -1L)
-assert unknown == 256L * 1024L * 1024L : "default reserve should be 256MiB, got ${unknown}"
+long packA = PackUnpackAdmission.estimateReserveBytes(27_742_491L, 0L)
+long packB = PackUnpackAdmission.estimateReserveBytes(24_062_954L, 0L)
+long packC = PackUnpackAdmission.estimateReserveBytes(17_193_474L, 0L)
+assert packA == 27_742_491L * 30L : "packA reserve ${packA}"
+assert packB == 24_062_954L * 30L : "packB reserve ${packB}"
+assert packA + packB < admit.budgetBytes() : "two largest must fit ${packA + packB} vs ${admit.budgetBytes()}"
+assert packA + packB + packC >= admit.budgetBytes() : "third must wait ${packA + packB + packC} vs ${admit.budgetBytes()}"
 
-println "OK pack-admission reserve wire=${wire} → ${reserve} default=${unknown}"
-println "activeUnpackers=${admit.activeUnpackers()} inFlightBytes=${admit.inFlightBytes()}"
+admit.setDefaultReserveOverrideBytes(null)
+long unknown = admit.defaultReserveBytes()
+assert 2L * unknown < admit.budgetBytes()
+assert 3L * unknown >= admit.budgetBytes()
+
+admit.setBudgetOverrideBytes(null)
+admit.setWireMultiplierOverride(null)
+println "OK pack-admission two-largest=${packA + packB} third=${packA + packB + packC} budget1800=${1800L << 20}"
+println "autoUnknown=${unknown} active=${admit.activeUnpackers()}"
 System.exit(0)

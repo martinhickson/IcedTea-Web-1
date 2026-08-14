@@ -401,6 +401,24 @@ public final class DeploymentConfiguration {
      * a single bar and Downloading/Unpacking label only.
      */
     public static final String KEY_HTTP_DOWNLOAD_PROGRESS_ADVANCED = "deployment.http.downloadProgress.advanced";
+    /**
+     * Integer. Pack200 wire→heap reserve multiplier. Default 30 (measured
+     * 30–34×). Two largest class packs fit an 1800 MiB heap; a third does not.
+     */
+    public static final String KEY_HTTP_PACK200_ADMISSION_WIRE_MULTIPLIER =
+            "deployment.http.pack200.admission.wireMultiplier";
+    /**
+     * Integer 1–100. Pack200 admission budget as a percent of
+     * {@code Runtime.maxMemory()}. Default 100. No absolute MiB ceiling.
+     */
+    public static final String KEY_HTTP_PACK200_ADMISSION_HEAP_PERCENT =
+            "deployment.http.pack200.admission.heapPercent";
+    /**
+     * Integer MiB. Reserve used when pack wire size is unknown. {@code 0}
+     * (default) derives {@code budget/3+1} so two unknowns fit and a third waits.
+     */
+    public static final String KEY_HTTP_PACK200_ADMISSION_DEFAULT_RESERVE_MIB =
+            "deployment.http.pack200.admission.defaultReserveMiB";
 
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     
