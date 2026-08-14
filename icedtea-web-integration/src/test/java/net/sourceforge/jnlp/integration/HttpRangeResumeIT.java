@@ -288,6 +288,81 @@ public class HttpRangeResumeIT {
         assertArrayEquals(fullJar, Files.readAllBytes(replaced));
     }
 
+    /**
+     * With {@code deployment.http.range.resume=false} the client must never send a Range
+     * header, so even a Range-capable server serves a plain 200 full download and the
+     * truncated cache is replaced. Guards the config escape hatch end-to-end.
+     */
+    @Test
+    void rangeDisabledDoesFullGetOnly() throws Exception {
+        writeUserDeploymentProperty("deployment.http.range.resume", "false");
+        mode = RangeMode.HONOR;
+
+        Path marker1 = markerDir.resolve("success1.marker");
+        writeJnlp(marker1);
+        LaunchResult first = launch(marker1);
+        assertTrue(first.success, "initial launch must populate cache:\n" + first.output);
+
+        Path cachedJar = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(cachedJar, "expected cached " + JAR_NAME);
+        int cut = Math.max(8, fullJar.length / 2);
+        truncate(cachedJar, cut);
+
+        resetCaptures();
+        Path marker2 = markerDir.resolve("success2.marker");
+        writeJnlp(marker2);
+        LaunchResult second = launch(marker2);
+
+        assertTrue(second.success, "relaunch must succeed via full GET:\n" + second.output);
+        assertTrue(lastRangeHeader.get() == null,
+                "range resume disabled: client must not send a Range header");
+        assertEquals(0, count206.get(), "no 206 when range resume is disabled");
+        assertTrue(count200.get() >= 1, "disabled resume still full-downloads with 200");
+
+        Path replaced = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(replaced);
+        assertEquals(fullJar.length, Files.size(replaced), "full GET must restore full length");
+        assertArrayEquals(fullJar, Files.readAllBytes(replaced));
+    }
+
+    /**
+     * A 206 whose Content-Range start does not line up with the on-disk prefix must be
+     * rejected by the client and retried as a full GET, so the suffix is never appended at
+     * the wrong offset. The server claims {@code bytes 0-} for a resume from {@code cut}.
+     */
+    @Test
+    void mismatchedContentRangeFallsBackToFullGet() throws Exception {
+        mode = RangeMode.MISMATCH;
+
+        Path marker1 = markerDir.resolve("success1.marker");
+        writeJnlp(marker1);
+        LaunchResult first = launch(marker1);
+        assertTrue(first.success, "initial launch must populate cache:\n" + first.output);
+
+        Path cachedJar = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(cachedJar, "expected cached " + JAR_NAME);
+        int cut = Math.max(8, fullJar.length / 2);
+        truncate(cachedJar, cut);
+
+        resetCaptures();
+        Path marker2 = markerDir.resolve("success2.marker");
+        writeJnlp(marker2);
+        LaunchResult second = launch(marker2);
+
+        assertTrue(second.success, "relaunch must succeed after Content-Range mismatch:\n" + second.output);
+        assertEquals("bytes=" + cut + "-", lastRangeHeader.get(),
+                "client must first attempt the Range resume");
+        assertTrue(count206.get() >= 1, "server serves a 206 (with a mismatched Content-Range)");
+        assertTrue(count200.get() >= 1, "client must fall back to a full 200 GET after the mismatch");
+        assertEquals(0, count416.get(), "no 416 involved in a Content-Range mismatch");
+
+        Path replaced = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(replaced);
+        assertEquals(fullJar.length, Files.size(replaced),
+                "mismatch fallback full GET must restore full length");
+        assertArrayEquals(fullJar, Files.readAllBytes(replaced));
+    }
+
     // ----- helpers -----
 
     private void writeJnlp(Path marker) throws Exception {
@@ -304,6 +379,18 @@ public class HttpRangeResumeIT {
                 + "  <application-desc main-class=\"net.sourceforge.jnlp.integration.HeadlessJnlpMain\"/>\n"
                 + "</jnlp>\n";
         Files.write(webRoot.resolve("range-resume.jnlp"), jnlp.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private void writeUserDeploymentProperty(String key, String value) throws Exception {
+        Path dir = configHome.resolve("icedtea-web");
+        Files.createDirectories(dir);
+        Path file = dir.resolve("deployment.properties");
+        String existing = Files.exists(file) ? new String(Files.readAllBytes(file), StandardCharsets.UTF_8) : "";
+        if (!existing.isEmpty() && !existing.endsWith("\n")) {
+            existing += "\n";
+        }
+        existing += key + "=" + value + "\n";
+        Files.write(file, existing.getBytes(StandardCharsets.UTF_8));
     }
 
     private LaunchResult launch(Path marker) throws Exception {
