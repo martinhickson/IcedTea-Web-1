@@ -31,7 +31,11 @@ public final class ItwLauncherPaths {
 
     private static final String JAVAWS_NAME = "javaws";
     private static final String JAVAWSC_NAME = "javawsc";
+    private static final String POLICYEDITOR_NAME = "policyeditor";
     private static final String JAVAWS_MAIN = JavawsUberLauncher.class.getName();
+    private static final String POLICYEDITOR_MAIN =
+            "net.sourceforge.jnlp.security.policyeditor.PolicyEditor";
+    private static final String SUN_SECURITY_PROVIDER = "sun.security.provider";
 
     private ItwLauncherPaths() {
     }
@@ -72,6 +76,33 @@ public final class ItwLauncherPaths {
             return buildNativeWrapperCommand(vm, appArgs, javaHome);
         }
         return buildJavaCpCommand(vm, appArgs, javaHome);
+    }
+
+    /**
+     * {@code true} when this JVM can load {@code sun.security.provider.PolicyParser}
+     * (JDK 8, or JDK 9+ with {@code --add-exports java.base/sun.security.provider=…}).
+     * Control Panel Simple editor uses this to decide in-process vs a child JVM.
+     */
+    public static boolean canAccessSunSecurityProvider() {
+        if (JavaVersionUtils.getRunningMajorVersion() < 9) {
+            return true;
+        }
+        Module javaBase = Object.class.getModule();
+        return javaBase.isExported(SUN_SECURITY_PROVIDER, ItwLauncherPaths.class.getModule());
+    }
+
+    /**
+     * Command to start PolicyEditor with JPMS exports, so Simple editor works
+     * even when the Control Panel JVM was started without {@code --add-exports}.
+     */
+    public static List<String> buildPolicyEditorLaunchCommand(String filePath) {
+        if (filePath == null || filePath.trim().isEmpty()) {
+            throw new IllegalArgumentException("policy file path is required");
+        }
+        if (isNativeLauncherProcess()) {
+            return buildNativePolicyEditorCommand(filePath.trim());
+        }
+        return buildJavaCpPolicyEditorCommand(filePath.trim(), null);
     }
 
     public static String resolveJavawsBin() {
@@ -176,6 +207,141 @@ public final class ItwLauncherPaths {
         File java = new File(new File(home.trim(), "bin"), name);
         if (java.isFile()) {
             return java;
+        }
+        return null;
+    }
+
+    private static List<String> buildNativePolicyEditorCommand(String filePath) {
+        File policyEditor = resolvePolicyEditorBin();
+        if (policyEditor == null) {
+            throw new IllegalStateException("policyeditor launcher not found next to native ITW wrapper");
+        }
+        List<String> commands = new ArrayList<>();
+        commands.add(policyEditor.getAbsolutePath());
+        commands.add("-file");
+        commands.add(filePath);
+        return commands;
+    }
+
+    private static List<String> buildJavaCpPolicyEditorCommand(String filePath, String javaHome) {
+        File java = resolveJavaExecutable(javaHome);
+        File uberJar = resolveUberJar();
+        if (java == null) {
+            throw new IllegalStateException("java executable not found for PolicyEditor launch");
+        }
+        if (uberJar == null) {
+            throw new IllegalStateException("icedtea-web uber JAR not found for PolicyEditor launch");
+        }
+        List<String> commands = new ArrayList<>();
+        commands.add(java.getAbsolutePath());
+        commands.add("-Xms8m");
+        List<String> modularVmArgs = new ArrayList<>();
+        JavaVersionUtils.addModularJdkCompatibilityArgs(modularVmArgs, javaHome);
+        commands.addAll(modularVmArgs);
+        commands.add("-D" + KEY_BIN_NAME + "=" + POLICYEDITOR_NAME);
+        commands.add("-D" + Launcher.KEY_JAVAWS_LOCATION + "=" + uberJar.getAbsolutePath());
+        commands.add("-cp");
+        commands.add(uberJar.getAbsolutePath());
+        commands.add(POLICYEDITOR_MAIN);
+        commands.add("-file");
+        commands.add(filePath);
+        return commands;
+    }
+
+    static File resolvePolicyEditorBin() {
+        String location = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
+        File fromLocation = resolveSiblingNamed(location, POLICYEDITOR_NAME);
+        if (fromLocation != null) {
+            return fromLocation;
+        }
+        return findNamedOnPath(POLICYEDITOR_NAME);
+    }
+
+    private static File resolveSiblingNamed(String location, String baseName) {
+        File launcher = asExecutableFile(location);
+        if (launcher == null && location != null && location.trim().toLowerCase(Locale.ROOT).endsWith(".cmd")) {
+            File cmd = new File(location.trim());
+            if (cmd.isFile()) {
+                launcher = cmd;
+            }
+        }
+        if (launcher == null) {
+            return null;
+        }
+        if (isLauncherName(launcher.getName(), baseName)) {
+            File windowsNative = preferWindowsNativeNamed(launcher.getParentFile(), baseName);
+            return windowsNative != null ? windowsNative : launcher;
+        }
+        File parent = launcher.getParentFile();
+        if (parent == null) {
+            return null;
+        }
+        File windowsNative = preferWindowsNativeNamed(parent, baseName);
+        if (windowsNative != null) {
+            return windowsNative;
+        }
+        return findNamedInDirectory(parent, baseName);
+    }
+
+    private static boolean isLauncherName(String name, String baseName) {
+        if (name == null) {
+            return false;
+        }
+        return baseName.equals(stripExtension(name.trim().toLowerCase(Locale.ROOT)));
+    }
+
+    private static File preferWindowsNativeNamed(File binDirectory, String baseName) {
+        if (!JNLPRuntime.isWindows() || binDirectory == null) {
+            return null;
+        }
+        File exe = new File(binDirectory, baseName + ".exe");
+        if (asExecutableFile(exe.getPath()) != null) {
+            return exe;
+        }
+        File cmd = new File(binDirectory, baseName + ".cmd");
+        if (cmd.isFile()) {
+            return cmd;
+        }
+        return null;
+    }
+
+    private static File findNamedInDirectory(File binDirectory, String baseName) {
+        File[] candidates = JNLPRuntime.isWindows()
+                ? new File[] {new File(binDirectory, baseName)}
+                : new File[] {new File(binDirectory, baseName), new File(binDirectory, baseName + ".exe")};
+        for (File candidate : candidates) {
+            if (asExecutableFile(candidate.getPath()) != null) {
+                return candidate;
+            }
+        }
+        return null;
+    }
+
+    private static File findNamedOnPath(String baseName) {
+        String path = System.getenv("PATH");
+        if (path == null || path.trim().isEmpty()) {
+            path = System.getenv("Path");
+        }
+        if (path == null || path.trim().isEmpty()) {
+            return null;
+        }
+        String[] names = JNLPRuntime.isWindows()
+                ? new String[] {baseName + ".exe", baseName + ".cmd", baseName}
+                : new String[] {baseName, baseName + ".exe"};
+        for (String dir : path.split(File.pathSeparator)) {
+            if (dir == null || dir.trim().isEmpty()) {
+                continue;
+            }
+            for (String name : names) {
+                File candidate = new File(dir.trim(), name);
+                if (name.endsWith(".cmd") && candidate.isFile()) {
+                    return candidate;
+                }
+                File executable = asExecutableFile(candidate.getPath());
+                if (executable != null) {
+                    return executable;
+                }
+            }
         }
         return null;
     }
