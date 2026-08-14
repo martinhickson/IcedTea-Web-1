@@ -992,7 +992,7 @@ public class JNLPRuntime {
             @Override
             public void run() {
                 markNetxStopped();
-                CacheUtil.cleanCache();
+                CacheUtil.cleanCacheOnShutdown();
             }
         });
     }

@@ -1175,6 +1175,15 @@ public class CacheUtil {
     }
 
     /**
+     * Shutdown sweep: apply {@code delete=true} marks only. Never LRU-evict
+     * and never wipe unmarked siblings in a kept slot (GitHub #16 — a relaunch
+     * parent must not delete the child's Pack200 sidecars).
+     */
+    public static void cleanCacheOnShutdown() {
+        processCacheCleanup(false);
+    }
+
+    /**
      * Removes cache entries marked for deletion always; LRU size enforcement only when allowed.
      */
     private static void processCacheCleanup(boolean enforceLruLimit) {
@@ -1237,17 +1246,9 @@ public class CacheUtil {
 
                 curSize += len;
                 keep.add(path);
-
-                for (File f : file.getParentFile().listFiles()) {
-                    if (!(f.equals(file) || f.equals(pf.getStoreFile()))) {
-                        try {
-                            FileUtils.recursiveDelete(f, f);
-                        } catch (IOException e1) {
-                            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
-                        }
-                    }
-
-                }
+                // Do not delete unmarked siblings in a kept slot. Pack200 sidecars
+                // (*.pack.gz.download.*) live next to the jar during admission wait;
+                // a parent shutdown hook used to treat them as leftover debris.
             }
             lruHandler.store();
         } finally {
