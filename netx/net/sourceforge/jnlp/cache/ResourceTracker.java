@@ -681,6 +681,11 @@ public class ResourceTracker {
         net.sourceforge.jnlp.cache.download.JarGroupState metricsGroup = lastMetricsGroup;
         java.util.List<Resource> needsRestart = new java.util.ArrayList<>();
         if (!canReuseMetricsGroup(resources, metricsGroup)) {
+            // Progress UI calls wait() again after the group is done. Do not
+            // allocate a fresh group and recount every GET as cached.
+            if (isCompletedMetricsGroup(resources, metricsGroup)) {
+                return true;
+            }
             java.util.List<URL> urls = new java.util.ArrayList<>();
             for (Resource r : resources) {
                 urls.add(r.getLocation());
@@ -750,9 +755,30 @@ public class ResourceTracker {
         return true;
     }
 
+    /**
+     * True when {@code group} already finished for exactly these resource URLs.
+     * A second wait() must not rebuild slots and reprint Download stats as cached.
+     */
+    static boolean isCompletedMetricsGroup(Resource[] resources,
+            net.sourceforge.jnlp.cache.download.JarGroupState group) {
+        if (group == null || !group.done().isDone() || group.size() != resources.length) {
+            return false;
+        }
+        for (int i = 0; i < resources.length; i++) {
+            net.sourceforge.jnlp.cache.download.JarSlot slot = group.slot(i);
+            if (slot == null || resources[i].getLocation() == null
+                    || !resources[i].getLocation().equals(slot.location())) {
+                return false;
+            }
+        }
+        return true;
+    }
+
     /** Visible for Groovy probes / unit tests. */
     protected void logDownloadStats() {
-        if (lastMetricsGroup == null) return;
+        if (lastMetricsGroup == null || !lastMetricsGroup.markStatsLogged()) {
+            return;
+        }
         try {
             net.sourceforge.jnlp.cache.download.GroupStats stats = lastMetricsGroup.stats();
             net.sourceforge.jnlp.util.logging.OutputController.getLogger()

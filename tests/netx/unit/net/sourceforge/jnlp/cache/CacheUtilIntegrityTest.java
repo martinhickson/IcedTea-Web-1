@@ -29,7 +29,7 @@ class CacheUtilIntegrityTest {
         writeMinimalJar(jar, "hello.txt", "hello");
         String result = CacheUtil.verifyJarIntegrity(jar);
         assertTrue(result.contains("file has integrity"), result);
-        assertTrue(result.contains("unsigned"), result);
+        assertTrue(result.contains("ZIP OK"), result);
         assertTrue(CacheUtil.isValidJarFile(jar));
     }
 

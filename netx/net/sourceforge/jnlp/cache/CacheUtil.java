@@ -753,8 +753,9 @@ public class CacheUtil {
 
     /**
      * Open the jar with signature/digest verification enabled and drain every entry.
-     * Throws when the ZIP is truncated, digests mismatch, or signatures fail — call this
+     * Throws when the ZIP is truncated or unreadable — call this
      * <em>before</em> marking a download GOOD so corrupt payloads never settle as cached.
+     * Signature/digest trust is {@code JarCertVerifier}'s job (do not verify twice).
      * Does not use {@code JarFileCache} (must not pin a bad file).
      *
      * @return brief result text suitable for logging when verification succeeds
@@ -765,22 +766,15 @@ public class CacheUtil {
         }
         byte[] buffer = new byte[8192];
         int entries = 0;
-        int signedEntries = 0;
-        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(file, true)) {
+        try (java.util.jar.JarFile jar = new java.util.jar.JarFile(file, false)) {
             java.util.Enumeration<java.util.jar.JarEntry> en = jar.entries();
             while (en.hasMoreElements()) {
                 java.util.jar.JarEntry je = en.nextElement();
                 entries++;
                 try (InputStream is = jar.getInputStream(je)) {
                     while (is.read(buffer) != -1) {
-                        // drain — SecurityException if signed entry digests fail
+                        // drain — ZipException if the central directory / payload is truncated
                     }
-                } catch (SecurityException se) {
-                    throw new IOException("JAR signature/digest check failed for entry "
-                            + je.getName() + " in " + file, se);
-                }
-                if (!je.isDirectory() && je.getCodeSigners() != null && je.getCodeSigners().length > 0) {
-                    signedEntries++;
                 }
             }
         } catch (IOException e) {
@@ -788,11 +782,7 @@ public class CacheUtil {
         } catch (RuntimeException e) {
             throw new IOException("JAR integrity check failed for " + file + ": " + e.getMessage(), e);
         }
-        if (signedEntries > 0) {
-            return "signature is good and file has integrity (" + signedEntries + "/" + entries
-                    + " entries signed) path=" + file.getAbsolutePath();
-        }
-        return "file has integrity (unsigned ZIP OK, " + entries + " entries) path="
+        return "file has integrity (ZIP OK, " + entries + " entries) path="
                 + file.getAbsolutePath();
     }
 

@@ -8,11 +8,14 @@ import net.sourceforge.jnlp.security.HttpResponse;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.net.URL;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -27,21 +30,27 @@ import java.util.function.Consumer;
  * Longest-job-first download order for a shared pipe one TCP flow cannot fill.
  * <p>
  * The first real flood (2+ jars) is HEADed 12-wide to learn
- * {@code Content-Length}, then GETs are submitted largest-first. Later
- * single-resource waits must not HEAD again — that stole Apache pool slots
- * from in-flight GETs and logged a bogus “1 at a time” sequence in reverse
- * completion order (smallest of the first wave finish first).
+ * {@code Content-Length}, then GETs run on two reserved lanes: 10 workers
+ * always take the largest remaining, 2 workers always take the smallest
+ * remaining. A finished tiny is replaced by the next-smallest, not a giant.
+ * Later single-resource waits must not HEAD again — that stole Apache pool
+ * slots from in-flight GETs and logged a bogus “1 at a time” sequence.
  */
 public final class SizeFirstDownloadQueue {
 
     private static final long SWEEP_TIMEOUT_MS = 30_000L;
+    static final int LARGE_LANES = 10;
+    static final int SMALL_LANES = 2;
+    private static final Consumer<Resource> DEFAULT_STARTER = SizeFirstDownloadQueue::startDownload;
 
     private static final ConcurrentLinkedQueue<Resource> PENDING = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentHashMap<Resource, URL> HEAD_WINNER = new ConcurrentHashMap<Resource, URL>();
     private static final Object FLUSH_LOCK = new Object();
     private static final AtomicBoolean MAIN_SWEEP_DONE = new AtomicBoolean();
+    private static volatile ExecutorService GET_LANES;
 
     /** Test seam: replace to capture submit order without starting HTTP GETs. */
-    static volatile Consumer<Resource> downloadStarter = SizeFirstDownloadQueue::startDownload;
+    static volatile Consumer<Resource> downloadStarter = DEFAULT_STARTER;
     /** Test seam: replace to inject sizes without a real HEAD. */
     static volatile Consumer<Resource> headProbe = SizeFirstDownloadQueue::headOne;
 
@@ -95,26 +104,22 @@ public final class SizeFirstDownloadQueue {
                             + width + " in flight");
             long t0 = System.currentTimeMillis();
             probeHeads(batch, width);
-            List<Resource> ordered = orderLargestFirst(batch);
+            List<Resource> largestFirst = orderLargestFirst(batch);
             long wall = System.currentTimeMillis() - t0;
             int known = 0;
-            for (Resource r : ordered) {
+            for (Resource r : largestFirst) {
                 if (r.getSize() > 0) {
                     known++;
                 }
             }
+            int smallLanes = smallLaneCount(width);
+            int largeLanes = width - smallLanes;
             log(OutputController.Level.MESSAGE_ALL,
-                    "Size-first HEAD complete: " + known + "/" + ordered.size()
+                    "Size-first HEAD complete: " + known + "/" + largestFirst.size()
                             + " sizes in " + wall + "ms (" + width + " in flight)");
-            logOrderTable(ordered);
+            logLanePlan(largestFirst, largeLanes, smallLanes);
             MAIN_SWEEP_DONE.set(true);
-            for (int i = 0; i < ordered.size(); i++) {
-                Resource r = ordered.get(i);
-                log(OutputController.Level.MESSAGE_DEBUG,
-                        "Size-first GET #" + (i + 1) + "/" + ordered.size()
-                                + " " + formatSize(r.getSize()) + " " + resourceName(r));
-                downloadStarter.accept(r);
-            }
+            startTwoLaneDownloads(largestFirst, largeLanes, smallLanes);
         }
     }
 
@@ -138,6 +143,103 @@ public final class SizeFirstDownloadQueue {
     }
 
     /**
+     * Start order when the 10 large lanes stay busy on giants and the 2 small
+     * lanes immediately refill from the small end (smallest → largest).
+     */
+    static List<Resource> tinyChurnWhileGiantsHeld(List<Resource> batch) {
+        return tinyChurnWhileGiantsHeld(batch, LARGE_LANES, SMALL_LANES);
+    }
+
+    static List<Resource> tinyChurnWhileGiantsHeld(List<Resource> batch, int largeLanes, int smallLanes) {
+        Deque<Resource> dq = new ArrayDeque<Resource>(orderLargestFirst(batch));
+        List<Resource> started = new ArrayList<Resource>();
+        int large = Math.max(0, largeLanes);
+        int small = Math.max(0, smallLanes);
+        for (int i = 0; i < large; i++) {
+            Resource r = dq.pollFirst();
+            if (r == null) {
+                break;
+            }
+            started.add(r);
+        }
+        while (!dq.isEmpty() && small > 0) {
+            for (int i = 0; i < small && !dq.isEmpty(); i++) {
+                started.add(dq.pollLast());
+            }
+        }
+        return started;
+    }
+
+    private static int smallLaneCount(int slots) {
+        int n = Math.max(2, slots);
+        return Math.min(SMALL_LANES, n - 1);
+    }
+
+    private static void startTwoLaneDownloads(List<Resource> largestFirst, int largeLanes, int smallLanes) {
+        if (downloadStarter != DEFAULT_STARTER) {
+            for (Resource r : tinyChurnWhileGiantsHeld(largestFirst, largeLanes, smallLanes)) {
+                downloadStarter.accept(r);
+            }
+            return;
+        }
+        final Deque<Resource> dq = new ArrayDeque<Resource>(largestFirst);
+        ExecutorService lanes = Executors.newFixedThreadPool(largeLanes + smallLanes, new ThreadFactory() {
+            private final AtomicInteger n = new AtomicInteger();
+
+            @Override
+            public Thread newThread(Runnable r) {
+                int i = n.incrementAndGet();
+                String kind = i <= largeLanes ? "large" : "small";
+                Thread t = new Thread(r, "itw-size-first-" + kind + "-" + i);
+                t.setDaemon(true);
+                return t;
+            }
+        });
+        GET_LANES = lanes;
+        for (int i = 0; i < largeLanes; i++) {
+            lanes.execute(new Runnable() {
+                @Override
+                public void run() {
+                    laneLoop(dq, true);
+                }
+            });
+        }
+        for (int i = 0; i < smallLanes; i++) {
+            lanes.execute(new Runnable() {
+                @Override
+                public void run() {
+                    laneLoop(dq, false);
+                }
+            });
+        }
+        lanes.shutdown();
+    }
+
+    private static void laneLoop(Deque<Resource> dq, boolean largeLane) {
+        while (true) {
+            Resource resource;
+            synchronized (dq) {
+                resource = largeLane ? dq.pollFirst() : dq.pollLast();
+                if (resource == null) {
+                    resource = largeLane ? dq.pollLast() : dq.pollFirst();
+                }
+            }
+            if (resource == null) {
+                return;
+            }
+            log(OutputController.Level.MESSAGE_DEBUG,
+                    "Size-first GET " + (largeLane ? "large" : "small") + "-lane "
+                            + formatSize(resource.getSize()) + " " + resourceName(resource));
+            CachedDaemonThreadPoolProvider.noteJarDownloadStarting();
+            new ResourceDownloader(resource, null).run();
+        }
+    }
+
+    static URL headWinner(Resource resource) {
+        return resource == null ? null : HEAD_WINNER.get(resource);
+    }
+
+    /**
      * Known length ranks as itself. Unknown ({@code <= 0}) ranks as
      * {@link Long#MAX_VALUE} so a failed HEAD cannot bury a fat jar at the tail.
      */
@@ -148,9 +250,16 @@ public final class SizeFirstDownloadQueue {
 
     static void resetForTests() {
         PENDING.clear();
+        HEAD_WINNER.clear();
         MAIN_SWEEP_DONE.set(false);
-        downloadStarter = SizeFirstDownloadQueue::startDownload;
+        downloadStarter = DEFAULT_STARTER;
         headProbe = SizeFirstDownloadQueue::headOne;
+        ResourceUrlCreator.resetPackHostForTests();
+        ExecutorService lanes = GET_LANES;
+        GET_LANES = null;
+        if (lanes != null) {
+            lanes.shutdownNow();
+        }
     }
 
     static boolean isEmptyForTests() {
@@ -247,11 +356,19 @@ public final class SizeFirstDownloadQueue {
                                 + " Content-Length=" + contentLength(response)
                                 + " " + url);
                 if (code < 200 || code >= 300) {
+                    ResourceUrlCreator.notePackHost(url, false);
                     continue;
                 }
                 long len = contentLength(response);
                 if (len > 0) {
                     resource.setSize(len);
+                    resource.setDownloadLocation(url);
+                    HEAD_WINNER.put(resource, url);
+                    ResourceUrlCreator.notePackHost(url, url.getPath() != null
+                            && url.getPath().endsWith(".pack.gz"));
+                    log(OutputController.Level.MESSAGE_DEBUG,
+                            "Size-first HEAD winner " + resourceName(resource)
+                                    + " " + formatSize(len) + " " + url);
                     return;
                 }
             } catch (Exception e) {
@@ -301,13 +418,26 @@ public final class SizeFirstDownloadQueue {
         return AdaptiveBackgroundThreads.connectionSlots(n, adaptive);
     }
 
-    private static void logOrderTable(List<Resource> ordered) {
+    private static void logLanePlan(List<Resource> largestFirst, int largeLanes, int smallLanes) {
         StringBuilder table = new StringBuilder();
-        table.append("Size-first GET order (largest first), ").append(ordered.size()).append(" jars:\n");
-        for (int i = 0; i < ordered.size(); i++) {
-            Resource r = ordered.get(i);
+        table.append("Size-first GET lanes: ").append(largeLanes)
+                .append(" largest→smallest + ").append(smallLanes)
+                .append(" smallest→largest (continuous refill), ")
+                .append(largestFirst.size()).append(" jars:\n");
+        int large = Math.min(largeLanes, largestFirst.size());
+        table.append("  large held:\n");
+        for (int i = 0; i < large; i++) {
+            Resource r = largestFirst.get(i);
             table.append(String.format("  %3d  %12s  %s%n",
                     i + 1, formatSize(r.getSize()), resourceName(r)));
+        }
+        table.append("  small refill (smallest first):\n");
+        int n = 0;
+        for (int i = largestFirst.size() - 1; i >= large; i--) {
+            n++;
+            Resource r = largestFirst.get(i);
+            table.append(String.format("  %3d  %12s  %s%n",
+                    n, formatSize(r.getSize()), resourceName(r)));
         }
         log(OutputController.Level.MESSAGE_ALL, table.toString().trim());
     }

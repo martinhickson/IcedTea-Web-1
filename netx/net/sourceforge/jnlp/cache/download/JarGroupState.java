@@ -7,6 +7,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public final class JarGroupState {
@@ -14,6 +15,7 @@ public final class JarGroupState {
     final JarSlot[] jars;
     final ConcurrentHashMap<URL, JarSlot> byUrl;
     final AtomicInteger settledCount = new AtomicInteger();
+    final AtomicBoolean statsLogged = new AtomicBoolean();
     final CompletableFuture<Void> done = new CompletableFuture<>();
     volatile long groupStartMillis;
     volatile long groupEndMillis = -1;
@@ -59,6 +61,11 @@ public final class JarGroupState {
     public GroupStats stats() {
         if (!done.isDone()) throw new IllegalStateException("call after awaitAll()");
         return GroupStats.from(this);
+    }
+
+    /** First caller logs Download stats; later wait() ticks must not reprint. */
+    public boolean markStatsLogged() {
+        return statsLogged.compareAndSet(false, true);
     }
 
     public int settledSoFar() { return settledCount.get(); }

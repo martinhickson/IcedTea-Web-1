@@ -4,6 +4,7 @@ import static org.junit.Assert.assertEquals;
 
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.List;
 
 import net.sourceforge.jnlp.DownloadOptions;
 import net.sourceforge.jnlp.Version;
@@ -142,6 +143,34 @@ public class ResourceUrlCreatorTest extends NoStdOutErrTest{
     public void testUserInfoAndVersioning() throws MalformedURLException {
         URL result = getResultUrl("http://foo:bar@example.com/userInfoAndVersion.jar", VERSION_11, DLOPTS_NOPACK_USEVERSION);
         assertEquals("http://foo:bar@example.com/userInfoAndVersion.jar?version-id=1.1", result.toString());
+    }
+
+    @Test
+    public void getUrlsPutsVersionedJarBeforeQueryAndPlain() throws MalformedURLException {
+        Resource resource = Resource.getResource(new URL("https://example.com/mostLikely.jar"),
+                VERSION_11, null);
+        List<URL> urls = new ResourceUrlCreator(resource, DLOPTS_NOPACK_USEVERSION).getUrls();
+        assertEquals("https://example.com/mostLikely__V1.1.jar", urls.get(0).toString());
+        assertEquals("https://example.com/mostLikely.jar?version-id=1.1", urls.get(1).toString());
+        assertEquals("https://example.com/mostLikely.jar", urls.get(2).toString());
+    }
+
+    @Test
+    public void getUrlsOmitsPackAfterHost404() throws MalformedURLException {
+        ResourceUrlCreator.resetPackHostForTests();
+        try {
+            ResourceUrlCreator.notePackHost(
+                    new URL("https://nopack.example.com/app__V1.1.jar.pack.gz"), false);
+            Resource resource = Resource.getResource(new URL("https://nopack.example.com/app.jar"),
+                    VERSION_11, null);
+            List<URL> urls = new ResourceUrlCreator(resource, new DownloadOptions(true, true)).getUrls();
+            for (URL u : urls) {
+                org.junit.Assert.assertFalse(u.getPath().endsWith(".pack.gz"));
+            }
+            assertEquals("https://nopack.example.com/app__V1.1.jar", urls.get(0).toString());
+        } finally {
+            ResourceUrlCreator.resetPackHostForTests();
+        }
     }
 
     @Test

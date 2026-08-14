@@ -46,6 +46,7 @@ public class ResourceDownloader implements Runnable {
 
     private static final long[] RETRY_DELAYS = {2000L, 3000L, 5000L, 8000L};
     private static final int RETRY_COUNT = 5;
+    private static final int COPY_BUFFER_SIZE_64KB = 65536;
     /**
      * Advertise pack200-gzip content-encoding for HTTP content negotiation.
      * gzip is only added when {@code deployment.http.useGZip} is true (default false).
@@ -314,6 +315,13 @@ public class ResourceDownloader implements Runnable {
 
     private void initializeOnlineResource() {
         try {
+            URL headWinner = SizeFirstDownloadQueue.headWinner(resource);
+            if (headWinner != null) {
+                downloadUrlCandidates = Collections.singletonList(headWinner);
+                resource.setDownloadLocation(headWinner);
+                resource.fireDownloadEvent(); // fire CONNECTED
+                return;
+            }
             // When skipHeadIfNotCached is enabled (default) and the resource is
             // not in cache, skip ALL URL probing (HEAD/GET) via findBestUrl
             // and go straight to download.  Java's HttpURLConnection follows
@@ -321,14 +329,14 @@ public class ResourceDownloader implements Runnable {
             // by skipping the application-level probe.
             if (isSkipHeadIfNotCached() && !isResourceCached()) {
                 // Pre-compute URL candidates for GET-based download (no HEAD probe).
-                // Order: __V<version> variant → ?version-id=<version> → plain URL.
+                // Most likely first (__V, then ?version-id=, then plain). Pack.gz
+                // is omitted once the host has 404'd it.
                 DownloadOptions options = resource.getDownloadOptions();
                 if (options == null) {
                     options = new DownloadOptions(false, false);
                 }
                 downloadUrlCandidates = new ResourceUrlCreator(resource, options).getUrls();
                 resource.setDownloadLocation(downloadUrlCandidates.get(0));
-                resource.setSize(-1);
 
                 resource.fireDownloadEvent(); // fire CONNECTED
                 return;
@@ -613,11 +621,15 @@ public class ResourceDownloader implements Runnable {
                     if (response.getStatusCode() >= 400) {
                         logResourceDebug(downloadTo, "GET returned " + response.getStatusCode()
                                 + " for " + candidate + ", trying next URL candidate");
+                        ResourceUrlCreator.notePackHost(candidate, false);
                         response.close();
                         response = null;
                         continue;
                     }
                     downloadFrom = candidate;
+                    resource.setDownloadLocation(candidate);
+                    ResourceUrlCreator.notePackHost(candidate, candidate.getPath() != null
+                            && candidate.getPath().endsWith(".pack.gz"));
                     break;
                 } catch (IOException e) {
                     lastError = e;
@@ -632,6 +644,12 @@ public class ResourceDownloader implements Runnable {
             }
             if (response == null) {
                 throw lastError != null ? lastError : new IOException("No URL candidates");
+            }
+            // Chunked GETs have no Content-Length; size-first / HEAD already planted
+            // resource.size. Adopt GET length only when size is still unknown.
+            long responseLength = response.getContentLength();
+            if (responseLength > 0 && resource.getSize() <= 0) {
+                resource.setSize(responseLength);
             }
 
             String contentEncoding = response.getContentEncoding();
@@ -679,7 +697,7 @@ public class ResourceDownloader implements Runnable {
         if (slot != null) {
             long end = timing.connectEndMillis > 0 ? timing.connectEndMillis : System.currentTimeMillis();
             long start = timing.connectStartMillis > 0 ? timing.connectStartMillis : end;
-            slot.onConnect(start, end);
+            slot.onConnect(start, end, timing.reused);
         }
         return response;
     }
@@ -689,25 +707,8 @@ public class ResourceDownloader implements Runnable {
         // Keep enqueued until the slot is absorbing. Splash wait() ticks every
         // ~150ms and calls startResource; clearing here (before integrity) let
         // a second GET start for a jar that had just finished writing.
-        // Final gate: jars must pass signature/digest integrity before GOOD.
-        File local = resource.getLocalFile();
-        if (CacheUtil.isJarResourceUrl(resource.getLocation()) && local != null) {
-            try {
-                String result = CacheUtil.verifyJarIntegrity(local);
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
-                        "Download integrity: " + result);
-            } catch (IOException integrityFailed) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
-                        "Download integrity FAILED before settle — not marking success: "
-                                + resource.getLocation() + " (" + integrityFailed.getMessage() + ")");
-                OutputController.getLogger().log(integrityFailed);
-                deleteCorruptLocal(local);
-                resource.setLocalFile(null);
-                settleSlotBad();
-                resource.fireDownloadEvent(); // ERROR
-                return;
-            }
-        }
+        // ZIP structure already ran at write (download) or jarPassesIntegrity
+        // (cache). JarCertVerifier is the single signature/trust pass.
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
@@ -1097,21 +1098,34 @@ public class ResourceDownloader implements Runnable {
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
             throw new IOException("Cannot create cache directory: " + parent);
         }
-        writeCountedStreamToFile(localFile, in);
+        // Raw JAR/GET only. Pack200 sidecars use writeCountedStreamToFile with
+        // expected=-1: resource.size is the unpacked jar, not the .pack.gz wire size.
+        writeCountedStreamToFile(localFile, in, resource, resource.getJarSlot(), resource.getSize());
         return localFile;
     }
 
     /** Copy HTTP bytes to {@code dest} immediately; first/last-byte clocks follow the wire, not unpack. */
     private void writeCountedStreamToFile(File dest, InputStream in) throws IOException {
-        writeCountedStreamToFile(dest, in, resource, resource.getJarSlot());
+        writeCountedStreamToFile(dest, in, resource, resource.getJarSlot(), -1L);
     }
 
     static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
             net.sourceforge.jnlp.cache.download.JarSlot slot) throws IOException {
-        byte buf[] = new byte[8192];
+        writeCountedStreamToFile(dest, in, resource, slot, -1L);
+    }
+
+    static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
+            net.sourceforge.jnlp.cache.download.JarSlot slot, long expected) throws IOException {
+        byte buf[] = new byte[COPY_BUFFER_SIZE_64KB];
         int rlen;
+        long written = 0L;
         try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest))) {
             while (-1 != (rlen = in.read(buf))) {
+                written += rlen;
+                if (expected > 0 && written > expected) {
+                    throw new IOException("Download of " + dest
+                            + " exceeded expected length: got " + written + " of " + expected);
+                }
                 if (resource != null) {
                     resource.incrementTransferred(rlen);
                 }
@@ -1126,6 +1140,10 @@ public class ResourceDownloader implements Runnable {
                 slot.onLastByte(System.currentTimeMillis());
             }
             in.close();
+        }
+        if (expected > 0 && written != expected) {
+            throw new IOException("Download of " + dest
+                    + " was truncated: got " + written + " of " + expected + " bytes");
         }
     }
 

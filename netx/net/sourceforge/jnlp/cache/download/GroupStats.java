@@ -82,10 +82,11 @@ public final class GroupStats {
             long tm = slot.transferMillisForThroughput();
             if (tm > 0) sumTransfer += tm;
             if (s.throughputKBps[i] > 0 && s.throughputKBps[i] < minThr) minThr = s.throughputKBps[i];
-            // Reused keep-alive: connect start→end is near-instant. Do NOT compare against
-            // slot.startMillis (shared group start) — late jars would look like handshakes.
-            if (slot.connectMillis >= 0 && slot.connectStartMillis >= 0
-                    && slot.connectMillis - slot.connectStartMillis <= 1) {
+            // Prefer the HTTP client's keep-alive flag. Instant connect is the
+            // fallback for tests / OracleHttpClient (TTFB is not a handshake).
+            if (slot.connectionReused
+                    || (slot.connectMillis >= 0 && slot.connectStartMillis >= 0
+                    && slot.connectMillis - slot.connectStartMillis <= 1)) {
                 reused++;
             }
         }

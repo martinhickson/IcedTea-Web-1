@@ -7,6 +7,7 @@ import java.net.URL;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLSocket;
 import net.sourceforge.jnlp.cache.AdaptiveBackgroundThreads;
 import net.sourceforge.jnlp.cache.download.ConnectionTiming;
@@ -21,10 +22,14 @@ import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
 import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
+import org.apache.hc.client5.http.protocol.HttpClientContext;
 import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpEntity;
+import org.apache.hc.core5.http.io.entity.EntityUtils;
 import org.apache.hc.core5.http.protocol.HttpContext;
+import org.apache.hc.core5.pool.PoolStats;
+import org.apache.hc.core5.util.TimeValue;
 
 /**
  * Apache HttpClient 5 (httpclient5) implementation of {@link ItwHttpClient} —
@@ -37,6 +42,9 @@ import org.apache.hc.core5.http.protocol.HttpContext;
 public final class ApacheHttpClient implements ItwHttpClient {
 
     private final CloseableHttpClient client;
+    private final PoolingHttpClientConnectionManager pool;
+    private final int perRoute;
+    private final AtomicBoolean loggedCapacity = new AtomicBoolean();
 
     public ApacheHttpClient() {
         // Wrap the ITW factory so probe/full cipher selection applies to every
@@ -81,9 +89,13 @@ public final class ApacheHttpClient implements ItwHttpClient {
         // "Unsupported Content-Encoding: pack200-gzip", which made ResourceDownloader
         // log "GET failed" and skip the only working artifact. ITW unpacks
         // pack200-gzip itself in ResourceDownloader.
+        this.pool = pool;
+        this.perRoute = perRoute;
         this.client = HttpClients.custom()
                 .setConnectionManager(pool)
                 .setDefaultRequestConfig(requestConfig)
+                .evictExpiredConnections()
+                .evictIdleConnections(TimeValue.ofSeconds(30))
                 .disableContentCompression()
                 .build();
     }
@@ -140,13 +152,18 @@ public final class ApacheHttpClient implements ItwHttpClient {
         }
         ClassicHttpResponse response = null;
         IOException last = null;
+        boolean reused = false;
         // Cipher-offer short-circuit only: a probe miss tries the next stage
         // on this same request. Not an IO/download retry budget.
         while (true) {
             int stageAtStart = ItwTls.effectiveOffer(url.getHost());
             try {
-                response = client.execute(newRequest(uri, method, requestHeaders));
+                PoolStats before = pool.getTotalStats();
+                HttpClientContext context = HttpClientContext.create();
+                response = client.execute(newRequest(uri, method, requestHeaders), context);
+                reused = before.getAvailable() > 0;
                 last = null;
+                logPoolAdmission(method);
                 break;
             } catch (IOException e) {
                 last = e;
@@ -160,8 +177,29 @@ public final class ApacheHttpClient implements ItwHttpClient {
         }
         if (timing != null) {
             timing.connectEndMillis = System.currentTimeMillis();
+            timing.reused = reused;
         }
         return new ApacheResponse(url, response);
+    }
+
+    private void logPoolAdmission(String method) {
+        try {
+            PoolStats stats = pool.getTotalStats();
+            if (stats.getLeased() >= perRoute && loggedCapacity.compareAndSet(false, true)) {
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                        "HTTP pool at capacity leased=" + stats.getLeased()
+                                + "/" + perRoute + " available=" + stats.getAvailable()
+                                + " pending=" + stats.getPending()
+                                + " (" + method + ")");
+            } else {
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                        "HTTP pool leased=" + stats.getLeased()
+                                + "/" + perRoute + " available=" + stats.getAvailable()
+                                + " pending=" + stats.getPending()
+                                + " (" + method + ")");
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private static HttpUriRequestBase newRequest(URI uri, String method, Map<String, String> requestHeaders) {
@@ -175,6 +213,9 @@ public final class ApacheHttpClient implements ItwHttpClient {
             for (Map.Entry<String, String> h : requestHeaders.entrySet()) {
                 request.addHeader(h.getKey(), h.getValue());
             }
+        }
+        if (request.getFirstHeader("Connection") == null) {
+            request.addHeader("Connection", "keep-alive");
         }
         return request;
     }
@@ -267,8 +308,9 @@ public final class ApacheHttpClient implements ItwHttpClient {
             if (!closed) {
                 closed = true;
                 try {
+                    EntityUtils.consumeQuietly(response.getEntity());
                     response.close();
-                } catch (IOException e) {
+                } catch (Exception e) {
                     // release best-effort
                 }
             }
