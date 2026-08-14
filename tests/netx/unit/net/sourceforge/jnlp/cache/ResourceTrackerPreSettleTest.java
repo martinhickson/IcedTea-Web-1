@@ -145,6 +145,18 @@ public class ResourceTrackerPreSettleTest {
     }
 
     @Test
+    public void isCompletedMetricsGroupAcceptsFinishedSameUrls() throws Exception {
+        URL u = url("http://localhost/completed-metrics-" + System.nanoTime() + ".jar");
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        JarGroupState group = JarGroupState.forJars(Arrays.asList(u));
+        r.setJarSlot(group.slot(0));
+        assertTrue(group.slot(0).settleGood(System.currentTimeMillis(), false));
+        assertTrue(group.done().isDone());
+        assertTrue(ResourceTracker.isCompletedMetricsGroup(new Resource[]{r}, group));
+        assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{r}, group));
+    }
+
+    @Test
     public void canReuseMetricsGroupRejectsCompletedGroup() throws Exception {
         URL u = url("http://localhost/done.jar");
         Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);

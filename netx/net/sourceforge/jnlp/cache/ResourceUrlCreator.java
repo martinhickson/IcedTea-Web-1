@@ -41,6 +41,7 @@ import java.net.URL;
 import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 import net.sourceforge.jnlp.DownloadOptions;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
@@ -52,9 +53,44 @@ public class ResourceUrlCreator {
     protected final Resource resource;
     protected final DownloadOptions downloadOptions;
 
+    /**
+     * Hosts that 404 every {@code .pack.gz} stay unmarked so later HEADs/GETs
+     * try {@code __V} first. A 200 on pack.gz pins the host as packed.
+     */
+    private static final ConcurrentHashMap<String, Boolean> PACK_HOST = new ConcurrentHashMap<String, Boolean>();
+
     public ResourceUrlCreator(Resource resource, DownloadOptions downloadOptions) {
         this.resource = resource;
         this.downloadOptions = downloadOptions;
+    }
+
+    static boolean shouldOfferPack(URL location, DownloadOptions options) {
+        if (options == null || !options.useExplicitPack()) {
+            return false;
+        }
+        if (location == null || location.getHost() == null || location.getHost().isEmpty()) {
+            return true;
+        }
+        return !Boolean.FALSE.equals(PACK_HOST.get(location.getHost()));
+    }
+
+    static void notePackHost(URL url, boolean success) {
+        if (url == null || url.getHost() == null || url.getHost().isEmpty()) {
+            return;
+        }
+        String path = url.getPath();
+        if (path == null || !path.endsWith(".pack.gz")) {
+            return;
+        }
+        if (success) {
+            PACK_HOST.put(url.getHost(), Boolean.TRUE);
+        } else {
+            PACK_HOST.putIfAbsent(url.getHost(), Boolean.FALSE);
+        }
+    }
+
+    static void resetPackHostForTests() {
+        PACK_HOST.clear();
     }
 
     /**
@@ -67,8 +103,10 @@ public class ResourceUrlCreator {
     public List<URL> getUrls() {
         List<URL> urls = new LinkedList<>();
         URL url;
+        boolean pack = shouldOfferPack(resource.getLocation(), downloadOptions);
+        boolean version = downloadOptions.useExplicitVersion();
 
-        if (downloadOptions.useExplicitPack() && downloadOptions.useExplicitVersion()) {
+        if (pack && version) {
             url = getUrl(resource, true, true);
             if (url != null) {
                 urls.add(url);
@@ -81,12 +119,12 @@ public class ResourceUrlCreator {
             if (url != null) {
                 urls.add(url);
             }
-        } else if (downloadOptions.useExplicitPack()) {
+        } else if (pack) {
             url = getUrl(resource, true, false);
             if (url != null) {
                 urls.add(url);
             }
-        } else if (downloadOptions.useExplicitVersion()) {
+        } else if (version) {
             url = getUrl(resource, false, true);
             if (url != null) {
                 urls.add(url);

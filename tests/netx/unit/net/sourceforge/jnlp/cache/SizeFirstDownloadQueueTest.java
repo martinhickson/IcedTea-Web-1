@@ -56,6 +56,23 @@ public class SizeFirstDownloadQueueTest {
     }
 
     @Test
+    public void weavesTenLargestThenTwoSmallest() throws Exception {
+        List<Resource> batch = new ArrayList<Resource>();
+        for (int i = 1; i <= 14; i++) {
+            batch.add(resource("j" + i + ".jar", i * 1000L));
+        }
+        List<Resource> ordered = SizeFirstDownloadQueue.orderLargestWithSmallTail(batch);
+        assertEquals(14, ordered.size());
+        for (int i = 0; i < 10; i++) {
+            assertEquals((14 - i) * 1000L, ordered.get(i).getSize(), "first 10 must be largest");
+        }
+        assertEquals(1000L, ordered.get(10).getSize(), "slot 11 is smallest");
+        assertEquals(2000L, ordered.get(11).getSize(), "slot 12 is second-smallest");
+        assertEquals(4000L, ordered.get(12).getSize());
+        assertEquals(3000L, ordered.get(13).getSize());
+    }
+
+    @Test
     public void flushHeadsThenSubmitsLargestFirst() throws Exception {
         Resource tiny = resource("tiny.jar", -1);
         Resource huge = resource("huge.jar", -1);

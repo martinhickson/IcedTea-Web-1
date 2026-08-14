@@ -315,6 +315,13 @@ public class ResourceDownloader implements Runnable {
 
     private void initializeOnlineResource() {
         try {
+            URL headWinner = SizeFirstDownloadQueue.headWinner(resource);
+            if (headWinner != null) {
+                downloadUrlCandidates = Collections.singletonList(headWinner);
+                resource.setDownloadLocation(headWinner);
+                resource.fireDownloadEvent(); // fire CONNECTED
+                return;
+            }
             // When skipHeadIfNotCached is enabled (default) and the resource is
             // not in cache, skip ALL URL probing (HEAD/GET) via findBestUrl
             // and go straight to download.  Java's HttpURLConnection follows
@@ -322,14 +329,14 @@ public class ResourceDownloader implements Runnable {
             // by skipping the application-level probe.
             if (isSkipHeadIfNotCached() && !isResourceCached()) {
                 // Pre-compute URL candidates for GET-based download (no HEAD probe).
-                // Order: __V<version> variant → ?version-id=<version> → plain URL.
+                // Most likely first (__V, then ?version-id=, then plain). Pack.gz
+                // is omitted once the host has 404'd it.
                 DownloadOptions options = resource.getDownloadOptions();
                 if (options == null) {
                     options = new DownloadOptions(false, false);
                 }
                 downloadUrlCandidates = new ResourceUrlCreator(resource, options).getUrls();
                 resource.setDownloadLocation(downloadUrlCandidates.get(0));
-                resource.setSize(-1);
 
                 resource.fireDownloadEvent(); // fire CONNECTED
                 return;
@@ -614,11 +621,15 @@ public class ResourceDownloader implements Runnable {
                     if (response.getStatusCode() >= 400) {
                         logResourceDebug(downloadTo, "GET returned " + response.getStatusCode()
                                 + " for " + candidate + ", trying next URL candidate");
+                        ResourceUrlCreator.notePackHost(candidate, false);
                         response.close();
                         response = null;
                         continue;
                     }
                     downloadFrom = candidate;
+                    resource.setDownloadLocation(candidate);
+                    ResourceUrlCreator.notePackHost(candidate, candidate.getPath() != null
+                            && candidate.getPath().endsWith(".pack.gz"));
                     break;
                 } catch (IOException e) {
                     lastError = e;
@@ -686,7 +697,7 @@ public class ResourceDownloader implements Runnable {
         if (slot != null) {
             long end = timing.connectEndMillis > 0 ? timing.connectEndMillis : System.currentTimeMillis();
             long start = timing.connectStartMillis > 0 ? timing.connectStartMillis : end;
-            slot.onConnect(start, end);
+            slot.onConnect(start, end, timing.reused);
         }
         return response;
     }
@@ -696,25 +707,8 @@ public class ResourceDownloader implements Runnable {
         // Keep enqueued until the slot is absorbing. Splash wait() ticks every
         // ~150ms and calls startResource; clearing here (before integrity) let
         // a second GET start for a jar that had just finished writing.
-        // Final gate: jars must pass signature/digest integrity before GOOD.
-        File local = resource.getLocalFile();
-        if (CacheUtil.isJarResourceUrl(resource.getLocation()) && local != null) {
-            try {
-                String result = CacheUtil.verifyJarIntegrity(local);
-                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
-                        "Download integrity: " + result);
-            } catch (IOException integrityFailed) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
-                        "Download integrity FAILED before settle — not marking success: "
-                                + resource.getLocation() + " (" + integrityFailed.getMessage() + ")");
-                OutputController.getLogger().log(integrityFailed);
-                deleteCorruptLocal(local);
-                resource.setLocalFile(null);
-                settleSlotBad();
-                resource.fireDownloadEvent(); // ERROR
-                return;
-            }
-        }
+        // ZIP structure already ran at write (download) or jarPassesIntegrity
+        // (cache). JarCertVerifier is the single signature/trust pass.
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);

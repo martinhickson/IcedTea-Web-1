@@ -13,6 +13,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
@@ -27,16 +28,20 @@ import java.util.function.Consumer;
  * Longest-job-first download order for a shared pipe one TCP flow cannot fill.
  * <p>
  * The first real flood (2+ jars) is HEADed 12-wide to learn
- * {@code Content-Length}, then GETs are submitted largest-first. Later
- * single-resource waits must not HEAD again — that stole Apache pool slots
- * from in-flight GETs and logged a bogus “1 at a time” sequence in reverse
- * completion order (smallest of the first wave finish first).
+ * {@code Content-Length}, then GETs are submitted in waves of 10 largest
+ * plus 2 smallest so tiny jars finish (and settle) while giants still
+ * transfer. Later single-resource waits must not HEAD again — that stole
+ * Apache pool slots from in-flight GETs and logged a bogus “1 at a time”
+ * sequence in reverse completion order (smallest of the first wave finish first).
  */
 public final class SizeFirstDownloadQueue {
 
     private static final long SWEEP_TIMEOUT_MS = 30_000L;
+    static final int LARGE_PER_WAVE = 10;
+    static final int SMALL_PER_WAVE = 2;
 
     private static final ConcurrentLinkedQueue<Resource> PENDING = new ConcurrentLinkedQueue<>();
+    private static final ConcurrentHashMap<Resource, URL> HEAD_WINNER = new ConcurrentHashMap<Resource, URL>();
     private static final Object FLUSH_LOCK = new Object();
     private static final AtomicBoolean MAIN_SWEEP_DONE = new AtomicBoolean();
 
@@ -95,7 +100,7 @@ public final class SizeFirstDownloadQueue {
                             + width + " in flight");
             long t0 = System.currentTimeMillis();
             probeHeads(batch, width);
-            List<Resource> ordered = orderLargestFirst(batch);
+            List<Resource> ordered = orderLargestWithSmallTail(batch);
             long wall = System.currentTimeMillis() - t0;
             int known = 0;
             for (Resource r : ordered) {
@@ -138,6 +143,37 @@ public final class SizeFirstDownloadQueue {
     }
 
     /**
+     * Largest-first, then weave: each wave takes {@value #LARGE_PER_WAVE} from
+     * the large end and {@value #SMALL_PER_WAVE} from the small end so the
+     * first 12 pool slots are 10 giants + 2 tiny jars.
+     */
+    static List<Resource> orderLargestWithSmallTail(List<Resource> batch) {
+        return weaveLargeAndSmall(orderLargestFirst(batch), LARGE_PER_WAVE, SMALL_PER_WAVE);
+    }
+
+    static List<Resource> weaveLargeAndSmall(List<Resource> largestFirst, int largePerWave, int smallPerWave) {
+        List<Resource> src = new ArrayList<Resource>(largestFirst);
+        List<Resource> out = new ArrayList<Resource>(src.size());
+        int large = Math.max(0, largePerWave);
+        int small = Math.max(0, smallPerWave);
+        while (!src.isEmpty()) {
+            int takeLarge = Math.min(large, src.size());
+            for (int i = 0; i < takeLarge; i++) {
+                out.add(src.remove(0));
+            }
+            int takeSmall = Math.min(small, src.size());
+            for (int i = 0; i < takeSmall; i++) {
+                out.add(src.remove(src.size() - 1));
+            }
+        }
+        return out;
+    }
+
+    static URL headWinner(Resource resource) {
+        return resource == null ? null : HEAD_WINNER.get(resource);
+    }
+
+    /**
      * Known length ranks as itself. Unknown ({@code <= 0}) ranks as
      * {@link Long#MAX_VALUE} so a failed HEAD cannot bury a fat jar at the tail.
      */
@@ -148,9 +184,11 @@ public final class SizeFirstDownloadQueue {
 
     static void resetForTests() {
         PENDING.clear();
+        HEAD_WINNER.clear();
         MAIN_SWEEP_DONE.set(false);
         downloadStarter = SizeFirstDownloadQueue::startDownload;
         headProbe = SizeFirstDownloadQueue::headOne;
+        ResourceUrlCreator.resetPackHostForTests();
     }
 
     static boolean isEmptyForTests() {
@@ -247,11 +285,19 @@ public final class SizeFirstDownloadQueue {
                                 + " Content-Length=" + contentLength(response)
                                 + " " + url);
                 if (code < 200 || code >= 300) {
+                    ResourceUrlCreator.notePackHost(url, false);
                     continue;
                 }
                 long len = contentLength(response);
                 if (len > 0) {
                     resource.setSize(len);
+                    resource.setDownloadLocation(url);
+                    HEAD_WINNER.put(resource, url);
+                    ResourceUrlCreator.notePackHost(url, url.getPath() != null
+                            && url.getPath().endsWith(".pack.gz"));
+                    log(OutputController.Level.MESSAGE_DEBUG,
+                            "Size-first HEAD winner " + resourceName(resource)
+                                    + " " + formatSize(len) + " " + url);
                     return;
                 }
             } catch (Exception e) {
@@ -303,7 +349,8 @@ public final class SizeFirstDownloadQueue {
 
     private static void logOrderTable(List<Resource> ordered) {
         StringBuilder table = new StringBuilder();
-        table.append("Size-first GET order (largest first), ").append(ordered.size()).append(" jars:\n");
+        table.append("Size-first GET order (10 largest + 2 smallest per wave), ")
+                .append(ordered.size()).append(" jars:\n");
         for (int i = 0; i < ordered.size(); i++) {
             Resource r = ordered.get(i);
             table.append(String.format("  %3d  %12s  %s%n",

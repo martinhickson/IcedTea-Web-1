@@ -22,6 +22,8 @@ public final class JarSlot {
     volatile long connectStartMillis = -1;
     /** Wall clock when HTTP connect finished ({@code -1} if unknown). */
     volatile long connectMillis = -1;
+    /** True when the HTTP client reused a keep-alive connection for this GET. */
+    volatile boolean connectionReused;
     volatile long firstByteMillis = -1;
     volatile long lastByteMillis  = -1;
     volatile long endMillis       = -1;
@@ -53,8 +55,13 @@ public final class JarSlot {
     }
 
     public void onConnect(long connectStart, long connectEnd) {
+        onConnect(connectStart, connectEnd, connectEnd - connectStart <= 1);
+    }
+
+    public void onConnect(long connectStart, long connectEnd, boolean reused) {
         this.connectStartMillis = connectStart;
         this.connectMillis = connectEnd;
+        this.connectionReused = reused;
     }
 
     public void onFirstByte(long now) {

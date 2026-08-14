@@ -7,4 +7,6 @@ public final class ConnectionTiming {
     public long contentLength      = -1;
     public String  contentEncoding = null;
     public long lastModified        = -1;
+    /** True when HC5 leased an idle pooled connection instead of a new TCP/TLS handshake. */
+    public boolean reused;
 }

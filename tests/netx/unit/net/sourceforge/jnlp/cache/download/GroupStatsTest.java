@@ -109,6 +109,21 @@ public class GroupStatsTest {
     }
 
     @Test
+    public void clientReusedFlagCountsEvenWhenConnectIncludesTtfb() {
+        JarGroupState g = JarGroupState.forJars(Arrays.asList(url("http://localhost/keep-alive.jar")));
+        JarSlot slot = g.slot(0);
+        long t = slot.startMillis + 1_000;
+        slot.onConnect(t, t + 80, true); // 80ms TTFB on a reused socket
+        slot.onFirstByte(t + 80);
+        slot.onLastByte(t + 200);
+        slot.addTransferred(1024);
+        assertTrue(slot.settleGood(t + 220, false));
+        GroupStats s = g.stats();
+        assertEquals(1, s.reusedConnections);
+        assertEquals(0, s.handshakes);
+    }
+
+    @Test
     public void emptyDownloadSetLeavesMeansNegative() {
         JarGroupState g = JarGroupState.forJars(Arrays.asList(url("http://localhost/a.jar")));
         assertTrue(g.slot(0).settleGood(g.slot(0).startMillis + 1, true));

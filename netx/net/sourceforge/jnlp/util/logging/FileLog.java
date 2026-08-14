@@ -50,7 +50,7 @@ import net.sourceforge.jnlp.util.logging.headers.Header;
 public final class FileLog  {
 
     public static Header getHeadlineHeader() {
-        return new Header(OutputController.Level.WARNING_ALL, Thread.currentThread().getStackTrace(), Thread.currentThread(), false);
+        return new Header(OutputController.Level.MESSAGE_ALL, Thread.currentThread().getStackTrace(), Thread.currentThread(), false);
     }
 
     private static String getColon() {
