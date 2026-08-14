@@ -46,6 +46,7 @@ public class ResourceDownloader implements Runnable {
 
     private static final long[] RETRY_DELAYS = {2000L, 3000L, 5000L, 8000L};
     private static final int RETRY_COUNT = 5;
+    private static final int COPY_BUFFER_SIZE_64KB = 65536;
     /**
      * Advertise pack200-gzip content-encoding for HTTP content negotiation.
      * gzip is only added when {@code deployment.http.useGZip} is true (default false).
@@ -633,6 +634,12 @@ public class ResourceDownloader implements Runnable {
             if (response == null) {
                 throw lastError != null ? lastError : new IOException("No URL candidates");
             }
+            // Chunked GETs have no Content-Length; size-first / HEAD already planted
+            // resource.size. Adopt GET length only when size is still unknown.
+            long responseLength = response.getContentLength();
+            if (responseLength > 0 && resource.getSize() <= 0) {
+                resource.setSize(responseLength);
+            }
 
             String contentEncoding = response.getContentEncoding();
 
@@ -1097,21 +1104,34 @@ public class ResourceDownloader implements Runnable {
         if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
             throw new IOException("Cannot create cache directory: " + parent);
         }
-        writeCountedStreamToFile(localFile, in);
+        // Raw JAR/GET only. Pack200 sidecars use writeCountedStreamToFile with
+        // expected=-1: resource.size is the unpacked jar, not the .pack.gz wire size.
+        writeCountedStreamToFile(localFile, in, resource, resource.getJarSlot(), resource.getSize());
         return localFile;
     }
 
     /** Copy HTTP bytes to {@code dest} immediately; first/last-byte clocks follow the wire, not unpack. */
     private void writeCountedStreamToFile(File dest, InputStream in) throws IOException {
-        writeCountedStreamToFile(dest, in, resource, resource.getJarSlot());
+        writeCountedStreamToFile(dest, in, resource, resource.getJarSlot(), -1L);
     }
 
     static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
             net.sourceforge.jnlp.cache.download.JarSlot slot) throws IOException {
-        byte buf[] = new byte[8192];
+        writeCountedStreamToFile(dest, in, resource, slot, -1L);
+    }
+
+    static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
+            net.sourceforge.jnlp.cache.download.JarSlot slot, long expected) throws IOException {
+        byte buf[] = new byte[COPY_BUFFER_SIZE_64KB];
         int rlen;
+        long written = 0L;
         try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest))) {
             while (-1 != (rlen = in.read(buf))) {
+                written += rlen;
+                if (expected > 0 && written > expected) {
+                    throw new IOException("Download of " + dest
+                            + " exceeded expected length: got " + written + " of " + expected);
+                }
                 if (resource != null) {
                     resource.incrementTransferred(rlen);
                 }
@@ -1126,6 +1146,10 @@ public class ResourceDownloader implements Runnable {
                 slot.onLastByte(System.currentTimeMillis());
             }
             in.close();
+        }
+        if (expected > 0 && written != expected) {
+            throw new IOException("Download of " + dest
+                    + " was truncated: got " + written + " of " + expected + " bytes");
         }
     }
 
