@@ -102,12 +102,12 @@ public class CorruptJarDownloadRecoveryIT {
         Path cachedJar = findCachedJar(cacheHome, "headless-app.jar");
         assertTrue(cachedJar != null && Files.isRegularFile(cachedJar),
                 "expected cached headless-app.jar under " + cacheHome);
-        Path info = cachedJar.resolveSibling(cachedJar.getFileName().toString() + ".info");
-        assertTrue(Files.isRegularFile(info), "missing cache .info for " + cachedJar);
+        assertFalse(Files.isRegularFile(cachedJar.resolveSibling(
+                cachedJar.getFileName().toString() + ".info")));
 
         // Production sticky state: version-miss text + last-modified=0 + matching content-length.
         Files.write(cachedJar, VERSION_MISS);
-        Files.write(info, buildPoisonInfo(VERSION_MISS.length).getBytes(StandardCharsets.ISO_8859_1));
+        poisonCatalogRow(cachedJar, VERSION_MISS.length);
         assertFalse(isZipMagic(cachedJar), "precondition: cache is poisoned");
 
         int hitsAfterPoison = jarHits.get();
@@ -180,13 +180,25 @@ public class CorruptJarDownloadRecoveryIT {
         return new LaunchResult(ok, output);
     }
 
-    private static String buildPoisonInfo(int length) {
-        return "#automatically generated - do not edit\n"
-                + "#Wed Jul 22 11:31:24 NZST 2026\n"
-                + "content-length=" + length + "\n"
-                + "last-modified=0\n"
-                + "last-updated=" + System.currentTimeMillis() + "\n"
-                + "jnlp-path=sticky-poison.jnlp\n";
+    private void poisonCatalogRow(Path cachedJar, int length) {
+        Path itwCache = cacheHome.resolve("icedtea-web").resolve("cache");
+        String previous = net.sourceforge.jnlp.config.PathsAndFiles.CACHE_DIR.getFullPath();
+        net.sourceforge.jnlp.config.PathsAndFiles.CACHE_DIR.setValue(itwCache.toAbsolutePath().toString());
+        try {
+            net.sourceforge.jnlp.cache.CacheLRUWrapper lru =
+                    net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance();
+            net.sourceforge.jnlp.cache.CacheEntryMeta meta = lru.getMetaByPath(cachedJar.toAbsolutePath().toString());
+            if (meta == null) {
+                meta = new net.sourceforge.jnlp.cache.CacheEntryMeta();
+                meta.path = cachedJar.toAbsolutePath().toString();
+            }
+            meta.contentLength = (long) length;
+            meta.lastModified = 0L;
+            meta.lastUpdated = System.currentTimeMillis();
+            lru.putMeta(meta);
+        } finally {
+            net.sourceforge.jnlp.config.PathsAndFiles.CACHE_DIR.setValue(previous);
+        }
     }
 
     private static Path findCachedJar(Path cacheHome, String jarName) throws Exception {

@@ -362,9 +362,11 @@ public final class DeploymentConfiguration {
     public static final String KEY_ENABLE_CACHE_FSYNC = "deployment.enable.cache.fsync";
 
     /**
-     * When true, cache jars and the LRU catalog live under {@code {cachedir}/db/}
-     * using SQLite ({@code cache_catalog.sqlite}). Legacy {@code recently_used}
-     * under {@code {cachedir}/} is ignored. When false, use the properties index.
+     * When true, cache jars and the LRU catalog live under {@code {cachedir}/cache/db/}
+     * using SQLite ({@code cache_catalog.sqlite}), or {@code {cachedir}/db/} when
+     * {@code cachedir} already ends with the path segment {@code cache}.
+     * Legacy {@code recently_used} under {@code {cachedir}/} is ignored.
+     * When false, use the properties index.
      */
     public static final String KEY_CACHE_CATALOG_SQLITE = "deployment.cache.catalog.sqlite";
     public static final String KEY_BACKGROUND_THREADS_COUNT = "deployment.background.threads.count";

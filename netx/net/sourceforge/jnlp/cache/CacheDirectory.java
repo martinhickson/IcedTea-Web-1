@@ -38,6 +38,7 @@ package net.sourceforge.jnlp.cache;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Date;
 
 import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -47,39 +48,77 @@ public final class CacheDirectory {
     /* Don't allow instantiation of this class */
     private CacheDirectory(){}
     
+    /**
+     * Legacy suffix. Do not create new {@code .info} sidecars — entry metadata
+     * belongs on the cache catalog row.
+     */
     public static final String INFO_SUFFIX = ".info";
 
     /**
-     * Get the structure of directory for keeping track of the protocol and
-     * domain.
-     * 
-     * @param root Location of cache directory.
+     * Refuse to write a per-jar metadata sidecar. Callers that still try are
+     * wrong: use {@link CacheLRUWrapper#putMeta(CacheEntryMeta)}.
      */
-    public static void getDirStructure(DirectoryNode root) {
-        for (File f : root.getFile().listFiles()) {
-            DirectoryNode node = new DirectoryNode(f.getName(), f, root);
-            if (f.isDirectory() || (!f.isDirectory() && !f.getName().endsWith(INFO_SUFFIX)))
-                root.addChild(node);
-            if (f.isDirectory())
-                getDirStructure(node);
-        }
+    public static void rejectInfoSidecar(File sidecar) {
+        OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                "Refusing cache metadata file (use the catalog): " + sidecar);
     }
 
     /**
-     * Get all the leaf nodes.
-     * 
-     * @param root The point where we want to start getting the leafs.
-     * @return An ArrayList of DirectoryNode.
+     * Cache-viewer rows from the catalog. Does not walk the cache tree or
+     * read sidecar {@code .info} files.
      */
-    public static ArrayList<DirectoryNode> getLeafData(DirectoryNode root) {
-        ArrayList<DirectoryNode> temp = new ArrayList<>();
-        for (DirectoryNode f : root.getChildren()) {
-            if (f.isDir())
-                temp.addAll(getLeafData(f));
-            else if (!f.getName().endsWith(INFO_SUFFIX))
-                temp.add(f);
+    public static ArrayList<Object[]> listViewerRows() {
+        ArrayList<Object[]> data = new ArrayList<>();
+        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+        synchronized (lru) {
+            lru.lock();
+            try {
+                lru.load();
+                for (CacheEntryMeta row : lru.listAllMeta()) {
+                    if (row == null || row.path == null || row.path.isEmpty()) {
+                        continue;
+                    }
+                    File f = new File(row.path);
+                    String rel = row.resourceUrl;
+                    if (rel == null || rel.isEmpty()) {
+                        rel = CacheUtil.pathToURLPath(row.path, lru.getCacheDir().getFullPath());
+                    }
+                    String type = CacheUtil.protocolFromCacheRelativePath(rel);
+                    String domain = CacheUtil.hostFromCacheRelativePath(rel);
+                    long size = f.isFile() ? f.length()
+                            : (row.contentLength == null ? 0L : row.contentLength.longValue());
+                    Date modified = f.isFile() ? new Date(f.lastModified())
+                            : new Date(row.lastModified == null ? 0L : row.lastModified.longValue());
+                    DirectoryNode leaf = new DirectoryNode(f.getName(), f, null, row);
+                    data.add(new Object[] {
+                        leaf,
+                        f.getParentFile(),
+                        type == null ? "" : type,
+                        domain == null ? "" : domain,
+                        Long.valueOf(size),
+                        modified,
+                        row.jnlpPath
+                    });
+                }
+            } finally {
+                lru.unlock();
+            }
         }
-        return temp;
+        return data;
+    }
+
+    /** Catalog, JNI extract, leftover sidecars — not cache resources. */
+    static boolean isCacheInfrastructure(File f) {
+        if (f == null) {
+            return true;
+        }
+        String n = f.getName();
+        if (n.endsWith(INFO_SUFFIX) || "native".equals(n)
+                || n.equals(SqliteCacheCatalog.FAILED_MARKER)
+                || n.startsWith(SqliteCacheCatalog.DB_FILE_NAME)) {
+            return true;
+        }
+        return false;
     }
 
     /**
@@ -109,13 +148,44 @@ public final class CacheDirectory {
      * @param fileNode node of file which parent is going to be cleaned
      */
     public static void cleanParent(DirectoryNode fileNode) {
-        DirectoryNode parent = fileNode.getParent();
-        if (parent.getParent() == null)
-            return; // Don't delete the root.
-        if (parent.getChildren().isEmpty()) {
-            FileUtils.deleteWithErrMesg(parent.getFile());
-            parent.getParent().removeChild(parent);
-            cleanParent(parent);
+        if (fileNode == null || fileNode.getFile() == null) {
+            return;
+        }
+        File cacheRoot = CacheLRUWrapper.getInstance().getCacheDir().getFile();
+        cleanEmptyParents(fileNode.getFile().getParentFile(), cacheRoot);
+    }
+
+    /** Delete empty directories from {@code dir} up to, but not including, {@code cacheRoot}. */
+    public static void cleanEmptyParents(File dir, File cacheRoot) {
+        if (dir == null || cacheRoot == null) {
+            return;
+        }
+        File stop = canonical(cacheRoot);
+        File cur = dir;
+        while (cur != null) {
+            File canon = canonical(cur);
+            if (canon.equals(stop)) {
+                break;
+            }
+            if (!canon.getPath().startsWith(stop.getPath() + File.separator)
+                    && !canon.getPath().startsWith(stop.getPath())) {
+                break;
+            }
+            File[] kids = cur.listFiles();
+            if (kids != null && kids.length > 0) {
+                break;
+            }
+            File parent = cur.getParentFile();
+            FileUtils.deleteWithErrMesg(cur);
+            cur = parent;
+        }
+    }
+
+    private static File canonical(File f) {
+        try {
+            return f.getCanonicalFile();
+        } catch (java.io.IOException e) {
+            return f.getAbsoluteFile();
         }
     }
 }

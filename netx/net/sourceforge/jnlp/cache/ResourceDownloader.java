@@ -388,7 +388,7 @@ public class ResourceDownloader implements Runnable {
             if (lm == null && response != null) {
                 lm = response.getLastModified();
             }
-            // If the newest LRU slot is a ghost (.info-only) but an older folder still has the
+            // If the newest LRU slot is a ghost (catalog row, no bytes) but an older folder still has the
             // jar, reuse that copy when it is still current. Do not point localFile at the old
             // copy when a re-download is required — writes must keep using the newest slot.
             File existingOnDisk = null;
@@ -832,7 +832,7 @@ public class ResourceDownloader implements Runnable {
         File existingCached = downloadEntry.getCacheFile();
         boolean existingUsable = existingCached != null && existingCached.isFile() && existingCached.length() > 0
                 && (!CacheUtil.isJarResourceUrl(cacheLocation) || CacheUtil.isValidJarFile(existingCached));
-        // isCurrent alone is not enough: a stale .info / vanished file must not mark
+        // isCurrent alone is not enough: a stale catalog row / vanished file must not mark
         // DOWNLOADED with a null localFile (that produced Unknown Main-Class).
         if (!downloadEntry.isCurrent(response.getLastModified()) || !existingUsable) {
             boolean wrote = false;

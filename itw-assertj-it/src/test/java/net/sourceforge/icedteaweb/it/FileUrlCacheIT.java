@@ -7,6 +7,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import net.sourceforge.jnlp.cache.CacheLRUWrapper;
 import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.cache.ResourceTracker;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
@@ -47,7 +48,8 @@ class FileUrlCacheIT {
 
         assertThat(cached).isFile();
         assertThat(cached.getCanonicalFile()).isNotEqualTo(source.toFile().getCanonicalFile());
-        assertThat(new File(cached.getPath() + ".info")).isFile();
+        assertThat(new File(cached.getPath() + ".info")).doesNotExist();
+        assertThat(CacheLRUWrapper.getInstance().getMetaByPath(cached.getPath())).isNotNull();
         assertThat(Files.readString(cached.toPath())).isEqualTo(expected);
         assertThat(CacheUtil.isCacheable(url, null)).isTrue();
     }

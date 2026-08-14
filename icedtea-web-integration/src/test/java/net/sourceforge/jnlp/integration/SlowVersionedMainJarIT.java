@@ -147,22 +147,28 @@ public class SlowVersionedMainJarIT {
      */
     private void seedGhostMainJarCacheEntry() throws Exception {
         Path cacheRoot = cacheHome.resolve("icedtea-web").resolve("cache");
-        Path slot = cacheRoot.resolve("1").resolve("http").resolve("127.0.0.1")
-                .resolve(String.valueOf(httpPort)).resolve("headless-app.jar");
-        Files.createDirectories(slot.getParent());
-        Path info = Paths.get(slot.toString() + ".info");
-        String infoBody = "#automatically generated - do not edit\n"
-                + "content-length=1\n"
-                + "last-modified=0\n"
-                + "last-updated=" + System.currentTimeMillis() + "\n"
-                + "jnlp-path=slow-main.jnlp\n";
-        Files.write(info, infoBody.getBytes(StandardCharsets.ISO_8859_1));
-        // No headless-app.jar file — ghost .info-only slot.
-
-        Path recentlyUsed = cacheRoot.resolve("recently_used");
-        String path = slot.toAbsolutePath().toString().replace("\\", "\\\\").replace(":", "\\:");
-        String entry = System.currentTimeMillis() + ",1=" + path + "\n";
-        Files.write(recentlyUsed, entry.getBytes(StandardCharsets.ISO_8859_1));
+        Files.createDirectories(cacheRoot);
+        String previous = net.sourceforge.jnlp.config.PathsAndFiles.CACHE_DIR.getFullPath();
+        net.sourceforge.jnlp.config.PathsAndFiles.CACHE_DIR.setValue(cacheRoot.toAbsolutePath().toString());
+        try {
+            java.net.URL jarUrl = new java.net.URL("http://127.0.0.1:" + httpPort + "/headless-app.jar");
+            java.io.File reserved = net.sourceforge.jnlp.cache.CacheUtil.makeNewCacheFile(jarUrl, null);
+            net.sourceforge.jnlp.cache.CacheLRUWrapper lru =
+                    net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance();
+            net.sourceforge.jnlp.cache.CacheEntryMeta meta = lru.getMetaByPath(reserved.getPath());
+            if (meta == null) {
+                meta = new net.sourceforge.jnlp.cache.CacheEntryMeta();
+                meta.path = reserved.getPath();
+            }
+            meta.contentLength = 1L;
+            meta.lastModified = 0L;
+            meta.lastUpdated = System.currentTimeMillis();
+            meta.jnlpPath = "http://127.0.0.1:" + httpPort + "/slow-main.jnlp";
+            lru.putMeta(meta);
+            java.nio.file.Files.deleteIfExists(reserved.toPath());
+        } finally {
+            net.sourceforge.jnlp.config.PathsAndFiles.CACHE_DIR.setValue(previous);
+        }
     }
 
     private void writeJnlp(Path marker) throws Exception {
