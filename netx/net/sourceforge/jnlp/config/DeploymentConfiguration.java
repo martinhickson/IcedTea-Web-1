@@ -432,6 +432,14 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_HTTP_PACK200_ADMISSION_LARGE_WIRE_MULTIPLIER =
             "deployment.http.pack200.admission.largeWireMultiplier";
+    /**
+     * Boolean. If true (default), resume interrupted downloads with an HTTP
+     * Range request (RFC 7233) when a partial cache file exists: send
+     * {@code Range: bytes=<cachedLen>-} (plus {@code If-Range} when the cached
+     * Last-Modified is known), append the 206 suffix, and fall back to a full
+     * GET on 200/416 so old servers keep working.
+     */
+    public static final String KEY_HTTP_RANGE_RESUME = "deployment.http.range.resume";
 
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     

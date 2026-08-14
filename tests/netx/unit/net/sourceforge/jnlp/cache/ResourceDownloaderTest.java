@@ -43,6 +43,8 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     public static ServerLauncher testServer;
     public static ServerLauncher testServerWithBrokenHead;
     public static ServerLauncher downloadServer;
+    public static ServerLauncher rangeServer;
+    private static java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSeen;
 
     private static final PrintStream[] backedUpStream = new PrintStream[4];
     private static ByteArrayOutputStream currentErrorStream;
@@ -316,11 +318,19 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
 
         cacheDir = PathsAndFiles.CACHE_DIR.getFullPath();
         PathsAndFiles.CACHE_DIR.setValue(System.getProperty("java.io.tmpdir") + File.separator + "tempcache");
+
+        rangeHeaderSeen = new java.util.concurrent.atomic.AtomicReference<>(null);
+        redirectErr();
+        rangeServer = ServerAccess.getIndependentInstance(dir.getAbsolutePath(), ServerAccess.findFreePort());
+        rangeServer.setSupportRangeRequests(true);
+        rangeServer.setRangeHeaderSink(rangeHeaderSeen);
+        redirectErrBack();
     }
 
     @AfterClass
     public static void teardownCache() {
         downloadServer.stop();
+        rangeServer.stop();
 
         CacheUtil.clearCache();
         PathsAndFiles.CACHE_DIR.setValue(cacheDir);
@@ -674,5 +684,117 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
             return Integer.parseInt(elements[1]);
         }
         return discard;
+    }
+
+    @Test
+    public void rangeHeaderBuiltFromPartialCacheLength() {
+        Assert.assertNull("no resume when offset <= 0", ResourceDownloader.buildRangeHeader(0L));
+        Assert.assertNull(ResourceDownloader.buildRangeHeader(-1L));
+        Assert.assertEquals("bytes=512-", ResourceDownloader.buildRangeHeader(512L));
+        Assert.assertEquals("bytes=1-", ResourceDownloader.buildRangeHeader(1L));
+    }
+
+    @Test
+    public void parseContentRangeReadsStartEndTotal() {
+        long[] r = ResourceDownloader.parseContentRange("bytes 512-3851/3852");
+        Assert.assertNotNull(r);
+        Assert.assertEquals(512L, r[0]);
+        Assert.assertEquals(3851L, r[1]);
+        Assert.assertEquals(3852L, r[2]);
+        // unit is case-insensitive; response Content-Range always carries start-end/total
+        long[] open = ResourceDownloader.parseContentRange("BYTES 90-99/100");
+        Assert.assertNotNull(open);
+        Assert.assertEquals(90L, open[0]);
+        Assert.assertEquals(99L, open[1]);
+        Assert.assertEquals(100L, open[2]);
+        Assert.assertNull(ResourceDownloader.parseContentRange(null));
+        Assert.assertNull(ResourceDownloader.parseContentRange("bytes */100"));
+        Assert.assertNull(ResourceDownloader.parseContentRange("items 0-9/10"));
+    }
+
+    @Test
+    public void formatIfRangeDateIsRfc1123Gmt() {
+        Assert.assertNull(ResourceDownloader.formatIfRangeDate(0L));
+        Assert.assertNull(ResourceDownloader.formatIfRangeDate(-1L));
+        String d = ResourceDownloader.formatIfRangeDate(1_600_000_000_000L);
+        Assert.assertTrue("expected RFC 1123 GMT date, got " + d, d.endsWith(" GMT") && d.contains(","));
+    }
+
+    private static byte[] makeMinimalJarBytes(String manifestVersion) throws IOException {
+        File tmp = File.createTempFile("range-jar", ".jar");
+        tmp.deleteOnExit();
+        Manifest manifest = new Manifest();
+        manifest.getMainAttributes().put(Attributes.Name.MANIFEST_VERSION, manifestVersion);
+        try (JarOutputStream jos = new JarOutputStream(new FileOutputStream(tmp), manifest)) {
+            java.util.jar.JarEntry entry = new java.util.jar.JarEntry("payload.txt");
+            jos.putNextEntry(entry);
+            jos.write("hello-range-resume".getBytes());
+            jos.closeEntry();
+        }
+        return Files.readAllBytes(tmp.toPath());
+    }
+
+    private static void seedPartialCache(URL url, byte[] full, int cut) throws IOException {
+        CacheEntry seed = new CacheEntry(url, null);
+        File cacheFile = seed.getCacheFile();
+        Files.createDirectories(cacheFile.toPath().getParent());
+        Files.write(cacheFile.toPath(), java.util.Arrays.copyOf(full, cut));
+        seed.setRemoteContentLength(full.length);
+        seed.setLastModified(0L);
+        seed.lock();
+        seed.store();
+        seed.unlock();
+    }
+
+    @Test
+    public void testResumeAppendsSuffixOnHttp206() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.2");
+        File remote = new File(rangeServer.getDir(), "resume.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = rangeServer.getUrl("resume.jar");
+        rangeHeaderSeen.set(null);
+        int cut = Math.max(4, full.length / 2);
+        seedPartialCache(url, full, cut);
+
+        Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+        ResourceDownloader downloader = new ResourceDownloader(resource, new Object());
+        resource.setDownloadOptions(new DownloadOptions(false, false));
+        downloader.run();
+
+        File downloaded = resource.getLocalFile();
+        Assert.assertNotNull("resumed download must produce a cache file", downloaded);
+        byte[] result = Files.readAllBytes(downloaded.toPath());
+        Assert.assertEquals("resumed file must be the full resource length", full.length, result.length);
+        Assert.assertArrayEquals("appended suffix must reconstruct the original jar", full, result);
+        String rangeSent = rangeHeaderSeen.get();
+        Assert.assertNotNull("client must send a Range header to resume", rangeSent);
+        Assert.assertEquals("client must request the suffix from the cached length",
+                "bytes=" + cut + "-", rangeSent);
+    }
+
+    @Test
+    public void testServerWithoutRangeFullDownloadsNoAppend() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.3");
+        File remote = new File(downloadServer.getDir(), "no-range.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = downloadServer.getUrl("no-range.jar");
+        int cut = Math.max(4, full.length / 2);
+        seedPartialCache(url, full, cut);
+
+        Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+        ResourceDownloader downloader = new ResourceDownloader(resource, new Object());
+        resource.setDownloadOptions(new DownloadOptions(false, false));
+        downloader.run();
+
+        File downloaded = resource.getLocalFile();
+        Assert.assertNotNull(downloaded);
+        byte[] result = Files.readAllBytes(downloaded.toPath());
+        Assert.assertEquals("server ignored Range: client must replace, not append (no length doubling)",
+                full.length, result.length);
+        Assert.assertArrayEquals(full, result);
     }
 }

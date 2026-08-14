@@ -16,6 +16,9 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
+import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.EnumSet;
 import java.util.Collections;
 import java.util.HashMap;
@@ -186,6 +189,15 @@ public class ResourceDownloader implements Runnable {
     private static boolean isSkipHeadIfNotCached() {
         return Boolean.valueOf(JNLPRuntime.getConfiguration().getProperty(
                 DeploymentConfiguration.KEY_HTTP_SKIP_HEAD_IF_NOT_CACHED));
+    }
+
+    /**
+     * Whether HTTP Range (RFC 7233) resume of interrupted downloads is enabled
+     * ({@code deployment.http.range.resume}, default true).
+     */
+    private static boolean isRangeResumeEnabled() {
+        return Boolean.valueOf(JNLPRuntime.getConfiguration().getProperty(
+                DeploymentConfiguration.KEY_HTTP_RANGE_RESUME));
     }
 
     /**
@@ -603,6 +615,12 @@ public class ResourceDownloader implements Runnable {
         net.sourceforge.jnlp.security.HttpResponse response = null;
         URL downloadFrom = null;
 
+        // HTTP Range (RFC 7233) resume: when a partial cache file exists, ask the server
+        // for only the missing suffix. effectiveResume is zeroed whenever a server forces
+        // a full GET fallback (416, mismatched Content-Range, or a compressed representation).
+        ResumeTarget resume = computeResumeTarget();
+        long effectiveResume = resume.offset;
+
         try {
             // When skipHeadIfNotCached set up URL candidates during initialize,
             // try each with a GET. The first successful GET IS the download
@@ -615,11 +633,23 @@ public class ResourceDownloader implements Runnable {
             IOException lastError = null;
             for (URL candidate : tryUrls) {
                 try {
-                    response = getDownloadConnection(candidate);
+                    response = getDownloadConnection(candidate, effectiveResume, resume.ifRangeLastModified);
+                    int status = response.getStatusCode();
+                    if (effectiveResume > 0 && isRangeRejection(response, status, effectiveResume)) {
+                        // Server could not honour the suffix (416) or returned a 206 whose
+                        // Content-Range does not line up with the on-disk prefix. Fall back
+                        // to a full GET on the same candidate.
+                        logResourceDebug(downloadTo, "Range resume rejected (" + status
+                                + ") for " + candidate + " - falling back to full GET");
+                        response.close();
+                        response = getDownloadConnection(candidate, 0L, 0L);
+                        effectiveResume = 0L;
+                        status = response.getStatusCode();
+                    }
                     // HTTP error codes (404 etc.) are not exceptions; check the
                     // status explicitly to fall through to the next candidate.
-                    if (response.getStatusCode() >= 400) {
-                        logResourceDebug(downloadTo, "GET returned " + response.getStatusCode()
+                    if (status >= 400) {
+                        logResourceDebug(downloadTo, "GET returned " + status
                                 + " for " + candidate + ", trying next URL candidate");
                         ResourceUrlCreator.notePackHost(candidate, false);
                         response.close();
@@ -653,13 +683,26 @@ public class ResourceDownloader implements Runnable {
             }
 
             String contentEncoding = response.getContentEncoding();
+            int status = response.getStatusCode();
 
-            logResourceDebug(downloadTo, "Downloading " + downloadTo + " using "
-                    + downloadFrom + " (encoding : " + contentEncoding + ") ");
-
+            // Only an identity (uncompressed) 206 whose Content-Range lined up with the
+            // on-disk prefix is byte-resumable. pack200-gzip / gzip bodies are not.
             boolean packgz = "pack200-gzip".equals(contentEncoding)
                     || downloadFrom.getPath().endsWith(".pack.gz");
             boolean gzip = "gzip".equals(contentEncoding);
+            boolean rangeHonored = status == HttpURLConnection.HTTP_PARTIAL && effectiveResume > 0
+                    && !packgz && !gzip;
+            // On a 206 the Content-Length is only the slice; report the full size for progress.
+            if (rangeHonored) {
+                long total = parseContentRangeTotal(response.getHeader("Content-Range"));
+                if (total > 0) {
+                    resource.setSize(total);
+                }
+            }
+
+            logResourceDebug(downloadTo, "Downloading " + downloadTo + " using "
+                    + downloadFrom + " (encoding : " + contentEncoding
+                    + (rangeHonored ? ", range resume from " + effectiveResume : "") + ") ");
 
             // It's important to check packgz first. If a stream is both
             // pack200 and gz encoded, then the Content-Encoding could
@@ -671,7 +714,8 @@ public class ResourceDownloader implements Runnable {
             } else if (gzip) {
                 downloadGZipFile(response, downloadFrom, downloadTo);
             } else {
-                downloadFile(response, downloadTo, false, null);
+                downloadFile(response, downloadTo, false, null, rangeHonored,
+                        rangeHonored ? effectiveResume : 0L);
             }
             settleSlotGood(false);
             CachedDaemonThreadPoolProvider.noteJarDownloadSucceeded();
@@ -687,9 +731,86 @@ public class ResourceDownloader implements Runnable {
         }
     }
 
+    /**
+     * Whether a response to a ranged GET must fall back to a full GET: a 416, or a 206
+     * whose Content-Range start does not equal the requested offset (the on-disk prefix
+     * would not line up with the served suffix). A 200 means the server ignored Range
+     * and is sending the full representation, which is handled by the normal truncate path.
+     */
+    private static boolean isRangeRejection(net.sourceforge.jnlp.security.HttpResponse response, int status, long rangeFrom) {
+        if (status == 416 /* Range Not Satisfiable */) {
+            return true;
+        }
+        if (status == HttpURLConnection.HTTP_PARTIAL) {
+            long[] cr = parseContentRange(response.getHeader("Content-Range"));
+            return cr == null || cr[0] != rangeFrom;
+        }
+        return false;
+    }
+
+    /**
+     * Determine whether an interrupted download can be resumed with HTTP Range: the
+     * on-disk cache file is a non-empty prefix shorter than the known remote length.
+     * Returns the byte offset to request ({@code 0} means "full GET") plus the cached
+     * Last-Modified for an {@code If-Range} conditional so a changed resource is served
+     * in full rather than appended.
+     */
+    private ResumeTarget computeResumeTarget() {
+        URL loc = resource.getLocation();
+        if (!isRangeResumeEnabled()) {
+            return ResumeTarget.NONE;
+        }
+        String protocol = loc.getProtocol();
+        if (!"http".equalsIgnoreCase(protocol) && !"https".equalsIgnoreCase(protocol)) {
+            return ResumeTarget.NONE;
+        }
+        CacheEntry probe = new CacheEntry(loc, resource.getDownloadVersion());
+        File partial = probe.getCacheFile();
+        if (partial == null || !partial.isFile()) {
+            return ResumeTarget.NONE;
+        }
+        long len = partial.length();
+        long remote = probe.getRemoteContentLength();
+        if (len <= 0 || (remote > 0 && len >= remote)) {
+            return ResumeTarget.NONE;
+        }
+        // A jar partial must still carry ZIP magic; never resume an error body or raw pack bytes.
+        if (CacheUtil.isJarResourceUrl(loc) && !CacheUtil.isValidJarFile(partial)) {
+            return ResumeTarget.NONE;
+        }
+        return new ResumeTarget(len, probe.getLastModified());
+    }
+
+    private static final class ResumeTarget {
+        static final ResumeTarget NONE = new ResumeTarget(0L, 0L);
+        final long offset;
+        final long ifRangeLastModified;
+
+        ResumeTarget(long offset, long ifRangeLastModified) {
+            this.offset = offset;
+            this.ifRangeLastModified = ifRangeLastModified;
+        }
+    }
+
     private net.sourceforge.jnlp.security.HttpResponse getDownloadConnection(URL location) throws IOException {
+        return getDownloadConnection(location, 0L, 0L);
+    }
+
+    private net.sourceforge.jnlp.security.HttpResponse getDownloadConnection(URL location, long rangeFrom, long ifRangeLastModified)
+            throws IOException {
         java.util.Map<String, String> headers = new java.util.HashMap<>();
         headers.put("Accept-Encoding", getAcceptEncoding());
+        // Resume an interrupted download by asking for the missing suffix (RFC 7233).
+        // If-Range makes the server return the full 200 representation when the resource
+        // has changed, so a stale prefix is never appended to.
+        String rangeHeader = buildRangeHeader(rangeFrom);
+        if (rangeHeader != null) {
+            headers.put("Range", rangeHeader);
+            String ifRange = formatIfRangeDate(ifRangeLastModified);
+            if (ifRange != null) {
+                headers.put("If-Range", ifRange);
+            }
+        }
         net.sourceforge.jnlp.cache.download.ConnectionTiming timing = new net.sourceforge.jnlp.cache.download.ConnectionTiming();
         net.sourceforge.jnlp.security.HttpResponse response =
                 net.sourceforge.jnlp.security.HttpClientProvider.getDefault().open(location, "GET", headers, timing);
@@ -804,7 +925,7 @@ public class ResourceDownloader implements Runnable {
         if (downloadFrom.equals(downloadTo)) {
             downloadFrom = new URL(downloadFrom + ".pack.gz");
         }
-        downloadFile(response, downloadFrom, true, null);
+        downloadFile(response, downloadFrom, true, null, false, 0L);
 
         uncompressPackGz(downloadFrom, downloadTo, resource.getDownloadVersion());
         CacheEntry entry = new CacheEntry(downloadFrom, resource.getDownloadVersion());
@@ -817,14 +938,14 @@ public class ResourceDownloader implements Runnable {
             downloadFrom = new URL(downloadFrom + ".pack.gz");
         }
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion(), true);
-        downloadFile(response, downloadFrom, true, entry);
+        downloadFile(response, downloadFrom, true, entry, false, 0L);
         storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified());
     }
 
     private void downloadGZipFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom, URL downloadTo) throws IOException {
         if (downloadFrom.equals(downloadTo))
             downloadFrom = new URL(downloadFrom + ".gz");
-        downloadFile(response, downloadFrom, false, null);
+        downloadFile(response, downloadFrom, false, null, false, 0L);
 
         uncompressGzip(downloadFrom, downloadTo, resource.getDownloadVersion());
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion());
@@ -832,7 +953,8 @@ public class ResourceDownloader implements Runnable {
         markForDelete(downloadFrom);
     }
 
-    private void downloadFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadLocation, boolean packGZ, CacheEntry entry) throws IOException {
+    private void downloadFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadLocation, boolean packGZ, CacheEntry entry,
+            boolean append, long resumeOffset) throws IOException {
         CacheEntry downloadEntry = entry != null ? entry
                 : new CacheEntry(downloadLocation, resource.getDownloadVersion());
         // Always persist to the cache entry location (usually resource.getLocation()).
@@ -852,7 +974,7 @@ public class ResourceDownloader implements Runnable {
             final File pinnedJar = downloadEntry.getCacheFile();
             try {
                 writtenFile = writeDownloadStream(cacheLocation, response.getBody(), packGZ,
-                        response.getContentLength(), pinnedJar);
+                        response.getContentLength(), pinnedJar, append, resumeOffset);
                 wrote = true;
             } catch (IOException ex) {
                 if (isFavIconUrl(downloadLocation)) {
@@ -870,7 +992,7 @@ public class ResourceDownloader implements Runnable {
                     OutputController.getLogger().log(head);
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
                     writtenFile = writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ,
-                            body != null ? body.length : -1L, pinnedJar);
+                            body != null ? body.length : -1L, pinnedJar, false, 0L);
                     wrote = true;
                 } else {
                     logDownloadFailure(downloadLocation, ex);
@@ -940,11 +1062,16 @@ public class ResourceDownloader implements Runnable {
 
     private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ, long contentLength,
             File pinnedJar) throws IOException {
+        return writeDownloadStream(cacheLocation, raw, packGZ, contentLength, pinnedJar, false, 0L);
+    }
+
+    private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ, long contentLength,
+            File pinnedJar, boolean append, long resumeOffset) throws IOException {
         // Validate the exact file we wrote — a second getCacheFile() can resolve a different
         // LRU slot and falsely reject a good pack200 unpack (or leave poison on disk).
         File written = packGZ
                 ? drainThenUnpackPackGz(cacheLocation, raw, pinnedJar)
-                : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw), pinnedJar);
+                : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw), pinnedJar, append, resumeOffset);
         // compressionRatio metric: on-disk decompressed size vs wire bytes
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot != null && written != null) {
@@ -1100,11 +1227,82 @@ public class ResourceDownloader implements Runnable {
         return 0L;
     }
 
+    /**
+     * Build an HTTP {@code Range} request-header value for an open-ended suffix
+     * resume ({@code bytes=<offset>-}), or {@code null} when no resume is requested.
+     * Package-visible for unit tests.
+     */
+    static String buildRangeHeader(long offset) {
+        if (offset <= 0) {
+            return null;
+        }
+        return "bytes=" + offset + "-";
+    }
+
+    /**
+     * Format an epoch-millisecond Last-Modified as an RFC 7232 {@code If-Range}
+     * HTTP-date (RFC 1123, GMT), or {@code null} when unknown. Used so a server
+     * serves a full 200 (not a 206 suffix) when the representation has changed.
+     */
+    static String formatIfRangeDate(long lastModifiedMillis) {
+        if (lastModifiedMillis <= 0) {
+            return null;
+        }
+        return Instant.ofEpochMilli(lastModifiedMillis)
+                .atZone(ZoneOffset.UTC)
+                .format(DateTimeFormatter.RFC_1123_DATE_TIME);
+    }
+
+    /**
+     * Parse a {@code Content-Range} header ({@code bytes &lt;start&gt;-&lt;end&gt;/&lt;total&gt;},
+     * with a space after the unit as emitted by RFC 7233 servers) into
+     * {@code [start, end, total]}. {@code total} is {@code -1} when the server sent
+     * {@code *} (e.g. on a 416). Returns {@code null} when absent or malformed.
+     * Package-visible for unit tests.
+     */
+    static long[] parseContentRange(String contentRange) {
+        if (contentRange == null) {
+            return null;
+        }
+        String s = contentRange.trim();
+        if (!s.regionMatches(true, 0, "bytes", 0, 5)) {
+            return null;
+        }
+        s = s.substring(5).trim();
+        int slash = s.lastIndexOf('/');
+        if (slash < 0) {
+            return null;
+        }
+        String rangePart = s.substring(0, slash).trim();
+        String totalPart = s.substring(slash + 1).trim();
+        int dash = rangePart.indexOf('-');
+        if (dash < 0) {
+            return null;
+        }
+        try {
+            long start = Long.parseLong(rangePart.substring(0, dash).trim());
+            long end = Long.parseLong(rangePart.substring(dash + 1).trim());
+            long total = "*".equals(totalPart) ? -1L : Long.parseLong(totalPart);
+            return new long[]{start, end, total};
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static long parseContentRangeTotal(String contentRange) {
+        long[] cr = parseContentRange(contentRange);
+        return cr != null ? cr[2] : -1L;
+    }
+
     private File writeDownloadToFile(URL downloadLocation, InputStream in) throws IOException {
         return writeDownloadToFile(downloadLocation, in, null);
     }
 
     private File writeDownloadToFile(URL downloadLocation, InputStream in, File pinnedJar) throws IOException {
+        return writeDownloadToFile(downloadLocation, in, pinnedJar, false, 0L);
+    }
+
+    private File writeDownloadToFile(URL downloadLocation, InputStream in, File pinnedJar, boolean append, long resumeOffset) throws IOException {
         File localFile = pinnedJar != null ? pinnedJar
                 : CacheUtil.getCacheFile(downloadLocation, resource.getDownloadVersion());
         File parent = localFile.getParentFile();
@@ -1113,7 +1311,9 @@ public class ResourceDownloader implements Runnable {
         }
         // Raw JAR/GET only. Pack200 sidecars use writeCountedStreamToFile with
         // expected=-1: resource.size is the unpacked jar, not the .pack.gz wire size.
-        writeCountedStreamToFile(localFile, in, resource, resource.getJarSlot(), resource.getSize());
+        // On a 206 append, seed written with resumeOffset so expected is the full size.
+        writeCountedStreamToFile(localFile, in, resource, resource.getJarSlot(),
+                resource.getSize(), append, resumeOffset);
         return localFile;
     }
 
@@ -1124,15 +1324,34 @@ public class ResourceDownloader implements Runnable {
 
     static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
             net.sourceforge.jnlp.cache.download.JarSlot slot) throws IOException {
-        writeCountedStreamToFile(dest, in, resource, slot, -1L);
+        writeCountedStreamToFile(dest, in, resource, slot, -1L, false, 0L);
     }
 
     static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
             net.sourceforge.jnlp.cache.download.JarSlot slot, long expected) throws IOException {
+        writeCountedStreamToFile(dest, in, resource, slot, expected, false, 0L);
+    }
+
+    /**
+     * Copy HTTP bytes to {@code dest}. When {@code append} is true (a resumed 206), the
+     * stream is appended to the existing partial file and the progress/metric counters
+     * are seeded with {@code resumeOffset} so TTFB/throughput and the reported
+     * transferred total reflect the whole resource, not just the suffix.
+     */
+    static void writeCountedStreamToFile(File dest, InputStream in, Resource resource,
+            net.sourceforge.jnlp.cache.download.JarSlot slot, long expected, boolean append, long resumeOffset) throws IOException {
         byte buf[] = new byte[COPY_BUFFER_SIZE_64KB];
         int rlen;
-        long written = 0L;
-        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest))) {
+        long written = append && resumeOffset > 0 ? resumeOffset : 0L;
+        if (append && resumeOffset > 0) {
+            if (resource != null) {
+                resource.incrementTransferred(resumeOffset);
+            }
+            if (slot != null) {
+                slot.addTransferred(resumeOffset);
+            }
+        }
+        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest, append))) {
             while (-1 != (rlen = in.read(buf))) {
                 written += rlen;
                 if (expected > 0 && written > expected) {
