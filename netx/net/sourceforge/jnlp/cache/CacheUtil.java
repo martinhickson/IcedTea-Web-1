@@ -60,7 +60,6 @@ import static net.sourceforge.jnlp.runtime.Translator.R;
 
 import net.sourceforge.jnlp.security.ConnectionFactory;
 import net.sourceforge.jnlp.util.FileUtils;
-import net.sourceforge.jnlp.util.PropertiesFile;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
@@ -234,53 +233,54 @@ public class CacheUtil {
         synchronized (lruHandler) {
         lruHandler.lock();
         try {
-            final List<Path> infos = new ArrayList<Path>();
-            Files.walk(Paths.get(lruHandler.getCacheDir().getFile().getCanonicalPath())).filter(new Predicate<Path>() {
-                @Override
-                public boolean test(Path t) {
-                    return isCacheJarInfoFile(t);
-                }
-            }).forEach(new Consumer<Path>() {
-                @Override
-                public void accept(Path path) {
-                    infos.add(path);
-                }
-            });
-            // Exact id first. Sibling jars are cleared only after the requested
-            // JNLP/JAR/domain actually exists — unknown URLs must not prefix-match
-            // another app and print "Clearing… Alerting: N".
-            final List<Path> exact = new ArrayList<Path>();
-            for (Path path : infos) {
-                PropertiesFile pf = new PropertiesFile(new File(path.toString()));
-                if (cacheInfoExactMatch(path, pf, application, jnlpPath, domain)) {
-                    exact.add(path);
+            lruHandler.load();
+            final List<CacheEntryMeta> rows = lruHandler.listAllMeta();
+            // Exact catalog match only. Unknown URLs must not domain-walk another
+            // app and print "Clearing… Alerting: N".
+            final List<CacheEntryMeta> exact = new ArrayList<CacheEntryMeta>();
+            for (CacheEntryMeta row : rows) {
+                if (catalogRowExactMatch(row, application, jnlpPath, domain)) {
+                    exact.add(row);
                 }
             }
             if (exact.isEmpty()) {
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL, Translator.R("BXSingleCacheClearNotFound", application));
                 return false;
             }
+            final Set<String> exactPaths = new HashSet<String>();
+            final Set<String> siblingJnlp = new HashSet<String>();
             final Set<String> siblingDirs = new HashSet<String>();
-            if (jnlpPath) {
-                for (Path path : exact) {
-                    String dir = parentCacheRelativeDir(cacheRelativePathFromInfo(path));
+            for (CacheEntryMeta row : exact) {
+                if (row.path != null) {
+                    exactPaths.add(row.path);
+                }
+                if (jnlpPath) {
+                    if (row.jnlpPath != null && !row.jnlpPath.isEmpty()) {
+                        siblingJnlp.add(row.jnlpPath.toLowerCase(java.util.Locale.ROOT));
+                    }
+                    String dir = parentCacheRelativeDir(row.resourceUrl != null
+                            ? normalizeCacheRelativePath(row.resourceUrl) : null);
                     if (dir != null) {
                         siblingDirs.add(dir.toLowerCase(java.util.Locale.ROOT));
                     }
                 }
             }
-            for (Path path : infos) {
-                boolean mark = exact.contains(path);
+            for (CacheEntryMeta row : rows) {
+                boolean mark = row.path != null && exactPaths.contains(row.path);
+                if (!mark && row.jnlpPath != null
+                        && siblingJnlp.contains(row.jnlpPath.toLowerCase(java.util.Locale.ROOT))) {
+                    mark = true;
+                }
                 if (!mark && !siblingDirs.isEmpty()) {
-                    String dir = parentCacheRelativeDir(cacheRelativePathFromInfo(path));
+                    String dir = parentCacheRelativeDir(row.resourceUrl != null
+                            ? normalizeCacheRelativePath(row.resourceUrl) : null);
                     mark = dir != null && siblingDirs.contains(dir.toLowerCase(java.util.Locale.ROOT));
                 }
                 if (mark) {
-                    PropertiesFile pf = new PropertiesFile(new File(path.toString()));
-                    pf.setProperty("delete", "true");
-                    pf.store();
+                    row.markedDelete = true;
+                    lruHandler.putMeta(row);
                     markedForDeletion[0]++;
-                    OutputController.getLogger().log("marked for deletion: " + path);
+                    OutputController.getLogger().log("marked for deletion: " + row.path);
                 }
             }
             if (markedForDeletion[0] == 0) {
@@ -290,13 +290,15 @@ public class CacheUtil {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, Translator.R("BXSingleCacheCleared", application));
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, Translator.R("BXSingleCacheFileCount", markedForDeletion[0]));
             if (JNLPRuntime.isWindows()) {
-                removeWindowsShortcuts(application.toLowerCase());
+                try {
+                    removeWindowsShortcuts(application.toLowerCase());
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
             }
             // Remove entries marked for deletion even when unrelated JNLP apps hold MAIN_LOCK
             cleanCache();
 
-        } catch (IOException e) {
-            throw new RuntimeException(e);
         } finally {
             lruHandler.unlock();
         }
@@ -316,6 +318,17 @@ public class CacheUtil {
      * @return true when {@code application} may be cleared without deleting
      *         resources a running JNLP process still needs (JNLP URL or JAR href)
      */
+    /** JNLP URL or resource href used to decide if a viewer/clear id is busy. */
+    public static String clearIdForMeta(CacheEntryMeta meta) {
+        if (meta == null) {
+            return null;
+        }
+        if (meta.jnlpPath != null && !meta.jnlpPath.trim().isEmpty()) {
+            return meta.jnlpPath.trim();
+        }
+        return hrefFromCacheRelativePath(meta.resourceUrl);
+    }
+
     public static boolean canClearApplicationCache(String application) {
         if (application == null || application.trim().isEmpty()) {
             return false;
@@ -329,6 +342,19 @@ public class CacheUtil {
      * directory as {@code runningJnlpPath}, so clearing it would remove the
      * running application's files.
      */
+    /**
+     * True when {@code cacheId} is a hostname and equals the host of
+     * {@code runningJnlpPath}. {@code example.com} must not match
+     * {@code evil.example.com} (substring matching did).
+     */
+    public static boolean cacheIdIsRunningJnlpHost(String cacheId, String runningJnlpPath) {
+        if (!looksLikeCacheDomainId(cacheId) || runningJnlpPath == null) {
+            return false;
+        }
+        String host = hostFromCacheRelativePath(applicationToCacheRelativePath(runningJnlpPath));
+        return cacheId.equalsIgnoreCase(host);
+    }
+
     public static boolean cacheIdSharesDirectoryWithJnlp(String cacheId, String runningJnlpPath) {
         if (cacheId == null || runningJnlpPath == null) {
             return false;
@@ -436,37 +462,23 @@ public class CacheUtil {
         synchronized (lruHandler) {
         lruHandler.lock();
         try {
-            Files.walk(Paths.get(lruHandler.getCacheDir().getFile().getCanonicalPath())).filter(new Predicate<Path>() {
-                @Override
-                public boolean test(Path t) {
-                    return isCacheJarInfoFile(t);
+            lruHandler.load();
+            for (CacheEntryMeta row : lruHandler.listAllMeta()) {
+                if (jnlpPath) {
+                    addCacheJnlpId(r, row.jnlpPath, filter);
+                    addCacheJnlpId(r, hrefFromCacheRelativePath(row.resourceUrl), filter);
                 }
-            }).forEach(new Consumer<Path>() {
-                @Override
-                public void accept(Path path) {
-                    if (path.getFileName().toString().endsWith(CacheDirectory.INFO_SUFFIX)) {
-                        PropertiesFile pf = new PropertiesFile(new File(path.toString()));
-                        if (jnlpPath) {
-                            String storedJnlpPath = pf.getProperty(CacheEntry.KEY_JNLP_PATH);
-                            addCacheJnlpId(r, storedJnlpPath, filter);
-                            addCacheJnlpId(r, hrefFromCacheInfoFile(path), filter);
-                        }
-                        if (domain) {
-                            String domain = getDomain(path);
-                            if (domain != null && domain.matches(filter)) {
-                                CacheId doaminId = new CacheDomainId(domain);
-                                if (!r.contains(doaminId)) {
-                                    r.add(doaminId);
-                                    doaminId.populate();
-
-                                }
-                            }
+                if (domain) {
+                    String host = hostFromCacheRelativePath(row.resourceUrl);
+                    if (host != null && host.matches(filter)) {
+                        CacheId doaminId = new CacheDomainId(host);
+                        if (!r.contains(doaminId)) {
+                            r.add(doaminId);
+                            doaminId.populate();
                         }
                     }
                 }
-            });
-        } catch (IOException e) {
-            throw new RuntimeException(e);
+            }
         } finally {
             lruHandler.unlock();
         }
@@ -636,12 +648,11 @@ public class CacheUtil {
                 final String path = e.getValue();
                 try {
                     File candidate = new File(path);
-                    File infoFile = new File(path + CacheDirectory.INFO_SUFFIX);
-                    // Skip fully orphaned LRU rows (neither jar nor .info). Keep .info-only
-                    // reserved slots so in-progress downloads still write to the same path.
-                    if (!candidate.isFile() && !infoFile.isFile()) {
+                    // Catalog row is the reservation. Do not require a sidecar .info file.
+                    if (!candidate.isFile() && lruHandler.getMetaByPath(path) == null
+                            && !lruHandler.containsValue(path)) {
                         OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
-                                "Ignoring orphaned cache path listed in recently_used: " + path);
+                                "Ignoring orphaned cache path listed in catalog: " + path);
                         continue;
                     }
                     cacheFile = candidate;
@@ -659,7 +670,7 @@ public class CacheUtil {
 
     /**
      * Find an on-disk cached copy of {@code source} even when the newest LRU slot is a
-     * ghost (.info-only / deleted folder). Used to recover launches that would otherwise
+     * ghost (catalog row / deleted folder). Used to recover launches that would otherwise
      * open a missing path in JarCertVerifier while a good jar still exists elsewhere.
      * For {@code .jar} URLs, candidates must pass {@link #isValidJarFile(File)} so a
      * sticky JNLP version-protocol error body (e.g. {@code 11 Could not locate requested
@@ -808,7 +819,7 @@ public class CacheUtil {
      * This string is the SQLite {@code resource_url} / properties lookup key.
      *
      * @param path absolute cache file path
-     * @param cacheDir effective cache root (legacy {@code cachedir} or {@code cachedir/db})
+     * @param cacheDir effective cache root (legacy {@code cachedir} or sqlite {@code cache/db})
      */
     public static String pathToURLPath(String path, String cacheDir) {
         // Normalize paths: convert backslashes to forward slashes for consistent comparison
@@ -903,8 +914,7 @@ public class CacheUtil {
                 try {
                     cacheFile = urlToPath(source, path);
                     FileUtils.createParentDir(cacheFile);
-                    File pf = new File(cacheFile.getPath() + CacheDirectory.INFO_SUFFIX);
-                    FileUtils.createRestrictedFile(pf, true); // Create the info file for marking later.
+                    // Metadata is on the catalog row. Do not create a sidecar .info file.
                     lruHandler.addEntry(lruHandler.generateKey(cacheFile.getPath()), cacheFile.getPath());
                 } catch (IOException ioe) {
                     OutputController.getLogger().log(ioe);
@@ -1266,8 +1276,8 @@ public class CacheUtil {
                 final String path = e.getValue();
 
                 File file = new File(path);
-                PropertiesFile pf = new PropertiesFile(new File(path + CacheDirectory.INFO_SUFFIX));
-                boolean delete = Boolean.parseBoolean(pf.getProperty("delete"));
+                CacheEntryMeta rowMeta = lruHandler.getMetaByPath(path);
+                boolean delete = rowMeta != null && rowMeta.markedDelete;
 
             /*
              * This will get me the root directory specific to this cache item.
@@ -1463,32 +1473,28 @@ public class CacheUtil {
     }
 
     /**
-     * True when this {@code .info} file is the requested cache id itself:
-     * stored {@code jnlp-path}, exact on-disk resource URL, or a hostname
-     * domain id. URLs never match via domain (that produced false
-     * {@code Clearing… Alerting: N} for unknown ids).
+     * True when this catalog row is the requested cache id itself:
+     * stored {@code jnlp-path}, exact resource URL, or a hostname
+     * domain id. URLs never match via domain.
      */
-    static boolean cacheInfoExactMatch(Path infoPath, PropertiesFile pf, String application,
+    static boolean catalogRowExactMatch(CacheEntryMeta row, String application,
             boolean matchJnlpPath, boolean matchDomain) {
-        if (infoPath == null || application == null) {
+        if (row == null || application == null) {
             return false;
         }
         if (matchJnlpPath) {
-            String stored = pf != null ? pf.getProperty(CacheEntry.KEY_JNLP_PATH) : null;
-            if (application.equalsIgnoreCase(stored)) {
+            if (application.equalsIgnoreCase(row.jnlpPath)) {
                 return true;
             }
-            if (cachedResourceMatchesApplication(infoPath, application)) {
+            String wantedRel = applicationToCacheRelativePath(application);
+            String cachedRel = row.resourceUrl != null
+                    ? normalizeCacheRelativePath(row.resourceUrl) : null;
+            if (wantedRel != null && cachedRel != null && cachedRel.equalsIgnoreCase(wantedRel)) {
                 return true;
             }
         }
         return matchDomain && looksLikeCacheDomainId(application)
-                && application.equalsIgnoreCase(getDomain(infoPath));
-    }
-
-    static boolean cacheInfoMatchesApplication(Path infoPath, PropertiesFile pf, String application,
-            boolean matchJnlpPath, boolean matchDomain) {
-        return cacheInfoExactMatch(infoPath, pf, application, matchJnlpPath, matchDomain);
+                && application.equalsIgnoreCase(hostFromCacheRelativePath(row.resourceUrl));
     }
 
     static boolean looksLikeCacheDomainId(String application) {
@@ -1497,15 +1503,6 @@ public class CacheUtil {
         }
         String t = application.trim();
         return !t.isEmpty() && !t.contains("://") && t.indexOf('/') < 0 && t.indexOf('\\') < 0;
-    }
-
-    static boolean cachedResourceMatchesApplication(Path infoPath, String application) {
-        String wantedRel = applicationToCacheRelativePath(application);
-        String cachedRel = cacheRelativePathFromInfo(infoPath);
-        if (wantedRel == null || cachedRel == null) {
-            return false;
-        }
-        return cachedRel.equalsIgnoreCase(wantedRel);
     }
 
     static String parentCacheRelativeDir(String rel) {
@@ -1539,10 +1536,6 @@ public class CacheUtil {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    static String hrefFromCacheInfoFile(Path infoPath) {
-        return hrefFromCacheRelativePath(cacheRelativePathFromInfo(infoPath));
     }
 
     static String hrefFromCacheRelativePath(String rel) {
@@ -1580,26 +1573,6 @@ public class CacheUtil {
         return null;
     }
 
-    private static String cacheRelativePathFromInfo(Path infoPath) {
-        if (infoPath == null) {
-            return null;
-        }
-        String abs = infoPath.toAbsolutePath().toString();
-        if (!abs.endsWith(CacheDirectory.INFO_SUFFIX)) {
-            return null;
-        }
-        String resourceAbs = abs.substring(0, abs.length() - CacheDirectory.INFO_SUFFIX.length());
-        String cacheRoot = CacheLRUWrapper.getInstance().getCacheDir().getFullPath();
-        try {
-            resourceAbs = new File(resourceAbs).getCanonicalPath();
-            if (cacheRoot != null) {
-                cacheRoot = new File(cacheRoot).getCanonicalPath();
-            }
-        } catch (IOException ignored) {
-        }
-        return normalizeCacheRelativePath(pathToURLPath(resourceAbs, cacheRoot));
-    }
-
     private static String normalizeCacheRelativePath(String path) {
         if (path == null || path.isEmpty()) {
             return null;
@@ -1611,13 +1584,20 @@ public class CacheUtil {
         return s;
     }
 
-    /**
-     * Hostname for a cache {@code .info} file ({@code 127.0.0.1}, {@code example.com}).
-     * Uses the same canonical relative path as URL matching so Windows drive-letter
-     * case and {@code \} vs {@code /} cannot invent a false domain.
-     */
-    static String getDomain(Path path) {
-        return hostFromCacheRelativePath(cacheRelativePathFromInfo(path));
+    /** First path segment ({@code http}, {@code https}, {@code file}). */
+    static String protocolFromCacheRelativePath(String rel) {
+        if (rel == null || rel.isEmpty()) {
+            return null;
+        }
+        String s = rel.replace('\\', '/');
+        while (s.startsWith("/")) {
+            s = s.substring(1);
+        }
+        if (s.isEmpty()) {
+            return null;
+        }
+        int slash = s.indexOf('/');
+        return slash <= 0 ? s : s.substring(0, slash);
     }
 
     static String hostFromCacheRelativePath(String rel) {

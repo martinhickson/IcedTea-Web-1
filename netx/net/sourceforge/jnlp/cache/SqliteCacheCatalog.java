@@ -28,7 +28,8 @@ import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
- * SQLite-backed cache catalog under {@code {cachedir}/db/cache_catalog.sqlite}.
+ * SQLite-backed cache catalog under {@code {cachedir}/cache/db/cache_catalog.sqlite}
+ * ({@code {cachedir}/db/} when {@code cachedir} already ends with {@code cache}).
  * Uses WAL and {@code busy_timeout} for multi-process wait/retry.
  */
 final class SqliteCacheCatalog implements CacheCatalog {
@@ -94,10 +95,14 @@ final class SqliteCacheCatalog implements CacheCatalog {
             parent.mkdirs();
         }
         // Prefer extracting sqlitejdbc under the cache tree (VDI often blocks %TEMP%).
-        if (parent != null && System.getProperty("org.sqlite.tmpdir") == null) {
-            File nativeDir = new File(parent, "native");
-            if (nativeDir.isDirectory() || nativeDir.mkdirs()) {
-                System.setProperty("org.sqlite.tmpdir", nativeDir.getAbsolutePath());
+        // Refresh if a previous JVM test left a deleted tmpdir path.
+        if (parent != null) {
+            String existing = System.getProperty("org.sqlite.tmpdir");
+            if (existing == null || !new File(existing).isDirectory()) {
+                File nativeDir = new File(parent, "native");
+                if (nativeDir.isDirectory() || nativeDir.mkdirs()) {
+                    System.setProperty("org.sqlite.tmpdir", nativeDir.getAbsolutePath());
+                }
             }
         }
     }
@@ -115,7 +120,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             st.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
             try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM schema_version")) {
                 if (rs.next() && rs.getInt(1) == 0) {
-                    st.executeUpdate("INSERT INTO schema_version(version) VALUES (1)");
+                    st.executeUpdate("INSERT INTO schema_version(version) VALUES (2)");
                 }
             }
             st.execute("CREATE TABLE IF NOT EXISTS cache_entry ("
@@ -135,8 +140,42 @@ final class SqliteCacheCatalog implements CacheCatalog {
                     + "ON cache_entry (last_access ASC)");
             st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_folder "
                     + "ON cache_entry (folder_id)");
+            ensureEntryMetadataColumns(st);
         }
         return connection;
+    }
+
+    /**
+     * Schema v2: jnlp-path / HTTP freshness / delete mark on the row.
+     * Do not put these in sidecar {@code .info} files.
+     */
+    private void ensureEntryMetadataColumns(Statement st) throws SQLException {
+        addColumnIfMissing(st, "jnlp_path", "TEXT");
+        addColumnIfMissing(st, "content_length", "INTEGER");
+        addColumnIfMissing(st, "last_modified", "INTEGER");
+        addColumnIfMissing(st, "last_updated", "INTEGER");
+        addColumnIfMissing(st, "marked_delete", "INTEGER NOT NULL DEFAULT 0");
+        st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_jnlp ON cache_entry (jnlp_path)");
+        try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
+            if (rs.next() && rs.getInt(1) < 2) {
+                st.executeUpdate("UPDATE schema_version SET version = 2");
+            }
+        }
+    }
+
+    private static void addColumnIfMissing(Statement st, String name, String decl) throws SQLException {
+        boolean present = false;
+        try (ResultSet rs = st.executeQuery("PRAGMA table_info(cache_entry)")) {
+            while (rs.next()) {
+                if (name.equalsIgnoreCase(rs.getString("name"))) {
+                    present = true;
+                    break;
+                }
+            }
+        }
+        if (!present) {
+            st.execute("ALTER TABLE cache_entry ADD COLUMN " + name + " " + decl);
+        }
     }
 
     private void quarantineSidecars() {
@@ -328,6 +367,23 @@ final class SqliteCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public boolean removeByPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement("DELETE FROM cache_entry WHERE path = ?")) {
+                ps.setString(1, path);
+                return ps.executeUpdate() > 0;
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    @Override
     public boolean updateEntry(String oldKey, String cacheDirPath) {
         try {
             Connection c = conn();
@@ -483,6 +539,97 @@ final class SqliteCacheCatalog implements CacheCatalog {
             candidate = 0;
         }
         return CacheCatalog.claimFolderId(cacheDir, candidate);
+    }
+
+    @Override
+    public CacheEntryMeta getMetaByPath(String path) {
+        if (path == null) {
+            return null;
+        }
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT path, resource_url, jnlp_path, content_length, last_modified, "
+                            + "last_updated, marked_delete FROM cache_entry WHERE path = ?")) {
+                ps.setString(1, path);
+                try (ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next()) {
+                        return null;
+                    }
+                    return rowToMeta(rs);
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return null;
+        }
+    }
+
+    @Override
+    public void putMeta(CacheEntryMeta meta) {
+        if (meta == null || meta.path == null) {
+            return;
+        }
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement(
+                    "UPDATE cache_entry SET jnlp_path = ?, content_length = ?, last_modified = ?, "
+                            + "last_updated = ?, marked_delete = ? WHERE path = ?")) {
+                ps.setString(1, meta.jnlpPath);
+                setNullableLong(ps, 2, meta.contentLength);
+                setNullableLong(ps, 3, meta.lastModified);
+                setNullableLong(ps, 4, meta.lastUpdated);
+                ps.setInt(5, meta.markedDelete ? 1 : 0);
+                ps.setString(6, meta.path);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+    }
+
+    @Override
+    public List<CacheEntryMeta> listAllMeta() {
+        List<CacheEntryMeta> rows = new ArrayList<>();
+        try {
+            Connection c = conn();
+            try (Statement st = c.createStatement();
+                 ResultSet rs = st.executeQuery(
+                         "SELECT path, resource_url, jnlp_path, content_length, last_modified, "
+                                 + "last_updated, marked_delete FROM cache_entry")) {
+                while (rs.next()) {
+                    rows.add(rowToMeta(rs));
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+        return rows;
+    }
+
+    private static CacheEntryMeta rowToMeta(ResultSet rs) throws SQLException {
+        CacheEntryMeta m = new CacheEntryMeta();
+        m.path = rs.getString(1);
+        m.resourceUrl = rs.getString(2);
+        m.jnlpPath = rs.getString(3);
+        m.contentLength = getNullableLong(rs, 4);
+        m.lastModified = getNullableLong(rs, 5);
+        m.lastUpdated = getNullableLong(rs, 6);
+        m.markedDelete = rs.getInt(7) != 0;
+        return m;
+    }
+
+    private static Long getNullableLong(ResultSet rs, int idx) throws SQLException {
+        long v = rs.getLong(idx);
+        return rs.wasNull() ? null : v;
+    }
+
+    private static void setNullableLong(PreparedStatement ps, int idx, Long value) throws SQLException {
+        if (value == null) {
+            ps.setObject(idx, null);
+        } else {
+            ps.setLong(idx, value);
+        }
     }
 
     @Override

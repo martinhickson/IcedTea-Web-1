@@ -5,7 +5,6 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import net.sourceforge.jnlp.config.PathsAndFiles;
-import net.sourceforge.jnlp.util.PropertiesFile;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
 import org.junit.After;
 import org.junit.Assert;
@@ -77,22 +76,28 @@ public class CacheUtilKeepSlotSidecarTest extends NoStdOutErrTest {
     @Test
     public void shutdownSweepDoesNotTreatMissingJarAsGhost() throws Exception {
         File jar = writeCachedJar();
-        File info = new File(jar.getPath() + CacheDirectory.INFO_SUFFIX);
+        String path = jar.getPath();
         Assert.assertTrue(jar.delete());
 
         CacheUtil.cleanCacheOnShutdown();
 
-        Assert.assertTrue("unmarked .info must stay when jar is not a file yet", info.isFile());
+        CacheEntryMeta row = CacheLRUWrapper.getInstance().getMetaByPath(path);
+        Assert.assertNotNull("unmarked catalog row must stay when jar is not a file yet", row);
+        Assert.assertFalse(row.markedDelete);
     }
 
     @Test
     public void markedDeleteStillRemovesSlotIncludingSidecar() throws Exception {
         File jar = writeCachedJar();
         File sidecar = writeSidecar(jar, "pack-bytes");
-        File info = new File(jar.getPath() + CacheDirectory.INFO_SUFFIX);
-        PropertiesFile pf = new PropertiesFile(info);
-        pf.setProperty("delete", "true");
-        pf.store();
+        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+        CacheEntryMeta meta = lru.getMetaByPath(jar.getPath());
+        if (meta == null) {
+            meta = new CacheEntryMeta();
+            meta.path = jar.getPath();
+        }
+        meta.markedDelete = true;
+        lru.putMeta(meta);
 
         CacheUtil.cleanCacheOnShutdown();
 

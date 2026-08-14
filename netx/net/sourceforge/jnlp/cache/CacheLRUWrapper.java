@@ -58,6 +58,8 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  */
 public class CacheLRUWrapper {
 
+    /** Under the configured cache root: {@code cache/db/}. */
+    public static final String SQLITE_NEST_DIR_NAME = "cache";
     public static final String DB_CACHE_DIR_NAME = "db";
 
     private final InfrastructureFileDescriptor cacheDir;
@@ -92,7 +94,7 @@ public class CacheLRUWrapper {
             File marker = new File(this.cacheDir.getFile(), SqliteCacheCatalog.FAILED_MARKER);
             if (marker.isFile()) {
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
-                        "sqlite catalog sticky-fail marker present; using properties under db/");
+                        "sqlite catalog sticky-fail marker present; using properties under cache/db/");
                 this.sqliteMode = false;
                 this.recentlyUsedPropertiesFile = recentlyUsedUnder(this.cacheDir);
                 this.catalog = new PropertiesCacheCatalog(this.recentlyUsedPropertiesFile);
@@ -107,7 +109,7 @@ public class CacheLRUWrapper {
             this.recentlyUsedPropertiesFile = recentlyUsed != null ? recentlyUsed : PathsAndFiles.getRecentlyUsedFile();
             this.catalog = new PropertiesCacheCatalog(this.recentlyUsedPropertiesFile);
         }
-        // Keep Windows shortcuts at the configured user cache root (parent of db/ when sqlite).
+        // Keep Windows shortcuts at the configured user cache root (parent of cache/db/ when sqlite).
         InfrastructureFileDescriptor shortcutRoot = useSqlite
                 ? (cacheDir != null ? cacheDir : PathsAndFiles.CACHE_DIR)
                 : this.cacheDir;
@@ -115,7 +117,8 @@ public class CacheLRUWrapper {
     }
 
     /**
-     * Integration-test factory: sqlite catalog roots at {@code parentCache/db};
+     * Integration-test factory: sqlite catalog roots at {@code parentCache/cache/db}
+     * (or {@code parentCache/db} when {@code parentCache} is named {@code cache});
      * legacy uses {@code parentCache/recently_used} under the same parent.
      */
     public static CacheLRUWrapper createForTests(boolean useSqlite, File parentCache) {
@@ -190,11 +193,25 @@ public class CacheLRUWrapper {
         }
     }
 
+    /**
+     * {@code {cachedir}/cache/db}, or {@code {cachedir}/db} when {@code cachedir}
+     * already ends with the path segment {@code cache}.
+     */
+    static File sqliteCacheRoot(File parentCache) {
+        if (parentCache == null) {
+            return new File(SQLITE_NEST_DIR_NAME, DB_CACHE_DIR_NAME);
+        }
+        File nest = SQLITE_NEST_DIR_NAME.equals(parentCache.getName())
+                ? parentCache
+                : new File(parentCache, SQLITE_NEST_DIR_NAME);
+        return new File(nest, DB_CACHE_DIR_NAME);
+    }
+
     static InfrastructureFileDescriptor dbDirDescriptor(final InfrastructureFileDescriptor parentCache) {
         return new InfrastructureFileDescriptor() {
             @Override
             public File getFile() {
-                return new File(parentCache.getFile(), DB_CACHE_DIR_NAME);
+                return sqliteCacheRoot(parentCache.getFile());
             }
 
             @Override
@@ -232,7 +249,7 @@ public class CacheLRUWrapper {
     }
 
     /**
-     * @return the cacheDir (legacy root or {@code cachedir/db})
+     * @return the cacheDir (legacy root or {@code cachedir/cache/db})
      */
     public InfrastructureFileDescriptor getCacheDir() {
         return cacheDir;
@@ -324,6 +341,10 @@ public class CacheLRUWrapper {
         return catalog.removeEntry(key);
     }
 
+    public synchronized boolean removeByPath(String path) {
+        return catalog.removeByPath(path);
+    }
+
     public synchronized boolean updateEntry(String oldKey) {
         return catalog.updateEntry(oldKey, getCacheDir().getFullPath());
     }
@@ -394,5 +415,17 @@ public class CacheLRUWrapper {
     /** Close catalog resources (SQLite connection). Safe to call more than once. */
     public void close() {
         catalog.close();
+    }
+
+    public CacheEntryMeta getMetaByPath(String path) {
+        return catalog.getMetaByPath(path);
+    }
+
+    public void putMeta(CacheEntryMeta meta) {
+        catalog.putMeta(meta);
+    }
+
+    public List<CacheEntryMeta> listAllMeta() {
+        return catalog.listAllMeta();
     }
 }

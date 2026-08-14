@@ -16,14 +16,13 @@
 
 package net.sourceforge.jnlp.cache;
 
-import static net.sourceforge.jnlp.runtime.Translator.R;
-
 import java.io.File;
 import java.net.MalformedURLException;
 import java.net.URL;
 
+import java.util.concurrent.locks.ReentrantLock;
+
 import net.sourceforge.jnlp.Version;
-import net.sourceforge.jnlp.util.PropertiesFile;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
@@ -45,8 +44,9 @@ public class CacheEntry {
     /** the requested version */
     private final Version version;
 
-    /** info about the cached file */
-    private final PropertiesFile properties;
+    /** Catalog-row metadata (not a sidecar {@code .info} file). */
+    private final CacheEntryMeta meta = new CacheEntryMeta();
+    private final ReentrantLock entryLock = new ReentrantLock();
 
     private File localFile;
 
@@ -70,9 +70,18 @@ public class CacheEntry {
 
         this.localFile = directPackGz ? CacheUtil.getCacheFile(removePackGzSuffix(location), version)
                 : CacheUtil.getCacheFile(location, version);
-        File infoFile = new File(localFile.getPath() + CacheDirectory.INFO_SUFFIX); // replace with something that can't be clobbered
-
-        properties = new PropertiesFile(infoFile, R("CAutoGen"));
+        if (this.localFile != null) {
+            this.meta.path = this.localFile.getPath();
+            CacheEntryMeta stored = CacheLRUWrapper.getInstance().getMetaByPath(this.meta.path);
+            if (stored != null) {
+                this.meta.jnlpPath = stored.jnlpPath;
+                this.meta.contentLength = stored.contentLength;
+                this.meta.lastModified = stored.lastModified;
+                this.meta.lastUpdated = stored.lastUpdated;
+                this.meta.markedDelete = stored.markedDelete;
+                this.meta.resourceUrl = stored.resourceUrl;
+            }
+        }
     }
 
     public static URL removePackGzSuffix(URL url) {
@@ -138,7 +147,7 @@ public class CacheEntry {
     }
 
     public void setJnlpPath(String jnlpPath) {
-    	properties.setProperty(KEY_JNLP_PATH, jnlpPath);
+        meta.jnlpPath = jnlpPath;
     }
 
     public long getLastModified() {
@@ -150,15 +159,31 @@ public class CacheEntry {
     }
 
     private long getLongKey(String key) {
-        try {
-            return Long.parseLong(properties.getProperty(key));
-        } catch (Exception ex) {
-            return 0;
-        }
+        Long v = longField(key);
+        return v == null ? 0L : v;
     }
 
     private void setLongKey(String key, long value) {
-        properties.setProperty(key, Long.toString(value));
+        if (KEY_CONTENT_LENGTH.equals(key)) {
+            meta.contentLength = value;
+        } else if (KEY_LAST_MODIFIED.equals(key)) {
+            meta.lastModified = value;
+        } else if (KEY_LAST_UPDATED.equals(key)) {
+            meta.lastUpdated = value;
+        }
+    }
+
+    private Long longField(String key) {
+        if (KEY_CONTENT_LENGTH.equals(key)) {
+            return meta.contentLength;
+        }
+        if (KEY_LAST_MODIFIED.equals(key)) {
+            return meta.lastModified;
+        }
+        if (KEY_LAST_UPDATED.equals(key)) {
+            return meta.lastUpdated;
+        }
+        return null;
     }
 
     /**
@@ -180,7 +205,7 @@ public class CacheEntry {
             return false;
         }
         try {
-            long cachedModified = Long.parseLong(properties.getProperty(KEY_LAST_MODIFIED, "0"));
+            long cachedModified = meta.lastModified == null ? 0L : meta.lastModified;
             OutputController.getLogger().log("isCurrent:lastModified cache:" + cachedModified +  " actual:" + lastModified);
             // Servers that omit Last-Modified (common for simple local HTTP such as
             // Undertow test hosts) report 0. Only treat as current when THIS entry's
@@ -226,7 +251,7 @@ public class CacheEntry {
 
         try {
             long cachedLength = fileToCheck.length();
-            long remoteLength = Long.parseLong(properties.getProperty(KEY_CONTENT_LENGTH, "-1"));
+            long remoteLength = meta.contentLength == null ? -1L : meta.contentLength;
 
             OutputController.getLogger().log("isCached: remote:" + remoteLength + " cached:" + cachedLength);
 
@@ -253,46 +278,50 @@ public class CacheEntry {
     }
 
     /**
-     * Save the current information for the cache entry.
+     * Save the current information for the cache entry into the catalog.
      *
-     * @return True if successfuly stored into file, false otherwise
+     * @return True if stored, false otherwise
      */
     protected boolean store() {
-        if (properties.isHeldByCurrentThread()) {
-            properties.store();
-            return true;
-        } else {
+        if (!entryLock.isHeldByCurrentThread()) {
             return false;
         }
+        if (localFile != null) {
+            meta.path = localFile.getPath();
+        }
+        CacheLRUWrapper.getInstance().putMeta(meta);
+        return true;
     }
 
     /**
      * Mark this entry for deletion at shutdown.
      */
     public void markForDelete() { // once marked it should not be unmarked.
-        properties.setProperty("delete", Boolean.toString(true));
+        meta.markedDelete = true;
     }
 
     /**
      * Lock cache item.
      */
     protected void lock() {
-        properties.lock();
+        entryLock.lock();
     }
 
     /**
      * Unlock cache item. Does not do anything if not holding the lock.
      */
     protected void unlock() {
-        properties.unlock();
+        if (entryLock.isHeldByCurrentThread()) {
+            entryLock.unlock();
+        }
     }
 
     protected boolean tryLock() {
-        return properties.tryLock();
+        return entryLock.tryLock();
     }
 
     protected boolean isHeldByCurrentThread() {
-        return properties.isHeldByCurrentThread();
+        return entryLock.isHeldByCurrentThread();
     }
 
     public File getLocalFile() {

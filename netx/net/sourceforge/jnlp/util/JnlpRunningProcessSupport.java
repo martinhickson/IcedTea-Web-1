@@ -139,8 +139,7 @@ public final class JnlpRunningProcessSupport {
             if (CacheUtil.cacheIdSharesDirectoryWithJnlp(id, runningJnlp)) {
                 return true;
             }
-            return runningJnlp != null
-                    && runningJnlp.toLowerCase(Locale.ROOT).contains(id.toLowerCase(Locale.ROOT));
+            return CacheUtil.cacheIdIsRunningJnlpHost(id, runningJnlp);
         }
 
         private static boolean pathsMatch(String haystackRaw, String needleRaw) {

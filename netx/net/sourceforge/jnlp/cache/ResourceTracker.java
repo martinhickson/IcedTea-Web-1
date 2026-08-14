@@ -402,7 +402,7 @@ public class ResourceTracker {
                 return local;
             }
         }
-        // Ghost / corrupt localFile (reserved .info slot, cleared folder, or a
+        // Ghost / corrupt localFile (reserved catalog slot, cleared folder, or a
         // non-zip payload cached as .jar). Recover an older good copy if present.
         try {
             File recovered = CacheUtil.findExistingCacheFile(location, resource.getDownloadVersion());

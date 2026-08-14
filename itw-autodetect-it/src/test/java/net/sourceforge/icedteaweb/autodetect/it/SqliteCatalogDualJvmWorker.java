@@ -3,7 +3,6 @@ package net.sourceforge.icedteaweb.autodetect.it;
 import java.io.File;
 import java.util.List;
 import java.util.Map.Entry;
-import net.sourceforge.jnlp.cache.CacheDirectory;
 import net.sourceforge.jnlp.cache.CacheLRUWrapper;
 import net.sourceforge.jnlp.cache.CacheUtil;
 
@@ -47,10 +46,6 @@ public final class SqliteCatalogDualJvmWorker {
                         }
                         if (!jar.exists() && !jar.createNewFile()) {
                             fail("create " + jar);
-                        }
-                        File info = new File(jar.getPath() + CacheDirectory.INFO_SUFFIX);
-                        if (!info.exists() && !info.createNewFile()) {
-                            fail("create " + info);
                         }
                         wrapper.lock();
                         try {

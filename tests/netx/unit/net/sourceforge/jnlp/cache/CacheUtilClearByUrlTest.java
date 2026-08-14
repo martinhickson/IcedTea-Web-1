@@ -5,6 +5,7 @@ import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import net.sourceforge.jnlp.config.PathsAndFiles;
+import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
 import org.junit.After;
 import org.junit.Assert;
@@ -105,6 +106,23 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void unknownClearIdNotBlockedByHeldConsoleAndDoesNotDeleteIt() throws Exception {
+        JnlpRunningProcessSupport.RunningProcess held =
+                new JnlpRunningProcessSupport.RunningProcess(42, "console", "1.0",
+                        "java -jar icedtea-web-uber.jar http://127.0.0.1:4200/jnlp/console/app.jnlp",
+                        "http://127.0.0.1:4200/jnlp/console/app.jnlp");
+        String unknown = "http://127.0.0.1:4200/jnlp/no-such/app.jar";
+        Assert.assertTrue(held.blocksCacheClear("http://127.0.0.1:4200/jnlp/console/app.jnlp"));
+        Assert.assertFalse(held.blocksCacheClear(unknown));
+
+        URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
+        File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
+        writeJnlpPath(jnlpFile, jnlp.toString());
+        Assert.assertFalse(CacheUtil.clearCache(unknown, true, true));
+        Assert.assertTrue(jnlpFile.isFile());
+    }
+
+    @Test
     public void unknownClearIdsDoNotAlertSiblingApps() throws Exception {
         URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
         URL jar = new URL("http://127.0.0.1:4200/jnlp/console/app.jar");
@@ -137,14 +155,33 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
 
     @Test
     public void clearByDomainIdStillRemovesHostFiles() throws Exception {
-        URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
-        URL otherHost = new URL("http://127.0.0.2:4200/jnlp/console/app.jnlp");
+        URL jnlp = new URL("http://192.0.2.1:4200/jnlp/console/app.jnlp");
+        URL otherHost = new URL("http://192.0.2.2:4200/jnlp/console/app.jnlp");
         File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
         File otherFile = writeCachedResource(otherHost, "<jnlp/>");
 
-        Assert.assertTrue(CacheUtil.clearCache("127.0.0.1", true, true));
+        Assert.assertTrue(CacheUtil.clearCache("192.0.2.1", true, true));
         Assert.assertFalse("same-host JNLP should be cleared by domain id", jnlpFile.exists());
         Assert.assertTrue("other host must stay", otherFile.isFile());
+    }
+
+    @Test
+    public void cacheIdIsRunningJnlpHostIsExactHost() {
+        String running = "http://evil.example.com/app.jnlp";
+        Assert.assertTrue(CacheUtil.cacheIdIsRunningJnlpHost("evil.example.com", running));
+        Assert.assertFalse(CacheUtil.cacheIdIsRunningJnlpHost("example.com", running));
+        Assert.assertFalse(CacheUtil.cacheIdIsRunningJnlpHost("com", running));
+        Assert.assertTrue(CacheUtil.cacheIdIsRunningJnlpHost("127.0.0.1",
+                "http://127.0.0.1:4200/jnlp/console/app.jnlp"));
+    }
+
+    @Test
+    public void protocolFromCacheRelativePathReadsScheme() {
+        Assert.assertEquals("http", CacheUtil.protocolFromCacheRelativePath(
+                "/http/127.0.0.1/4200/jnlp/console/app.jnlp"));
+        Assert.assertEquals("https", CacheUtil.protocolFromCacheRelativePath(
+                "/https/example.com/app.jnlp"));
+        Assert.assertNull(CacheUtil.protocolFromCacheRelativePath(null));
     }
 
     @Test
@@ -160,32 +197,75 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
     }
 
     @Test
-    public void getDomainUsesCanonicalCacheRoot() throws Exception {
+    public void directoryNodeReadsCatalogNotInfoSidecar() throws Exception {
         URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
         File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
-        File info = new File(jnlpFile.getPath() + CacheDirectory.INFO_SUFFIX);
-        Assert.assertTrue(info.isFile());
+        writeJnlpPath(jnlpFile, jnlp.toString());
 
-        String nonCanonicalRoot = new File(tempCache, ".." + File.separator + tempCache.getName())
-                .getAbsolutePath();
-        PathsAndFiles.CACHE_DIR.setValue(nonCanonicalRoot);
-
-        Assert.assertEquals("127.0.0.1", CacheUtil.getDomain(info.getCanonicalFile().toPath()));
+        DirectoryNode node = new DirectoryNode(jnlpFile.getName(), jnlpFile, null);
+        CacheEntryMeta meta = node.getMeta();
+        Assert.assertNotNull(meta);
+        Assert.assertEquals(jnlp.toString(), meta.jnlpPath);
+        Assert.assertFalse(new File(jnlpFile.getPath() + CacheDirectory.INFO_SUFFIX).exists());
+        Assert.assertTrue(meta.formatAsInfoText().contains("jnlp-path=" + jnlp));
     }
 
     @Test
-    public void cachedResourceMatchesApplicationAfterCanonicalizingCacheRoot() throws Exception {
+    public void cacheViewerRowsComeFromCatalogNotDiskWalk() throws Exception {
         URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
         File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
-        File info = new File(jnlpFile.getPath() + CacheDirectory.INFO_SUFFIX);
-        Assert.assertTrue(info.isFile());
+        writeJnlpPath(jnlpFile, jnlp.toString());
+        File nativeLib = new File(CacheLRUWrapper.getInstance().getCacheDir().getFile(),
+                "native/sqlitejdbc.so");
+        Assert.assertTrue(nativeLib.getParentFile().mkdirs() || nativeLib.getParentFile().isDirectory());
+        Assert.assertTrue(nativeLib.createNewFile() || nativeLib.isFile());
 
-        String nonCanonicalRoot = new File(tempCache, ".." + File.separator + tempCache.getName())
-                .getAbsolutePath();
-        PathsAndFiles.CACHE_DIR.setValue(nonCanonicalRoot);
+        java.util.List<Object[]> rows = CacheDirectory.listViewerRows();
+        Assert.assertEquals(1, rows.size());
+        Object[] row = rows.get(0);
+        DirectoryNode node = (DirectoryNode) row[0];
+        Assert.assertEquals(jnlpFile.getName(), node.toString());
+        Assert.assertEquals("http", row[2]);
+        Assert.assertEquals("127.0.0.1", row[3]);
+        Assert.assertEquals(jnlp.toString(), row[6]);
+        Assert.assertFalse(new File(jnlpFile.getPath() + CacheDirectory.INFO_SUFFIX).exists());
+    }
 
-        Assert.assertTrue(CacheUtil.cachedResourceMatchesApplication(
-                info.getCanonicalFile().toPath(), jnlp.toString()));
+    @Test
+    public void removeByPathDropsCatalogRow() throws Exception {
+        URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
+        File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
+        writeJnlpPath(jnlpFile, jnlp.toString());
+        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+        Assert.assertNotNull(lru.getMetaByPath(jnlpFile.getPath()));
+        DirectoryNode node = new DirectoryNode(jnlpFile.getName(), jnlpFile, null);
+        node.removeCatalogRow();
+        Assert.assertNull(lru.getMetaByPath(jnlpFile.getPath()));
+        Assert.assertTrue(CacheDirectory.listViewerRows().isEmpty());
+    }
+
+    @Test
+    public void clearIdForMetaPrefersJnlpPathThenHref() {
+        CacheEntryMeta meta = new CacheEntryMeta();
+        meta.resourceUrl = "/http/127.0.0.1/4200/jnlp/console/app.jar";
+        Assert.assertEquals("http://127.0.0.1:4200/jnlp/console/app.jar",
+                CacheUtil.clearIdForMeta(meta));
+        meta.jnlpPath = "http://127.0.0.1:4200/jnlp/console/app.jnlp";
+        Assert.assertEquals("http://127.0.0.1:4200/jnlp/console/app.jnlp",
+                CacheUtil.clearIdForMeta(meta));
+        Assert.assertNull(CacheUtil.clearIdForMeta(null));
+    }
+
+    @Test
+    public void catalogRowMatchesJnlpUrlNotHost() throws Exception {
+        URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
+        File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
+        CacheEntryMeta row = CacheLRUWrapper.getInstance().getMetaByPath(jnlpFile.getPath());
+        Assert.assertNotNull(row);
+        Assert.assertTrue(CacheUtil.catalogRowExactMatch(row, jnlp.toString(), true, true));
+        Assert.assertFalse(CacheUtil.catalogRowExactMatch(row,
+                "http://127.0.0.1:4200/jnlp/no-such/app.jar", true, true));
+        Assert.assertEquals("127.0.0.1", CacheUtil.hostFromCacheRelativePath(row.resourceUrl));
     }
 
     private static File writeCachedResource(URL source, String contents) throws Exception {
@@ -195,11 +275,14 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
     }
 
     private static void writeJnlpPath(File cacheFile, String jnlpPath) {
-        File info = new File(cacheFile.getPath() + CacheDirectory.INFO_SUFFIX);
-        net.sourceforge.jnlp.util.PropertiesFile pf =
-                new net.sourceforge.jnlp.util.PropertiesFile(info);
-        pf.setProperty(CacheEntry.KEY_JNLP_PATH, jnlpPath);
-        pf.store();
+        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+        CacheEntryMeta meta = lru.getMetaByPath(cacheFile.getPath());
+        if (meta == null) {
+            meta = new CacheEntryMeta();
+            meta.path = cacheFile.getPath();
+        }
+        meta.jnlpPath = jnlpPath;
+        lru.putMeta(meta);
     }
 
     private static void deleteRecursive(File root) {
