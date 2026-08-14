@@ -141,6 +141,10 @@ final class SqliteCacheCatalog implements CacheCatalog {
             st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_folder "
                     + "ON cache_entry (folder_id)");
             ensureEntryMetadataColumns(st);
+            st.execute("CREATE TABLE IF NOT EXISTS running_app ("
+                    + "pid INTEGER PRIMARY KEY,"
+                    + "jnlp_path TEXT,"
+                    + "process_start TEXT)");
         }
         return connection;
     }
@@ -586,6 +590,73 @@ final class SqliteCacheCatalog implements CacheCatalog {
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
+    }
+
+    private static void ensureRunningAppTable(Connection c) throws SQLException {
+        try (Statement st = c.createStatement()) {
+            st.execute("CREATE TABLE IF NOT EXISTS running_app ("
+                    + "pid INTEGER PRIMARY KEY,"
+                    + "jnlp_path TEXT,"
+                    + "process_start TEXT)");
+        }
+    }
+
+    @Override
+    public void registerRunningApp(int pid, String jnlpPath, String processStart) {
+        if (pid <= 0) {
+            return;
+        }
+        try {
+            Connection c = conn();
+            ensureRunningAppTable(c);
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT INTO running_app(pid, jnlp_path, process_start) VALUES (?,?,?) "
+                            + "ON CONFLICT(pid) DO UPDATE SET "
+                            + "jnlp_path=excluded.jnlp_path, process_start=excluded.process_start")) {
+                ps.setInt(1, pid);
+                ps.setString(2, jnlpPath);
+                ps.setString(3, processStart);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+        }
+    }
+
+    @Override
+    public void unregisterRunningApp(int pid) {
+        if (pid <= 0) {
+            return;
+        }
+        try {
+            Connection c = conn();
+            ensureRunningAppTable(c);
+            try (PreparedStatement ps = c.prepareStatement("DELETE FROM running_app WHERE pid = ?")) {
+                ps.setInt(1, pid);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(e);
+        }
+    }
+
+    @Override
+    public List<CacheRunningApp> listRunningApps() {
+        List<CacheRunningApp> rows = new ArrayList<CacheRunningApp>();
+        try {
+            Connection c = conn();
+            ensureRunningAppTable(c);
+            try (Statement st = c.createStatement();
+                    ResultSet rs = st.executeQuery(
+                            "SELECT pid, jnlp_path, process_start FROM running_app")) {
+                while (rs.next()) {
+                    rows.add(new CacheRunningApp(rs.getInt(1), rs.getString(2), rs.getString(3)));
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(e);
+        }
+        return rows;
     }
 
     @Override

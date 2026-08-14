@@ -194,7 +194,7 @@ public final class JnlpRunningProcessSupport {
      * line, so that filter used to skip the busy guard.
      */
     public static boolean cacheClearBlockedByRunningApps(String cacheId) {
-        List<RunningProcess> running = listRunningJnlpProcesses();
+        List<RunningProcess> running = listRunningJnlpProcessesForCacheClear();
         if (cacheId == null || cacheId.trim().isEmpty()) {
             return !running.isEmpty();
         }
@@ -206,40 +206,100 @@ public final class JnlpRunningProcessSupport {
         return false;
     }
 
+    /**
+     * Same as {@link #listRunningJnlpProcesses()} but does not treat ancestor
+     * PIDs as self. A JDK-relaunch child can otherwise hide the running app
+     * when {@code -Xclearcache} is started under the same launcher tree.
+     */
+    public static List<RunningProcess> listRunningJnlpProcessesForCacheClear() {
+        Map<Integer, RunningProcess> byPid = new LinkedHashMap<>();
+        collectRunningJnlpProcesses(byPid, null, false);
+        mergeCatalogRunningApps(byPid);
+        return new ArrayList<>(byPid.values());
+    }
+
     public static List<RunningProcess> listRunningJnlpProcesses(String jnlpPathFilter) {
         Map<Integer, RunningProcess> byPid = new LinkedHashMap<>();
+        collectRunningJnlpProcesses(byPid, jnlpPathFilter, true);
+        return new ArrayList<>(byPid.values());
+    }
+
+    private static void collectRunningJnlpProcesses(Map<Integer, RunningProcess> byPid,
+            String jnlpPathFilter, boolean includeAncestorsInSelfTree) {
         int selfPid = currentPid();
-        Set<Long> selfTree = selfTreePids();
+        Set<Long> selfTree = selfTreePids(includeAncestorsInSelfTree);
 
         collectFromLockFiles(byPid, selfPid);
         collectFromProcessListing(byPid, selfPid);
 
-        List<RunningProcess> filtered = new ArrayList<>();
+        List<Integer> drop = new ArrayList<>();
         for (RunningProcess process : byPid.values()) {
-            if (selfTree.contains((long) process.getPid())) {
-                continue;
-            }
-            if (isInfrastructureProcess(process)) {
-                continue;
-            }
-            if (jnlpPathFilter == null || jnlpPathFilter.trim().isEmpty()
-                    || process.matchesJnlpPath(jnlpPathFilter)) {
-                filtered.add(process);
+            if (selfTree.contains((long) process.getPid())
+                    || isInfrastructureProcess(process)
+                    || (jnlpPathFilter != null && !jnlpPathFilter.trim().isEmpty()
+                    && !process.matchesJnlpPath(jnlpPathFilter))) {
+                drop.add(process.getPid());
             }
         }
-        return filtered;
+        for (Integer pid : drop) {
+            byPid.remove(pid);
+        }
+    }
+
+    private static void mergeCatalogRunningApps(Map<Integer, RunningProcess> byPid) {
+        int selfPid = currentPid();
+        List<net.sourceforge.jnlp.cache.CacheRunningApp> leases;
+        try {
+            leases = net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance().listRunningApps();
+        } catch (Exception e) {
+            return;
+        }
+        for (net.sourceforge.jnlp.cache.CacheRunningApp lease : leases) {
+            // Catalog leases are explicit. Do not drop them as "self tree"
+            // descendants — a test (or a relaunch child) may be a child PID.
+            if (lease.pid <= 0 || lease.pid == selfPid) {
+                continue;
+            }
+            if (!isProcessAlive(lease.pid)) {
+                try {
+                    net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance().unregisterRunningApp(lease.pid);
+                } catch (Exception ignored) {
+                }
+                continue;
+            }
+            if (lease.processStart != null && !isSameProcess(lease.pid, lease.processStart)) {
+                try {
+                    net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance().unregisterRunningApp(lease.pid);
+                } catch (Exception ignored) {
+                }
+                continue;
+            }
+            RunningProcess existing = byPid.get(lease.pid);
+            if (existing != null && existing.getJnlpPath() != null && !existing.getJnlpPath().trim().isEmpty()) {
+                continue;
+            }
+            String commandLine = existing != null ? existing.getCommandLine() : resolveCommandLine(lease.pid);
+            byPid.put(lease.pid, new RunningProcess(lease.pid, existing != null ? existing.getAppTitle() : null,
+                    existing != null ? existing.getAppVersion() : null, commandLine, lease.jnlpPath));
+        }
     }
 
     static Set<Long> selfTreePids() {
+        return selfTreePids(true);
+    }
+
+    static Set<Long> selfTreePids(boolean includeAncestors) {
         Set<Long> s = new HashSet<>();
         try {
             ProcessHandle current = ProcessHandle.current();
             s.add(current.pid());
             current.descendants().forEach(h -> s.add(h.pid()));
-            ProcessHandle p = current.parent().orElse(null);
-            while (p != null) {
-                s.add(p.pid());
-                p = p.parent().orElse(null);
+            if (includeAncestors) {
+                ProcessHandle p = current.parent().orElse(null);
+                while (p != null) {
+                    s.add(p.pid());
+                    p = p.parent().orElse(null);
+                }
             }
         } catch (Exception ignored) {}
         return s;
@@ -273,6 +333,9 @@ public final class JnlpRunningProcessSupport {
             return appTitle == null || appTitle.trim().isEmpty();
         }
         String lower = commandLine.toLowerCase(Locale.ROOT);
+        if (lower.contains("-xclearcache") || lower.contains("-xlistcacheids")) {
+            return true;
+        }
         return lower.contains("icedtea-web.bin.name=icedtea-web-settings")
                 || lower.contains("icedtea-web.bin.name=policyeditor")
                 || (lower.contains("icedtea-web-uber")
@@ -482,7 +545,7 @@ public final class JnlpRunningProcessSupport {
                 while ((line = reader.readLine()) != null) {
                     RunningProcess running = parsePsLine(line, selfPid);
                     if (running != null) {
-                        byPid.put(running.getPid(), running);
+                        putIfRicher(byPid, running);
                     }
                 }
             }
@@ -506,7 +569,7 @@ public final class JnlpRunningProcessSupport {
                 while ((line = reader.readLine()) != null) {
                     RunningProcess running = parseTasklistLine(line, selfPid);
                     if (running != null) {
-                        byPid.put(running.getPid(), running);
+                        putIfRicher(byPid, running);
                     }
                 }
             }
@@ -545,7 +608,8 @@ public final class JnlpRunningProcessSupport {
         if (!isLikelyJnlpProcess(commandLine) || isInfrastructureProcess(commandLine, null, null)) {
             return null;
         }
-        return new RunningProcess(pid, JnlpLockMetadata.shortNameFromCommandLine(commandLine), commandLine);
+        return new RunningProcess(pid, JnlpLockMetadata.shortNameFromCommandLine(commandLine),
+                null, commandLine, JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine));
     }
 
     private static RunningProcess parseTasklistLine(String line, int selfPid) {
@@ -578,6 +642,19 @@ public final class JnlpRunningProcessSupport {
         }
         return toRunningProcess(pid, commandLine,
                 JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine), null, null, null, null, null, null);
+    }
+
+    private static void putIfRicher(Map<Integer, RunningProcess> byPid, RunningProcess running) {
+        RunningProcess existing = byPid.get(running.getPid());
+        if (existing == null) {
+            byPid.put(running.getPid(), running);
+            return;
+        }
+        boolean existingHasJnlp = existing.getJnlpPath() != null && !existing.getJnlpPath().trim().isEmpty();
+        boolean incomingHasJnlp = running.getJnlpPath() != null && !running.getJnlpPath().trim().isEmpty();
+        if (!existingHasJnlp && incomingHasJnlp) {
+            byPid.put(running.getPid(), running);
+        }
     }
 
     private static String[] parseCsvLine(String line) {

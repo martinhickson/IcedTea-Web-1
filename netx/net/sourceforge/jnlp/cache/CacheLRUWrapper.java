@@ -428,4 +428,16 @@ public class CacheLRUWrapper {
     public List<CacheEntryMeta> listAllMeta() {
         return catalog.listAllMeta();
     }
+
+    public void registerRunningApp(int pid, String jnlpPath, String processStart) {
+        catalog.registerRunningApp(pid, jnlpPath, processStart);
+    }
+
+    public void unregisterRunningApp(int pid) {
+        catalog.unregisterRunningApp(pid);
+    }
+
+    public List<CacheRunningApp> listRunningApps() {
+        return catalog.listRunningApps();
+    }
 }

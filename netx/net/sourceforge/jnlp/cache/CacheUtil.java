@@ -307,7 +307,8 @@ public class CacheUtil {
     }
 
     public static boolean checkToClearCache() {
-        if (!okToClearCache()) {
+        if (net.sourceforge.jnlp.util.JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(null)
+                || !okToClearCache()) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, R("CCannotClearCache"));
             return false;
         }
