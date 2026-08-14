@@ -17,10 +17,10 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  * one unpack is always admitted (even if a single jar exceeds the budget) so the
  * pipeline never stalls with zero unpackers.
  * <p>
- * Defaults are sized so the two largest class-heavy packs on a typical
- * {@code -Xmx1800m} launch (≈26 MiB + ≈23 MiB wire at {@link #WIRE_TO_HEAP_MULTIPLIER}×)
- * fit together, and a third does not. There is no absolute budget ceiling —
- * the budget is a fraction of {@link Runtime#maxMemory()}.
+ * Class-heavy packs use {@link #WIRE_TO_HEAP_MULTIPLIER}×. Packs at or above
+ * {@link #LARGE_WIRE_MIB} (native-heavy, ~1× expand) use
+ * {@link #LARGE_WIRE_MULTIPLIER}× so an ~81 MiB unpack shares the heap with
+ * the two large class packs. No absolute budget ceiling.
  */
 public final class PackUnpackAdmission {
 
@@ -39,12 +39,17 @@ public final class PackUnpackAdmission {
      * 30× lets the two largest class packs share an 1800 MiB heap; 40× did not.
      */
     static final int WIRE_TO_HEAP_MULTIPLIER = 30;
+    /** Wire at or above this uses {@link #LARGE_WIRE_MULTIPLIER} (native-heavy). */
+    static final int LARGE_WIRE_MIB = 40;
+    static final int LARGE_WIRE_MULTIPLIER = 1;
     /** Fallback unknown-size reserve when heap math is unavailable. */
     static final long DEFAULT_RESERVE_BYTES = 256L << 20; // 256 MiB
     /** Same strings as {@code DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_*}. */
     static final String KEY_WIRE_MULTIPLIER = "deployment.http.pack200.admission.wireMultiplier";
     static final String KEY_HEAP_PERCENT = "deployment.http.pack200.admission.heapPercent";
     static final String KEY_DEFAULT_RESERVE_MIB = "deployment.http.pack200.admission.defaultReserveMiB";
+    static final String KEY_LARGE_WIRE_MIB = "deployment.http.pack200.admission.largeWireMiB";
+    static final String KEY_LARGE_WIRE_MULTIPLIER = "deployment.http.pack200.admission.largeWireMultiplier";
 
     private final AtomicLong inFlightBytes = new AtomicLong();
     private final AtomicInteger active = new AtomicInteger();
@@ -81,6 +86,22 @@ public final class PackUnpackAdmission {
             return Math.max(1, override.intValue());
         }
         return clamp(readInt(KEY_WIRE_MULTIPLIER, WIRE_TO_HEAP_MULTIPLIER), 1, 200);
+    }
+
+    int largeWireMiB() {
+        return clamp(readInt(KEY_LARGE_WIRE_MIB, LARGE_WIRE_MIB), 1, 65536);
+    }
+
+    int largeWireMultiplier() {
+        return clamp(readInt(KEY_LARGE_WIRE_MULTIPLIER, LARGE_WIRE_MULTIPLIER), 1, 200);
+    }
+
+    int multiplierForWire(long basisBytes) {
+        long threshold = (long) largeWireMiB() << 20;
+        if (basisBytes >= threshold) {
+            return largeWireMultiplier();
+        }
+        return wireMultiplier();
     }
 
     long budgetBytes() {
@@ -135,7 +156,7 @@ public final class PackUnpackAdmission {
         if (basis <= 0L) {
             return admission.defaultReserveBytes();
         }
-        long scaled = basis * (long) admission.wireMultiplier();
+        long scaled = basis * (long) admission.multiplierForWire(basis);
         if (scaled < basis) {
             // overflow → treat as exclusive / oversized
             return Long.MAX_VALUE / 4;
@@ -224,6 +245,7 @@ public final class PackUnpackAdmission {
         }
         logDebug("PackUnpackAdmission budget=" + budgetBytes()
                 + " wireMultiplier=" + wireMultiplier()
+                + " largeWire=" + largeWireMiB() + "MiB@" + largeWireMultiplier() + "x"
                 + " defaultReserve=" + defaultReserveBytes()
                 + " maxMemory=" + Runtime.getRuntime().maxMemory());
     }

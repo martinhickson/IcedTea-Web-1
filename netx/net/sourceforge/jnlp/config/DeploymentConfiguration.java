@@ -419,6 +419,19 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_HTTP_PACK200_ADMISSION_DEFAULT_RESERVE_MIB =
             "deployment.http.pack200.admission.defaultReserveMiB";
+    /**
+     * Integer MiB. Packs at or above this wire size use
+     * {@link #KEY_HTTP_PACK200_ADMISSION_LARGE_WIRE_MULTIPLIER} (native-heavy,
+     * ~1× expand). Default 40.
+     */
+    public static final String KEY_HTTP_PACK200_ADMISSION_LARGE_WIRE_MIB =
+            "deployment.http.pack200.admission.largeWireMiB";
+    /**
+     * Integer. Reserve multiplier for large-wire packs. Default 1 so an
+     * ~81 MiB unpack can run with the two large class packs.
+     */
+    public static final String KEY_HTTP_PACK200_ADMISSION_LARGE_WIRE_MULTIPLIER =
+            "deployment.http.pack200.admission.largeWireMultiplier";
 
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     

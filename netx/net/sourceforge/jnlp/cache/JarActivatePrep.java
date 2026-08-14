@@ -8,14 +8,17 @@ import java.util.Collections;
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.jar.JarEntry;
+import java.util.jar.Manifest;
 
+import net.sourceforge.jnlp.jdk89acesses.JarIndexAccess;
 import net.sourceforge.jnlp.runtime.JarFileCache;
+import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.JarFile;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
- * Walks a settled jar on the download worker: records entry names and
- * extracts nested jars so {@code activateJars} does not re-scan the ZIP.
+ * Walks a settled jar on the download worker: entry names, nested-jar extract,
+ * native extract into {@code {cache/db}/native/jars/}, and catalog native index.
  */
 public final class JarActivatePrep {
 
@@ -32,10 +35,17 @@ public final class JarActivatePrep {
     public static final class Scan {
         public final List<String> entryNames;
         public final List<Nested> nested;
+        public final Manifest manifest;
+        public final JarIndexAccess jarIndex;
+        public final File nativeDir;
 
-        Scan(List<String> entryNames, List<Nested> nested) {
+        Scan(List<String> entryNames, List<Nested> nested, Manifest manifest,
+                JarIndexAccess jarIndex, File nativeDir) {
             this.entryNames = entryNames;
             this.nested = nested;
+            this.manifest = manifest;
+            this.jarIndex = jarIndex;
+            this.nativeDir = nativeDir;
         }
     }
 
@@ -70,9 +80,37 @@ public final class JarActivatePrep {
     private static Scan scan(File jar) throws Exception {
         List<String> names = new ArrayList<String>();
         List<Nested> nested = new ArrayList<Nested>();
+        File nativeDir = null;
         JarFile jarFile = JarFileCache.getInstance().getJarFile(jar.getAbsolutePath());
+        Manifest manifest = jarFile.getManifest();
+        JarIndexAccess jarIndex = null;
+        try {
+            jarIndex = JarIndexAccess.getJarIndex(jarFile);
+        } catch (Exception e) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, e);
+        }
+        String jarPath = jar.getAbsolutePath();
         for (JarEntry je : Collections.list(jarFile.entries())) {
             names.add(je.getName());
+            if (je.isDirectory()) {
+                continue;
+            }
+            String leaf = new File(je.getName()).getName();
+            if (isNativeLibraryName(leaf)) {
+                if (nativeDir == null) {
+                    nativeDir = CacheLRUWrapper.getInstance().jarNativeExtractDir(jar);
+                    if (nativeDir != null && !nativeDir.isDirectory() && !nativeDir.mkdirs()) {
+                        nativeDir = null;
+                    }
+                }
+                if (nativeDir != null) {
+                    File out = extractEntry(jarFile, je, new File(nativeDir, leaf));
+                    if (out != null) {
+                        CacheLRUWrapper.getInstance().putNativeLib(leaf, jarPath, out.getAbsolutePath());
+                    }
+                }
+                continue;
+            }
             if (!je.getName().endsWith(".jar")) {
                 continue;
             }
@@ -85,25 +123,49 @@ public final class JarActivatePrep {
             if (parentDir != null && !parentDir.isDirectory() && !parentDir.mkdirs()) {
                 continue;
             }
-            FileOutputStream extractedJar = new FileOutputStream(extractedJarLocation);
-            InputStream is = jarFile.getInputStream(je);
-            try {
-                byte[] bytes = new byte[1024];
-                int read = is.read(bytes);
-                int fileSize = read;
-                while (read > 0) {
-                    extractedJar.write(bytes, 0, read);
-                    read = is.read(bytes);
-                    fileSize += read;
-                }
-                if (fileSize > 0) {
-                    nested.add(new Nested(je.getName(), extractedJarLocation));
-                }
-            } finally {
-                is.close();
-                extractedJar.close();
+            File extracted = extractEntry(jarFile, je, new File(extractedJarLocation));
+            if (extracted != null) {
+                nested.add(new Nested(je.getName(), extracted.getAbsolutePath()));
             }
         }
-        return new Scan(names, nested);
+        return new Scan(names, nested, manifest, jarIndex, nativeDir);
+    }
+
+    static boolean isNativeLibraryName(String leaf) {
+        if (leaf == null || leaf.isEmpty()) {
+            return false;
+        }
+        for (String suffix : NativeLibraryStorage.NATIVE_LIBRARY_EXTENSIONS) {
+            if (leaf.endsWith(suffix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static File extractEntry(JarFile jarFile, JarEntry je, File out) throws Exception {
+        File parent = out.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+            return null;
+        }
+        if (!out.isFile()) {
+            FileUtils.createRestrictedFile(out, true);
+        }
+        InputStream is = jarFile.getInputStream(je);
+        FileOutputStream os = new FileOutputStream(out);
+        try {
+            byte[] bytes = new byte[8192];
+            int read = is.read(bytes);
+            int fileSize = read;
+            while (read > 0) {
+                os.write(bytes, 0, read);
+                read = is.read(bytes);
+                fileSize += read;
+            }
+            return fileSize > 0 ? out : null;
+        } finally {
+            is.close();
+            os.close();
+        }
     }
 }

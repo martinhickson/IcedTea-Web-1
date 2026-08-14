@@ -227,7 +227,11 @@ class PackUnpackAdmissionTest {
         assertTrue(packA + packB < admission.budgetBytes(),
                 "two largest must fit: " + (packA + packB) + " vs " + admission.budgetBytes());
         assertTrue(packA + packB + packC >= admission.budgetBytes(),
-                "third must not fit: " + (packA + packB + packC) + " vs " + admission.budgetBytes());
+                "third class pack must not fit: " + (packA + packB + packC) + " vs " + admission.budgetBytes());
+        long blob = PackUnpackAdmission.estimateReserveBytes(85_000_000L, 0L);
+        assertEquals(85_000_000L, blob, "large-wire pack uses 1× (native-heavy)");
+        assertTrue(packA + packB + blob < admission.budgetBytes(),
+                "81MiB-class unpack must share the heap: " + (packA + packB + blob));
 
         CountDownLatch twoInside = new CountDownLatch(2);
         CountDownLatch release = new CountDownLatch(1);

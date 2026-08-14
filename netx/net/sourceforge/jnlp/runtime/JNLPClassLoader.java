@@ -1333,63 +1333,47 @@ public class JNLPClassLoader extends URLClassLoader {
                 for (JARDesc jar : jars) {
                     available.remove(jar);
 
-                    // add jar
                     File localFile = tracker.getCacheFile(jar.getLocation());
+                    boolean prepped = false;
                     try {
-                        URL location = jar.getLocation(); // non-cacheable, use source location
+                        URL location = jar.getLocation();
                         if (localFile != null) {
-                            // TODO: Should be toURI().toURL()
-                            location = localFile.toURL(); // cached file
-                            // This is really not the best way.. but we need some way for
-                            // PluginAppletViewer::getCachedImageRef() to check if the image
-                            // is available locally, and it cannot use getResources() because
-                            // that prefetches the resource, which confuses MediaTracker.waitForAll()
-                            // which does a wait(), waiting for notification (presumably
-                            // thrown after a resource is fetched). This bug manifests itself
-                            // particularly when using The FileManager applet from Webmin.
-                            try {
-                                net.sourceforge.jnlp.cache.JarActivatePrep.Scan scan =
-                                        net.sourceforge.jnlp.cache.JarActivatePrep.take(
-                                                localFile.getAbsolutePath());
-                                if (scan != null) {
-                                    applyActivateScan(jar, scan);
-                                } else {
-                                    JarFile jarFile = JarFileCache.getInstance()
-                                            .getJarFile(localFile.getAbsolutePath());
-                                    for (JarEntry je : Collections.list(jarFile.entries())) {
-                                        if (je.getName().endsWith(".jar")) {
-                                            extractAndMapNestedJar(jar, localFile, jarFile, je);
-                                        }
-                                        jarEntries.add(je.getName());
-                                    }
+                            location = localFile.toURL();
+                            net.sourceforge.jnlp.cache.JarActivatePrep.Scan scan =
+                                    net.sourceforge.jnlp.cache.JarActivatePrep.take(
+                                            localFile.getAbsolutePath());
+                            if (scan != null) {
+                                prepped = true;
+                                applyActivateScan(jar, scan);
+                                if (scan.jarIndex != null) {
+                                    jarIndexes.add(scan.jarIndex);
                                 }
-                            } finally {}
+                                if (scan.nativeDir != null) {
+                                    nativeLibraryStorage.addSearchDirectory(scan.nativeDir);
+                                }
+                            } else {
+                                JarFile jarFile = JarFileCache.getInstance()
+                                        .getJarFile(localFile.getAbsolutePath());
+                                for (JarEntry je : Collections.list(jarFile.entries())) {
+                                    if (je.getName().endsWith(".jar")) {
+                                        extractAndMapNestedJar(jar, localFile, jarFile, je);
+                                    }
+                                    jarEntries.add(je.getName());
+                                }
+                            }
                         }
 
                         addURL(jar.getLocation());
 
-                        // there is currently no mechanism to cache files per
-                        // instance.. so only index cached files
                         if (localFile != null) {
                             CachedJarFileCallback.getInstance().addMapping(jar.getLocation(), localFile.toURI().toURL());
-
-                            try {
+                            if (!prepped) {
                                 JarFile jarFile = JarFileCache.getInstance().getJarFile(localFile.getAbsolutePath());
-                                Manifest mf = jarFile.getManifest();
-
-                                // Only check classpath if this is the plugin and there is no jnlp_href usage.
-                                // Note that this is different from proprietary plugin behaviour.
-                                // If jnlp_href is used, the app should be treated similarly to when
-                                // it is run from javaws as a webstart.
-                                //if (file instanceof PluginBridge && !((PluginBridge) file).useJNLPHref()) {
-                                //    classpaths.addAll(getClassPathsFromManifest(mf, jar.getLocation().getPath()));
-                                //}
-
                                 JarIndexAccess index = JarIndexAccess.getJarIndex(jarFile);
                                 if (index != null) {
                                     jarIndexes.add(index);
                                 }
-                            } finally {}
+                            }
                         } else {
                             CachedJarFileCallback.getInstance().addMapping(jar.getLocation(), jar.getLocation());
                         }
@@ -1399,8 +1383,9 @@ public class JNLPClassLoader extends URLClassLoader {
                         OutputController.getLogger().log(ex);
                     }
 
-                    // some programs place a native library in any jar
-                    nativeLibraryStorage.addSearchJar(jar.getLocation());
+                    if (!prepped) {
+                        nativeLibraryStorage.addSearchJar(jar.getLocation());
+                    }
                 }
 
                 return null;

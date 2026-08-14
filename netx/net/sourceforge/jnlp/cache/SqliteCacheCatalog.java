@@ -120,7 +120,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             st.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
             try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM schema_version")) {
                 if (rs.next() && rs.getInt(1) == 0) {
-                    st.executeUpdate("INSERT INTO schema_version(version) VALUES (2)");
+                    st.executeUpdate("INSERT INTO schema_version(version) VALUES (3)");
                 }
             }
             st.execute("CREATE TABLE IF NOT EXISTS cache_entry ("
@@ -141,6 +141,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_folder "
                     + "ON cache_entry (folder_id)");
             ensureEntryMetadataColumns(st);
+            ensureNativeLibTable(st);
             st.execute("CREATE TABLE IF NOT EXISTS running_app ("
                     + "pid INTEGER PRIMARY KEY,"
                     + "jnlp_path TEXT,"
@@ -163,6 +164,25 @@ final class SqliteCacheCatalog implements CacheCatalog {
         try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
             if (rs.next() && rs.getInt(1) < 2) {
                 st.executeUpdate("UPDATE schema_version SET version = 2");
+            }
+        }
+    }
+
+    /**
+     * Schema v3: native library index. Files live under {@code native/jars/}
+     * beside the sqlite-jdbc extract in {@code native/}.
+     */
+    private void ensureNativeLibTable(Statement st) throws SQLException {
+        st.execute("CREATE TABLE IF NOT EXISTS native_lib ("
+                + "lib_name TEXT NOT NULL,"
+                + "jar_path TEXT NOT NULL,"
+                + "extract_path TEXT NOT NULL,"
+                + "PRIMARY KEY (lib_name, jar_path)"
+                + ")");
+        st.execute("CREATE INDEX IF NOT EXISTS idx_native_lib_name ON native_lib (lib_name)");
+        try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
+            if (rs.next() && rs.getInt(1) < 3) {
+                st.executeUpdate("UPDATE schema_version SET version = 3");
             }
         }
     }
@@ -377,6 +397,11 @@ final class SqliteCacheCatalog implements CacheCatalog {
         }
         try {
             Connection c = conn();
+            try (PreparedStatement natives = c.prepareStatement(
+                    "DELETE FROM native_lib WHERE jar_path = ?")) {
+                natives.setString(1, path);
+                natives.executeUpdate();
+            }
             try (PreparedStatement ps = c.prepareStatement("DELETE FROM cache_entry WHERE path = ?")) {
                 ps.setString(1, path);
                 return ps.executeUpdate() > 0;
@@ -780,6 +805,61 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return Integer.parseInt(key.split(",")[1]);
         } catch (Exception e) {
             return -1;
+        }
+    }
+
+    @Override
+    public void putNativeLib(String libName, String jarPath, String extractPath) {
+        if (libName == null || libName.isEmpty() || jarPath == null || extractPath == null) {
+            return;
+        }
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement(
+                    "INSERT OR REPLACE INTO native_lib(lib_name, jar_path, extract_path) VALUES (?,?,?)")) {
+                ps.setString(1, libName);
+                ps.setString(2, jarPath);
+                ps.setString(3, extractPath);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, e);
+        }
+    }
+
+    @Override
+    public String findNativeLib(String libName) {
+        if (libName == null || libName.isEmpty()) {
+            return null;
+        }
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement(
+                    "SELECT extract_path FROM native_lib WHERE lib_name = ? ORDER BY rowid DESC LIMIT 1")) {
+                ps.setString(1, libName);
+                try (ResultSet rs = ps.executeQuery()) {
+                    return rs.next() ? rs.getString(1) : null;
+                }
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, e);
+            return null;
+        }
+    }
+
+    @Override
+    public void removeNativeLibsByJarPath(String jarPath) {
+        if (jarPath == null || jarPath.isEmpty()) {
+            return;
+        }
+        try {
+            Connection c = conn();
+            try (PreparedStatement ps = c.prepareStatement("DELETE FROM native_lib WHERE jar_path = ?")) {
+                ps.setString(1, jarPath);
+                ps.executeUpdate();
+            }
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, e);
         }
     }
 }

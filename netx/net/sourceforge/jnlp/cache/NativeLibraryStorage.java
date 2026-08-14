@@ -55,7 +55,9 @@ public class NativeLibraryStorage {
      * @param directory directory to be added
      */
     public void addSearchDirectory(File directory) {
-        nativeSearchDirectories.add(directory);
+        if (directory != null && !nativeSearchDirectories.contains(directory)) {
+            nativeSearchDirectories.add(directory);
+        }
     }
 
     public List<File> getSearchDirectories() {
@@ -69,6 +71,17 @@ public class NativeLibraryStorage {
      * @return path to library if found, null otherwise.
      */
     public File findLibrary(String fileName) {
+        try {
+            String indexed = CacheLRUWrapper.getInstance().findNativeLib(fileName);
+            if (indexed != null) {
+                File hit = new File(indexed);
+                if (hit.isFile()) {
+                    return hit;
+                }
+            }
+        } catch (Exception ignored) {
+            // catalog not ready — fall through to directory scan
+        }
         for (File dir : getSearchDirectories()) {
             File target = new File(dir, fileName);
             if (target.exists())
@@ -116,14 +129,21 @@ public class NativeLibraryStorage {
                         continue;
                     }
 
-                    ensureNativeStoreDirectory();
-
-                    File outFile = new File(jarEntryDirectory, name);
+                    File destDir = CacheLRUWrapper.getInstance().jarNativeExtractDir(localFile);
+                    if (destDir != null && (destDir.isDirectory() || destDir.mkdirs())) {
+                        addSearchDirectory(destDir);
+                    } else {
+                        ensureNativeStoreDirectory();
+                        destDir = jarEntryDirectory;
+                    }
+                    File outFile = new File(destDir, name);
                     if (!outFile.isFile()) {
                         FileUtils.createRestrictedFile(outFile, true);
                     }
                     CacheUtil.streamCopy(jarFile.getInputStream(e),
                             new FileOutputStream(outFile));
+                    CacheLRUWrapper.getInstance().putNativeLib(
+                            name, localFile.getAbsolutePath(), outFile.getAbsolutePath());
             }
         } catch (IOException ex) {
             OutputController.getLogger().log(ex);
