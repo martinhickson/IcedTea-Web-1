@@ -210,6 +210,84 @@ public class HttpRangeResumeIT {
         assertArrayEquals(fullJar, Files.readAllBytes(replaced));
     }
 
+    /**
+     * A 416 (Range Not Satisfiable) must trigger a single full-GET fallback on the same URL,
+     * not a download failure. Asserts both responses (416 then 200) occur and the app launches.
+     */
+    @Test
+    void unsatisfiableRangeFallsBackToFullGet() throws Exception {
+        mode = RangeMode.REJECT_416;
+
+        Path marker1 = markerDir.resolve("success1.marker");
+        writeJnlp(marker1);
+        LaunchResult first = launch(marker1);
+        assertTrue(first.success, "initial launch must populate cache:\n" + first.output);
+
+        Path cachedJar = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(cachedJar, "expected cached " + JAR_NAME);
+        int cut = Math.max(8, fullJar.length / 2);
+        truncate(cachedJar, cut);
+
+        resetCaptures();
+        Path marker2 = markerDir.resolve("success2.marker");
+        writeJnlp(marker2);
+        LaunchResult second = launch(marker2);
+
+        assertTrue(second.success, "relaunch must succeed after 416 fallback:\n" + second.output);
+        assertEquals("bytes=" + cut + "-", lastRangeHeader.get(),
+                "client must first attempt the Range resume");
+        assertTrue(count416.get() >= 1, "server must reject the range with 416");
+        assertTrue(count200.get() >= 1, "client must fall back to a full 200 GET after 416");
+        assertEquals(0, count206.get(), "no 206 should be served when the range is rejected");
+
+        Path replaced = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(replaced);
+        assertEquals(fullJar.length, Files.size(replaced), "fallback full GET must restore full length");
+        assertArrayEquals(fullJar, Files.readAllBytes(replaced));
+    }
+
+    /**
+     * When the resource changed since the partial was cached, the client's If-Range must make
+     * the server answer with a full 200 (not a 206 suffix), so the stale prefix is replaced
+     * rather than appended to. Exercises the RFC 7233 If-Range safety path end-to-end.
+     */
+    @Test
+    void ifRangeStaleForcesFullReplace() throws Exception {
+        long t1 = 1_700_000_000_000L;
+        resourceLastModified = t1;
+        mode = RangeMode.IF_RANGE;
+
+        Path marker1 = markerDir.resolve("success1.marker");
+        writeJnlp(marker1);
+        LaunchResult first = launch(marker1);
+        assertTrue(first.success, "initial launch must populate cache:\n" + first.output);
+
+        Path cachedJar = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(cachedJar, "expected cached " + JAR_NAME);
+        int cut = Math.max(8, fullJar.length / 2);
+        truncate(cachedJar, cut);
+
+        // Simulate the resource changing on the server between the two launches.
+        resourceLastModified = t1 + 70_000L;
+
+        resetCaptures();
+        Path marker2 = markerDir.resolve("success2.marker");
+        writeJnlp(marker2);
+        LaunchResult second = launch(marker2);
+
+        assertTrue(second.success, "relaunch must succeed via full GET:\n" + second.output);
+        assertNotNull(lastIfRangeHeader.get(),
+                "client must send If-Range when it cached a Last-Modified");
+        assertEquals(0, count206.get(), "stale If-Range must NOT yield a 206 suffix");
+        assertTrue(count200.get() >= 1, "stale If-Range must yield a full 200 replacement");
+
+        Path replaced = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(replaced);
+        assertEquals(fullJar.length, Files.size(replaced),
+                "stale prefix must be replaced, not appended");
+        assertArrayEquals(fullJar, Files.readAllBytes(replaced));
+    }
+
     // ----- helpers -----
 
     private void writeJnlp(Path marker) throws Exception {
