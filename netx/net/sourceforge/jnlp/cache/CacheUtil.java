@@ -1091,6 +1091,10 @@ public class CacheUtil {
 
         try {
             if (DownloadProgress.isEnabled()) {
+                if (resources == null || resources.length < 2) {
+                    tracker.waitForResources(resources, 0);
+                    return;
+                }
                 long known = 0L;
                 for (int i = 0; i < resources.length; i++) {
                     long s = tracker.getTotalSize(resources[i]);
@@ -1101,7 +1105,7 @@ public class CacheUtil {
                 DownloadProgress.begin(title, tracker, resources, downloadProgressSlots(), known);
                 try {
                     tracker.waitForResources(resources, 0);
-                    DownloadProgress.refreshKnownTotal(tracker, resources);
+                    DownloadProgress.markComplete();
                 } finally {
                     DownloadProgress.end();
                 }

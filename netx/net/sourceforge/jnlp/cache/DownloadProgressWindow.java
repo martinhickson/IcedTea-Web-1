@@ -46,7 +46,6 @@ final class DownloadProgressWindow {
     private static JProgressBar[] slotBars;
     private static boolean expanded;
     private static DownloadProgress model;
-    private static int logTicks;
 
     private DownloadProgressWindow() {
     }
@@ -76,7 +75,6 @@ final class DownloadProgressWindow {
         hide();
         model = progress;
         expanded = false;
-        logTicks = 0;
         dialog = new JDialog((JFrame) null, R("CDownloading") + "…");
         dialog.setName("DownloadProgressDialog");
         dialog.setAlwaysOnTop(true);
@@ -184,23 +182,28 @@ final class DownloadProgressWindow {
         }
         DownloadProgress.Snapshot s = p.snapshot();
         String name = s.title == null || s.title.isEmpty() ? "" : s.title + " ";
+        String extra = s.finishing != null && !s.finishing.isEmpty() ? "  " + s.finishing : "";
         header.setText(R("CDownloading") + " " + name + s.percent + "%  "
                 + DownloadProgress.formatBytes(s.bytes) + " / "
-                + DownloadProgress.formatBytes(s.knownTotal));
+                + DownloadProgress.formatBytes(s.knownTotal) + extra);
         overallBar.setValue(s.percent);
         overallBar.setString(s.percent + "%");
         if (ratesTick || rates.getText().trim().isEmpty()) {
+            String left = s.finishing != null && !s.finishing.isEmpty()
+                    ? s.finishing
+                    : "left " + DownloadProgress.formatEta(s.etaMs);
             rates.setText("mean " + DownloadProgress.formatRate(s.meanBps)
                     + "   now " + DownloadProgress.formatRate(s.nowBps)
-                    + "   left " + DownloadProgress.formatEta(s.etaMs));
-            if (logTicks++ % 1 == 0 && ratesTick) {
+                    + "   " + left);
+            if (ratesTick) {
                 OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
                         "Download progress " + s.percent + "% "
                                 + DownloadProgress.formatBytes(s.bytes) + "/"
                                 + DownloadProgress.formatBytes(s.knownTotal)
                                 + " mean=" + DownloadProgress.formatRate(s.meanBps)
                                 + " now=" + DownloadProgress.formatRate(s.nowBps)
-                                + " eta=" + DownloadProgress.formatEta(s.etaMs));
+                                + " eta=" + DownloadProgress.formatEta(s.etaMs)
+                                + extra);
             }
         }
         if (expanded && slotLabels != null) {

@@ -34,6 +34,20 @@ public class DownloadProgressTest {
     }
 
     @Test
+    public void wireCompleteStaysAt99UntilMarkedComplete() {
+        DownloadProgress p = new DownloadProgress(2);
+        p.knownTotal = 1_000L;
+        p.bytes.set(1_000L);
+        p.slots[0].bind("giant.jar", 1_000L);
+        p.slots[0].add(1_000L);
+        DownloadProgress.Snapshot s = p.snapshot();
+        assertEquals(99, s.percent, "100% before wait() returns looks like a hang");
+        assertTrue(s.finishing.contains("giant.jar"), s.finishing);
+        p.complete = true;
+        assertEquals(100, p.snapshot().percent);
+    }
+
+    @Test
     public void addBytesIsNoOpWhenInactive() {
         DownloadProgress.end();
         DownloadProgress.addBytes(999);

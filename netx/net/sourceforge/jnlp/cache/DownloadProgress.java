@@ -30,6 +30,8 @@ public final class DownloadProgress {
     volatile String title = "";
     volatile ResourceTracker tracker;
     volatile URL[] resources;
+    /** True only after wait() returns — wire complete is not launch-complete. */
+    volatile boolean complete;
 
     private final Object sampleLock = new Object();
     private final long[] sampleAt = new long[SAMPLE_CAP];
@@ -83,6 +85,13 @@ public final class DownloadProgress {
         instance = next;
         active = true;
         DownloadProgressWindow.open(next);
+    }
+
+    public static void markComplete() {
+        DownloadProgress p = instance;
+        if (p != null) {
+            p.complete = true;
+        }
     }
 
     public static void end() {
@@ -164,12 +173,40 @@ public final class DownloadProgress {
         double nowBps = instant[1] > 0 ? (instant[0] * 1000.0) / instant[1] : 0.0;
         long remain = knownTotal > b ? knownTotal - b : 0L;
         long etaMs = nowBps > 1.0 ? (long) (remain / nowBps * 1000.0) : -1L;
-        int pct = knownTotal > 0 ? (int) Math.min(100L, (b * 100L) / knownTotal) : 0;
+        int wirePct = knownTotal > 0 ? (int) Math.min(100L, (b * 100L) / knownTotal) : 0;
+        // Wire bytes can finish a minute before Pack200 unpack / integrity.
+        // Never paint 100% until wait() returns or users think it hung.
+        int pct = complete ? 100 : Math.min(99, wirePct);
+        String finishing = "";
+        if (!complete && wirePct >= 99) {
+            finishing = finishingNames();
+        }
         SlotSnap[] snaps = new SlotSnap[slots.length];
         for (int i = 0; i < slots.length; i++) {
             snaps[i] = slots[i].snapshot(now);
         }
-        return new Snapshot(title, b, knownTotal, pct, meanBps, nowBps, etaMs, snaps);
+        return new Snapshot(title, b, knownTotal, pct, meanBps, nowBps, etaMs, finishing, snaps);
+    }
+
+    private String finishingNames() {
+        StringBuilder sb = new StringBuilder();
+        int n = 0;
+        for (int i = 0; i < slots.length; i++) {
+            if (!slots[i].busy) {
+                continue;
+            }
+            n++;
+            if (sb.length() > 0) {
+                sb.append(", ");
+            }
+            if (sb.length() < 80) {
+                sb.append(slots[i].name);
+            }
+        }
+        if (n == 0) {
+            return "finishing";
+        }
+        return "finishing " + sb.toString();
     }
 
     void recordSample(long now, long b) {
@@ -303,6 +340,9 @@ public final class DownloadProgress {
             long remain = size > b ? size - b : 0L;
             long eta = busy && nowBps > 1.0 ? (long) (remain / nowBps * 1000.0) : -1L;
             int pct = size > 0 ? (int) Math.min(100L, (b * 100L) / size) : 0;
+            if (busy && pct >= 100) {
+                pct = 99;
+            }
             return new SlotSnap(name, busy, b, size, pct, mean, nowBps, eta);
         }
 
@@ -383,10 +423,11 @@ public final class DownloadProgress {
         final double meanBps;
         final double nowBps;
         final long etaMs;
+        final String finishing;
         final SlotSnap[] slots;
 
         Snapshot(String title, long bytes, long knownTotal, int percent,
-                double meanBps, double nowBps, long etaMs, SlotSnap[] slots) {
+                double meanBps, double nowBps, long etaMs, String finishing, SlotSnap[] slots) {
             this.title = title;
             this.bytes = bytes;
             this.knownTotal = knownTotal;
@@ -394,6 +435,7 @@ public final class DownloadProgress {
             this.meanBps = meanBps;
             this.nowBps = nowBps;
             this.etaMs = etaMs;
+            this.finishing = finishing;
             this.slots = slots;
         }
     }
