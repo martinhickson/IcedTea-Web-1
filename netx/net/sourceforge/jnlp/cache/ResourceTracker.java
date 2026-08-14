@@ -677,7 +677,7 @@ public class ResourceTracker {
         // ResourceDownloader keeps writing wire bytes / first-last-byte times onto the
         // same JarSlots. Creating a fresh group each tick was swapping slots mid-download
         // (metrics on the old slot, settle on the new empty one) and the final tick then
-        // pre-settled everything as CACHED → Download stats thr=-1 / bytes=0.
+        // pre-settled everything as CACHED → Download stats with no transfer time / bytes=0.
         net.sourceforge.jnlp.cache.download.JarGroupState metricsGroup = lastMetricsGroup;
         java.util.List<Resource> needsRestart = new java.util.ArrayList<>();
         if (!canReuseMetricsGroup(resources, metricsGroup)) {

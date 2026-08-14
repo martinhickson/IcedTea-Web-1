@@ -118,7 +118,7 @@ public final class JvmArgumentPolicy {
 
     public static void logUnsupportedVmArg(String argument) {
         String hint = formatWhitelistPropertyHint(argument);
-        OutputController.getLogger().log(OutputController.Level.WARNING_ALL,
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
                 "Ignoring unsupported java-vm-args entry: " + argument
                         + System.lineSeparator()
                         + "To allow it, add this token to the CSV property "

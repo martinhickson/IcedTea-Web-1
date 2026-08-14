@@ -618,7 +618,7 @@ public class Launcher {
                         R("LCantDetermineMainClassInfo")));
             }
 
-            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "Starting application [" + mainName + "] ...");
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Starting application [" + mainName + "] ...");
 
             Class<?> mainClass = app.getClassLoader().loadClass(mainName);
 

@@ -42,7 +42,9 @@ public class JarSlotTest {
         String line = s.settleStatsLine();
         assertTrue(line.contains("Download complete:"), line);
         assertTrue(line.contains("kind=DOWNLOADED"), line);
-        assertTrue(line.contains("bytes=2048"), line);
+        assertTrue(line.contains("bytes=2,048"), line);
+        assertTrue(line.contains("ratio=50.0%"), line);
+        assertTrue(line.contains("qwait="), line);
         assertTrue(line.contains("retried=false"), line);
     }
 
@@ -217,5 +219,41 @@ public class JarSlotTest {
         s.onLastByte(10_100L);
         assertTrue(s.settleGood(10_200L, false));
         assertEquals(200, s.durationMillis());
+        assertEquals(10_000L, s.queueWaitMillis());
+    }
+
+    @Test
+    public void durationDoesNotFallBackToGroupEnqueue() {
+        JarSlot s = slot(0, url("http://localhost/queued.jar"));
+        s.startMillis = 0L;
+        assertTrue(s.settleGood(180_000L, false));
+        assertEquals(-1, s.durationMillis(), "dur must not include queue wait via startMillis");
+        assertEquals(-1, s.queueWaitMillis());
+    }
+
+    @Test
+    public void queueWaitIsEnqueueToConnectStart() {
+        JarSlot s = slot(0, url("http://localhost/queued.jar"));
+        s.startMillis = 1_000L;
+        s.onConnect(6_000L, 6_010L);
+        s.onFirstByte(6_020L);
+        s.onLastByte(6_100L);
+        assertTrue(s.settleGood(6_200L, false));
+        assertEquals(5_000L, s.queueWaitMillis());
+        assertEquals(200L, s.durationMillis());
+    }
+
+    @Test
+    public void throughputUsesOneMsWhenLastByteMinusFirstByteNonPositive() {
+        JarSlot s = slot(0, url("http://localhost/fast.jar"));
+        s.onConnect(100L, 100L);
+        s.onFirstByte(100L);
+        s.onLastByte(100L);
+        s.addTransferred(2048L);
+        assertTrue(s.settleGood(100L, false));
+        assertEquals(0, s.transferMillis());
+        assertEquals(1, s.transferMillisForThroughput());
+        assertEquals(2048.0 / 1024.0 * 1000.0, s.throughputKBps(), 0.001);
+        assertTrue(s.settleStatsLine().contains("thr=2,000.0KB/s"), s.settleStatsLine());
     }
 }

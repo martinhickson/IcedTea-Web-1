@@ -55,11 +55,14 @@ public class GroupStatsTest {
         assertTrue(summary.contains("failed=1"), summary);
         assertTrue(summary.contains("cached=1"), summary);
         assertTrue(summary.contains("dl=1"), summary);
-        assertTrue(summary.contains("ratio=2.00"), summary);
+        assertTrue(summary.contains("ratio=50.0%"), summary);
+        assertTrue(summary.contains("qwait="), summary);
+        assertTrue(summary.contains("bytes=2,048"), summary);
 
         String[] lines = s.jarLines();
         assertEquals(3, lines.length);
-        assertTrue(lines[0].contains("kind=DOWNLOADED") && lines[0].contains("comp=gz"), lines[0]);
+        assertTrue(lines[0].contains("kind=DOWNLOADED") && lines[0].contains("comp=gz")
+                && lines[0].contains("ratio=50.0%"), lines[0]);
         assertTrue(lines[1].contains("kind=CACHED"), lines[1]);
         assertTrue(lines[2].contains("kind=FAILED"), lines[2]);
     }

@@ -381,7 +381,7 @@ class JNLPSecurityManager extends SecurityManager {
             if (JNLPRuntime.isDebug()) {
                 if (cl.getSecurity() == null) {
                     if (cl.getPermissions(null).implies(perm)){
-                        OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "Added permission: " + perm.toString());
+                        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Added permission: " + perm.toString());
                     } else {
                         OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "Unable to add permission: " + perm.toString());
                     }

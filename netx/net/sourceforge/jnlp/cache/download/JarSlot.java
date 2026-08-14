@@ -141,13 +141,36 @@ public final class JarSlot {
     }
 
     public long durationMillis() {
-        // This jar's own timeline, not time-since-group-start.
-        long origin = connectStartMillis >= 0 ? connectStartMillis
-                : (firstByteMillis >= 0 ? firstByteMillis : startMillis);
+        // Work time only: connect/request start → settle. Never group enqueue
+        // (startMillis) — that folds size-first / pool queue wait into dur.
+        long origin = workStartMillis();
         if (endMillis < 0 || origin < 0) {
             return -1;
         }
         return Math.max(0L, endMillis - origin);
+    }
+
+    /**
+     * Time sitting in the size-first / thread-pool queue before the GET starts.
+     * Separate from {@link #durationMillis()}.
+     */
+    public long queueWaitMillis() {
+        long workStart = workStartMillis();
+        if (workStart < 0 || startMillis < 0) {
+            return -1;
+        }
+        return Math.max(0L, workStart - startMillis);
+    }
+
+    /** Connect/GET start, else first body byte. Not group enqueue. */
+    long workStartMillis() {
+        if (connectStartMillis >= 0) {
+            return connectStartMillis;
+        }
+        if (firstByteMillis >= 0) {
+            return firstByteMillis;
+        }
+        return -1;
     }
 
     public long transferMillis() {
@@ -155,27 +178,38 @@ public final class JarSlot {
         return lastByteMillis - firstByteMillis;
     }
 
-    public double throughputKBps() {
+    /**
+     * Transfer time used for throughput. Unknown ({@code -1}) stays unknown.
+     * If {@code lastByte - firstByte <= 0}, normalize to 1ms (LOGIC).
+     */
+    public long transferMillisForThroughput() {
         long tm = transferMillis();
-        if (tm <= 0) return -1;
+        if (tm < 0) {
+            return -1;
+        }
+        return tm <= 0 ? 1L : tm;
+    }
+
+    public double throughputKBps() {
+        long tm = transferMillisForThroughput();
+        if (tm < 0) return -1;
         return transferred.get() / (double) tm * 1000.0 / 1024.0;
     }
 
     /** One-line per-jar download stats for logging at settle time. */
     public String settleStatsLine() {
         String k = kind == null ? "?" : kind.name();
-        long ttfb = ttfbMillis();
-        long dur = durationMillis();
-        double thr = throughputKBps();
         return String.format(java.util.Locale.ROOT,
-                "Download complete: %s kind=%s ttfb=%s dur=%s thr=%s bytes=%d decomp=%s retried=%s",
+                "Download complete: %s kind=%s ttfb=%s dur=%s qwait=%s thr=%s bytes=%s decomp=%s ratio=%s retried=%s",
                 location,
                 k,
-                ttfb >= 0 ? ttfb + "ms" : "-",
-                dur >= 0 ? dur + "ms" : "-",
-                thr >= 0 ? String.format(java.util.Locale.ROOT, "%.1fKB/s", thr) : "-",
-                transferred.get(),
-                decompressedBytes >= 0 ? Long.toString(decompressedBytes) : "-",
+                DownloadMetricFormat.ms(ttfbMillis()),
+                DownloadMetricFormat.ms(durationMillis()),
+                DownloadMetricFormat.ms(queueWaitMillis()),
+                DownloadMetricFormat.throughput(throughputKBps()),
+                DownloadMetricFormat.grouped(transferred.get()),
+                decompressedBytes >= 0 ? DownloadMetricFormat.grouped(decompressedBytes) : "-",
+                DownloadMetricFormat.compressionPercent(transferred.get(), decompressedBytes),
                 retried.get());
     }
 }
