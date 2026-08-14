@@ -1470,6 +1470,21 @@ public class ParserTest extends NoStdOutErrTest {
     }
     
     @Test
+    public void testInstallerDescMainClass() throws Exception {
+        String data = "<?xml version=\"1.0\"?>\n"
+                + "<jnlp codebase=\"http://someNotExistingUrl.com\">\n"
+                + "<installer-desc main-class=\"net.sourceforge.icedteaweb.sample2.SampleApp2Main\"/>\n"
+                + "</jnlp>";
+
+        Node root = Parser.getRootNode(new ByteArrayInputStream(data.getBytes()), defaultParser);
+        MockJNLPFile file = new MockJNLPFile(LANG_LOCALE);
+        Parser parser = new Parser(file, null, root, defaultParser, null);
+        LaunchDesc launcher = parser.getLauncher(root);
+        Assert.assertTrue(launcher instanceof InstallerDesc);
+        Assert.assertEquals("net.sourceforge.icedteaweb.sample2.SampleApp2Main", launcher.getMainClass());
+    }
+
+    @Test
     public void testNullMainClassInstaller() throws Exception {
         String data = "<?xml version=\"1.0\"?>\n"
                 + "<jnlp codebase=\"http://someNotExistingUrl.com\"  >\n"

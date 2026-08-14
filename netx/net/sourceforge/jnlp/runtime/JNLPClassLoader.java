@@ -17,6 +17,7 @@ package net.sourceforge.jnlp.runtime;
 import net.sourceforge.jnlp.AppletDesc;
 import net.sourceforge.jnlp.ApplicationDesc;
 import net.sourceforge.jnlp.ExtensionDesc;
+import net.sourceforge.jnlp.InstallerDesc;
 import net.sourceforge.jnlp.JARDesc;
 import net.sourceforge.jnlp.JNLPFile;
 import net.sourceforge.jnlp.JNLPMatcher;
@@ -568,6 +569,9 @@ public class JNLPClassLoader extends URLClassLoader {
             } else if (obj instanceof AppletDesc) {
                 AppletDesc ad = (AppletDesc) file.getLaunchInfo();
                 mainClass = ad.getMainClass();
+            } else if (obj instanceof InstallerDesc) {
+                InstallerDesc id = (InstallerDesc) file.getLaunchInfo();
+                mainClass = id.getMainClass();
             }
         }
 

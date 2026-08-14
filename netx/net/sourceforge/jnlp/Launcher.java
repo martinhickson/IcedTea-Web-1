@@ -555,47 +555,6 @@ public class Launcher {
         }
 
         try {
-
-            try {
-                ServiceUtil.checkExistingSingleInstance(file);
-            } catch (InstanceExistsException e) {
-                OutputController.getLogger().log("Single instance application is already running.");
-                return null;
-            }
-
-            String relaunchJavaHome = resolveRelaunchJavaHome(file);
-            if (relaunchJavaHome != null && !jvmHomeSatisfiesRequestedJre(relaunchJavaHome, file)) {
-                relaunchJavaHome = null;
-            }
-            if (relaunchJavaHome == null && currentRuntimeDoesNotSatisfyRequestedJre(file)) {
-                try {
-                    relaunchJavaHome = resolveMissingSuitableJre(file);
-                } catch (MissingJreDialogDismissed e) {
-                    return null;
-                }
-            }
-
-            if (JNLPRuntime.getForksAllowed() && (file.needsNewVM() || needsConfiguredJreRelaunch(relaunchJavaHome))) {
-                if (!JNLPRuntime.isHeadless()){
-                    SplashScreen sp = SplashScreen.getSplashScreen();
-                    if (sp!=null) {
-                        sp.close();
-                    }
-                }
-                List<String> netxArguments = new LinkedList<String>();
-                netxArguments.add("-Xnofork");
-                netxArguments.addAll(JNLPRuntime.getInitialArguments());
-                launchExternal(vmArgsForRelaunch(file), netxArguments, relaunchJavaHome);
-                return null;
-            }
-
-            failIfStrictAndRunningJreMismatches(file);
-
-            handler.launchInitialized(file);
-
-            ApplicationInstance app = createApplication(file);
-            app.initialize();
-
             String mainName = file.getApplication().getMainClass();
 
             // When the application-desc field is empty, we should take a
@@ -619,33 +578,7 @@ public class Launcher {
                         R("LCantDetermineMainClassInfo")));
             }
 
-            DownloadProgress.finishLaunch();
-            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Starting application [" + mainName + "] ...");
-
-            Class<?> mainClass = app.getClassLoader().loadClass(mainName);
-
-            Method main = mainClass.getMethod("main", new Class<?>[] { String[].class });
-            String args[] = file.getApplication().getArguments();
-
-            // create EDT within application context:
-            SwingUtils.callOnAppContext(new Runnable() {
-                // dummy method to force Event Dispatch Thread creation
-                @Override
-                public void run() {
-                }
-            });
-
-            setContextClassLoaderForAllThreads(app.getThreadGroup(), app.getClassLoader());
-
-            handler.launchStarting(app);
-
-            main.setAccessible(true);
-
-            JNLPRuntime.addStartupTrackingEntry("invoking main()");
-            OutputController.getLogger().log("Invoking main() with args: " + Arrays.toString(args));
-            main.invoke(null, new Object[] { args });
-
-            return app;
+            return launchMainClass(file, mainName, file.getApplication().getArguments(), "application");
         } catch (LaunchException lex) {
             DownloadProgress.end();
             throw launchError(lex);
@@ -780,9 +713,96 @@ public class Launcher {
      * @throws net.sourceforge.jnlp.LaunchException if deploy unrecoverably die
      */
     protected ApplicationInstance launchInstaller(JNLPFile file) throws LaunchException {
-        // TODO Check for an existing single instance once implemented.
-        // ServiceUtil.checkExistingSingleInstance(file);
-        throw launchError(new LaunchException(file, null, R("LSFatal"), R("LCNotSupported"), R("LNoInstallers"), R("LNoInstallersInfo")));
+        if (!file.isInstaller()) {
+            throw launchError(new LaunchException(file, null, R("LSFatal"), R("LCClient"), R("LNotLaunchable"), R("LNotLaunchableInfo")));
+        }
+        try {
+            String mainName = file.getInstaller().getMainClass();
+            if (mainName == null || mainName.trim().isEmpty()) {
+                throw launchError(new LaunchException(file, null,
+                        R("LSFatal"), R("LCClient"), R("LCantDetermineMainClass"),
+                        R("LCantDetermineMainClassInfo")));
+            }
+            return launchMainClass(file, mainName.trim(), new String[0], "installer");
+        } catch (LaunchException lex) {
+            DownloadProgress.end();
+            throw launchError(lex);
+        } catch (Exception ex) {
+            DownloadProgress.end();
+            throw launchError(new LaunchException(file, ex, R("LSFatal"), R("LCLaunching"), R("LCouldNotLaunch"), R("LCouldNotLaunchInfo")));
+        }
+    }
+
+    /**
+     * Shared application / installer main() invocation after JRE relaunch checks.
+     */
+    private ApplicationInstance launchMainClass(JNLPFile file, String mainName, String[] args, String kind)
+            throws LaunchException, Exception {
+        try {
+            ServiceUtil.checkExistingSingleInstance(file);
+        } catch (InstanceExistsException e) {
+            OutputController.getLogger().log("Single instance " + kind + " is already running.");
+            return null;
+        }
+
+        String relaunchJavaHome = resolveRelaunchJavaHome(file);
+        if (relaunchJavaHome != null && !jvmHomeSatisfiesRequestedJre(relaunchJavaHome, file)) {
+            relaunchJavaHome = null;
+        }
+        if (relaunchJavaHome == null && currentRuntimeDoesNotSatisfyRequestedJre(file)) {
+            try {
+                relaunchJavaHome = resolveMissingSuitableJre(file);
+            } catch (MissingJreDialogDismissed e) {
+                return null;
+            }
+        }
+
+        if (JNLPRuntime.getForksAllowed() && (file.needsNewVM() || needsConfiguredJreRelaunch(relaunchJavaHome))) {
+            if (!JNLPRuntime.isHeadless()){
+                SplashScreen sp = SplashScreen.getSplashScreen();
+                if (sp!=null) {
+                    sp.close();
+                }
+            }
+            List<String> netxArguments = new LinkedList<String>();
+            netxArguments.add("-Xnofork");
+            netxArguments.addAll(JNLPRuntime.getInitialArguments());
+            launchExternal(vmArgsForRelaunch(file), netxArguments, relaunchJavaHome);
+            return null;
+        }
+
+        failIfStrictAndRunningJreMismatches(file);
+
+        handler.launchInitialized(file);
+
+        ApplicationInstance app = createApplication(file);
+        app.initialize();
+
+        DownloadProgress.finishLaunch();
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Starting " + kind + " [" + mainName + "] ...");
+
+        Class<?> mainClass = app.getClassLoader().loadClass(mainName);
+
+        Method main = mainClass.getMethod("main", new Class<?>[] { String[].class });
+        String[] invokeArgs = args != null ? args : new String[0];
+
+        SwingUtils.callOnAppContext(new Runnable() {
+            @Override
+            public void run() {
+            }
+        });
+
+        setContextClassLoaderForAllThreads(app.getThreadGroup(), app.getClassLoader());
+
+        handler.launchStarting(app);
+
+        main.setAccessible(true);
+
+        JNLPRuntime.addStartupTrackingEntry("invoking main()");
+        OutputController.getLogger().log("Invoking main() with args: " + Arrays.toString(invokeArgs));
+        main.invoke(null, new Object[] { invokeArgs });
+
+        return app;
     }
 
     /**
