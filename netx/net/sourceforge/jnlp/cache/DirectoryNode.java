@@ -44,7 +44,7 @@ public class DirectoryNode {
     private File path;
     private ArrayList<DirectoryNode> childNodes;
     private DirectoryNode parent = null;
-    private File infoFile;
+    private CacheEntryMeta meta;
 
     /**
      * Create a new instance of DirectoryNode.
@@ -68,6 +68,12 @@ public class DirectoryNode {
         this(name, absPathToNode, null, parent);
     }
 
+    /** Leaf bound to a catalog row (cache viewer). */
+    public DirectoryNode(String name, File absPathToNode, DirectoryNode parent, CacheEntryMeta meta) {
+        this(name, absPathToNode, null, parent);
+        this.meta = meta;
+    }
+
     /**
      * Create a new instance of DirectoryNode.
      * 
@@ -83,8 +89,6 @@ public class DirectoryNode {
         if (this.childNodes == null)
             this.childNodes = new ArrayList<DirectoryNode>();
         this.parent = parent;
-        if (!isDir())
-            this.infoFile = new File(this.getFile().getAbsolutePath().concat(CacheDirectory.INFO_SUFFIX));
     }
 
     /**
@@ -160,8 +164,36 @@ public class DirectoryNode {
         return path.isDirectory();
     }
 
-    public File getInfoFile() {
-        return this.infoFile;
+    /**
+     * Catalog metadata for this leaf, or {@code null} for directories / unknown paths.
+     * Not a sidecar {@code .info} file.
+     */
+    public CacheEntryMeta getMeta() {
+        if (meta != null) {
+            return meta;
+        }
+        if (path == null || isDir()) {
+            return null;
+        }
+        return CacheLRUWrapper.getInstance().getMetaByPath(path.getPath());
+    }
+
+    /** Drop the catalog row for this leaf after the on-disk file is deleted. */
+    public void removeCatalogRow() {
+        if (path == null) {
+            return;
+        }
+        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+        synchronized (lru) {
+            lru.lock();
+            try {
+                lru.load();
+                lru.removeByPath(path.getPath());
+                lru.store();
+            } finally {
+                lru.unlock();
+            }
+        }
     }
 
 }

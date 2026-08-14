@@ -55,9 +55,49 @@ public class SqliteCacheCatalogTest {
     }
 
     @Test
+    public void entryMetadataLivesOnCatalogRowNotInfoFile() throws Exception {
+        File jar = new File(dbRoot, "4/http/example.com/app.jar");
+        jar.getParentFile().mkdirs();
+        assertTrue(jar.createNewFile());
+        wrapper.lock();
+        try {
+            wrapper.load();
+            String key = wrapper.generateKey(jar.getAbsolutePath());
+            assertTrue(wrapper.addEntry(key, jar.getAbsolutePath()));
+            CacheEntryMeta meta = new CacheEntryMeta();
+            meta.path = jar.getAbsolutePath();
+            meta.jnlpPath = "http://example.com/app.jnlp";
+            meta.contentLength = 12L;
+            meta.markedDelete = false;
+            wrapper.putMeta(meta);
+            CacheEntryMeta stored = wrapper.getMetaByPath(jar.getAbsolutePath());
+            assertEquals("http://example.com/app.jnlp", stored.jnlpPath);
+            assertEquals(Long.valueOf(12L), stored.contentLength);
+            assertFalse(new File(jar.getPath() + CacheDirectory.INFO_SUFFIX).exists());
+        } finally {
+            wrapper.unlock();
+        }
+        assertTrue(CacheDirectory.isCacheInfrastructure(
+                new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME)));
+        assertTrue(CacheDirectory.isCacheInfrastructure(new File(dbRoot, "native")));
+        assertFalse(CacheDirectory.isCacheInfrastructure(jar));
+    }
+
+    @Test
+    public void sqliteCacheRootNestsCacheDbUnlessParentIsAlreadyCache() {
+        assertEquals(new File(new File(new File("/tmp/itw-root"), "cache"), "db").getPath(),
+                CacheLRUWrapper.sqliteCacheRoot(new File("/tmp/itw-root")).getPath());
+        assertEquals(new File(new File("/tmp/itw-root/cache"), "db").getPath(),
+                CacheLRUWrapper.sqliteCacheRoot(new File("/tmp/itw-root/cache")).getPath());
+        assertEquals(new File(new File(new File("/tmp/mycache"), "cache"), "db").getPath(),
+                CacheLRUWrapper.sqliteCacheRoot(new File("/tmp/mycache")).getPath());
+    }
+
+    @Test
     public void usesDbSubdirectoryNotLegacyRoot() {
         assertTrue(wrapper.isSqliteMode());
-        assertEquals(new File(parentCache, "db").getAbsolutePath(), dbRoot.getAbsolutePath());
+        assertEquals(new File(new File(parentCache, "cache"), "db").getAbsolutePath(),
+                dbRoot.getAbsolutePath());
         wrapper.lock();
         try {
             wrapper.load();
@@ -78,13 +118,23 @@ public class SqliteCacheCatalogTest {
             wrapper.unlock();
         }
         String tmpdir = System.getProperty("org.sqlite.tmpdir");
-        assertTrue("org.sqlite.tmpdir should be set to {cachedir}/db/native", tmpdir != null);
+        assertTrue("org.sqlite.tmpdir should be set to a cache db/native dir", tmpdir != null);
         File nativeDir = new File(tmpdir);
         assertEquals("native", nativeDir.getName());
-        assertTrue(nativeDir.isDirectory());
-        File[] libs = nativeDir.listFiles((d, n) -> n.toLowerCase().contains("sqlitejdbc"));
+        // sqlite-jdbc extracts once per JVM. A prior test may own the property
+        // (and may have already deleted that TemporaryFolder).
+        File thisNative = new File(dbRoot, "native");
+        assertTrue(thisNative.isDirectory() || nativeDir.isDirectory());
+        File[] libs = nativeDir.isDirectory()
+                ? nativeDir.listFiles((d, n) -> n.toLowerCase().contains("sqlitejdbc"))
+                : null;
+        if (libs == null || libs.length == 0) {
+            assertTrue("catalog still opens after sqlite-jdbc is already loaded",
+                    new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME).isFile());
+            return;
+        }
         assertTrue("expected sqlitejdbc native under " + nativeDir.getAbsolutePath(),
-                libs != null && libs.length > 0);
+                libs.length > 0);
     }
 
     @Test
@@ -107,7 +157,7 @@ public class SqliteCacheCatalogTest {
                 }
                 try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
                     assertTrue(rs.next());
-                    assertEquals(1, rs.getInt(1));
+                    assertEquals(2, rs.getInt(1));
                 }
                 try (ResultSet rs = st.executeQuery(
                         "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_cache_entry_folder'")) {
@@ -115,6 +165,28 @@ public class SqliteCacheCatalogTest {
                 }
             }
         }
+    }
+
+    @Test
+    public void runningAppLeaseSurvivesSecondCatalogConnection() throws Exception {
+        wrapper.registerRunningApp(4242, "http://127.0.0.1:4350/jnlp/c401/app.jnlp", "2026-01-01T00:00:00Z");
+        List<CacheRunningApp> first = wrapper.listRunningApps();
+        assertEquals(1, first.size());
+        assertEquals(4242, first.get(0).pid);
+        assertEquals("http://127.0.0.1:4350/jnlp/c401/app.jnlp", first.get(0).jnlpPath);
+        wrapper.close();
+
+        CacheLRUWrapper other = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            List<CacheRunningApp> second = other.listRunningApps();
+            assertEquals(1, second.size());
+            assertEquals(4242, second.get(0).pid);
+            other.unregisterRunningApp(4242);
+            assertTrue(other.listRunningApps().isEmpty());
+        } finally {
+            other.close();
+        }
+        wrapper = CacheLRUWrapper.createForTests(true, parentCache);
     }
 
     @Test

@@ -48,12 +48,34 @@ public class JnlpRunningProcessSupportIdentityTest {
         assertTrue(running.blocksCacheClear("http://127.0.0.1:4200/jnlp/console/app.jnlp"));
         assertTrue(running.blocksCacheClear("http://127.0.0.1:4200/jnlp/console/app.jar"));
         assertTrue(running.blocksCacheClear("127.0.0.1"));
+        assertFalse(running.blocksCacheClear("example.com"));
+        assertFalse(running.blocksCacheClear("com"));
         assertFalse(running.blocksCacheClear("http://127.0.0.1:4200/jnlp/swing-gui/app.jar"));
         assertFalse(running.blocksCacheClear("http://127.0.0.1:4200/jnlp/swing-gui/app.jnlp"));
+
+        JnlpRunningProcessSupport.RunningProcess siblingHost = new JnlpRunningProcessSupport.RunningProcess(
+                44, "evil", "1.0",
+                "java -jar icedtea-web-uber.jar http://evil.example.com/app.jnlp",
+                "http://evil.example.com/app.jnlp");
+        assertTrue(siblingHost.blocksCacheClear("evil.example.com"));
+        assertFalse(siblingHost.blocksCacheClear("example.com"));
 
         JnlpRunningProcessSupport.RunningProcess fromCommandLine = new JnlpRunningProcessSupport.RunningProcess(
                 43, "console",
                 "java -jar icedtea-web-uber.jar -jnlp http://127.0.0.1:4200/jnlp/console/app.jnlp");
         assertTrue(fromCommandLine.blocksCacheClear("http://127.0.0.1:4200/jnlp/console/app.jar"));
+    }
+
+    @Test
+    public void clearcacheCliIsInfrastructure() {
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -jar icedtea-web-uber.jar -Xclearcache http://127.0.0.1:4350/jnlp/c401/app.jnlp",
+                null, null));
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -jar icedtea-web-uber.jar -Xlistcacheids",
+                null, null));
+        assertFalse(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -jar icedtea-web-uber.jar -jnlp http://127.0.0.1:4350/jnlp/c401/app.jnlp",
+                "c401", "http://127.0.0.1:4350/jnlp/c401/app.jnlp"));
     }
 }

@@ -31,15 +31,10 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.WindowEvent;
 import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.nio.channels.FileLock;
 import java.text.NumberFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Date;
-import java.util.Enumeration;
 import java.util.List;
 
 import javax.swing.JButton;
@@ -60,15 +55,12 @@ import javax.swing.table.TableRowSorter;
 
 import net.sourceforge.jnlp.cache.CacheDirectory;
 import net.sourceforge.jnlp.cache.CacheEntry;
+import net.sourceforge.jnlp.cache.CacheEntryMeta;
 import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.cache.DirectoryNode;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
-import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.runtime.Translator;
 import net.sourceforge.jnlp.util.CacheDateTimeFormats;
-import net.sourceforge.jnlp.util.FileUtils;
-import net.sourceforge.jnlp.util.PropertiesFile;
-import net.sourceforge.jnlp.util.StreamUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.jnlp.util.ui.NonEditableTableModel;
 import net.sourceforge.swing.SwingUtils;
@@ -208,9 +200,8 @@ public class CachePane extends JPanel {
                 try {
                     int modelRow = cacheTable.convertRowIndexToModel(row);
                     DirectoryNode fileNode = ((DirectoryNode) cacheTable.getModel().getValueAt(modelRow, 0));
-                    File selectedFile = fileNode.getFile();
-                    File infoFile = new File(selectedFile + CacheDirectory.INFO_SUFFIX);
-                    String info = StreamUtils.readStreamAsString(new FileInputStream(infoFile), true);
+                    CacheEntryMeta meta = fileNode.getMeta();
+                    String info = meta == null ? "" : meta.formatAsInfoText();
                     t.setText(formatCacheInfoContent(info));
                 } catch (Exception ex) {
                     t.setText(ex.toString());
@@ -301,14 +292,14 @@ public class CachePane extends JPanel {
      * @see CachePane#cacheTable
      */
     private void invokeLaterDelete() {
-        final String jnlpPath = getSelectedJnlpPath();
+        final String clearId = getSelectedClearId();
         SwingUtils.invokeLater(new Runnable() {
             @Override
             public void run() {
                 try {
                     RunningJnlpProcessesDialog.runClearAfterProcessesStopped(
                             parent,
-                            jnlpPath,
+                            clearId,
                             Translator.R("CacheProceedClearSelected"),
                             new Runnable() {
                                 @Override
@@ -326,78 +317,35 @@ public class CachePane extends JPanel {
     }
 
     private void deleteSelectedCacheEntry() {
-        FileLock fl = null;
-        File netxRunningFile = new File(PathsAndFiles.MAIN_LOCK.getFullPath(config));
-        if (!netxRunningFile.exists()) {
-            try {
-                FileUtils.createParentDir(netxRunningFile);
-                FileUtils.createRestrictedFile(netxRunningFile, true);
-            } catch (IOException e1) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
-            }
-        }
-
-        try {
-            fl = FileUtils.getFileLock(netxRunningFile.getPath(), false, false);
-        } catch (FileNotFoundException e1) {
-        }
-
         int row = cacheTable.getSelectedRow();
-        try {
-            if (fl == null) {
-                JOptionPane.showMessageDialog(parent, Translator.R("CCannotClearCache"));
-                return;
-            }
-            int modelRow = cacheTable.convertRowIndexToModel(row);
-            DirectoryNode fileNode = ((DirectoryNode) cacheTable.getModel().getValueAt(modelRow, 0));
-            if (fileNode.getFile().delete()) {
-                updateRecentlyUsed(fileNode.getFile());
-                fileNode.getParent().removeChild(fileNode);
-                FileUtils.deleteWithErrMesg(fileNode.getInfoFile());
-                ((NonEditableTableModel) cacheTable.getModel()).removeRow(modelRow);
-                cacheTable.getSelectionModel().clearSelection();
-                CacheDirectory.cleanParent(fileNode);
-            }
-        } catch (Exception exception) {
-            // ignore
+        if (row < 0) {
+            return;
         }
-
-        if (fl != null) {
-            try {
-                fl.release();
-                fl.channel().close();
-            } catch (IOException e1) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e1);
-            }
+        int modelRow = cacheTable.convertRowIndexToModel(row);
+        DirectoryNode fileNode = ((DirectoryNode) cacheTable.getModel().getValueAt(modelRow, 0));
+        String clearId = CacheUtil.clearIdForMeta(fileNode.getMeta());
+        if (clearId != null && !CacheUtil.canClearApplicationCache(clearId)) {
+            JOptionPane.showMessageDialog(parent, Translator.R("CCannotClearCache"));
+            return;
+        }
+        File selected = fileNode.getFile();
+        boolean removed = selected == null || !selected.exists() || selected.delete();
+        if (removed) {
+            fileNode.removeCatalogRow();
+            ((NonEditableTableModel) cacheTable.getModel()).removeRow(modelRow);
+            cacheTable.getSelectionModel().clearSelection();
+            CacheDirectory.cleanParent(fileNode);
         }
     }
 
-    private void updateRecentlyUsed(File f) {
-        File recentlyUsedFile = new File(PathsAndFiles.getRecentlyUsedFile().getFullPath(config));
-        PropertiesFile pf = new PropertiesFile(recentlyUsedFile);
-        pf.load();
-        Enumeration<Object> en = pf.keys();
-        while (en.hasMoreElements()) {
-            String key = (String) en.nextElement();
-            if (pf.get(key).equals(f.getAbsolutePath())) {
-                pf.remove(key);
-            }
-        }
-        pf.store();
-    }
-
-    private String getSelectedJnlpPath() {
+    private String getSelectedClearId() {
         int row = cacheTable.getSelectedRow();
         if (row < 0) {
             return null;
         }
         int modelRow = cacheTable.convertRowIndexToModel(row);
-        Object value = cacheTable.getModel().getValueAt(modelRow, 6);
-        if (value == null) {
-            return null;
-        }
-        String jnlpPath = value.toString().trim();
-        return jnlpPath.isEmpty() ? null : jnlpPath;
+        DirectoryNode fileNode = ((DirectoryNode) cacheTable.getModel().getValueAt(modelRow, 0));
+        return CacheUtil.clearIdForMeta(fileNode.getMeta());
     }
 
     private static String formatCacheInfoContent(String raw) {
@@ -522,35 +470,7 @@ public class CachePane extends JPanel {
      * table.
      */
     public static ArrayList<Object[]> generateData() {
-        DirectoryNode root = new DirectoryNode("Root", PathsAndFiles.CACHE_DIR.getFile(), null);
-        CacheDirectory.getDirStructure(root);
-        ArrayList<Object[]> data = new ArrayList<>();
-
-        for (DirectoryNode identifier : root.getChildren()) {
-            for (DirectoryNode type : identifier.getChildren()) {
-                for (DirectoryNode domain : type.getChildren()) {
-                    //after domain, there is optional port dir. It is skipped here (as is skipped path on domain)
-                    for (DirectoryNode leaf : CacheDirectory.getLeafData(domain)) {
-                        final File f = leaf.getFile();
-                        PropertiesFile pf = new PropertiesFile(new File(f.toString() + CacheDirectory.INFO_SUFFIX));
-                        // if jnlp-path in .info equals path of app to delete mark to delete
-                        String jnlpPath = pf.getProperty(CacheEntry.KEY_JNLP_PATH);
-                        Object[] o = {
-                            leaf,
-                            f.getParentFile(),
-                            type,
-                            domain,
-                            f.length(),
-                            new Date(f.lastModified()),
-                            jnlpPath
-                        };
-                        data.add(o);
-                    }
-                }
-            }
-        }
-
-        return data;
+        return CacheDirectory.listViewerRows();
     }
 
     /**

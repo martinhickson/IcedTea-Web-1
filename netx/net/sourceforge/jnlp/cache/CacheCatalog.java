@@ -11,7 +11,8 @@ import java.util.Map.Entry;
 
 /**
  * Backend for {@link CacheLRUWrapper}: either legacy {@code recently_used}
- * properties or SQLite under {@code {cachedir}/db/}.
+ * properties or SQLite under {@code {cachedir}/cache/db/}
+ * ({@code {cachedir}/db/} when {@code cachedir} already ends with {@code cache}).
  */
 interface CacheCatalog {
 
@@ -42,6 +43,9 @@ interface CacheCatalog {
     boolean addEntry(String key, String path);
 
     boolean removeEntry(String key);
+
+    /** Delete every catalog row whose stored path is {@code path}. */
+    boolean removeByPath(String path);
 
     boolean updateEntry(String oldKey, String cacheDirPath);
 
@@ -93,4 +97,23 @@ interface CacheCatalog {
 
     /** Release resources (e.g. JDBC connection). No-op for properties backend. */
     void close();
+
+    /**
+     * Metadata for the catalog row at {@code path}, or {@code null} if unknown.
+     * Not a sidecar {@code .info} file.
+     */
+    CacheEntryMeta getMetaByPath(String path);
+
+    /** Persist metadata on the catalog row for {@code meta.path}. */
+    void putMeta(CacheEntryMeta meta);
+
+    /** All catalog rows with metadata (for {@code -Xclearcache} / list-ids). */
+    java.util.List<CacheEntryMeta> listAllMeta();
+
+    /** Record a live JNLP JVM so another process can refuse to clear its files. */
+    void registerRunningApp(int pid, String jnlpPath, String processStart);
+
+    void unregisterRunningApp(int pid);
+
+    java.util.List<CacheRunningApp> listRunningApps();
 }

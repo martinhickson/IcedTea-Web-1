@@ -95,7 +95,12 @@ public class StickyVersionMissCacheTest extends NoStdOutErrTest {
         poisoned.setRemoteContentLength(VERSION_MISS.length);
         poisoned.setLastModified(0L);
         poisoned.setLastUpdated(System.currentTimeMillis());
-        poisoned.store();
+        poisoned.lock();
+        try {
+            poisoned.store();
+        } finally {
+            poisoned.unlock();
+        }
 
         // OLD BUG: isCached()==true && isCurrent(0)==true ⇒ never re-download ⇒ ZipException later.
         assertFalse("poison must not count as cached", poisoned.isCached());

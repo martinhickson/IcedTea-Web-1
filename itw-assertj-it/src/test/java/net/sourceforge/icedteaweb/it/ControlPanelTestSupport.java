@@ -21,6 +21,8 @@ import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 import javax.swing.WindowConstants;
+import net.sourceforge.jnlp.cache.CacheEntryMeta;
+import net.sourceforge.jnlp.cache.CacheLRUWrapper;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.KnownJvmStore;
 import net.sourceforge.jnlp.controlpanel.ControlPanel;
@@ -79,34 +81,39 @@ final class ControlPanelTestSupport {
     }
 
     /**
-     * Seeds minimal cache entries ({@code jnlp-path} in {@code .info} files) so
+     * Seeds catalog rows ({@code jnlp-path}) so
      * {@link net.sourceforge.jnlp.cache.CachedJnlpUrlDiscovery} finds sample apps.
-     * This keeps the assignment-listing tests focused on discovery data.
      */
     static void seedCachedJnlpDiscoveryEntries(String... sampleNames) throws Exception {
         resetCacheDir();
         int slot = 0;
-        for (String sampleName : sampleNames) {
-            URL jnlpUrl = JnlpLaunchTestSupport.jnlpUrl(sampleName);
-            String canonicalUrl = JnlpAssignmentLauncher.canonicalizeJnlpUrl(jnlpUrl.toExternalForm());
+        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+        lru.lock();
+        try {
+            lru.load();
+            for (String sampleName : sampleNames) {
+                URL jnlpUrl = JnlpLaunchTestSupport.jnlpUrl(sampleName);
+                String canonicalUrl = JnlpAssignmentLauncher.canonicalizeJnlpUrl(jnlpUrl.toExternalForm());
 
-            File leaf = new File(icedteaWebCacheDir(),
-                    slot + File.separator + "http" + File.separator + "itw-test"
-                            + File.separator + sampleName + File.separator + "app.jnlp");
-            if (!leaf.getParentFile().mkdirs()) {
-                throw new IllegalStateException("Failed to create " + leaf.getParentFile());
+                File leaf = new File(lru.getCacheDir().getFile(),
+                        slot + File.separator + "http" + File.separator + "itw-test"
+                                + File.separator + sampleName + File.separator + "app.jnlp");
+                if (!leaf.getParentFile().mkdirs()) {
+                    throw new IllegalStateException("Failed to create " + leaf.getParentFile());
+                }
+                if (!leaf.createNewFile() && !leaf.isFile()) {
+                    throw new IllegalStateException("Failed to create " + leaf);
+                }
+                lru.addEntry(lru.generateKey(leaf.getAbsolutePath()), leaf.getAbsolutePath());
+                CacheEntryMeta meta = new CacheEntryMeta();
+                meta.path = leaf.getAbsolutePath();
+                meta.jnlpPath = canonicalUrl;
+                lru.putMeta(meta);
+                slot++;
             }
-            if (!leaf.createNewFile() && !leaf.isFile()) {
-                throw new IllegalStateException("Failed to create " + leaf);
-            }
-
-            Properties info = new Properties();
-            info.setProperty("jnlp-path", canonicalUrl);
-            File infoFile = new File(leaf.getPath() + ".info");
-            try (FileOutputStream out = new FileOutputStream(infoFile)) {
-                info.store(out, "itw-assertj-it");
-            }
-            slot++;
+            lru.store();
+        } finally {
+            lru.unlock();
         }
     }
 

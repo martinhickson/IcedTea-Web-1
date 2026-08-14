@@ -136,6 +136,39 @@ final class PropertiesCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public boolean removeByPath(String path) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        boolean removed = false;
+        List<Entry<String, String>> snapshot = new ArrayList<>(getLRUSortedEntries());
+        for (Entry<String, String> e : snapshot) {
+            if (path.equals(e.getValue())) {
+                removeEntry(e.getKey());
+                removed = true;
+            }
+        }
+        PropertiesFile meta = metaProps();
+        meta.lock();
+        try {
+            meta.load();
+            String[] suffixes = {
+                "|path", "|jnlp_path", "|resource_url", "|content_length",
+                "|last_modified", "|last_updated", "|marked_delete"
+            };
+            for (String suffix : suffixes) {
+                if (meta.remove(path + suffix) != null) {
+                    removed = true;
+                }
+            }
+            meta.store();
+        } finally {
+            meta.unlock();
+        }
+        return removed;
+    }
+
+    @Override
     public boolean updateEntry(String oldKey, String cacheDirPath) {
         PropertiesFile p = props();
         if (!p.containsKey(oldKey)) {
@@ -212,6 +245,198 @@ final class PropertiesCacheCatalog implements CacheCatalog {
     @Override
     public void close() {
         // PropertiesFile holds no long-lived JDBC resources.
+    }
+
+    /**
+     * Legacy backend: metadata in {@code recently_used.entry-meta} (one catalog
+     * file), not a {@code .info} sidecar next to each jar.
+     */
+    private PropertiesFile metaProps() {
+        File metaFile = new File(recentlyUsedFile.getFile().getAbsolutePath() + ".entry-meta");
+        return new PropertiesFile(metaFile);
+    }
+
+    @Override
+    public CacheEntryMeta getMetaByPath(String path) {
+        if (path == null) {
+            return null;
+        }
+        PropertiesFile p = metaProps();
+        if (!p.containsKey(path + "|path") && p.getProperty(path + "|jnlp_path") == null
+                && p.getProperty(path + "|marked_delete") == null) {
+            // still return a shell so callers can attach fields
+            CacheEntryMeta empty = new CacheEntryMeta();
+            empty.path = path;
+            return empty;
+        }
+        CacheEntryMeta m = new CacheEntryMeta();
+        m.path = path;
+        m.jnlpPath = p.getProperty(path + "|jnlp_path");
+        m.resourceUrl = p.getProperty(path + "|resource_url");
+        m.contentLength = parseLongOrNull(p.getProperty(path + "|content_length"));
+        m.lastModified = parseLongOrNull(p.getProperty(path + "|last_modified"));
+        m.lastUpdated = parseLongOrNull(p.getProperty(path + "|last_updated"));
+        m.markedDelete = Boolean.parseBoolean(p.getProperty(path + "|marked_delete"));
+        return m;
+    }
+
+    @Override
+    public void putMeta(CacheEntryMeta meta) {
+        if (meta == null || meta.path == null) {
+            return;
+        }
+        PropertiesFile p = metaProps();
+        p.lock();
+        try {
+            p.setProperty(meta.path + "|path", meta.path);
+            setOrClear(p, meta.path + "|jnlp_path", meta.jnlpPath);
+            setOrClear(p, meta.path + "|resource_url", meta.resourceUrl);
+            setOrClear(p, meta.path + "|content_length",
+                    meta.contentLength == null ? null : Long.toString(meta.contentLength));
+            setOrClear(p, meta.path + "|last_modified",
+                    meta.lastModified == null ? null : Long.toString(meta.lastModified));
+            setOrClear(p, meta.path + "|last_updated",
+                    meta.lastUpdated == null ? null : Long.toString(meta.lastUpdated));
+            p.setProperty(meta.path + "|marked_delete", Boolean.toString(meta.markedDelete));
+            p.store();
+        } finally {
+            p.unlock();
+        }
+    }
+
+    @Override
+    public void registerRunningApp(int pid, String jnlpPath, String processStart) {
+        if (pid <= 0) {
+            return;
+        }
+        List<CacheRunningApp> rows = listRunningApps();
+        List<CacheRunningApp> updated = new ArrayList<CacheRunningApp>();
+        boolean replaced = false;
+        for (CacheRunningApp row : rows) {
+            if (row.pid == pid) {
+                updated.add(new CacheRunningApp(pid, jnlpPath, processStart));
+                replaced = true;
+            } else {
+                updated.add(row);
+            }
+        }
+        if (!replaced) {
+            updated.add(new CacheRunningApp(pid, jnlpPath, processStart));
+        }
+        writeRunningApps(updated);
+    }
+
+    @Override
+    public void unregisterRunningApp(int pid) {
+        if (pid <= 0) {
+            return;
+        }
+        List<CacheRunningApp> rows = listRunningApps();
+        List<CacheRunningApp> updated = new ArrayList<CacheRunningApp>();
+        for (CacheRunningApp row : rows) {
+            if (row.pid != pid) {
+                updated.add(row);
+            }
+        }
+        writeRunningApps(updated);
+    }
+
+    @Override
+    public List<CacheRunningApp> listRunningApps() {
+        List<CacheRunningApp> rows = new ArrayList<CacheRunningApp>();
+        File file = runningAppsFile();
+        if (file == null || !file.isFile()) {
+            return rows;
+        }
+        try {
+            List<String> lines = java.nio.file.Files.readAllLines(file.toPath(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            for (String line : lines) {
+                if (line == null || line.trim().isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+                String[] parts = line.split("\t", 3);
+                if (parts.length < 1) {
+                    continue;
+                }
+                try {
+                    int pid = Integer.parseInt(parts[0].trim());
+                    String jnlp = parts.length > 1 ? emptyToNull(parts[1]) : null;
+                    String start = parts.length > 2 ? emptyToNull(parts[2]) : null;
+                    rows.add(new CacheRunningApp(pid, jnlp, start));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        } catch (IOException e) {
+            OutputController.getLogger().log(e);
+        }
+        return rows;
+    }
+
+    private File runningAppsFile() {
+        File recentlyUsed = recentlyUsedFile.getFile();
+        File parent = recentlyUsed.getParentFile();
+        if (parent == null) {
+            return new File("running_apps");
+        }
+        return new File(parent, "running_apps");
+    }
+
+    private void writeRunningApps(List<CacheRunningApp> rows) {
+        File file = runningAppsFile();
+        try {
+            FileUtils.createParentDir(file);
+            StringBuilder sb = new StringBuilder();
+            for (CacheRunningApp row : rows) {
+                sb.append(row.pid).append('\t')
+                        .append(row.jnlpPath == null ? "" : row.jnlpPath).append('\t')
+                        .append(row.processStart == null ? "" : row.processStart).append('\n');
+            }
+            java.nio.file.Files.write(file.toPath(),
+                    sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            OutputController.getLogger().log(e);
+        }
+    }
+
+    private static String emptyToNull(String s) {
+        if (s == null || s.trim().isEmpty()) {
+            return null;
+        }
+        return s.trim();
+    }
+
+    @Override
+    public List<CacheEntryMeta> listAllMeta() {
+        List<CacheEntryMeta> rows = new ArrayList<>();
+        for (Entry<String, String> e : getLRUSortedEntries()) {
+            CacheEntryMeta m = getMetaByPath(e.getValue());
+            if (m == null) {
+                m = new CacheEntryMeta();
+                m.path = e.getValue();
+            }
+            rows.add(m);
+        }
+        return rows;
+    }
+
+    private static void setOrClear(PropertiesFile p, String key, String value) {
+        if (value == null) {
+            p.remove(key);
+        } else {
+            p.setProperty(key, value);
+        }
+    }
+
+    private static Long parseLongOrNull(String s) {
+        if (s == null || s.trim().isEmpty()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(s.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     static String folderIdFromPath(String path, String cacheDirPath) {

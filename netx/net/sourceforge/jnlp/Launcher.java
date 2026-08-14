@@ -584,7 +584,7 @@ public class Launcher {
                 List<String> netxArguments = new LinkedList<String>();
                 netxArguments.add("-Xnofork");
                 netxArguments.addAll(JNLPRuntime.getInitialArguments());
-                launchExternal(file.getNewVMArgs(), netxArguments, relaunchJavaHome);
+                launchExternal(vmArgsForRelaunch(file), netxArguments, relaunchJavaHome);
                 return null;
             }
 
@@ -1173,6 +1173,62 @@ public class Launcher {
         String fromJnlp = readRequestedJreFromJnlp(file);
         String fromRelaunch = readRelaunchRequestedJre(file);
         return reconcileRequestedJreVersion(fromJnlp, fromRelaunch);
+    }
+
+    /**
+     * JNLP {@code java-vm-args} plus user {@code -J-D…} from this JVM.
+     * The .NET/native launcher applies {@code -J} to the parent only; without
+     * this, properties such as {@code itw.sample.hold.seconds} never reach the
+     * JDK-relaunch child and the app exits while testers still think it is held.
+     */
+    static List<String> vmArgsForRelaunch(JNLPFile file) {
+        List<String> vmArgs = new LinkedList<String>();
+        if (file != null) {
+            vmArgs.addAll(file.getNewVMArgs());
+        }
+        for (String input : java.lang.management.ManagementFactory.getRuntimeMXBean().getInputArguments()) {
+            if (shouldForwardRelaunchVmArg(input) && !containsSameVmArg(vmArgs, input)) {
+                vmArgs.add(input);
+            }
+        }
+        return vmArgs;
+    }
+
+    static boolean shouldForwardRelaunchVmArg(String arg) {
+        if (arg == null || arg.isEmpty()) {
+            return false;
+        }
+        if (arg.startsWith("-Ditw.")) {
+            return true;
+        }
+        if (!arg.startsWith("-D")) {
+            return false;
+        }
+        String key = arg.substring(2);
+        int eq = key.indexOf('=');
+        if (eq >= 0) {
+            key = key.substring(0, eq);
+        }
+        return !key.startsWith("java.")
+                && !key.startsWith("jdk.")
+                && !key.startsWith("sun.")
+                && !key.startsWith("oracle.")
+                && !key.startsWith("com.sun.")
+                && !key.startsWith("javax.")
+                && !key.startsWith("javafx.")
+                && !key.startsWith("icedtea-web.")
+                && !key.startsWith("net.sourceforge.jnlp.");
+    }
+
+    private static boolean containsSameVmArg(List<String> vmArgs, String candidate) {
+        int eq = candidate.indexOf('=');
+        String prefix = eq >= 0 ? candidate.substring(0, eq + 1) : candidate;
+        for (String existing : vmArgs) {
+            if (existing.equals(candidate) || (eq >= 0 && existing.startsWith(prefix))) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static String readRequestedJreFromJnlp(JNLPFile file) {
