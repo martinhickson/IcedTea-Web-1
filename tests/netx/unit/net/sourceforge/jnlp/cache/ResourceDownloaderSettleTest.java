@@ -37,8 +37,10 @@ class ResourceDownloaderSettleTest {
         Files.write(file, "hello".getBytes(StandardCharsets.UTF_8));
         r.setLocalFile(file.toFile());
         r.setJarSlot(null);
+        assertTrue(r.tryEnqueue());
         new ResourceDownloader(r, new Object()).settleSlotGood(false);
         assertEquals(JarState.GOOD, r.getTerminalState());
+        assertFalse(r.isEnqueued(), "enqueued must clear only after GOOD");
     }
 
     @Test
@@ -48,9 +50,11 @@ class ResourceDownloaderSettleTest {
         JarGroupState group = JarGroupState.forJars(Arrays.asList(u));
         r.setJarSlot(group.slot(0));
         r.setLocalFile(null);
+        assertTrue(r.tryEnqueue());
         new ResourceDownloader(r, new Object()).settleSlotGood(true);
         assertEquals(JarState.RETRY_PENDING, group.slot(0).state());
         assertEquals(null, r.getTerminalState());
+        assertTrue(r.isEnqueued(), "RETRY_PENDING must keep enqueued so wait() cannot start a second GET");
     }
 
     @Test
@@ -70,10 +74,12 @@ class ResourceDownloaderSettleTest {
         JarSlot slot = group.slot(0);
         r.setJarSlot(slot);
         ResourceDownloader d = new ResourceDownloader(r, new Object());
+        assertTrue(r.tryEnqueue());
 
         d.settleSlotBad();
         assertEquals(JarState.RETRY_PENDING, slot.state());
         assertEquals(null, r.getTerminalState());
+        assertTrue(r.isEnqueued(), "first failure parks retry and must keep enqueued");
     }
 
     @Test
@@ -92,6 +98,7 @@ class ResourceDownloaderSettleTest {
         assertEquals(JarState.SETTLED_BAD, slot.state());
         assertEquals(JarState.SETTLED_BAD, r.getTerminalState());
         assertTrue(group.done().isDone());
+        assertFalse(r.isEnqueued(), "absorbing SETTLED_BAD must release enqueued");
     }
 
     @Test

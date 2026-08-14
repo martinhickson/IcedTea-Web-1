@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import net.sourceforge.jnlp.Version;
 import net.sourceforge.jnlp.cache.download.JarGroupState;
 import net.sourceforge.jnlp.cache.download.JarState;
@@ -152,5 +153,21 @@ public class ResourceTrackerPreSettleTest {
         assertTrue(group.slot(0).settleGood(System.currentTimeMillis(), true));
         assertTrue(group.done().isDone());
         assertTrue(!ResourceTracker.canReuseMetricsGroup(new Resource[]{r}, group));
+    }
+
+    @Test
+    public void startResourceDoesNotStartSecondDownloadWhileEnqueued() throws Exception {
+        URL u = url("http://localhost/enq-" + System.nanoTime() + ".jar");
+        Resource r = Resource.getResource(u, null, UpdatePolicy.NEVER);
+        final AtomicInteger starts = new AtomicInteger();
+        ResourceTracker tracker = new ResourceTracker() {
+            @Override
+            protected void startDownloadThread(Resource resource) {
+                starts.incrementAndGet();
+            }
+        };
+        assertTrue(r.tryEnqueue());
+        assertTrue(tracker.startResource(r), "already enqueued must be treated as in-progress");
+        assertEquals(0, starts.get(), "wait() tick must not start a second GET");
     }
 }

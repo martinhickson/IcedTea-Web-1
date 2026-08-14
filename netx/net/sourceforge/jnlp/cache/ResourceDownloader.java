@@ -349,6 +349,7 @@ public class ResourceDownloader implements Runnable {
 
     private void initializeFromURL(UrlRequestResult location) throws IOException {
         CacheEntry entry = new CacheEntry(resource.getLocation(), resource.getRequestVersion());
+        net.sourceforge.jnlp.security.HttpResponse response = null;
         entry.lock();
         try {
             resource.setDownloadLocation(location.URL);
@@ -364,11 +365,16 @@ public class ResourceDownloader implements Runnable {
                 return;
             }
 
-            java.util.Map<String, String> headers = new java.util.HashMap<>();
-            headers.put("Accept-Encoding", getAcceptEncoding());
-            net.sourceforge.jnlp.security.HttpResponse response =
-                    net.sourceforge.jnlp.security.HttpClientProvider.getDefault()
-                            .open(location.URL, "GET", headers, null);
+            // Cache-freshness only. Never GET here: an unread GET's close()
+            // drains chunked/gzip (the whole jar) and steals the HTTP pool.
+            Long size = location.length;
+            Long lm = location.lastModified;
+            if (size == null || lm == null) {
+                java.util.Map<String, String> headers = new java.util.HashMap<>();
+                headers.put("Accept-Encoding", getAcceptEncoding());
+                response = net.sourceforge.jnlp.security.HttpClientProvider.getDefault()
+                        .open(location.URL, "HEAD", headers, null);
+            }
 
             File localFile = null;
             if (resource.getRequestVersion() == resource.getDownloadVersion()) {
@@ -376,12 +382,10 @@ public class ResourceDownloader implements Runnable {
             } else {
                 localFile = CacheUtil.getCacheFile(resource.getLocation(), resource.getDownloadVersion());
             }
-            Long size = location.length;
-            if (size == null) {
+            if (size == null && response != null) {
                 size = response.getContentLength();
             }
-            Long lm = location.lastModified;
-            if (lm == null) {
+            if (lm == null && response != null) {
                 lm = response.getLastModified();
             }
             // If the newest LRU slot is a ghost (.info-only) but an older folder still has the
@@ -468,10 +472,13 @@ public class ResourceDownloader implements Runnable {
             }
             entry.store();
             resource.fireDownloadEvent(); // fire CONNECTED
-
-            // explicitly close the HTTP response.
-            response.close();
         } finally {
+            if (response != null) {
+                try {
+                    response.close();
+                } catch (Exception ignored) {
+                }
+            }
             entry.unlock();
         }
     }
@@ -679,7 +686,9 @@ public class ResourceDownloader implements Runnable {
 
     /** Package-visible for Groovy probes / unit tests. */
     void settleSlotGood(boolean fromCache) {
-        resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
+        // Keep enqueued until the slot is absorbing. Splash wait() ticks every
+        // ~150ms and calls startResource; clearing here (before integrity) let
+        // a second GET start for a jar that had just finished writing.
         // Final gate: jars must pass signature/digest integrity before GOOD.
         File local = resource.getLocalFile();
         if (CacheUtil.isJarResourceUrl(resource.getLocation()) && local != null) {
@@ -702,12 +711,13 @@ public class ResourceDownloader implements Runnable {
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
+            resource.clearEnqueued();
             return;
         }
         if (fromCache && !ResourceTracker.hasUsableLocalFile(resource)) {
             // ghost cache entry: don't settle GOOD — park for the one-shot retry so
             // the wait path re-enqueues and re-downloads instead of launching from a
-            // phantom file.
+            // phantom file. Keep enqueued so wait() cannot start a second GET.
             slot.settleUnusable(System.currentTimeMillis());
             return;
         }
@@ -718,16 +728,17 @@ public class ResourceDownloader implements Runnable {
         // cache hits loop forever: isCurrent=true → "Downloading" → new IN_FLIGHT slot.
         if (slot.state() == net.sourceforge.jnlp.cache.download.JarState.GOOD) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
+            resource.clearEnqueued();
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, slot.settleStatsLine());
         }
     }
 
     /** Package-visible for unit tests of the settle / fail-fast paths. */
     void settleSlotBad() {
-        resource.clearEnqueued();   // allow a retry/next wait to re-enqueue
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+            resource.clearEnqueued();
             return;
         }
         // settleUnusable → RETRY_PENDING (not absorbing) on first failure; SETTLED_BAD after retry.
@@ -735,6 +746,7 @@ public class ResourceDownloader implements Runnable {
                 || slot.state() == net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD;
         if (terminal) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+            resource.clearEnqueued();
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
                     "Download failed (out of retries or terminal error): " + slot.settleStatsLine());
         }
@@ -742,15 +754,16 @@ public class ResourceDownloader implements Runnable {
 
     /** Force SETTLED_BAD when attempts are exhausted and the slot never absorbed. Package-visible for tests. */
     void failFastOutOfRetries() {
-        resource.clearEnqueued();
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+            resource.clearEnqueued();
             resource.fireDownloadEvent(); // ERROR
             return;
         }
         slot.settleBadFinal(System.currentTimeMillis());
         resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.SETTLED_BAD);
+        resource.clearEnqueued();
         OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
                 "Download failed fast after retries exhausted: " + slot.settleStatsLine());
         resource.fireDownloadEvent(); // ERROR

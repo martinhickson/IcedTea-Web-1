@@ -525,7 +525,7 @@ public class ResourceTracker {
      * @return true if the resource is already downloaded (or an error occurred)
      * @throws IllegalResourceDescriptorException if the resource is not being tracked
      */
-    private boolean startResource(Resource resource) {
+    boolean startResource(Resource resource) {
         // DOWNLOADED/ERROR without a usable jar: clear and enqueue a fresh attempt.
         // Do NOT consume the one-shot retry here — wait/getCacheFile consume it when
         // they observe another terminal-unusable result after this download finishes.
@@ -537,6 +537,13 @@ public class ResourceTracker {
             }
             resource.prepareRedownloadAfterUnusableTerminal();
         } else if (resource.isSet(ERROR) || resource.isSet(DOWNLOADED)) {
+            return true;
+        }
+
+        // A downloader already owns this resource (IN_FLIGHT integrity, or
+        // sitting in the size-first queue). Splash wait() ticks must not start
+        // a second GET for the same URL.
+        if (resource.isEnqueued()) {
             return true;
         }
 
