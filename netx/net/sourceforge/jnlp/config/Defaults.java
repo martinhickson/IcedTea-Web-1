@@ -616,9 +616,14 @@ public class Defaults {
                         String.valueOf(1)
                 },
                 {
-                        DeploymentConfiguration.KEY_HTTP_RANGE_RESUME,
+                        DeploymentConfiguration.KEY_HTTP_RANGE_ENABLED,
                         BasicValueValidators.getBooleanValidator(),
                         String.valueOf(true)
+                },
+                {
+                        DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                        BasicValueValidators.getRangedIntegerValidator(0, Integer.MAX_VALUE),
+                        String.valueOf(50 * 1024 * 1024)
                 },
                 //**************
                 //* Native (rust) only - beggin

@@ -192,12 +192,27 @@ public class ResourceDownloader implements Runnable {
     }
 
     /**
-     * Whether HTTP Range (RFC 7233) resume of interrupted downloads is enabled
-     * ({@code deployment.http.range.resume}, default true).
+     * Whether HTTP Range (RFC 7233) is enabled ({@code deployment.http.range.enabled},
+     * default true). Gates both resume of interrupted downloads and the multipart split of
+     * large fresh downloads.
      */
-    private static boolean isRangeResumeEnabled() {
+    private static boolean isRangeEnabled() {
         return Boolean.valueOf(JNLPRuntime.getConfiguration().getProperty(
-                DeploymentConfiguration.KEY_HTTP_RANGE_RESUME));
+                DeploymentConfiguration.KEY_HTTP_RANGE_ENABLED));
+    }
+
+    /**
+     * Maximum byte size of each parallel Range chunk for a fresh large download
+     * ({@code deployment.http.range.maxSlotBytes}, default 50&nbsp;MB). {@code 0} disables
+     * the multipart split (resume still works).
+     */
+    private static long getRangeMaxSlotBytes() {
+        try {
+            return Long.parseLong(JNLPRuntime.getConfiguration().getProperty(
+                    DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES));
+        } catch (Exception e) {
+            return 0L;
+        }
     }
 
     /**
@@ -615,11 +630,20 @@ public class ResourceDownloader implements Runnable {
         net.sourceforge.jnlp.security.HttpResponse response = null;
         URL downloadFrom = null;
 
-        // HTTP Range (RFC 7233) resume: when a partial cache file exists, ask the server
-        // for only the missing suffix. effectiveResume is zeroed whenever a server forces
-        // a full GET fallback (416, mismatched Content-Range, or a compressed representation).
+        // HTTP Range (RFC 7233): either resume an interrupted download (a partial cache file
+        // exists → request the missing suffix) or split a large fresh download into parallel
+        // chunks. effectiveResume is zeroed whenever a server forces a full GET fallback.
         ResumeTarget resume = computeResumeTarget();
         long effectiveResume = resume.offset;
+        final URL rangeLoc = resource.getLocation();
+        final long slotSize = getRangeMaxSlotBytes();
+        final boolean multipartEligible = effectiveResume == 0
+                && slotSize > 0
+                && isRangeEnabled()
+                && ("http".equalsIgnoreCase(rangeLoc.getProtocol())
+                        || "https".equalsIgnoreCase(rangeLoc.getProtocol()))
+                && !rangeLoc.getPath().toLowerCase().endsWith(".pack.gz");
+        String probeHeader = multipartEligible ? multipartProbeHeader(slotSize) : null;
 
         try {
             // When skipHeadIfNotCached set up URL candidates during initialize,
@@ -633,17 +657,21 @@ public class ResourceDownloader implements Runnable {
             IOException lastError = null;
             for (URL candidate : tryUrls) {
                 try {
-                    response = getDownloadConnection(candidate, effectiveResume, resume.ifRangeLastModified);
+                    String rangeHeader = effectiveResume > 0 ? buildRangeHeader(effectiveResume) : probeHeader;
+                    response = getDownloadConnection(candidate, rangeHeader, resume.ifRangeLastModified);
                     int status = response.getStatusCode();
-                    if (effectiveResume > 0 && isRangeRejection(response, status, effectiveResume)) {
-                        // Server could not honour the suffix (416) or returned a 206 whose
-                        // Content-Range does not line up with the on-disk prefix. Fall back
-                        // to a full GET on the same candidate.
-                        logResourceDebug(downloadTo, "Range resume rejected (" + status
+                    long requestedStart = effectiveResume > 0 ? effectiveResume : 0L;
+                    if (rangeHeader != null && isRangeRejection(response, status, requestedStart)) {
+                        // Server rejected the Range (416) or returned a 206 whose Content-Range
+                        // does not line up with the requested offset. Applies to both a resume
+                        // suffix and a multipart probe. Fall back to a full GET on the same
+                        // candidate and stop probing remaining candidates.
+                        logResourceDebug(downloadTo, "Range request rejected (" + status
                                 + ") for " + candidate + " - falling back to full GET");
                         response.close();
-                        response = getDownloadConnection(candidate, 0L, 0L);
+                        response = getDownloadConnection(candidate, null, 0L);
                         effectiveResume = 0L;
+                        probeHeader = null;
                         status = response.getStatusCode();
                     }
                     // HTTP error codes (404 etc.) are not exceptions; check the
@@ -685,34 +713,55 @@ public class ResourceDownloader implements Runnable {
             String contentEncoding = response.getContentEncoding();
             int status = response.getStatusCode();
 
-            // Only an identity (uncompressed) 206 whose Content-Range lined up with the
-            // on-disk prefix is byte-resumable. pack200-gzip / gzip bodies are not.
+            // It's important to check packgz first. If a stream is both
+            // pack200 and gz encoded, then the Content-Encoding could
+            // return ".gz", so if we check gzip first, we would end up
+            // treating a pack200 file as a jar file.
             boolean packgz = "pack200-gzip".equals(contentEncoding)
                     || downloadFrom.getPath().endsWith(".pack.gz");
             boolean gzip = "gzip".equals(contentEncoding);
+
+            // Only an identity (uncompressed) 206 whose Content-Range lined up with the
+            // on-disk prefix is byte-resumable. pack200-gzip / gzip bodies are not.
             boolean rangeHonored = status == HttpURLConnection.HTTP_PARTIAL && effectiveResume > 0
                     && !packgz && !gzip;
             // On a 206 the Content-Length is only the slice; report the full size for progress.
-            if (rangeHonored) {
+            if (status == HttpURLConnection.HTTP_PARTIAL) {
                 long total = parseContentRangeTotal(response.getHeader("Content-Range"));
                 if (total > 0) {
                     resource.setSize(total);
                 }
             }
 
+            // Multipart split: a probe Range (bytes=0-(slotSize-1)) was sent on a fresh
+            // identity download and the server answered 206. Only split when the resource is
+            // larger than one slot; otherwise the 206 already carried the whole body.
+            long multipartTotal = -1L;
+            boolean multipart = multipartEligible
+                    && status == HttpURLConnection.HTTP_PARTIAL
+                    && !packgz && !gzip
+                    && (multipartTotal = parseContentRangeTotal(response.getHeader("Content-Range"))) > slotSize;
+
             logResourceDebug(downloadTo, "Downloading " + downloadTo + " using "
                     + downloadFrom + " (encoding : " + contentEncoding
-                    + (rangeHonored ? ", range resume from " + effectiveResume : "") + ") ");
+                    + (rangeHonored ? ", range resume from " + effectiveResume : "")
+                    + (multipart ? ", multipart " + multipartTotal + "B slot " + slotSize + "B" : "") + ") ");
 
-            // It's important to check packgz first. If a stream is both
-            // pack200 and gz encoded, then the Content-Encoding could
-            // return ".gz", so if we check gzip first, we would end up
-            // treating a pack200 file as a jar file.
             if (packgz) {
                 CachedDaemonThreadPoolProvider.notePackGzDetected();
                 downloadPackGzFileDirectly(response, downloadFrom, downloadTo);
             } else if (gzip) {
                 downloadGZipFile(response, downloadFrom, downloadTo);
+            } else if (multipart) {
+                long lastModified = response.getLastModified();
+                CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion());
+                File dest = entry.getCacheFile();
+                // download() consumes/closes the probe response as chunk 0 and reassembles into dest.
+                File reassembled = MultipartRangeDownloader.download(
+                        response, downloadFrom, multipartTotal, slotSize, resource, dest);
+                response = null; // ownership transferred (closed inside download())
+                resource.setLocalFile(reassembled);
+                storeEntryFields(entry, reassembled.length(), lastModified);
             } else {
                 downloadFile(response, downloadTo, false, null, rangeHonored,
                         rangeHonored ? effectiveResume : 0L);
@@ -757,7 +806,7 @@ public class ResourceDownloader implements Runnable {
      */
     private ResumeTarget computeResumeTarget() {
         URL loc = resource.getLocation();
-        if (!isRangeResumeEnabled()) {
+        if (!isRangeEnabled()) {
             return ResumeTarget.NONE;
         }
         String protocol = loc.getProtocol();
@@ -793,17 +842,16 @@ public class ResourceDownloader implements Runnable {
     }
 
     private net.sourceforge.jnlp.security.HttpResponse getDownloadConnection(URL location) throws IOException {
-        return getDownloadConnection(location, 0L, 0L);
+        return getDownloadConnection(location, null, 0L);
     }
 
-    private net.sourceforge.jnlp.security.HttpResponse getDownloadConnection(URL location, long rangeFrom, long ifRangeLastModified)
+    private net.sourceforge.jnlp.security.HttpResponse getDownloadConnection(URL location, String rangeHeader, long ifRangeLastModified)
             throws IOException {
         java.util.Map<String, String> headers = new java.util.HashMap<>();
         headers.put("Accept-Encoding", getAcceptEncoding());
-        // Resume an interrupted download by asking for the missing suffix (RFC 7233).
-        // If-Range makes the server return the full 200 representation when the resource
-        // has changed, so a stale prefix is never appended to.
-        String rangeHeader = buildRangeHeader(rangeFrom);
+        // Resume / multipart-split send a Range header (RFC 7233). If-Range makes the server
+        // return the full 200 representation when the resource has changed, so a stale prefix
+        // is never appended to and parallel chunks refer to a single version.
         if (rangeHeader != null) {
             headers.put("Range", rangeHeader);
             String ifRange = formatIfRangeDate(ifRangeLastModified);
@@ -821,6 +869,11 @@ public class ResourceDownloader implements Runnable {
             slot.onConnect(start, end, timing.reused);
         }
         return response;
+    }
+
+    /** Build a bounded Range header for the multipart probe / first chunk: {@code bytes=0-(slotSize-1)}. */
+    private static String multipartProbeHeader(long slotSize) {
+        return "bytes=0-" + (slotSize - 1);
     }
 
     /** Package-visible for Groovy probes / unit tests. */

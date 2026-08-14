@@ -433,13 +433,23 @@ public final class DeploymentConfiguration {
     public static final String KEY_HTTP_PACK200_ADMISSION_LARGE_WIRE_MULTIPLIER =
             "deployment.http.pack200.admission.largeWireMultiplier";
     /**
-     * Boolean. If true (default), resume interrupted downloads with an HTTP
-     * Range request (RFC 7233) when a partial cache file exists: send
-     * {@code Range: bytes=<cachedLen>-} (plus {@code If-Range} when the cached
-     * Last-Modified is known), append the 206 suffix, and fall back to a full
-     * GET on 200/416 so old servers keep working.
+     * Boolean. If true (default), enable HTTP Range (RFC 7233) for downloads. Two behaviours:
+     * <ul>
+     *   <li>resume an interrupted download by requesting the missing suffix
+     *       ({@code Range: bytes=<cachedLen>-}, with {@code If-Range}) and appending the 206;</li>
+     *   <li>split a large fresh download into parallel chunks of at most
+     *       {@link #KEY_HTTP_RANGE_MAX_SLOT_BYTES} bytes each, then reassemble them.</li>
+     * </ul>
+     * Old / range-unaware servers fall back to today's full GET on a 200/416.
      */
-    public static final String KEY_HTTP_RANGE_RESUME = "deployment.http.range.resume";
+    public static final String KEY_HTTP_RANGE_ENABLED = "deployment.http.range.enabled";
+    /**
+     * Positive long. Maximum byte size of each parallel Range chunk for a fresh large download
+     * (e.g. a 200&nbsp;MB jar with a 50&nbsp;MB slot size splits into 4 parallel chunks).
+     * {@code 0} disables the multipart split (resume still works when range is enabled).
+     * Default {@code 52428800} (50&nbsp;MB).
+     */
+    public static final String KEY_HTTP_RANGE_MAX_SLOT_BYTES = "deployment.http.range.maxSlotBytes";
 
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     

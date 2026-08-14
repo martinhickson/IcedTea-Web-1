@@ -797,4 +797,38 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
                 full.length, result.length);
         Assert.assertArrayEquals(full, result);
     }
+
+    @Test
+    public void testMultipartRangeSplitsAndReassembles() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.4");
+        File remote = new File(rangeServer.getDir(), "multipart.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = rangeServer.getUrl("multipart.jar");
+        rangeHeaderSeen.set(null);
+
+        // Tiny slot size forces many parallel Range chunks (ceil(len/16)) and exercises reassembly.
+        String prevSlot = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES);
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES, "16");
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            ResourceDownloader downloader = new ResourceDownloader(resource, new Object());
+            resource.setDownloadOptions(new DownloadOptions(false, false));
+            downloader.run();
+
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull("multipart download must produce a cache file", downloaded);
+            byte[] result = Files.readAllBytes(downloaded.toPath());
+            Assert.assertEquals("reassembled file must equal the full jar length",
+                    full.length, result.length);
+            Assert.assertArrayEquals("parallel chunks must reassemble into the original jar", full, result);
+        } finally {
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                    prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
+        }
+    }
 }
