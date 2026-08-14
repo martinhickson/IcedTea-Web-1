@@ -837,9 +837,12 @@ public class ResourceDownloader implements Runnable {
         if (!downloadEntry.isCurrent(response.getLastModified()) || !existingUsable) {
             boolean wrote = false;
             File writtenFile = null;
+            // Pin the cache jar path for this attempt. A second getCacheFile() during
+            // Pack200 admission wait can resolve a different LRU slot (issue #15).
+            final File pinnedJar = downloadEntry.getCacheFile();
             try {
                 writtenFile = writeDownloadStream(cacheLocation, response.getBody(), packGZ,
-                        response.getContentLength());
+                        response.getContentLength(), pinnedJar);
                 wrote = true;
             } catch (IOException ex) {
                 if (isFavIconUrl(downloadLocation)) {
@@ -857,7 +860,7 @@ public class ResourceDownloader implements Runnable {
                     OutputController.getLogger().log(head);
                     OutputController.getLogger().log("Body is: " + body.length + " bytes long");
                     writtenFile = writeDownloadStream(cacheLocation, new ByteArrayInputStream(body), packGZ,
-                            body != null ? body.length : -1L);
+                            body != null ? body.length : -1L, pinnedJar);
                     wrote = true;
                 } else {
                     logDownloadFailure(downloadLocation, ex);
@@ -917,16 +920,21 @@ public class ResourceDownloader implements Runnable {
      * @return the cache file that was written
      */
     private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ) throws IOException {
-        return writeDownloadStream(cacheLocation, raw, packGZ, -1L);
+        return writeDownloadStream(cacheLocation, raw, packGZ, -1L, null);
     }
 
     private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ, long contentLength)
             throws IOException {
+        return writeDownloadStream(cacheLocation, raw, packGZ, contentLength, null);
+    }
+
+    private File writeDownloadStream(URL cacheLocation, InputStream raw, boolean packGZ, long contentLength,
+            File pinnedJar) throws IOException {
         // Validate the exact file we wrote — a second getCacheFile() can resolve a different
         // LRU slot and falsely reject a good pack200 unpack (or leave poison on disk).
         File written = packGZ
-                ? drainThenUnpackPackGz(cacheLocation, raw)
-                : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw));
+                ? drainThenUnpackPackGz(cacheLocation, raw, pinnedJar)
+                : writeDownloadToFile(cacheLocation, new BufferedInputStream(raw), pinnedJar);
         // compressionRatio metric: on-disk decompressed size vs wire bytes
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot != null && written != null) {
@@ -952,17 +960,30 @@ public class ResourceDownloader implements Runnable {
      * Drain the HTTP pack.gz body to disk first (records real TTFB, releases the
      * connection), then Pack200-unpack under admission using the exact wire size.
      * Waiting for a heap slot with the response unread made mean TTFB ≈ wall clock.
+     * <p>
+     * Sidecar files are unique per attempt so a concurrent downloader's {@code finally}
+     * cannot delete the file this thread still needs while queued in
+     * {@link net.sourceforge.jnlp.cache.download.PackUnpackAdmission} (GitHub #15).
+     * The jar destination is the CacheEntry-pinned path when provided so
+     * {@code storeEntryFields} cannot lock a dead LRU slot after a successful unpack.
      */
-    private File drainThenUnpackPackGz(URL cacheLocation, InputStream packGzStream) throws IOException {
-        File jarFile = CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
-        File packed = new File(jarFile.getPath() + ".pack.gz.download");
+    private File drainThenUnpackPackGz(URL cacheLocation, InputStream packGzStream, File pinnedJar)
+            throws IOException {
+        File jarFile = pinnedJar != null ? pinnedJar
+                : CacheUtil.getCacheFile(cacheLocation, resource.getDownloadVersion());
+        File packed = newPackedSidecar(jarFile);
         try {
+            File parent = packed.getParentFile();
+            if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+                throw new IOException("Cannot create cache directory for Pack200 sidecar: " + parent);
+            }
             writeCountedStreamToFile(packed, new BufferedInputStream(packGzStream));
             long wire = packed.isFile() ? packed.length() : 0L;
             long sizeHint = resource.getSize();
             long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
                     .estimateReserveBytes(wire, sizeHint);
             net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
+                ensurePackedSidecarPresent(packed);
                 try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
                      OutputStream fileOut = Files.newOutputStream(jarFile.toPath(),
                              StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
@@ -972,8 +993,27 @@ public class ResourceDownloader implements Runnable {
             });
             return jarFile;
         } finally {
+            // Only this attempt's uniquely named sidecar — never a shared fixed suffix.
             deleteCorruptLocal(packed);
         }
+    }
+
+    /**
+     * Unique drain file beside {@code jarFile}. Package-visible for unit tests.
+     * Shared {@code .pack.gz.download} names let one attempt's finally delete another's
+     * sidecar during PackUnpackAdmission wait.
+     */
+    static File newPackedSidecar(File jarFile) {
+        return new File(jarFile.getPath() + ".pack.gz.download." + Long.toHexString(System.nanoTime()));
+    }
+
+    /** Fail with a retryable message when the sidecar vanished during admission wait. */
+    static void ensurePackedSidecarPresent(File packed) throws IOException {
+        if (packed != null && packed.isFile() && packed.length() > 0L) {
+            return;
+        }
+        throw new IOException("Pack200 sidecar missing after admission wait: "
+                + (packed != null ? packed.getAbsolutePath() : "null"));
     }
 
     private File retryDownload(net.sourceforge.jnlp.security.HttpResponse response, URL downloadLocation, CacheEntry downloadEntry,
@@ -1000,7 +1040,7 @@ public class ResourceDownloader implements Runnable {
         // missing unversioned sonata-dao.jar (Windows production launch failure).
         try {
             return writeDownloadStream(downloadEntry.getLocation(), retried.getBody(), packGZ,
-                    retried.getContentLength());
+                    retried.getContentLength(), downloadEntry.getCacheFile());
         } finally {
             retried.close();
         }
@@ -1047,7 +1087,16 @@ public class ResourceDownloader implements Runnable {
     }
 
     private File writeDownloadToFile(URL downloadLocation, InputStream in) throws IOException {
-        File localFile = CacheUtil.getCacheFile(downloadLocation, resource.getDownloadVersion());
+        return writeDownloadToFile(downloadLocation, in, null);
+    }
+
+    private File writeDownloadToFile(URL downloadLocation, InputStream in, File pinnedJar) throws IOException {
+        File localFile = pinnedJar != null ? pinnedJar
+                : CacheUtil.getCacheFile(downloadLocation, resource.getDownloadVersion());
+        File parent = localFile.getParentFile();
+        if (parent != null && !parent.isDirectory() && !parent.mkdirs()) {
+            throw new IOException("Cannot create cache directory: " + parent);
+        }
         writeCountedStreamToFile(localFile, in);
         return localFile;
     }
