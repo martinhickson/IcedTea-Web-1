@@ -637,6 +637,11 @@ public class Defaults {
                         BasicValueValidators.getRangedIntegerValidator(1, 200),
                         String.valueOf(6)
                 },
+                {
+                        DeploymentConfiguration.KEY_HTTP_RANGE_RESUME,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
                 //**************
                 //* Native (rust) only - beggin
                 //**************
