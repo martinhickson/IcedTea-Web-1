@@ -71,6 +71,7 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
     private ServerNaming serverNaming = ServerNaming.LOCALHOST;
     private boolean supportRangeRequests = false;
     private java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink = null;
+    private java.util.concurrent.atomic.AtomicInteger rangeRequestCounter = null;
 
     public void setSupportingHeadRequest(boolean supportsHead) {
         this.supportingHeadRequest = supportsHead;
@@ -92,6 +93,11 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
     /** Shared holder recording the last Range header seen by any handler. */
     public void setRangeHeaderSink(java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink) {
         this.rangeHeaderSink = rangeHeaderSink;
+    }
+
+    /** Shared counter of Range-header requests, propagated to every per-connection handler. */
+    public void setRangeRequestCounter(java.util.concurrent.atomic.AtomicInteger rangeRequestCounter) {
+        this.rangeRequestCounter = rangeRequestCounter;
     }
 
     public void setServerNaming(ServerNaming naming) {
@@ -188,6 +194,7 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
                 server.setSupportingHeadRequest(isSupportingHeadRequest());
                 server.setSupportRangeRequests(supportRangeRequests);
                 server.setRangeHeaderSink(rangeHeaderSink);
+                server.setRangeRequestCounter(rangeRequestCounter);
                 if (isNeedsAuthentication511()) {
                     server.setAuthenticator(this);
                 }

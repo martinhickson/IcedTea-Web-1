@@ -763,6 +763,9 @@ public class ResourceDownloader implements Runnable {
                 resource.setLocalFile(reassembled);
                 storeEntryFields(entry, reassembled.length(), lastModified);
             } else {
+                // Not splitting this time: discard any parts left by an earlier abandoned split.
+                MultipartRangeDownloader.cleanupStaleParts(
+                        new CacheEntry(downloadTo, resource.getDownloadVersion()).getCacheFile());
                 downloadFile(response, downloadTo, false, null, rangeHonored,
                         rangeHonored ? effectiveResume : 0L);
             }
