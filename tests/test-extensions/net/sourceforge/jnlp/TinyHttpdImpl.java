@@ -76,6 +76,7 @@ public class TinyHttpdImpl extends Thread {
     private boolean supportLastModified = false;
     private boolean supportRangeRequests = false;
     private java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink = null;
+    private java.util.concurrent.atomic.AtomicInteger rangeRequestCounter = null;
     private Authentication511Requester authenticationRequester;
 
     public TinyHttpdImpl(Socket socket, File dir) {
@@ -130,6 +131,14 @@ public class TinyHttpdImpl extends Thread {
      */
     public void setRangeHeaderSink(java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink) {
         this.rangeHeaderSink = rangeHeaderSink;
+    }
+
+    /**
+     * Shared counter incremented once per request that carries a Range header, so a test can
+     * assert how many Range requests were issued (e.g. multipart resume skip). Optional.
+     */
+    public void setRangeRequestCounter(java.util.concurrent.atomic.AtomicInteger rangeRequestCounter) {
+        this.rangeRequestCounter = rangeRequestCounter;
     }
 
     public int getPort() {
@@ -271,6 +280,9 @@ public class TinyHttpdImpl extends Thread {
                             }
                             if (rangeHeaderSink != null && rangeHeader != null) {
                                 rangeHeaderSink.set(rangeHeader);
+                            }
+                            if (rangeRequestCounter != null && rangeHeader != null) {
+                                rangeRequestCounter.incrementAndGet();
                             }
                         }
                         RangeSlice slice = supportRangeRequests ? parseRange(rangeHeader, resourceLength) : null;

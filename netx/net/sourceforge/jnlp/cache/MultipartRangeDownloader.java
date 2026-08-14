@@ -63,8 +63,9 @@ final class MultipartRangeDownloader {
         this.ifRangeMillis = ifRangeMillis;
         this.resource = resource;
         this.dest = dest;
-        this.tmpDir = new File(dest.getParentFile(),
-                dest.getName() + ".multipart-" + Long.toHexString(System.nanoTime()));
+        // Deterministic name so a retried/aborted transfer resumes from the parts already on
+        // disk instead of re-fetching every chunk.
+        this.tmpDir = new File(dest.getParentFile(), dest.getName() + ".multipart");
     }
 
     /**
@@ -94,15 +95,22 @@ final class MultipartRangeDownloader {
         long[] written = new long[n];
 
         ExecutorService pool = null;
+        boolean success = false;
         try {
-            // Chunk 0: drain the already-fetched probe response.
+            // Chunk 0: drain the already-fetched probe response — unless a prior attempt already
+            // left a complete part-0 on disk, in which case the probe body is discarded.
             parts[0] = new File(tmpDir, "part-0");
             if (slot != null) {
                 slot.onFirstByte(System.currentTimeMillis());
             }
-            written[0] = drainToPart(firstResponse.getBody(), parts[0]);
-            firstResponse.close();
-            verifyChunk(0, written[0]);
+            if (parts[0].isFile() && parts[0].length() == expectedChunkLength(0)) {
+                firstResponse.close();
+                written[0] = parts[0].length();
+            } else {
+                written[0] = drainToPart(firstResponse.getBody(), parts[0]);
+                firstResponse.close();
+                verifyChunk(0, written[0]);
+            }
 
             long running = written[0];
             resource.setTransferred(running);
@@ -118,20 +126,33 @@ final class MultipartRangeDownloader {
                     return t;
                 });
                 List<Future<Long>> futures = new ArrayList<>();
+                List<Integer> submitted = new ArrayList<>();
                 for (int i = 1; i < n; i++) {
                     final int idx = i;
                     final File part = new File(tmpDir, "part-" + idx);
                     parts[idx] = part;
+                    // Resume: skip chunks a prior attempt already wrote completely.
+                    if (part.isFile() && part.length() == expectedChunkLength(idx)) {
+                        written[idx] = part.length();
+                        running += written[idx];
+                        resource.setTransferred(running);
+                        if (slot != null) {
+                            slot.addTransferred(written[idx]);
+                        }
+                        continue;
+                    }
+                    submitted.add(idx);
                     futures.add(pool.submit(() -> fetchChunk(idx, part)));
                 }
-                for (int i = 1; i < n; i++) {
+                for (int j = 0; j < futures.size(); j++) {
+                    int idx = submitted.get(j);
                     // Blocking get re-throws the worker's IOException wrapped in ExecutionException.
-                    written[i] = futures.get(i - 1).get();
-                    verifyChunk(i, written[i]);
-                    running += written[i];
+                    written[idx] = futures.get(j).get();
+                    verifyChunk(idx, written[idx]);
+                    running += written[idx];
                     resource.setTransferred(running); // single-threaded, progressive progress
                     if (slot != null) {
-                        slot.addTransferred(written[i]);
+                        slot.addTransferred(written[idx]);
                     }
                 }
             }
@@ -147,6 +168,7 @@ final class MultipartRangeDownloader {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
                     "Multipart range download complete: " + n + " chunks, " + totalLength
                             + " bytes from " + url);
+            success = true;
             return dest;
         } catch (Exception e) {
             deleteCorruptLocal(dest);
@@ -160,7 +182,26 @@ final class MultipartRangeDownloader {
                     Thread.currentThread().interrupt();
                 }
             }
-            deleteRecursive(tmpDir);
+            // Keep the parts on a transfer failure so a retry resumes from them; clean up only
+            // once the full file has been reassembled successfully.
+            if (success) {
+                deleteRecursive(tmpDir);
+            }
+        }
+    }
+
+    /**
+     * Remove any stale multipart parts for a resource (used when the resource is downloaded by
+     * a non-multipart path — single GET, resume suffix, pack200 — so an abandoned split does not
+     * leave orphan part files behind). No-op when no parts directory exists.
+     */
+    static void cleanupStaleParts(File dest) {
+        if (dest == null) {
+            return;
+        }
+        File dir = new File(dest.getParentFile(), dest.getName() + ".multipart");
+        if (dir.isDirectory()) {
+            deleteRecursive(dir);
         }
     }
 
