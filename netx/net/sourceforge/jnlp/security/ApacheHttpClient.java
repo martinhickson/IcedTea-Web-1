@@ -14,6 +14,7 @@ import net.sourceforge.jnlp.cache.download.ConnectionTiming;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.logging.OutputController;
+import org.apache.hc.client5.http.RouteInfo;
 import org.apache.hc.client5.http.classic.methods.HttpUriRequestBase;
 import org.apache.hc.client5.http.config.ConnectionConfig;
 import org.apache.hc.client5.http.config.RequestConfig;
@@ -21,6 +22,7 @@ import org.apache.hc.client5.http.impl.classic.CloseableHttpClient;
 import org.apache.hc.client5.http.impl.classic.HttpClients;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManager;
 import org.apache.hc.client5.http.impl.io.PoolingHttpClientConnectionManagerBuilder;
+import org.apache.hc.client5.http.impl.routing.SystemDefaultRoutePlanner;
 import org.apache.hc.client5.http.ssl.SSLConnectionSocketFactory;
 import org.apache.hc.client5.http.protocol.HttpClientContext;
 import org.apache.hc.core5.http.ClassicHttpResponse;
@@ -38,6 +40,9 @@ import org.apache.hc.core5.util.TimeValue;
  * uses {@link ItwSslSocketFactory} (ITW trust chain + cipher probe/fallback).
  * Passing only {@code SSLContext} skips cipher stamping — jar downloads would
  * then use the JDK default order until a later {@code HttpURLConnection} path.
+ * Routes use {@link java.net.ProxySelector#getDefault()} at request time so
+ * {@code deployment.proxy.*} (via {@code JNLPProxySelector}) is honoured even
+ * when this client is constructed before {@code JNLPRuntime.initialize}.
  */
 public final class ApacheHttpClient implements ItwHttpClient {
 
@@ -91,9 +96,12 @@ public final class ApacheHttpClient implements ItwHttpClient {
         // pack200-gzip itself in ResourceDownloader.
         this.pool = pool;
         this.perRoute = perRoute;
+        // null selector → ProxySelector.getDefault() on each request, not a
+        // snapshot from construction (JNLPRuntime installs the selector later).
         this.client = HttpClients.custom()
                 .setConnectionManager(pool)
                 .setDefaultRequestConfig(requestConfig)
+                .setRoutePlanner(new SystemDefaultRoutePlanner(null))
                 .evictExpiredConnections()
                 .evictIdleConnections(TimeValue.ofSeconds(30))
                 .disableContentCompression()
@@ -163,6 +171,7 @@ public final class ApacheHttpClient implements ItwHttpClient {
                 response = client.execute(newRequest(uri, method, requestHeaders), context);
                 reused = before.getAvailable() > 0;
                 last = null;
+                logProxyRoute(method, uri, context);
                 logPoolAdmission(method);
                 break;
             } catch (IOException e) {
@@ -180,6 +189,17 @@ public final class ApacheHttpClient implements ItwHttpClient {
             timing.reused = reused;
         }
         return new ApacheResponse(url, response);
+    }
+
+    private static void logProxyRoute(String method, URI uri, HttpClientContext context) {
+        try {
+            RouteInfo route = context.getHttpRoute();
+            if (route != null && route.getProxyHost() != null) {
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                        method + " " + uri + " via proxy " + route.getProxyHost());
+            }
+        } catch (Exception ignored) {
+        }
     }
 
     private void logPoolAdmission(String method) {
