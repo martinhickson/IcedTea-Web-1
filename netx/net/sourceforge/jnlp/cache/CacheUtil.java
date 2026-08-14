@@ -234,6 +234,7 @@ public class CacheUtil {
         synchronized (lruHandler) {
         lruHandler.lock();
         try {
+            final List<Path> infos = new ArrayList<Path>();
             Files.walk(Paths.get(lruHandler.getCacheDir().getFile().getCanonicalPath())).filter(new Predicate<Path>() {
                 @Override
                 public boolean test(Path t) {
@@ -242,17 +243,46 @@ public class CacheUtil {
             }).forEach(new Consumer<Path>() {
                 @Override
                 public void accept(Path path) {
-                    if (path.getFileName().toString().endsWith(CacheDirectory.INFO_SUFFIX)) {
-                        PropertiesFile pf = new PropertiesFile(new File(path.toString()));
-                        if (cacheInfoMatchesApplication(path, pf, application, jnlpPath, domain)) {
-                            pf.setProperty("delete", "true");
-                            pf.store();
-                            markedForDeletion[0]++;
-                            OutputController.getLogger().log("marked for deletion: " + path);
-                        }
-                    }
+                    infos.add(path);
                 }
             });
+            // Exact id first. Sibling jars are cleared only after the requested
+            // JNLP/JAR/domain actually exists — unknown URLs must not prefix-match
+            // another app and print "Clearing… Alerting: N".
+            final List<Path> exact = new ArrayList<Path>();
+            for (Path path : infos) {
+                PropertiesFile pf = new PropertiesFile(new File(path.toString()));
+                if (cacheInfoExactMatch(path, pf, application, jnlpPath, domain)) {
+                    exact.add(path);
+                }
+            }
+            if (exact.isEmpty()) {
+                OutputController.getLogger().log(OutputController.Level.ERROR_ALL, Translator.R("BXSingleCacheClearNotFound", application));
+                return false;
+            }
+            final Set<String> siblingDirs = new HashSet<String>();
+            if (jnlpPath) {
+                for (Path path : exact) {
+                    String dir = parentCacheRelativeDir(cacheRelativePathFromInfo(path));
+                    if (dir != null) {
+                        siblingDirs.add(dir.toLowerCase(java.util.Locale.ROOT));
+                    }
+                }
+            }
+            for (Path path : infos) {
+                boolean mark = exact.contains(path);
+                if (!mark && !siblingDirs.isEmpty()) {
+                    String dir = parentCacheRelativeDir(cacheRelativePathFromInfo(path));
+                    mark = dir != null && siblingDirs.contains(dir.toLowerCase(java.util.Locale.ROOT));
+                }
+                if (mark) {
+                    PropertiesFile pf = new PropertiesFile(new File(path.toString()));
+                    pf.setProperty("delete", "true");
+                    pf.store();
+                    markedForDeletion[0]++;
+                    OutputController.getLogger().log("marked for deletion: " + path);
+                }
+            }
             if (markedForDeletion[0] == 0) {
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL, Translator.R("BXSingleCacheClearNotFound", application));
                 return false;
@@ -1369,11 +1399,12 @@ public class CacheUtil {
     }
 
     /**
-     * True when this {@code .info} file belongs to {@code application}: stored
-     * {@code jnlp-path}, cache domain id, or the on-disk resource URL (so
-     * {@code -Xclearcache http://host/app.jnlp} works even when metadata is missing).
+     * True when this {@code .info} file is the requested cache id itself:
+     * stored {@code jnlp-path}, exact on-disk resource URL, or a hostname
+     * domain id. URLs never match via domain (that produced false
+     * {@code Clearing… Alerting: N} for unknown ids).
      */
-    static boolean cacheInfoMatchesApplication(Path infoPath, PropertiesFile pf, String application,
+    static boolean cacheInfoExactMatch(Path infoPath, PropertiesFile pf, String application,
             boolean matchJnlpPath, boolean matchDomain) {
         if (infoPath == null || application == null) {
             return false;
@@ -1387,7 +1418,21 @@ public class CacheUtil {
                 return true;
             }
         }
-        return matchDomain && application.equalsIgnoreCase(getDomain(infoPath));
+        return matchDomain && looksLikeCacheDomainId(application)
+                && application.equalsIgnoreCase(getDomain(infoPath));
+    }
+
+    static boolean cacheInfoMatchesApplication(Path infoPath, PropertiesFile pf, String application,
+            boolean matchJnlpPath, boolean matchDomain) {
+        return cacheInfoExactMatch(infoPath, pf, application, matchJnlpPath, matchDomain);
+    }
+
+    static boolean looksLikeCacheDomainId(String application) {
+        if (application == null) {
+            return false;
+        }
+        String t = application.trim();
+        return !t.isEmpty() && !t.contains("://") && t.indexOf('/') < 0 && t.indexOf('\\') < 0;
     }
 
     static boolean cachedResourceMatchesApplication(Path infoPath, String application) {
@@ -1396,16 +1441,18 @@ public class CacheUtil {
         if (wantedRel == null || cachedRel == null) {
             return false;
         }
-        if (cachedRel.equalsIgnoreCase(wantedRel)) {
-            return true;
+        return cachedRel.equalsIgnoreCase(wantedRel);
+    }
+
+    static String parentCacheRelativeDir(String rel) {
+        if (rel == null) {
+            return null;
         }
-        int last = wantedRel.lastIndexOf('/');
+        int last = rel.lastIndexOf('/');
         if (last <= 0) {
-            return false;
+            return null;
         }
-        String dir = wantedRel.substring(0, last + 1);
-        return cachedRel.length() > dir.length()
-                && cachedRel.regionMatches(true, 0, dir, 0, dir.length());
+        return rel.substring(0, last + 1);
     }
 
     static String applicationToCacheRelativePath(String application) {
