@@ -45,6 +45,7 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     public static ServerLauncher downloadServer;
     public static ServerLauncher rangeServer;
     private static java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSeen;
+    private static java.util.concurrent.atomic.AtomicInteger rangeRequestCount;
 
     private static final PrintStream[] backedUpStream = new PrintStream[4];
     private static ByteArrayOutputStream currentErrorStream;
@@ -320,10 +321,12 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         PathsAndFiles.CACHE_DIR.setValue(System.getProperty("java.io.tmpdir") + File.separator + "tempcache");
 
         rangeHeaderSeen = new java.util.concurrent.atomic.AtomicReference<>(null);
+        rangeRequestCount = new java.util.concurrent.atomic.AtomicInteger(0);
         redirectErr();
         rangeServer = ServerAccess.getIndependentInstance(dir.getAbsolutePath(), ServerAccess.findFreePort());
         rangeServer.setSupportRangeRequests(true);
         rangeServer.setRangeHeaderSink(rangeHeaderSeen);
+        rangeServer.setRangeRequestCounter(rangeRequestCount);
         redirectErrBack();
     }
 
@@ -865,5 +868,169 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
                     net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
                     prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
         }
+    }
+
+    @Test
+    public void testMultipartResumeSkipsCompletedChunks() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.6");
+        File remote = new File(rangeServer.getDir(), "multipart-resume.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = rangeServer.getUrl("multipart-resume.jar");
+        int slot = 16;
+        int n = (full.length + slot - 1) / slot;
+
+        // Pre-seed the deterministic multipart parts dir with chunk 0 and chunk 2 already
+        // complete, simulating a prior interrupted split. A resumed transfer must skip those.
+        File dest = new CacheEntry(url, null).getCacheFile();
+        File tmpDir = new File(dest.getParentFile(), dest.getName() + ".multipart");
+        Files.createDirectories(tmpDir.toPath());
+        writePart(tmpDir, 0, full, slot);
+        writePart(tmpDir, 2, full, slot);
+
+        rangeRequestCount.set(0);
+        String prevSlot = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES);
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES, String.valueOf(slot));
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            ResourceDownloader downloader = new ResourceDownloader(resource, new Object());
+            resource.setDownloadOptions(new DownloadOptions(false, false));
+            downloader.run();
+
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull(downloaded);
+            byte[] result = Files.readAllBytes(downloaded.toPath());
+            Assert.assertEquals("reassembled file must equal the full jar length",
+                    full.length, result.length);
+            Assert.assertArrayEquals(full, result);
+            // Full split = n Range requests (probe + n-1 chunks). Pre-seeding chunk 2 saves one,
+            // proving the resumed transfer skipped an already-complete chunk.
+            Assert.assertEquals("resumed transfer must skip pre-seeded chunks",
+                    (long) n - 1, (long) rangeRequestCount.get());
+            Assert.assertFalse("completed reassembly must clean up its parts dir",
+                    tmpDir.isDirectory());
+        } finally {
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                    prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
+            deleteRecursively(tmpDir);
+        }
+    }
+
+    @Test
+    public void testConcurrentMultipartDownloadsReassembleCorrectly() throws Exception {
+        byte[] fullA = makeMinimalJarBytes("2.1");
+        byte[] fullB = makeMinimalJarBytes("2.2");
+        File remoteA = new File(rangeServer.getDir(), "mp-a.jar");
+        File remoteB = new File(rangeServer.getDir(), "mp-b.jar");
+        remoteA.deleteOnExit();
+        remoteB.deleteOnExit();
+        Files.write(remoteA.toPath(), fullA);
+        Files.write(remoteB.toPath(), fullB);
+
+        Resource ra = Resource.getResource(rangeServer.getUrl("mp-a.jar"), null, UpdatePolicy.FORCE);
+        Resource rb = Resource.getResource(rangeServer.getUrl("mp-b.jar"), null, UpdatePolicy.FORCE);
+
+        String prevSlot = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES);
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES, "16");
+        try {
+            // Two resources splitting concurrently share the global chunk pool; both must finish whole.
+            final Throwable[] err = new Throwable[2];
+            Thread t1 = runDownloaderAsync(ra, err, 0);
+            Thread t2 = runDownloaderAsync(rb, err, 1);
+            t1.join();
+            t2.join();
+
+            if (err[0] != null) {
+                throw new AssertionError("mp-a failed", err[0]);
+            }
+            if (err[1] != null) {
+                throw new AssertionError("mp-b failed", err[1]);
+            }
+            Assert.assertArrayEquals("concurrent split A must reassemble the original jar",
+                    fullA, Files.readAllBytes(ra.getLocalFile().toPath()));
+            Assert.assertArrayEquals("concurrent split B must reassemble the original jar",
+                    fullB, Files.readAllBytes(rb.getLocalFile().toPath()));
+        } finally {
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                    prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
+        }
+    }
+
+    @Test
+    public void testStaleMultipartDirCleanedOnSingleGet() throws Exception {
+        byte[] full = makeMinimalJarBytes("2.3");
+        File remote = new File(rangeServer.getDir(), "mp-stale.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+        URL url = rangeServer.getUrl("mp-stale.jar");
+
+        // Pre-create a stale .multipart dir as if a previous split had been abandoned.
+        File dest = new CacheEntry(url, null).getCacheFile();
+        File tmpDir = new File(dest.getParentFile(), dest.getName() + ".multipart");
+        Files.createDirectories(tmpDir.toPath());
+        Files.write(new File(tmpDir, "part-0").toPath(), new byte[] { 0 });
+        Assert.assertTrue(tmpDir.isDirectory());
+
+        String prevSlot = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES);
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES, "0");
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            resource.setDownloadOptions(new DownloadOptions(false, false));
+            new ResourceDownloader(resource, new Object()).run();
+
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull(downloaded);
+            Assert.assertArrayEquals(full, Files.readAllBytes(downloaded.toPath()));
+            Assert.assertFalse("non-multipart download must clean up a stale parts dir",
+                    tmpDir.isDirectory());
+        } finally {
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                    prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
+            deleteRecursively(tmpDir);
+        }
+    }
+
+    private static Thread runDownloaderAsync(final Resource resource, final Throwable[] err, final int slot) {
+        Thread t = new Thread(() -> {
+            try {
+                resource.setDownloadOptions(new DownloadOptions(false, false));
+                new ResourceDownloader(resource, new Object()).run();
+            } catch (Throwable th) {
+                err[slot] = th;
+            }
+        }, "itw-test-mp-" + slot);
+        t.setDaemon(true);
+        t.start();
+        return t;
+    }
+
+    private static void writePart(File tmpDir, int idx, byte[] full, int slot) throws IOException {
+        long start = (long) idx * slot;
+        long end = Math.min(start + slot - 1, full.length - 1);
+        int len = (int) (end - start + 1);
+        Files.write(new File(tmpDir, "part-" + idx).toPath(), java.util.Arrays.copyOfRange(full, (int) start, (int) start + len));
+    }
+
+    private static void deleteRecursively(File f) {
+        if (f == null || !f.exists()) {
+            return;
+        }
+        File[] kids = f.listFiles();
+        if (kids != null) {
+            for (File k : kids) {
+                deleteRecursively(k);
+            }
+        }
+        f.delete();
     }
 }
