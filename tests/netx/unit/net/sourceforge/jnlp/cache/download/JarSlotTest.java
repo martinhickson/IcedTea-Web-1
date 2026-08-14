@@ -162,7 +162,7 @@ public class JarSlotTest {
         s.addTransferred(100);
         s.onLastByte(30);
         assertTrue(s.settleGood(40, false));
-        assertEquals(10, s.ttfbMillis());        // 20 - 10 (connect end)
+        assertEquals(10, s.ttfbMillis());        // 20 - 10 (connect start)
         assertEquals(30, s.durationMillis());    // 40 - 10 (connect start)
         assertEquals(10, s.transferMillis());    // 30 - 20
     }
@@ -176,9 +176,19 @@ public class JarSlotTest {
         s.onLastByte(5100L);
         s.addTransferred(100);
         assertTrue(s.settleGood(5200L, false));
-        assertEquals(15, s.ttfbMillis());       // 5035 - 5020
+        assertEquals(35, s.ttfbMillis());       // 5035 - 5000 connect start (includes 20ms handshake)
         assertEquals(200, s.durationMillis());  // 5200 - 5000 connect start
         assertEquals(65, s.transferMillis());   // 5100 - 5035
+    }
+
+    @Test
+    public void ttfbIncludesConnectRoundTripNotJustWaitAfterHeaders() {
+        JarSlot s = slot(0, url("http://localhost/wan.jar"));
+        s.startMillis = 0L;
+        s.onConnect(1000L, 1040L); // 40ms handshake / RTT
+        s.onFirstByte(1045L);
+        assertEquals(45, s.ttfbMillis());
+        assertTrue(s.ttfbMillis() >= 40L, "TTFB must not be smaller than connect duration");
     }
 
     @Test
@@ -195,7 +205,7 @@ public class JarSlotTest {
         s.onConnect(100L, 110L);
         s.onFirstByte(120L);
         s.onFirstByte(999L);
-        assertEquals(10, s.ttfbMillis());
+        assertEquals(20, s.ttfbMillis());
     }
 
     @Test

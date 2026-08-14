@@ -1,6 +1,6 @@
 #!/usr/bin/env groovy
 /**
- * TTFB is connect→first body byte, never group start.
+ * TTFB is connect start→first body byte, never group start or connect-end.
  * Run: scripts/run-itw-groovy.sh ttfb-connect
  */
 import net.sourceforge.jnlp.cache.download.JarGroupState
@@ -15,7 +15,7 @@ s.onFirstByte(200_080L)
 s.onLastByte(201_000L)
 s.addTransferred(4096)
 assert s.settleGood(201_500L, false)
-assert s.ttfbMillis() == 30L : "ttfb=${s.ttfbMillis()} must be firstByte-connectEnd, not ${s.firstByteMillis}-groupStart"
+assert s.ttfbMillis() == 80L : "ttfb=${s.ttfbMillis()} must be firstByte-connectStart, not ${s.firstByteMillis}-connectEnd"
 assert s.durationMillis() == 1500L : "dur=${s.durationMillis()} must be end-connectStart"
 assert s.transferMillis() == 920L
 println "OK ttfb=${s.ttfbMillis()}ms dur=${s.durationMillis()}ms transfer=${s.transferMillis()}ms"

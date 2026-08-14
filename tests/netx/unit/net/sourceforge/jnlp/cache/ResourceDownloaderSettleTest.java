@@ -166,7 +166,7 @@ class ResourceDownloaderSettleTest {
         assertEquals(payload.length, dest.toFile().length());
         assertEquals(payload.length, r.getTransferred());
         assertEquals(payload.length, slot.transferred());
-        assertTrue(slot.ttfbMillis() >= 0, "TTFB is first-byte minus connect, recorded during drain");
+        assertTrue(slot.ttfbMillis() >= 0, "TTFB is first-byte minus connect start, recorded during drain");
         assertTrue(slot.transferMillis() >= 0, "last-byte clock must be set on drain complete");
     }
 }

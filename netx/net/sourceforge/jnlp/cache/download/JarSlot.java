@@ -129,9 +129,11 @@ public final class JarSlot {
     }
 
     public long ttfbMillis() {
-        // HTTP TTFB: first body byte minus connect completion (headers). Never group start —
-        // that made late jars look like 3-minute TTFB while transfer was 80ms.
-        long origin = connectMillis >= 0 ? connectMillis : connectStartMillis;
+        // HTTP TTFB: first body byte minus this jar's connect/request start.
+        // Never group start — that made late jars look like 3-minute TTFB.
+        // Never connect-end (headers already here) — that dropped the RTT and
+        // made ttfb= undercut ping.
+        long origin = connectStartMillis >= 0 ? connectStartMillis : connectMillis;
         if (firstByteMillis < 0 || origin < 0) {
             return -1;
         }
