@@ -507,6 +507,7 @@ public final class Boot implements PrivilegedAction<Void> {
             } else {
                 CacheUtil.listCacheIds(".*", true, true);
             }
+            finishCliControlOp();
             return null;
         }
 
@@ -523,6 +524,7 @@ public final class Boot implements PrivilegedAction<Void> {
             } else {
                 CacheUtil.clearCache();
             }
+            finishCliControlOp();
             return null;
         }
 
@@ -532,6 +534,22 @@ public final class Boot implements PrivilegedAction<Void> {
 
         return ParserSettings.setGlobalParserSettingsFromOptionParser(optionParser);
     }
+
+    /**
+     * {@code -Xclearcache} / {@code -Xlistcacheids} already called
+     * {@link JNLPRuntime#initialize}; non-daemon threads would keep the
+     * process alive if {@code main} merely returned.
+     */
+    static void finishCliControlOp() {
+        if (captureCliControlOpExitForTests) {
+            lastCliControlOpExitForTests = 0;
+            return;
+        }
+        JNLPRuntime.exit(0);
+    }
+
+    static boolean captureCliControlOpExitForTests;
+    static Integer lastCliControlOpExitForTests;
 
     private static boolean isCliModeEnvEnabled() {
         String value = System.getenv("ITW_CLI_MODE");

@@ -89,4 +89,17 @@ public class BootTest extends NoStdOutErrTest {
         Boot.resolveMainFileFromArgs(Arrays.asList("one", "two"));
     }
 
+    @Test
+    public void finishCliControlOpRecordsZeroInTests() {
+        Boot.captureCliControlOpExitForTests = true;
+        Boot.lastCliControlOpExitForTests = null;
+        try {
+            Boot.finishCliControlOp();
+            Assert.assertEquals(Integer.valueOf(0), Boot.lastCliControlOpExitForTests);
+        } finally {
+            Boot.captureCliControlOpExitForTests = false;
+            Boot.lastCliControlOpExitForTests = null;
+        }
+    }
+
 }
