@@ -56,20 +56,20 @@ public class SizeFirstDownloadQueueTest {
     }
 
     @Test
-    public void weavesTenLargestThenTwoSmallest() throws Exception {
+    public void smallLanesChurnSmallestFirstWhileGiantsStayHeld() throws Exception {
         List<Resource> batch = new ArrayList<Resource>();
         for (int i = 1; i <= 14; i++) {
             batch.add(resource("j" + i + ".jar", i * 1000L));
         }
-        List<Resource> ordered = SizeFirstDownloadQueue.orderLargestWithSmallTail(batch);
-        assertEquals(14, ordered.size());
+        List<Resource> started = SizeFirstDownloadQueue.tinyChurnWhileGiantsHeld(batch);
+        assertEquals(14, started.size());
         for (int i = 0; i < 10; i++) {
-            assertEquals((14 - i) * 1000L, ordered.get(i).getSize(), "first 10 must be largest");
+            assertEquals((14 - i) * 1000L, started.get(i).getSize(), "first 10 must be largest held");
         }
-        assertEquals(1000L, ordered.get(10).getSize(), "slot 11 is smallest");
-        assertEquals(2000L, ordered.get(11).getSize(), "slot 12 is second-smallest");
-        assertEquals(4000L, ordered.get(12).getSize());
-        assertEquals(3000L, ordered.get(13).getSize());
+        assertEquals(1000L, started.get(10).getSize(), "first refill is smallest");
+        assertEquals(2000L, started.get(11).getSize());
+        assertEquals(3000L, started.get(12).getSize());
+        assertEquals(4000L, started.get(13).getSize(), "small lane keeps taking next-smallest");
     }
 
     @Test
