@@ -15,6 +15,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map.Entry;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import net.sourceforge.jnlp.config.InfrastructureFileDescriptor;
 import net.sourceforge.jnlp.util.FileUtils;
@@ -28,6 +29,9 @@ final class PropertiesCacheCatalog implements CacheCatalog {
 
     private final InfrastructureFileDescriptor recentlyUsedFile;
     private PropertiesFile propertiesFile;
+    /** lib_name -> extract_path (last writer). jar_path kept for remove. */
+    private final ConcurrentHashMap<String, String> nativeByName = new ConcurrentHashMap<String, String>();
+    private final ConcurrentHashMap<String, String> nativeNameByJar = new ConcurrentHashMap<String, String>();
 
     PropertiesCacheCatalog(InfrastructureFileDescriptor recentlyUsedFile) {
         this.recentlyUsedFile = recentlyUsedFile;
@@ -140,6 +144,7 @@ final class PropertiesCacheCatalog implements CacheCatalog {
         if (path == null || path.isEmpty()) {
             return false;
         }
+        removeNativeLibsByJarPath(path);
         boolean removed = false;
         List<Entry<String, String>> snapshot = new ArrayList<>(getLRUSortedEntries());
         for (Entry<String, String> e : snapshot) {
@@ -448,5 +453,37 @@ final class PropertiesCacheCatalog implements CacheCatalog {
             throw new IllegalArgumentException("Cannot derive folder id from path: " + path);
         }
         return normalizedPath.substring(len + 1, index);
+    }
+
+    @Override
+    public void putNativeLib(String libName, String jarPath, String extractPath) {
+        if (libName == null || libName.isEmpty() || extractPath == null) {
+            return;
+        }
+        nativeByName.put(libName, extractPath);
+        if (jarPath != null) {
+            nativeNameByJar.put(jarPath + '\0' + libName, libName);
+        }
+    }
+
+    @Override
+    public String findNativeLib(String libName) {
+        return libName == null ? null : nativeByName.get(libName);
+    }
+
+    @Override
+    public void removeNativeLibsByJarPath(String jarPath) {
+        if (jarPath == null) {
+            return;
+        }
+        String prefix = jarPath + '\0';
+        for (String key : nativeNameByJar.keySet()) {
+            if (key.startsWith(prefix)) {
+                String lib = nativeNameByJar.remove(key);
+                if (lib != null) {
+                    nativeByName.remove(lib);
+                }
+            }
+        }
     }
 }

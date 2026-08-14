@@ -116,4 +116,16 @@ interface CacheCatalog {
     void unregisterRunningApp(int pid);
 
     java.util.List<CacheRunningApp> listRunningApps();
+
+    /**
+     * Index an extracted native library for O(1) lookup by file name
+     * ({@code foo.dll} / {@code libfoo.so}).
+     */
+    void putNativeLib(String libName, String jarPath, String extractPath);
+
+    /** Newest extract path for {@code libName}, or {@code null}. */
+    String findNativeLib(String libName);
+
+    /** Drop native index rows for a cache jar path (jar removed). */
+    void removeNativeLibsByJarPath(String jarPath);
 }

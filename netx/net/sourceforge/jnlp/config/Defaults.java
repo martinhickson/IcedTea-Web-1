@@ -605,6 +605,16 @@ public class Defaults {
                         BasicValueValidators.getRangedIntegerValidator(0, 65536),
                         String.valueOf(0)
                 },
+                {
+                        DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_LARGE_WIRE_MIB,
+                        BasicValueValidators.getRangedIntegerValidator(1, 65536),
+                        String.valueOf(40)
+                },
+                {
+                        DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_LARGE_WIRE_MULTIPLIER,
+                        BasicValueValidators.getRangedIntegerValidator(1, 200),
+                        String.valueOf(1)
+                },
                 //**************
                 //* Native (rust) only - beggin
                 //**************

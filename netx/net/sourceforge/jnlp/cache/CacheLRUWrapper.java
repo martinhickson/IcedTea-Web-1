@@ -440,4 +440,32 @@ public class CacheLRUWrapper {
     public List<CacheRunningApp> listRunningApps() {
         return catalog.listRunningApps();
     }
+
+    /** {@code {cache/db}/native} — sqlite-jdbc extract and app natives. */
+    public File nativeStoreDir() {
+        return new File(getCacheDir().getFile(), "native");
+    }
+
+    /** Per-jar extract dir under {@code native/jars/}. */
+    public File jarNativeExtractDir(File jar) {
+        String key;
+        try {
+            key = CacheUtil.hex(jar.getAbsolutePath(), jar.getName());
+        } catch (Exception e) {
+            key = Integer.toHexString(jar.getAbsolutePath().hashCode());
+        }
+        return new File(new File(nativeStoreDir(), "jars"), key);
+    }
+
+    public void putNativeLib(String libName, String jarPath, String extractPath) {
+        catalog.putNativeLib(libName, jarPath, extractPath);
+    }
+
+    public String findNativeLib(String libName) {
+        return catalog.findNativeLib(libName);
+    }
+
+    public void removeNativeLibsByJarPath(String jarPath) {
+        catalog.removeNativeLibsByJarPath(jarPath);
+    }
 }
