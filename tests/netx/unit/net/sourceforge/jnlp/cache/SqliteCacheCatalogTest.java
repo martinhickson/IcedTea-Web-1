@@ -168,6 +168,28 @@ public class SqliteCacheCatalogTest {
     }
 
     @Test
+    public void runningAppLeaseSurvivesSecondCatalogConnection() throws Exception {
+        wrapper.registerRunningApp(4242, "http://127.0.0.1:4350/jnlp/c401/app.jnlp", "2026-01-01T00:00:00Z");
+        List<CacheRunningApp> first = wrapper.listRunningApps();
+        assertEquals(1, first.size());
+        assertEquals(4242, first.get(0).pid);
+        assertEquals("http://127.0.0.1:4350/jnlp/c401/app.jnlp", first.get(0).jnlpPath);
+        wrapper.close();
+
+        CacheLRUWrapper other = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            List<CacheRunningApp> second = other.listRunningApps();
+            assertEquals(1, second.size());
+            assertEquals(4242, second.get(0).pid);
+            other.unregisterRunningApp(4242);
+            assertTrue(other.listRunningApps().isEmpty());
+        } finally {
+            other.close();
+        }
+        wrapper = CacheLRUWrapper.createForTests(true, parentCache);
+    }
+
+    @Test
     public void findEntriesUsesUrlAccessIndex() throws Exception {
         wrapper.lock();
         try {

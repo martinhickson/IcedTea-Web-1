@@ -33,7 +33,17 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
     @After
     public void tearDown() {
         try {
-            CacheUtil.clearCache();
+            CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+            synchronized (lru) {
+                lru.lock();
+                try {
+                    lru.load();
+                    lru.clearLRUSortedEntries();
+                    lru.store();
+                } finally {
+                    lru.unlock();
+                }
+            }
         } catch (Exception ignored) {
         }
         PathsAndFiles.CACHE_DIR.setValue(originalCacheDir);
@@ -80,6 +90,56 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
     public void canClearApplicationCacheRejectsBlankId() {
         Assert.assertFalse(CacheUtil.canClearApplicationCache(null));
         Assert.assertFalse(CacheUtil.canClearApplicationCache("  "));
+    }
+
+    @Test
+    public void catalogRunningAppBlocksHeldJnlpJarDomainAndAllClear() throws Exception {
+        URL jnlp = new URL("http://127.0.0.1:4350/jnlp/c401/app.jnlp");
+        URL jar = new URL("http://127.0.0.1:4350/jnlp/c401/app.jar");
+        File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
+        File jarFile = writeCachedResource(jar, "jar-bytes");
+        writeJnlpPath(jnlpFile, jnlp.toString());
+        writeJnlpPath(jarFile, jnlp.toString());
+
+        Process holder = new ProcessBuilder("sleep", "60").start();
+        try {
+            CacheLRUWrapper.getInstance().registerRunningApp(
+                    (int) holder.pid(), jnlp.toString(), null);
+
+            Assert.assertFalse("jnlp id", CacheUtil.canClearApplicationCache(jnlp.toString()));
+            Assert.assertFalse("jar id", CacheUtil.canClearApplicationCache(jar.toString()));
+            Assert.assertFalse("domain id", CacheUtil.canClearApplicationCache("127.0.0.1"));
+            Assert.assertFalse("all-clear", CacheUtil.checkToClearCache());
+
+            Assert.assertFalse(CacheUtil.clearCache(jnlp.toString(), true, true));
+            Assert.assertFalse(CacheUtil.clearCache(jar.toString(), true, true));
+            Assert.assertFalse(CacheUtil.clearCache("127.0.0.1", true, true));
+            Assert.assertFalse(CacheUtil.clearCache());
+
+            Assert.assertTrue(jnlpFile.isFile());
+            Assert.assertTrue(jarFile.isFile());
+        } finally {
+            holder.destroyForcibly();
+            CacheLRUWrapper.getInstance().unregisterRunningApp((int) holder.pid());
+        }
+    }
+
+    @Test
+    public void unknownUrlStillNoMatchWhileCatalogAppIsRunning() throws Exception {
+        URL jnlp = new URL("http://127.0.0.1:4350/jnlp/c401/app.jnlp");
+        File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
+        writeJnlpPath(jnlpFile, jnlp.toString());
+        Process holder = new ProcessBuilder("sleep", "60").start();
+        try {
+            CacheLRUWrapper.getInstance().registerRunningApp(
+                    (int) holder.pid(), jnlp.toString(), null);
+            Assert.assertFalse(CacheUtil.clearCache(
+                    "http://127.0.0.1:4200/jnlp/no-such/app.jar", true, true));
+            Assert.assertTrue(jnlpFile.isFile());
+        } finally {
+            holder.destroyForcibly();
+            CacheLRUWrapper.getInstance().unregisterRunningApp((int) holder.pid());
+        }
     }
 
     @Test

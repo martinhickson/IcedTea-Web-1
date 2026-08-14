@@ -109,4 +109,11 @@ interface CacheCatalog {
 
     /** All catalog rows with metadata (for {@code -Xclearcache} / list-ids). */
     java.util.List<CacheEntryMeta> listAllMeta();
+
+    /** Record a live JNLP JVM so another process can refuse to clear its files. */
+    void registerRunningApp(int pid, String jnlpPath, String processStart);
+
+    void unregisterRunningApp(int pid);
+
+    java.util.List<CacheRunningApp> listRunningApps();
 }

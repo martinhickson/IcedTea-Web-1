@@ -61,6 +61,7 @@ import net.sourceforge.jnlp.GuiLaunchHandler;
 import net.sourceforge.jnlp.LaunchHandler;
 import net.sourceforge.jnlp.Launcher;
 import net.sourceforge.jnlp.browser.BrowserAwareProxySelector;
+import net.sourceforge.jnlp.cache.CacheLRUWrapper;
 import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.cache.DefaultDownloadIndicator;
 import net.sourceforge.jnlp.cache.DownloadIndicator;
@@ -79,6 +80,7 @@ import net.sourceforge.jnlp.util.BasicExceptionDialog;
 import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.JvmArgumentPolicy;
 import net.sourceforge.jnlp.util.NetxRunningDetailsRegistry;
+import net.sourceforge.jnlp.util.JnlpLockMetadata;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 import net.sourceforge.jnlp.util.logging.JavaConsole;
 import net.sourceforge.jnlp.util.logging.OutputController;
@@ -948,6 +950,7 @@ public class JNLPRuntime {
             if (jnlpFile != null) {
                 NetxRunningDetailsRegistry.registerProcess(jnlpFile);
             }
+            registerCacheRunningApp(jnlpFile);
             return;
         }
         try {
@@ -984,6 +987,7 @@ public class JNLPRuntime {
             } else {
                 NetxRunningDetailsRegistry.registerProcess(JnlpRunningProcessSupport.currentPid());
             }
+            registerCacheRunningApp(jnlpFile);
         } catch (IOException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
@@ -997,12 +1001,39 @@ public class JNLPRuntime {
         });
     }
 
+    private static void registerCacheRunningApp(net.sourceforge.jnlp.JNLPFile jnlpFile) {
+        int pid = JnlpRunningProcessSupport.currentPid();
+        if (pid <= 0) {
+            return;
+        }
+        String jnlpPath = JnlpLockMetadata.extractJnlpPath(jnlpFile);
+        String start = null;
+        try {
+            java.time.Instant instant = java.lang.ProcessHandle.current().info().startInstant().orElse(null);
+            if (instant != null) {
+                start = instant.toString();
+            }
+        } catch (Exception ignored) {
+        }
+        try {
+            CacheLRUWrapper.getInstance().registerRunningApp(pid, jnlpPath, start);
+        } catch (Exception e) {
+            OutputController.getLogger().log(e);
+        }
+    }
+
     /**
      * Indicate that netx is stopped by releasing the shared lock on
      * {@link DeploymentConfiguration#KEY_USER_NETX_RUNNING_FILE}.
      */
     private static void markNetxStopped() {
-        NetxRunningDetailsRegistry.unregisterProcess(JnlpRunningProcessSupport.currentPid());
+        int pid = JnlpRunningProcessSupport.currentPid();
+        NetxRunningDetailsRegistry.unregisterProcess(pid);
+        try {
+            CacheLRUWrapper.getInstance().unregisterRunningApp(pid);
+        } catch (Exception e) {
+            OutputController.getLogger().log(e);
+        }
         if (fileLock == null) {
             return;
         }

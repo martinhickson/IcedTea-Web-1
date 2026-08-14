@@ -305,6 +305,108 @@ final class PropertiesCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public void registerRunningApp(int pid, String jnlpPath, String processStart) {
+        if (pid <= 0) {
+            return;
+        }
+        List<CacheRunningApp> rows = listRunningApps();
+        List<CacheRunningApp> updated = new ArrayList<CacheRunningApp>();
+        boolean replaced = false;
+        for (CacheRunningApp row : rows) {
+            if (row.pid == pid) {
+                updated.add(new CacheRunningApp(pid, jnlpPath, processStart));
+                replaced = true;
+            } else {
+                updated.add(row);
+            }
+        }
+        if (!replaced) {
+            updated.add(new CacheRunningApp(pid, jnlpPath, processStart));
+        }
+        writeRunningApps(updated);
+    }
+
+    @Override
+    public void unregisterRunningApp(int pid) {
+        if (pid <= 0) {
+            return;
+        }
+        List<CacheRunningApp> rows = listRunningApps();
+        List<CacheRunningApp> updated = new ArrayList<CacheRunningApp>();
+        for (CacheRunningApp row : rows) {
+            if (row.pid != pid) {
+                updated.add(row);
+            }
+        }
+        writeRunningApps(updated);
+    }
+
+    @Override
+    public List<CacheRunningApp> listRunningApps() {
+        List<CacheRunningApp> rows = new ArrayList<CacheRunningApp>();
+        File file = runningAppsFile();
+        if (file == null || !file.isFile()) {
+            return rows;
+        }
+        try {
+            List<String> lines = java.nio.file.Files.readAllLines(file.toPath(),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            for (String line : lines) {
+                if (line == null || line.trim().isEmpty() || line.startsWith("#")) {
+                    continue;
+                }
+                String[] parts = line.split("\t", 3);
+                if (parts.length < 1) {
+                    continue;
+                }
+                try {
+                    int pid = Integer.parseInt(parts[0].trim());
+                    String jnlp = parts.length > 1 ? emptyToNull(parts[1]) : null;
+                    String start = parts.length > 2 ? emptyToNull(parts[2]) : null;
+                    rows.add(new CacheRunningApp(pid, jnlp, start));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        } catch (IOException e) {
+            OutputController.getLogger().log(e);
+        }
+        return rows;
+    }
+
+    private File runningAppsFile() {
+        File recentlyUsed = recentlyUsedFile.getFile();
+        File parent = recentlyUsed.getParentFile();
+        if (parent == null) {
+            return new File("running_apps");
+        }
+        return new File(parent, "running_apps");
+    }
+
+    private void writeRunningApps(List<CacheRunningApp> rows) {
+        File file = runningAppsFile();
+        try {
+            FileUtils.createParentDir(file);
+            StringBuilder sb = new StringBuilder();
+            for (CacheRunningApp row : rows) {
+                sb.append(row.pid).append('\t')
+                        .append(row.jnlpPath == null ? "" : row.jnlpPath).append('\t')
+                        .append(row.processStart == null ? "" : row.processStart).append('\n');
+            }
+            java.nio.file.Files.write(file.toPath(),
+                    sb.toString().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            OutputController.getLogger().log(e);
+        }
+    }
+
+    private static String emptyToNull(String s) {
+        if (s == null || s.trim().isEmpty()) {
+            return null;
+        }
+        return s.trim();
+    }
+
+    @Override
     public List<CacheEntryMeta> listAllMeta() {
         List<CacheEntryMeta> rows = new ArrayList<>();
         for (Entry<String, String> e : getLRUSortedEntries()) {

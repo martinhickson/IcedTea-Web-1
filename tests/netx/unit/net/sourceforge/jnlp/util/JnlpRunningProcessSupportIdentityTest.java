@@ -65,4 +65,17 @@ public class JnlpRunningProcessSupportIdentityTest {
                 "java -jar icedtea-web-uber.jar -jnlp http://127.0.0.1:4200/jnlp/console/app.jnlp");
         assertTrue(fromCommandLine.blocksCacheClear("http://127.0.0.1:4200/jnlp/console/app.jar"));
     }
+
+    @Test
+    public void clearcacheCliIsInfrastructure() {
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -jar icedtea-web-uber.jar -Xclearcache http://127.0.0.1:4350/jnlp/c401/app.jnlp",
+                null, null));
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -jar icedtea-web-uber.jar -Xlistcacheids",
+                null, null));
+        assertFalse(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -jar icedtea-web-uber.jar -jnlp http://127.0.0.1:4350/jnlp/c401/app.jnlp",
+                "c401", "http://127.0.0.1:4350/jnlp/c401/app.jnlp"));
+    }
 }
