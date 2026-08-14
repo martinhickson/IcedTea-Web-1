@@ -57,11 +57,27 @@ public class DownloadProgressTest {
     }
 
     @Test
+    public void midDownloadUnpackKeepsDownloadingLabelAndWirePercent() {
+        DownloadProgress p = new DownloadProgress(2);
+        p.knownTotal = 10_000L;
+        p.bytes.set(2_900L);
+        p.startUnpack(Integer.valueOf(0), "fonts.jar", 500_000L);
+        DownloadProgress.Snapshot s = p.snapshot();
+        assertTrue(s.unpack.active, "pack.gz may unpack while other GETs run");
+        assertTrue(!s.unpacking, "still downloading — do not say Unpacking");
+        assertEquals(29, s.percent, "percent is wire bytes, not unpack output");
+        p.bytes.set(10_000L);
+        s = p.snapshot();
+        assertEquals(99, s.percent);
+        assertTrue(s.unpacking, "wire done + unpack still running → Unpacking 99%");
+    }
+
+    @Test
     public void unpackBarTracksOutputAndStaysAt99UntilJobEnds() {
         DownloadProgress p = new DownloadProgress(2);
         p.knownTotal = 1_000L;
         p.bytes.set(1_000L);
-        p.startUnpack(Integer.valueOf(0), "sonata-pbx.jar", 17_000_000L);
+        p.startUnpack(Integer.valueOf(0), "giant.jar", 17_000_000L);
         long est = p.estimateUnpackBytes(17_000_000L);
         assertEquals((long) (17_000_000L * DownloadProgress.DEFAULT_UNPACK_RATIO), est);
         p.addUnpack(Integer.valueOf(0), est / 2);

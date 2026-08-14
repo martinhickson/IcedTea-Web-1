@@ -18,6 +18,8 @@ class PackUnpackAdmissionTest {
     @AfterEach
     void resetBudget() {
         admission.setBudgetOverrideBytes(null);
+        admission.setWireMultiplierOverride(null);
+        admission.setDefaultReserveOverrideBytes(null);
     }
 
     @Test
@@ -196,126 +198,131 @@ class PackUnpackAdmissionTest {
 
     @Test
     void estimateReserveUsesMeasuredWireMultiplier() {
-        // Class-heavy pack A: wire ~17 MiB → retained ~579 MiB (~33.7×) on OOM dump
+        admission.setWireMultiplierOverride(PackUnpackAdmission.WIRE_TO_HEAP_MULTIPLIER);
         long wireA = 17_193_474L;
         long reserveA = PackUnpackAdmission.estimateReserveBytes(wireA, 0L);
-        assertEquals(wireA * PackUnpackAdmission.WIRE_TO_HEAP_MULTIPLIER, reserveA);
-        assertTrue(reserveA > PackUnpackAdmission.MAX_BUDGET_BYTES);
+        assertEquals(wireA * 30L, reserveA);
 
-        // Class-heavy pack B: wire ~24 MiB → retained ~725 MiB (~30.1×)
         long wireB = 24_062_954L;
         long reserveB = PackUnpackAdmission.estimateReserveBytes(wireB, 0L);
-        assertEquals(wireB * PackUnpackAdmission.WIRE_TO_HEAP_MULTIPLIER, reserveB);
-        assertTrue(reserveB > PackUnpackAdmission.MAX_BUDGET_BYTES);
-
-        assertEquals(PackUnpackAdmission.DEFAULT_RESERVE_BYTES,
-                PackUnpackAdmission.estimateReserveBytes(0L, 0L));
+        assertEquals(wireB * 30L, reserveB);
     }
 
     @Test
-    void twoDefaultReservesCannotStackUnderMaxBudget() throws Exception {
-        // Regression: empty-path used to set active before inFlight, letting a busy-path
-        // thread admit a second DEFAULT_RESERVE while inFlight was still 0.
-        admission.setBudgetOverrideBytes(PackUnpackAdmission.MAX_BUDGET_BYTES);
-        long reserve = PackUnpackAdmission.DEFAULT_RESERVE_BYTES;
-        CountDownLatch firstInside = new CountDownLatch(1);
-        CountDownLatch releaseFirst = new CountDownLatch(1);
-        AtomicInteger maxActive = new AtomicInteger();
-        AtomicInteger secondStarted = new AtomicInteger();
-
-        Thread t1 = new Thread(() -> {
-            try {
-                admission.runUnpack(reserve, () -> {
-                    bumpMax(maxActive);
-                    firstInside.countDown();
-                    try {
-                        releaseFirst.await(5, TimeUnit.SECONDS);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException(ie);
-                    }
-                });
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }, "default-a");
-        Thread t2 = new Thread(() -> {
-            try {
-                assertTrue(firstInside.await(5, TimeUnit.SECONDS));
-                admission.runUnpack(reserve, () -> {
-                    secondStarted.incrementAndGet();
-                    bumpMax(maxActive);
-                });
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }, "default-b");
-
-        t1.start();
-        assertTrue(firstInside.await(5, TimeUnit.SECONDS));
-        t2.start();
-        Thread.sleep(80);
-        assertEquals(1, admission.activeUnpackers());
-        assertEquals(0, secondStarted.get());
-        releaseFirst.countDown();
-        t1.join(5000);
-        t2.join(5000);
-        assertEquals(1, secondStarted.get());
-        assertEquals(1, maxActive.get());
+    void budgetIsHeapFractionWithNoAbsoluteCap() {
+        admission.setBudgetOverrideBytes(null);
+        long heap = Runtime.getRuntime().maxMemory();
+        long expected = Math.max(PackUnpackAdmission.MIN_BUDGET_BYTES, heap);
+        assertEquals(expected, admission.budgetBytes());
     }
 
     @Test
-    void measuredLargePackReservesCannotRunConcurrentlyUnderProductionBudget() throws Exception {
-        // Same budget cap as production (512 MiB); two large class-heavy reserves must serialize.
-        admission.setBudgetOverrideBytes(PackUnpackAdmission.MAX_BUDGET_BYTES);
-        long reserveA = PackUnpackAdmission.estimateReserveBytes(17_193_474L, 0L);
-        long reserveB = PackUnpackAdmission.estimateReserveBytes(24_062_954L, 0L);
+    void twoLargestClassPacksFitAndThirdWaitsOn1800mHeap() throws Exception {
+        // Two large + one medium pack.gz wires (class-heavy, ~26 / ~23 / ~16 MiB).
+        admission.setWireMultiplierOverride(30);
+        admission.setBudgetOverrideBytes(1800L << 20);
+        long packA = PackUnpackAdmission.estimateReserveBytes(27_742_491L, 0L);
+        long packB = PackUnpackAdmission.estimateReserveBytes(24_062_954L, 0L);
+        long packC = PackUnpackAdmission.estimateReserveBytes(17_193_474L, 0L);
+        assertTrue(packA + packB < admission.budgetBytes(),
+                "two largest must fit: " + (packA + packB) + " vs " + admission.budgetBytes());
+        assertTrue(packA + packB + packC >= admission.budgetBytes(),
+                "third must not fit: " + (packA + packB + packC) + " vs " + admission.budgetBytes());
 
-        CountDownLatch firstInside = new CountDownLatch(1);
-        CountDownLatch releaseFirst = new CountDownLatch(1);
+        CountDownLatch twoInside = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
         AtomicInteger maxActive = new AtomicInteger();
-        AtomicInteger secondStarted = new AtomicInteger();
+        AtomicInteger thirdStarted = new AtomicInteger();
 
-        Thread t1 = new Thread(() -> {
-            try {
-                admission.runUnpack(reserveA, () -> {
-                    bumpMax(maxActive);
-                    firstInside.countDown();
-                    try {
-                        releaseFirst.await(5, TimeUnit.SECONDS);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
-                        throw new RuntimeException(ie);
-                    }
-                });
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }, "unpack-a");
-        Thread t2 = new Thread(() -> {
-            try {
-                assertTrue(firstInside.await(5, TimeUnit.SECONDS));
-                admission.runUnpack(reserveB, () -> {
-                    secondStarted.incrementAndGet();
-                    bumpMax(maxActive);
-                });
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }, "unpack-b");
-
+        Thread t1 = holdUnpack("large-a", packA, twoInside, release, maxActive);
+        Thread t2 = holdUnpack("large-b", packB, twoInside, release, maxActive);
         t1.start();
-        assertTrue(firstInside.await(5, TimeUnit.SECONDS));
         t2.start();
+        assertTrue(twoInside.await(5, TimeUnit.SECONDS));
+        assertEquals(2, maxActive.get());
+
+        Thread t3 = new Thread(() -> {
+            try {
+                admission.runUnpack(packC, () -> {
+                    thirdStarted.incrementAndGet();
+                    bumpMax(maxActive);
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "medium");
+        t3.start();
         Thread.sleep(80);
-        assertEquals(1, admission.activeUnpackers());
-        assertEquals(0, secondStarted.get());
-        releaseFirst.countDown();
+        assertEquals(0, thirdStarted.get());
+        assertEquals(2, admission.activeUnpackers());
+        release.countDown();
         t1.join(5000);
         t2.join(5000);
-        assertEquals(1, secondStarted.get());
-        assertEquals(1, maxActive.get());
+        t3.join(5000);
+        assertEquals(1, thirdStarted.get());
+        assertEquals(2, maxActive.get());
         assertEquals(0, admission.activeUnpackers());
+    }
+
+    @Test
+    void twoAutoDefaultReservesFitAndThirdWaits() throws Exception {
+        admission.setBudgetOverrideBytes(1800L << 20);
+        admission.setDefaultReserveOverrideBytes(null);
+        long reserve = admission.defaultReserveBytes();
+        assertTrue(2L * reserve < admission.budgetBytes());
+        assertTrue(3L * reserve >= admission.budgetBytes());
+
+        CountDownLatch twoInside = new CountDownLatch(2);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicInteger maxActive = new AtomicInteger();
+        AtomicInteger thirdStarted = new AtomicInteger();
+
+        Thread t1 = holdUnpack("unk-1", reserve, twoInside, release, maxActive);
+        Thread t2 = holdUnpack("unk-2", reserve, twoInside, release, maxActive);
+        t1.start();
+        t2.start();
+        assertTrue(twoInside.await(5, TimeUnit.SECONDS));
+        assertEquals(2, maxActive.get());
+
+        Thread t3 = new Thread(() -> {
+            try {
+                admission.runUnpack(reserve, () -> {
+                    thirdStarted.incrementAndGet();
+                    bumpMax(maxActive);
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, "unk-3");
+        t3.start();
+        Thread.sleep(80);
+        assertEquals(0, thirdStarted.get());
+        release.countDown();
+        t1.join(5000);
+        t2.join(5000);
+        t3.join(5000);
+        assertEquals(1, thirdStarted.get());
+        assertEquals(2, maxActive.get());
+    }
+
+    private Thread holdUnpack(String name, long reserve, CountDownLatch inside,
+            CountDownLatch release, AtomicInteger maxActive) {
+        return new Thread(() -> {
+            try {
+                admission.runUnpack(reserve, () -> {
+                    bumpMax(maxActive);
+                    inside.countDown();
+                    try {
+                        release.await(5, TimeUnit.SECONDS);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new RuntimeException(ie);
+                    }
+                });
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
+        }, name);
     }
 
     private static void bumpMax(AtomicInteger maxActive) {
