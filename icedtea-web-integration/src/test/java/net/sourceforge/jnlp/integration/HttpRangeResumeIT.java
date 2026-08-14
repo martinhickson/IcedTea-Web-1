@@ -67,6 +67,8 @@ public class HttpRangeResumeIT {
 
     private final AtomicInteger jarGets = new AtomicInteger();
     private final AtomicInteger rangeRequests = new AtomicInteger();
+    private final AtomicInteger flakyFailures = new AtomicInteger();
+    private final java.util.concurrent.ConcurrentHashMap<String, AtomicInteger> rangeAttempts = new java.util.concurrent.ConcurrentHashMap<>();
     private final AtomicReference<String> lastRangeHeader = new AtomicReference<>();
     private final AtomicReference<String> lastIfRangeHeader = new AtomicReference<>();
     private final AtomicInteger count206 = new AtomicInteger();
@@ -83,7 +85,9 @@ public class HttpRangeResumeIT {
         /** Serve 206 with a Content-Range start of 0 (mismatches the requested suffix). */
         MISMATCH,
         /** Honour Range only when If-Range matches the current Last-Modified, else full 200. */
-        IF_RANGE
+        IF_RANGE,
+        /** Fail the first attempt of each distinct Range with 503, then serve 206 (retry test). */
+        FLAKY_FIRST
     }
 
     @BeforeEach
@@ -127,6 +131,8 @@ public class HttpRangeResumeIT {
     private void resetCaptures() {
         jarGets.set(0);
         rangeRequests.set(0);
+        flakyFailures.set(0);
+        rangeAttempts.clear();
         lastRangeHeader.set(null);
         lastIfRangeHeader.set(null);
         count206.set(0);
@@ -394,6 +400,29 @@ public class HttpRangeResumeIT {
         assertArrayEquals(fullJar, Files.readAllBytes(cachedJar));
     }
 
+    /**
+     * The server fails the first attempt of every Range chunk with 503. The client must retry
+     * each chunk (and the probe via the resource-level retry) and still reassemble a whole,
+     * signature-verifiable jar and launch — proving per-chunk retry resilience end-to-end.
+     */
+    @Test
+    void multipartRetriesFlakyChunksAndLaunches() throws Exception {
+        writeUserDeploymentProperty("deployment.http.range.maxSlotBytes", "64");
+        mode = RangeMode.FLAKY_FIRST;
+
+        Path marker1 = markerDir.resolve("success1.marker");
+        writeJnlp(marker1);
+        LaunchResult first = launch(marker1);
+        assertTrue(first.success, "flaky multipart launch must recover via retries:\n" + first.output);
+        assertTrue(flakyFailures.get() > 0,
+                "expected at least one injected 503; the client must have retried past it: " + first.output);
+
+        Path cachedJar = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(cachedJar, "reassembled jar must be cached");
+        assertEquals(fullJar.length, Files.size(cachedJar), "reassembled length must equal original");
+        assertArrayEquals(fullJar, Files.readAllBytes(cachedJar));
+    }
+
     // ----- helpers -----
 
     private void writeJnlp(Path marker) throws Exception {
@@ -602,6 +631,19 @@ public class HttpRangeResumeIT {
             String ifRange = exchange.getRequestHeaders().getFirst(Headers.IF_RANGE);
             if (ifRange != null) {
                 lastIfRangeHeader.set(ifRange);
+            }
+
+            // FLAKY_FIRST: fail the first attempt of each distinct Range with 503 to force the
+            // client's per-chunk (and resource-level) retry, then behave like HONOR.
+            if (mode == RangeMode.FLAKY_FIRST && rangeHeader != null) {
+                int attempt = rangeAttempts
+                        .computeIfAbsent(rangeHeader, k -> new AtomicInteger()).getAndIncrement();
+                if (attempt == 0) {
+                    flakyFailures.incrementAndGet();
+                    exchange.setStatusCode(StatusCodes.SERVICE_UNAVAILABLE);
+                    exchange.endExchange();
+                    return;
+                }
             }
 
             // Honour HEAD-style probes with no body but correct full length metadata.

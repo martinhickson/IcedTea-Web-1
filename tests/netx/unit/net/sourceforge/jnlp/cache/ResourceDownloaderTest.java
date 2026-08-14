@@ -831,4 +831,39 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
                     prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
         }
     }
+
+    @Test
+    public void testMultipartDisabledByZeroSlotSize() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.5");
+        File remote = new File(rangeServer.getDir(), "multipart-off.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = rangeServer.getUrl("multipart-off.jar");
+        rangeHeaderSeen.set(null);
+
+        // slot size 0 disables the multipart split: a fresh download must NOT send a Range probe.
+        String prevSlot = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES);
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES, "0");
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            ResourceDownloader downloader = new ResourceDownloader(resource, new Object());
+            resource.setDownloadOptions(new DownloadOptions(false, false));
+            downloader.run();
+
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull(downloaded);
+            byte[] result = Files.readAllBytes(downloaded.toPath());
+            Assert.assertEquals(full.length, result.length);
+            Assert.assertArrayEquals(full, result);
+            Assert.assertNull("slot size 0 must keep today's plain GET (no Range probe)",
+                    rangeHeaderSeen.get());
+        } finally {
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                    prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
+        }
+    }
 }
