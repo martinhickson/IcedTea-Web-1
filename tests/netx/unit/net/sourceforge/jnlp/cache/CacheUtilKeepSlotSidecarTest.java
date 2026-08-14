@@ -62,6 +62,30 @@ public class CacheUtilKeepSlotSidecarTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void shutdownSweepKeepsSidecarWhenJarNotWrittenYet() throws Exception {
+        File jar = writeCachedJar();
+        File sidecar = writeSidecar(jar, "pack-bytes");
+        Assert.assertTrue(jar.delete());
+        Assert.assertTrue(CacheUtil.hasInFlightPack200Sidecar(jar));
+
+        CacheUtil.cleanCacheOnShutdown();
+
+        Assert.assertTrue("in-flight sidecar must survive missing jar", sidecar.isFile());
+        Assert.assertFalse("jar was not on disk", jar.exists());
+    }
+
+    @Test
+    public void shutdownSweepDoesNotTreatMissingJarAsGhost() throws Exception {
+        File jar = writeCachedJar();
+        File info = new File(jar.getPath() + CacheDirectory.INFO_SUFFIX);
+        Assert.assertTrue(jar.delete());
+
+        CacheUtil.cleanCacheOnShutdown();
+
+        Assert.assertTrue("unmarked .info must stay when jar is not a file yet", info.isFile());
+    }
+
+    @Test
     public void markedDeleteStillRemovesSlotIncludingSidecar() throws Exception {
         File jar = writeCachedJar();
         File sidecar = writeSidecar(jar, "pack-bytes");

@@ -1175,12 +1175,38 @@ public class CacheUtil {
     }
 
     /**
-     * Shutdown sweep: apply {@code delete=true} marks only. Never LRU-evict
-     * and never wipe unmarked siblings in a kept slot (GitHub #16 — a relaunch
-     * parent must not delete the child's Pack200 sidecars).
+     * Shutdown sweep: apply {@code delete=true} marks only. Never LRU-evict,
+     * never treat a missing jar as a ghost slot, and never wipe unmarked
+     * siblings (GitHub #16 — a relaunch parent must not delete the child's
+     * Pack200 sidecars).
      */
     public static void cleanCacheOnShutdown() {
         processCacheCleanup(false);
+    }
+
+    /**
+     * True when a unique Pack200 drain file sits beside {@code cacheFile}.
+     * The LRU row already names {@code foo.jar} before that file exists.
+     */
+    static boolean hasInFlightPack200Sidecar(File cacheFile) {
+        if (cacheFile == null) {
+            return false;
+        }
+        File parent = cacheFile.getParentFile();
+        if (parent == null || !parent.isDirectory()) {
+            return false;
+        }
+        String prefix = cacheFile.getName() + ".pack.gz.download.";
+        File[] children = parent.listFiles();
+        if (children == null) {
+            return false;
+        }
+        for (File child : children) {
+            if (child.isFile() && child.getName().startsWith(prefix) && child.length() > 0L) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /**
@@ -1231,24 +1257,31 @@ public class CacheUtil {
                 }
 
             /*
-             * we remove entries from our lru if any of the following condition is met.
-             * Conditions:
-             *  - delete: file has been marked for deletion.
-             *  - !file.isFile(): if someone tampered with the directory, file doesn't exist.
-             *  - maxSize >= 0 && curSize + len > maxSize: If a limit was set and the new size
-             *  on disk would exceed the maximum size (only when enforceLruLimit is true).
+             * Remove only when marked delete, or (last-instance LRU) a true ghost /
+             * over-max slot. A missing jar during an in-flight Pack200 GET is not
+             * a ghost — the sidecar is the live download (GitHub #16 follow-up).
              */
-                if (delete || !file.isFile() || (enforceLruLimit && maxSize >= 0 && curSize + len > maxSize)) {
+                boolean inFlight = hasInFlightPack200Sidecar(file);
+                boolean overMax = enforceLruLimit && maxSize >= 0 && curSize + len > maxSize;
+                if (delete) {
+                    lruHandler.removeEntry(key);
+                    remove.add(rStr);
+                    continue;
+                }
+                if (inFlight) {
+                    keep.add(path);
+                    continue;
+                }
+                if (enforceLruLimit && (!file.isFile() || overMax)) {
                     lruHandler.removeEntry(key);
                     remove.add(rStr);
                     continue;
                 }
 
-                curSize += len;
+                if (file.isFile()) {
+                    curSize += len;
+                }
                 keep.add(path);
-                // Do not delete unmarked siblings in a kept slot. Pack200 sidecars
-                // (*.pack.gz.download.*) live next to the jar during admission wait;
-                // a parent shutdown hook used to treat them as leftover debris.
             }
             lruHandler.store();
         } finally {
