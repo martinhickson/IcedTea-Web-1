@@ -1348,72 +1348,20 @@ public class JNLPClassLoader extends URLClassLoader {
                             // thrown after a resource is fetched). This bug manifests itself
                             // particularly when using The FileManager applet from Webmin.
                             try {
-                                JarFile jarFile = JarFileCache.getInstance()
-                                        .getJarFile(localFile.getAbsolutePath());
-                                for (JarEntry je : Collections.list(jarFile.entries())) {
-
-                                    // another jar in my jar? it is more likely than you think
-                                    if (je.getName().endsWith(".jar")) {
-                                        // We need to extract that jar so that it can be loaded
-                                        // (inline loading with "jar:..!/..." path will not work
-                                        // with standard classloader methods)
-
-                                        String name = je.getName();
-                                        if (name.contains("..")){
-                                            name=CacheUtil.hex(name, name);
+                                net.sourceforge.jnlp.cache.JarActivatePrep.Scan scan =
+                                        net.sourceforge.jnlp.cache.JarActivatePrep.take(
+                                                localFile.getAbsolutePath());
+                                if (scan != null) {
+                                    applyActivateScan(jar, scan);
+                                } else {
+                                    JarFile jarFile = JarFileCache.getInstance()
+                                            .getJarFile(localFile.getAbsolutePath());
+                                    for (JarEntry je : Collections.list(jarFile.entries())) {
+                                        if (je.getName().endsWith(".jar")) {
+                                            extractAndMapNestedJar(jar, localFile, jarFile, je);
                                         }
-                                        String extractedJarLocation = localFile + ".nested/" + name;
-                                        File parentDir = new File(extractedJarLocation).getParentFile();
-                                        if (!parentDir.isDirectory() && !parentDir.mkdirs()) {
-                                            throw new RuntimeException(R("RNestedJarExtration"));
-                                        }
-                                        FileOutputStream extractedJar = new FileOutputStream(extractedJarLocation);
-                                        InputStream is = jarFile.getInputStream(je);
-
-                                        byte[] bytes = new byte[1024];
-                                        int read = is.read(bytes);
-                                        int fileSize = read;
-                                        while (read > 0) {
-                                            extractedJar.write(bytes, 0, read);
-                                            read = is.read(bytes);
-                                            fileSize += read;
-                                        }
-
-                                        is.close();
-                                        extractedJar.close();
-
-                                        // 0 byte file? skip
-                                        if (fileSize <= 0) {
-                                            continue;
-                                        }
-
-                                        tracker.addResource(new File(extractedJarLocation).toURL(), null, null, null);
-
-                                        URL codebase = file.getCodeBase();
-                                        if (codebase == null) {
-                                            //FIXME: codebase should be the codebase of the Main Jar not
-                                            //the location. Although, it still works in the current state.
-                                            codebase = file.getResources().getMainJAR().getLocation();
-                                        }
-
-                                        final SecurityDesc jarSecurity = securityDelegate.getJarPermissions(codebase);
-
-                                        try {
-                                            URL fileURL = new URL("file://" + extractedJarLocation);
-                                            // there is no remote URL for this, so lets fake one
-                                            URL fakeRemote = new URL(jar.getLocation().toString() + "!" + je.getName());
-                                            CachedJarFileCallback.getInstance().addMapping(fakeRemote, fileURL);
-                                            addURL(fakeRemote);
-
-                                            jarLocationSecurityMap.put(fakeRemote, jarSecurity);
-
-                                        } catch (MalformedURLException mfue) {
-                                            OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, "Unable to add extracted nested jar to classpath");
-                                            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, mfue);
-                                        }
+                                        jarEntries.add(je.getName());
                                     }
-
-                                    jarEntries.add(je.getName());
                                 }
                             } finally {}
                         }
@@ -1460,6 +1408,68 @@ public class JNLPClassLoader extends URLClassLoader {
         };
 
         AccessController.doPrivileged(activate, acc);
+    }
+
+    private void applyActivateScan(JARDesc jar, net.sourceforge.jnlp.cache.JarActivatePrep.Scan scan)
+            throws Exception {
+        for (String name : scan.entryNames) {
+            jarEntries.add(name);
+        }
+        for (net.sourceforge.jnlp.cache.JarActivatePrep.Nested nested : scan.nested) {
+            mapExtractedNestedJar(jar, nested.innerName, nested.extractedPath);
+        }
+    }
+
+    private void extractAndMapNestedJar(JARDesc jar, File localFile, JarFile jarFile, JarEntry je)
+            throws Exception {
+        String name = je.getName();
+        if (name.contains("..")) {
+            name = CacheUtil.hex(name, name);
+        }
+        String extractedJarLocation = localFile + ".nested/" + name;
+        File parentDir = new File(extractedJarLocation).getParentFile();
+        if (!parentDir.isDirectory() && !parentDir.mkdirs()) {
+            throw new RuntimeException(R("RNestedJarExtration"));
+        }
+        FileOutputStream extractedJar = new FileOutputStream(extractedJarLocation);
+        InputStream is = jarFile.getInputStream(je);
+        try {
+            byte[] bytes = new byte[1024];
+            int read = is.read(bytes);
+            int fileSize = read;
+            while (read > 0) {
+                extractedJar.write(bytes, 0, read);
+                read = is.read(bytes);
+                fileSize += read;
+            }
+            if (fileSize <= 0) {
+                return;
+            }
+        } finally {
+            is.close();
+            extractedJar.close();
+        }
+        mapExtractedNestedJar(jar, je.getName(), extractedJarLocation);
+    }
+
+    private void mapExtractedNestedJar(JARDesc jar, String innerName, String extractedJarLocation)
+            throws Exception {
+        tracker.addResource(new File(extractedJarLocation).toURL(), null, null, null);
+        URL codebase = file.getCodeBase();
+        if (codebase == null) {
+            codebase = file.getResources().getMainJAR().getLocation();
+        }
+        final SecurityDesc jarSecurity = securityDelegate.getJarPermissions(codebase);
+        try {
+            URL fileURL = new URL("file://" + extractedJarLocation);
+            URL fakeRemote = new URL(jar.getLocation().toString() + "!" + innerName);
+            CachedJarFileCallback.getInstance().addMapping(fakeRemote, fileURL);
+            addURL(fakeRemote);
+            jarLocationSecurityMap.put(fakeRemote, jarSecurity);
+        } catch (MalformedURLException mfue) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, "Unable to add extracted nested jar to classpath");
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, mfue);
+        }
     }
 
     /**

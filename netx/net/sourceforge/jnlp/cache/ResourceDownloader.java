@@ -711,6 +711,10 @@ public class ResourceDownloader implements Runnable {
         // (cache). JarCertVerifier is the single signature/trust pass.
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         if (slot == null) {
+            File local = resource.getLocalFile();
+            if (local != null && CacheUtil.isJarResourceUrl(resource.getLocation())) {
+                LaunchPrep.prepare(local);
+            }
             resource.setTerminalState(net.sourceforge.jnlp.cache.download.JarState.GOOD);
             resource.clearEnqueued();
             return;
@@ -721,6 +725,11 @@ public class ResourceDownloader implements Runnable {
             // phantom file. Keep enqueued so wait() cannot start a second GET.
             slot.settleUnusable(System.currentTimeMillis());
             return;
+        }
+        File local = resource.getLocalFile();
+        if (local != null && CacheUtil.isJarResourceUrl(resource.getLocation())) {
+            // Signature read + nested extract on this worker, overlapping other GETs.
+            LaunchPrep.prepare(local);
         }
         slot.settleGood(System.currentTimeMillis(), fromCache);
         // Persist absorbing outcome on the Resource. wait() builds a fresh JarGroupState
@@ -985,11 +994,15 @@ public class ResourceDownloader implements Runnable {
                     .estimateReserveBytes(wire, sizeHint);
             net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
                 ensurePackedSidecarPresent(packed);
+                DownloadProgress.beginUnpack(SizeFirstDownloadQueue.resourceName(resource), wire);
                 try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
                      OutputStream fileOut = Files.newOutputStream(jarFile.toPath(),
                              StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                     JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+                     JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(
+                             DownloadProgress.countingOutput(fileOut)))) {
                     Pack200.newUnpacker().unpack(in, jarOut);
+                } finally {
+                    DownloadProgress.endUnpack(jarFile.isFile() ? jarFile.length() : 0L);
                 }
             });
             return jarFile;
@@ -1178,12 +1191,19 @@ public class ResourceDownloader implements Runnable {
         File unpacked = CacheUtil.getCacheFile(uncompressedLocation, version);
         long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
                 .estimateReserveBytes(packed.isFile() ? packed.length() : 0L, 0L);
+        String unpackName = uncompressedLocation != null && uncompressedLocation.getPath() != null
+                ? new File(uncompressedLocation.getPath()).getName() : "pack.gz";
+        long wire = packed.isFile() ? packed.length() : 0L;
         net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
+            DownloadProgress.beginUnpack(unpackName, wire);
             try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
                  OutputStream fileOut = Files.newOutputStream(unpacked.toPath(),
                          StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                 JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(fileOut))) {
+                 JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(
+                         DownloadProgress.countingOutput(fileOut)))) {
                 Pack200.newUnpacker().unpack(in, jarOut);
+            } finally {
+                DownloadProgress.endUnpack(unpacked.isFile() ? unpacked.length() : 0L);
             }
         });
     }

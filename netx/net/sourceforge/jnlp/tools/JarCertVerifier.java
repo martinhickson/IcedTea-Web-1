@@ -40,6 +40,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Future;
 import java.util.jar.JarEntry;
 import java.util.regex.Pattern;
@@ -73,6 +74,9 @@ public class JarCertVerifier implements CertVerifier {
     private static final String META_INF = "META-INF/";
     private static final Pattern SIG = Pattern.compile(".*" + META_INF + "SIG-.*");
     private static final boolean JAR_CERT_VERIFIER_VERBOSE = false;
+    /** Filled on download workers so {@link #verifyJars} does not re-read the ZIP. */
+    private static final ConcurrentHashMap<String, VerifiedJarFile> PREPARED =
+            new ConcurrentHashMap<String, VerifiedJarFile>();
 
     // prefix for new signature-related files in META-INF directory
     private static final String SIG_PREFIX = META_INF + "SIG-";
@@ -284,7 +288,20 @@ public class JarCertVerifier implements CertVerifier {
             filesToVerify.add(localFile);
         }
 
-        List<VerifiedJarFile> verified = verifyJarsParallel(filesToVerify);
+        List<VerifiedJarFile> already = new ArrayList<VerifiedJarFile>();
+        List<String> remaining = new ArrayList<String>();
+        for (String path : filesToVerify) {
+            VerifiedJarFile ready = takePrepared(path);
+            if (ready != null) {
+                already.add(ready);
+            } else {
+                remaining.add(path);
+            }
+        }
+        List<VerifiedJarFile> verified = already;
+        if (!remaining.isEmpty()) {
+            verified.addAll(verifyJarsParallel(remaining));
+        }
 
         for (VerifiedJarFile vjf : verified) {
             VerifyResult result = verifyJarEntryCerts(vjf.file, vjf.hasManifest, vjf.entriesVec);
@@ -336,7 +353,26 @@ public class JarCertVerifier implements CertVerifier {
      * @throws Exception
      *             Will be thrown if there are any problems with the jar.
      */
-    private VerifiedJarFile verifyJar(String jarName) throws Exception {
+    /**
+     * Read every entry (signature/digest) on a download worker so the
+     * post-wait verifier only merges results.
+     */
+    public static void prepare(String jarName) {
+        if (jarName == null || jarName.isEmpty() || PREPARED.containsKey(jarName)) {
+            return;
+        }
+        try {
+            PREPARED.putIfAbsent(jarName, verifyJar(jarName));
+        } catch (Exception e) {
+            OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, e);
+        }
+    }
+
+    static VerifiedJarFile takePrepared(String jarName) {
+        return jarName == null ? null : PREPARED.remove(jarName);
+    }
+
+    static VerifiedJarFile verifyJar(String jarName) throws Exception {
         try {
             if (JAR_CERT_VERIFIER_VERBOSE) {
                 System.err.println("[JarCertVerifier] verifyJar called for: " + jarName);
@@ -721,7 +757,7 @@ public class JarCertVerifier implements CertVerifier {
         return sum;
     }
 
-    private static class VerifiedJarFile {
+    static class VerifiedJarFile {
         final String file;
         final boolean hasManifest;
         private final List<JarEntry> entriesVec;

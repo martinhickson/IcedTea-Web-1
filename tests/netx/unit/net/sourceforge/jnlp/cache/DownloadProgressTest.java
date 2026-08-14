@@ -42,7 +42,8 @@ public class DownloadProgressTest {
         p.slots[0].add(1_000L);
         DownloadProgress.Snapshot s = p.snapshot();
         assertEquals(99, s.percent, "100% before wait() returns looks like a hang");
-        assertTrue(s.finishing.contains("giant.jar"), s.finishing);
+        assertTrue(!DownloadProgress.isAdvanced(), "simple mode is the default");
+        assertEquals("", s.finishing, "simple mode hides jar names");
         p.complete = true;
         assertEquals(100, p.snapshot().percent);
     }
@@ -53,5 +54,56 @@ public class DownloadProgressTest {
         DownloadProgress.addBytes(999);
         assertTrue(DownloadProgress.current() == null);
         assertTrue(!DownloadProgress.isActive());
+    }
+
+    @Test
+    public void unpackBarTracksOutputAndStaysAt99UntilJobEnds() {
+        DownloadProgress p = new DownloadProgress(2);
+        p.knownTotal = 1_000L;
+        p.bytes.set(1_000L);
+        p.startUnpack(Integer.valueOf(0), "sonata-pbx.jar", 17_000_000L);
+        long est = p.estimateUnpackBytes(17_000_000L);
+        assertEquals((long) (17_000_000L * DownloadProgress.DEFAULT_UNPACK_RATIO), est);
+        p.addUnpack(Integer.valueOf(0), est / 2);
+        DownloadProgress.Snapshot s = p.snapshot();
+        assertTrue(s.unpack.active);
+        assertTrue(s.unpacking, "wire-done unpack switches the simple label");
+        assertEquals(50, s.unpack.percent, s.unpack.percent + " " + s.unpack.bytes + "/" + s.unpack.total);
+        assertEquals("", s.finishing, "simple mode hides jar names");
+        assertTrue(s.unpack.showBar(99, false));
+        p.addUnpack(Integer.valueOf(0), est);
+        s = p.snapshot();
+        assertTrue(s.unpack.percent < 100, "must not paint 100% while still unpacking: " + s.unpack.percent);
+        assertTrue(s.unpack.percent >= 90, "overrun should keep the bar moving: " + s.unpack.percent);
+        p.finishUnpack(Integer.valueOf(0), est);
+        s = p.snapshot();
+        assertTrue(!s.unpack.active);
+        assertTrue(!s.unpack.showBar(99, true));
+    }
+
+    @Test
+    public void countingOutputIsIdentityWhenInactive() {
+        DownloadProgress.end();
+        java.io.ByteArrayOutputStream raw = new java.io.ByteArrayOutputStream();
+        assertTrue(DownloadProgress.countingOutput(raw) == raw);
+        DownloadProgress.addUnpackBytes(50);
+        DownloadProgress.beginUnpack("x.jar", 10);
+    }
+
+    @Test
+    public void finishLaunchMarksCompleteAndClears() {
+        DownloadProgress.end();
+        assertTrue(!DownloadProgress.isAdvanced());
+        DownloadProgress p = new DownloadProgress(2);
+        p.knownTotal = 100L;
+        p.bytes.set(100L);
+        p.deferredUnpack = true;
+        assertTrue(p.snapshot().unpacking);
+        assertEquals(99, p.snapshot().percent);
+        p.complete = true;
+        assertTrue(!p.snapshot().unpacking);
+        assertEquals(100, p.snapshot().percent);
+        DownloadProgress.finishLaunch();
+        assertTrue(DownloadProgress.current() == null);
     }
 }

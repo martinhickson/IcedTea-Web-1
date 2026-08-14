@@ -395,6 +395,12 @@ public final class DeploymentConfiguration {
      * When false the write path does not call progress counters.
      */
     public static final String KEY_HTTP_DOWNLOAD_PROGRESS = "deployment.http.downloadProgress";
+    /**
+     * Boolean. If true, the download window shows jar names, throughput,
+     * ETA, Show Details lanes, and a separate unpack bar. Default false:
+     * a single bar and Downloading/Unpacking label only.
+     */
+    public static final String KEY_HTTP_DOWNLOAD_PROGRESS_ADVANCED = "deployment.http.downloadProgress.advanced";
 
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     

@@ -1146,12 +1146,7 @@ public class CacheUtil {
                     }
                 }
                 DownloadProgress.begin(title, tracker, resources, downloadProgressSlots(), known);
-                try {
-                    tracker.waitForResources(resources, 0);
-                    DownloadProgress.markComplete();
-                } finally {
-                    DownloadProgress.end();
-                }
+                tracker.waitForResources(resources, 0);
                 return;
             }
             if (indicator == null) {

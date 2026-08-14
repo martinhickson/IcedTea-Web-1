@@ -34,6 +34,7 @@ import java.util.Map;
 import net.sourceforge.jnlp.util.JarFile;
 
 import net.sourceforge.jnlp.cache.CacheUtil;
+import net.sourceforge.jnlp.cache.DownloadProgress;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.config.JdkMatchStrategy;
@@ -618,6 +619,7 @@ public class Launcher {
                         R("LCantDetermineMainClassInfo")));
             }
 
+            DownloadProgress.finishLaunch();
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, "Starting application [" + mainName + "] ...");
 
             Class<?> mainClass = app.getClassLoader().loadClass(mainName);
@@ -645,8 +647,10 @@ public class Launcher {
 
             return app;
         } catch (LaunchException lex) {
+            DownloadProgress.end();
             throw launchError(lex);
         } catch (Exception ex) {
+            DownloadProgress.end();
             throw launchError(new LaunchException(file, ex, R("LSFatal"), R("LCLaunching"), R("LCouldNotLaunch"), R("LCouldNotLaunchInfo")));
         }
     }

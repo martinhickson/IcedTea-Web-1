@@ -1,23 +1,32 @@
 package net.sourceforge.jnlp.cache;
 
+import net.sourceforge.jnlp.cache.download.PackUnpackAdmission;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 
+import java.io.FilterOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
 import java.net.URL;
 import java.util.Locale;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Determinate download progress: overall bytes vs HEAD-known total, mean
  * throughput since start, 10-second instantaneous throughput, and ETA from
- * the instant rate. Per-lane slot meters are updated only while
- * {@link #isActive()} so the write path stays a boolean check when the
- * window is off.
+ * the instant rate. Pack200 unpack uses a second meter (output bytes vs
+ * a learned expansion estimate). Per-lane slot meters are updated only
+ * while {@link #isActive()} so the write path stays a boolean check when
+ * the window is off.
  */
 public final class DownloadProgress {
 
     static final long INSTANT_WINDOW_MS = 10_000L;
     static final int SAMPLE_CAP = 16;
+    /** Hide the unpack bar for tiny jars that finish in a blink. */
+    static final long UNPACK_UI_MIN_BYTES = 1L << 20;
+    static final double DEFAULT_UNPACK_RATIO = 4.0;
 
     private static final ThreadLocal<Integer> LANE = new ThreadLocal<Integer>();
     private static volatile boolean active;
@@ -30,8 +39,14 @@ public final class DownloadProgress {
     volatile String title = "";
     volatile ResourceTracker tracker;
     volatile URL[] resources;
-    /** True only after wait() returns — wire complete is not launch-complete. */
+    /** True only just before main() — wire complete is not launch-complete. */
     volatile boolean complete;
+    /** Unpack started after the wire bar hit 99% (simple UI switches label). */
+    volatile boolean deferredUnpack;
+
+    private final ConcurrentHashMap<Object, UnpackJob> unpacks = new ConcurrentHashMap<Object, UnpackJob>();
+    private final AtomicLong ratioWire = new AtomicLong();
+    private final AtomicLong ratioOut = new AtomicLong();
 
     private final Object sampleLock = new Object();
     private final long[] sampleAt = new long[SAMPLE_CAP];
@@ -64,6 +79,17 @@ public final class DownloadProgress {
         }
     }
 
+    /** Jar names, rates, details, and a separate unpack bar. Default off. */
+    public static boolean isAdvanced() {
+        try {
+            String v = JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_HTTP_DOWNLOAD_PROGRESS_ADVANCED);
+            return v != null && Boolean.parseBoolean(v.trim());
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
     public static boolean isActive() {
         return active;
     }
@@ -75,6 +101,18 @@ public final class DownloadProgress {
     public static void begin(String title, ResourceTracker tracker, URL[] resources,
             int slotCount, long knownTotal) {
         if (!isEnabled()) {
+            return;
+        }
+        if (active && instance != null) {
+            DownloadProgress p = instance;
+            if (title != null && !title.isEmpty()) {
+                p.title = title;
+            }
+            if (knownTotal > p.knownTotal) {
+                p.knownTotal = knownTotal;
+            }
+            p.tracker = tracker;
+            p.resources = resources;
             return;
         }
         DownloadProgress next = new DownloadProgress(slotCount);
@@ -92,6 +130,12 @@ public final class DownloadProgress {
         if (p != null) {
             p.complete = true;
         }
+    }
+
+    /** Close the window a few instructions before {@code main}. */
+    public static void finishLaunch() {
+        markComplete();
+        end();
     }
 
     public static void end() {
@@ -133,6 +177,119 @@ public final class DownloadProgress {
         if (lane != null && lane.intValue() >= 0 && lane.intValue() < p.slots.length) {
             p.slots[lane.intValue()].add(n);
         }
+    }
+
+    /**
+     * Count Pack200 output bytes. Returns {@code out} unchanged when the
+     * window is off so the unpack path pays only a boolean check.
+     */
+    public static OutputStream countingOutput(OutputStream out) {
+        if (!active || instance == null || out == null) {
+            return out;
+        }
+        return new FilterOutputStream(out) {
+            @Override
+            public void write(int b) throws IOException {
+                out.write(b);
+                addUnpackBytes(1L);
+            }
+
+            @Override
+            public void write(byte[] b, int off, int len) throws IOException {
+                out.write(b, off, len);
+                if (len > 0) {
+                    addUnpackBytes(len);
+                }
+            }
+        };
+    }
+
+    public static void beginUnpack(String name, long wireBytes) {
+        DownloadProgress p = instance;
+        if (!active || p == null) {
+            return;
+        }
+        p.startUnpack(unpackKey(), name, wireBytes);
+    }
+
+    public static void addUnpackBytes(long n) {
+        DownloadProgress p = instance;
+        if (!active || p == null || n <= 0) {
+            return;
+        }
+        p.addUnpack(unpackKey(), n);
+    }
+
+    public static void endUnpack(long actualOut) {
+        DownloadProgress p = instance;
+        if (!active || p == null) {
+            return;
+        }
+        p.finishUnpack(unpackKey(), actualOut);
+    }
+
+    private static Object unpackKey() {
+        Integer lane = LANE.get();
+        return lane != null ? lane : Thread.currentThread();
+    }
+
+    void startUnpack(Object key, String name, long wireBytes) {
+        if (knownTotal > 0L && bytes.get() * 100L / knownTotal >= 99L) {
+            deferredUnpack = true;
+        }
+        long est = estimateUnpackBytes(wireBytes);
+        unpacks.put(key, new UnpackJob(name, wireBytes, est));
+        if (key instanceof Integer) {
+            int lane = ((Integer) key).intValue();
+            if (lane >= 0 && lane < slots.length) {
+                slots[lane].enterUnpack(name, est);
+            }
+        }
+    }
+
+    void addUnpack(Object key, long n) {
+        UnpackJob job = unpacks.get(key);
+        if (job == null) {
+            return;
+        }
+        job.bytes.addAndGet(n);
+        if (key instanceof Integer) {
+            int lane = ((Integer) key).intValue();
+            if (lane >= 0 && lane < slots.length) {
+                slots[lane].add(n);
+            }
+        }
+    }
+
+    void finishUnpack(Object key, long actualOut) {
+        UnpackJob job = unpacks.remove(key);
+        if (job == null) {
+            return;
+        }
+        long out = actualOut > 0 ? actualOut : job.bytes.get();
+        if (job.wire > 0 && out > 0) {
+            ratioWire.addAndGet(job.wire);
+            ratioOut.addAndGet(out);
+        }
+    }
+
+    long estimateUnpackBytes(long wireBytes) {
+        long wire = Math.max(0L, wireBytes);
+        if (wire <= 0L) {
+            return UNPACK_UI_MIN_BYTES;
+        }
+        long sampledW = ratioWire.get();
+        long sampledO = ratioOut.get();
+        double ratio = DEFAULT_UNPACK_RATIO;
+        if (sampledW > UNPACK_UI_MIN_BYTES && sampledO > 0L) {
+            ratio = sampledO / (double) sampledW;
+        }
+        if (ratio < 1.0) {
+            ratio = 1.0;
+        } else if (ratio > 8.0) {
+            ratio = 8.0;
+        }
+        return Math.max(wire, (long) (wire * ratio));
     }
 
     public static void refreshKnownTotal(ResourceTracker tracker, URL[] resources) {
@@ -177,15 +334,57 @@ public final class DownloadProgress {
         // Wire bytes can finish a minute before Pack200 unpack / integrity.
         // Never paint 100% until wait() returns or users think it hung.
         int pct = complete ? 100 : Math.min(99, wirePct);
+        UnpackSnap unpack = unpackSnapshot();
+        boolean unpacking = !complete && (deferredUnpack || unpack.active
+                || (unpack.queued > 0 && wirePct >= 99));
         String finishing = "";
-        if (!complete && wirePct >= 99) {
-            finishing = finishingNames();
+        if (isAdvanced()) {
+            if (unpack.active) {
+                finishing = "unpacking " + unpack.name;
+            } else if (!complete && wirePct >= 99) {
+                finishing = finishingNames();
+            }
         }
         SlotSnap[] snaps = new SlotSnap[slots.length];
         for (int i = 0; i < slots.length; i++) {
             snaps[i] = slots[i].snapshot(now);
         }
-        return new Snapshot(title, b, knownTotal, pct, meanBps, nowBps, etaMs, finishing, snaps);
+        return new Snapshot(title, b, knownTotal, pct, meanBps, nowBps, etaMs, finishing,
+                unpacking, unpack, snaps);
+    }
+
+    UnpackSnap unpackSnapshot() {
+        long b = 0L;
+        long total = 0L;
+        StringBuilder names = new StringBuilder();
+        int n = 0;
+        for (UnpackJob job : unpacks.values()) {
+            n++;
+            long written = job.bytes.get();
+            b += written;
+            long est = job.estimate;
+            if (written >= est) {
+                est = written + Math.max(1L, written / 20L);
+            }
+            total += est;
+            if (names.length() > 0) {
+                names.append(", ");
+            }
+            if (names.length() < 80) {
+                names.append(job.name);
+            }
+        }
+        int queued = 0;
+        try {
+            queued = PackUnpackAdmission.getInstance().waitingUnpackers();
+        } catch (Throwable ignored) {
+            // tests / early init
+        }
+        int pct = 0;
+        if (n > 0 && total > 0L) {
+            pct = (int) Math.min(99L, (b * 100L) / total);
+        }
+        return new UnpackSnap(n > 0, names.toString(), b, total, pct, queued);
     }
 
     private String finishingNames() {
@@ -319,6 +518,20 @@ public final class DownloadProgress {
             }
         }
 
+        void enterUnpack(String name, long estimate) {
+            if (name != null && !name.isEmpty()) {
+                this.name = name;
+            }
+            this.size = estimate;
+            this.busy = true;
+            this.startMillis = System.currentTimeMillis();
+            this.bytes.set(0L);
+            synchronized (sampleLock) {
+                sampleCount = 0;
+                sampleHead = 0;
+            }
+        }
+
         void idle() {
             this.busy = false;
             this.name = "";
@@ -415,6 +628,47 @@ public final class DownloadProgress {
         }
     }
 
+    static final class UnpackJob {
+        final String name;
+        final long wire;
+        final long estimate;
+        final AtomicLong bytes = new AtomicLong();
+
+        UnpackJob(String name, long wire, long estimate) {
+            this.name = name != null ? name : "";
+            this.wire = wire;
+            this.estimate = Math.max(1L, estimate);
+        }
+    }
+
+    static final class UnpackSnap {
+        final boolean active;
+        final String name;
+        final long bytes;
+        final long total;
+        final int percent;
+        final int queued;
+
+        UnpackSnap(boolean active, String name, long bytes, long total, int percent, int queued) {
+            this.active = active;
+            this.name = name != null ? name : "";
+            this.bytes = bytes;
+            this.total = total;
+            this.percent = percent;
+            this.queued = queued;
+        }
+
+        boolean showBar(int downloadPercent, boolean complete) {
+            if (complete) {
+                return false;
+            }
+            if (active && total >= UNPACK_UI_MIN_BYTES) {
+                return true;
+            }
+            return queued > 0 && downloadPercent >= 99;
+        }
+    }
+
     static final class Snapshot {
         final String title;
         final long bytes;
@@ -424,10 +678,13 @@ public final class DownloadProgress {
         final double nowBps;
         final long etaMs;
         final String finishing;
+        final boolean unpacking;
+        final UnpackSnap unpack;
         final SlotSnap[] slots;
 
         Snapshot(String title, long bytes, long knownTotal, int percent,
-                double meanBps, double nowBps, long etaMs, String finishing, SlotSnap[] slots) {
+                double meanBps, double nowBps, long etaMs, String finishing,
+                boolean unpacking, UnpackSnap unpack, SlotSnap[] slots) {
             this.title = title;
             this.bytes = bytes;
             this.knownTotal = knownTotal;
@@ -436,6 +693,8 @@ public final class DownloadProgress {
             this.nowBps = nowBps;
             this.etaMs = etaMs;
             this.finishing = finishing;
+            this.unpacking = unpacking;
+            this.unpack = unpack != null ? unpack : new UnpackSnap(false, "", 0L, 0L, 0, 0);
             this.slots = slots;
         }
     }
