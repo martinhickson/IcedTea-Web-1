@@ -114,6 +114,49 @@ public class ItwLauncherPathsTest {
     }
 
     @Test
+    public void javaCpPolicyEditorIncludesModularExportAndFile() throws IOException {
+        System.setProperty(ItwLauncherPaths.PROP_NATIVE_LAUNCHER, "false");
+        File uberJar = File.createTempFile("icedtea-web-2.0.1-SNAPSHOT-uber", ".jar");
+        uberJar.deleteOnExit();
+        System.setProperty(Launcher.KEY_JAVAWS_LOCATION, uberJar.getAbsolutePath());
+
+        List<String> command = ItwLauncherPaths.buildPolicyEditorLaunchCommand("/tmp/java.policy");
+        assertTrue(command.get(0).toLowerCase().contains("java"));
+        assertTrue(command.contains("-cp"));
+        assertTrue(command.contains(uberJar.getAbsolutePath()));
+        assertTrue(command.contains("net.sourceforge.jnlp.security.policyeditor.PolicyEditor"));
+        assertTrue(command.contains("-file"));
+        assertTrue(command.contains("/tmp/java.policy"));
+        if (JavaVersionUtils.getRunningMajorVersion() >= 9) {
+            assertTrue(command.contains("--add-exports"));
+            assertTrue(command.contains("java.base/sun.security.provider=ALL-UNNAMED"));
+        }
+    }
+
+    @Test
+    public void nativePolicyEditorUsesSiblingBinary() throws IOException {
+        System.setProperty(ItwLauncherPaths.PROP_NATIVE_LAUNCHER, "true");
+        File bin = Files.createTempDirectory("itw-bin-policyeditor").toFile();
+        File settings = new File(bin, "itweb-settings");
+        File policyeditor = new File(bin, "policyeditor");
+        writeExecutable(settings, "#!/bin/sh\necho settings\n");
+        writeExecutable(policyeditor, "#!/bin/sh\necho policyeditor\n");
+        System.setProperty(Launcher.KEY_JAVAWS_LOCATION, settings.getAbsolutePath());
+
+        List<String> command = ItwLauncherPaths.buildPolicyEditorLaunchCommand("/tmp/java.policy");
+        assertEquals(policyeditor.getAbsolutePath(), command.get(0));
+        assertTrue(command.contains("-file"));
+        assertTrue(command.contains("/tmp/java.policy"));
+    }
+
+    @Test
+    public void canAccessSunSecurityProviderMatchesSurefireExports() {
+        if (JavaVersionUtils.getRunningMajorVersion() >= 9) {
+            assertTrue(ItwLauncherPaths.canAccessSunSecurityProvider());
+        }
+    }
+
+    @Test
     public void isJavawsLauncherNameRecognizesJavawsAndJavawsc() {
         assertTrue(ItwLauncherPaths.isJavawsLauncherName("javaws"));
         assertTrue(ItwLauncherPaths.isJavawsLauncherName("javaws.exe"));

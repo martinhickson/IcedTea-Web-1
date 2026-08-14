@@ -49,6 +49,7 @@ import java.io.IOException;
 import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
+import java.util.List;
 
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -62,6 +63,7 @@ import net.sourceforge.jnlp.security.policyeditor.PolicyEditor;
 import net.sourceforge.jnlp.security.policyeditor.PolicyEditor.PolicyEditorWindow;
 import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.FileUtils.OpenFileResult;
+import net.sourceforge.jnlp.util.ItwLauncherPaths;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.swing.SwingUtils;
 
@@ -164,6 +166,14 @@ public class PolicyPanel extends NamedBorderPanel {
      * @param filePath a {@link String} representing the path to the file to be opened
      */
     private void launchSimplePolicyEditor(final String filePath) {
+        if (ItwLauncherPaths.canAccessSunSecurityProvider()) {
+            launchSimplePolicyEditorInProcess(filePath);
+            return;
+        }
+        launchSimplePolicyEditorExternally(filePath);
+    }
+
+    private void launchSimplePolicyEditorInProcess(final String filePath) {
         if (policyEditor == null || policyEditor.getPolicyEditor().isClosed()) {
             policyEditor = PolicyEditor.getPolicyEditorFrame(filePath);
             policyEditor.getPolicyEditor().openAndParsePolicyFile();
@@ -172,6 +182,29 @@ public class PolicyPanel extends NamedBorderPanel {
             policyEditor.asWindow().toFront();
             policyEditor.asWindow().repaint();
         }
+    }
+
+    /**
+     * PolicyEditor links {@code sun.security.provider.PolicyParser}. When this
+     * JVM was started without {@code --add-exports} (bare {@code java -cp} /
+     * in-process Control Panel), constructing it throws IllegalAccessError.
+     * The standalone {@code policyeditor} launcher already adds those flags.
+     */
+    private void launchSimplePolicyEditorExternally(final String filePath) {
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    final List<String> command = ItwLauncherPaths.buildPolicyEditorLaunchCommand(filePath);
+                    new ProcessBuilder(command).directory(new File(System.getProperty("user.home"))).start();
+                } catch (Exception e) {
+                    OutputController.getLogger().log(e);
+                    OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                            "Could not open user JNLP policy with PolicyEditor");
+                    FileUtils.showCouldNotOpenFilepathDialog(PolicyPanel.this, filePath);
+                }
+            }
+        }, "itw-policyeditor-launch").start();
     }
 
     /**
