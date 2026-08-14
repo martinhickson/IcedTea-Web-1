@@ -93,6 +93,31 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void catalogRowJnlpPathBlocksJarAndDomainClearIds() throws Exception {
+        URL jnlp = new URL("http://127.0.0.1:4360/jnlp/g28/app.jnlp");
+        URL jar = new URL("http://127.0.0.1:4360/jnlp/g28/app.jar");
+        File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
+        File jarFile = writeCachedResource(jar, "jar-bytes");
+        writeJnlpPath(jnlpFile, jnlp.toString());
+        writeJnlpPath(jarFile, jnlp.toString());
+
+        Process holder = new ProcessBuilder("sleep", "60").start();
+        try {
+            CacheLRUWrapper.getInstance().registerRunningApp(
+                    (int) holder.pid(), jnlp.toString(), null);
+            Assert.assertTrue("jar id uses catalog jnlp-path",
+                    CacheUtil.catalogRowsForClearIdBlocked(jar.toString()));
+            Assert.assertTrue("domain id uses catalog jnlp-path",
+                    CacheUtil.catalogRowsForClearIdBlocked("127.0.0.1"));
+            Assert.assertFalse(CacheUtil.canClearApplicationCache(jar.toString()));
+            Assert.assertFalse(CacheUtil.canClearApplicationCache("127.0.0.1"));
+        } finally {
+            holder.destroyForcibly();
+            CacheLRUWrapper.getInstance().unregisterRunningApp((int) holder.pid());
+        }
+    }
+
+    @Test
     public void catalogRunningAppBlocksHeldJnlpJarDomainAndAllClear() throws Exception {
         URL jnlp = new URL("http://127.0.0.1:4350/jnlp/c401/app.jnlp");
         URL jar = new URL("http://127.0.0.1:4350/jnlp/c401/app.jar");
