@@ -148,6 +148,32 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void hostFromCacheRelativePathReadsHttpHost() {
+        Assert.assertEquals("127.0.0.1", CacheUtil.hostFromCacheRelativePath(
+                "/http/127.0.0.1/4200/jnlp/console/app.jnlp"));
+        Assert.assertEquals("127.0.0.1", CacheUtil.hostFromCacheRelativePath(
+                "\\http\\127.0.0.1\\4200\\jnlp\\console\\app.jnlp"));
+        Assert.assertEquals("example.com", CacheUtil.hostFromCacheRelativePath(
+                "/https/example.com/app.jnlp"));
+        Assert.assertNull(CacheUtil.hostFromCacheRelativePath(null));
+        Assert.assertNull(CacheUtil.hostFromCacheRelativePath(""));
+    }
+
+    @Test
+    public void getDomainUsesCanonicalCacheRoot() throws Exception {
+        URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
+        File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");
+        File info = new File(jnlpFile.getPath() + CacheDirectory.INFO_SUFFIX);
+        Assert.assertTrue(info.isFile());
+
+        String nonCanonicalRoot = new File(tempCache, ".." + File.separator + tempCache.getName())
+                .getAbsolutePath();
+        PathsAndFiles.CACHE_DIR.setValue(nonCanonicalRoot);
+
+        Assert.assertEquals("127.0.0.1", CacheUtil.getDomain(info.getCanonicalFile().toPath()));
+    }
+
+    @Test
     public void cachedResourceMatchesApplicationAfterCanonicalizingCacheRoot() throws Exception {
         URL jnlp = new URL("http://127.0.0.1:4200/jnlp/console/app.jnlp");
         File jnlpFile = writeCachedResource(jnlp, "<jnlp/>");

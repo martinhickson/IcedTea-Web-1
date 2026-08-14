@@ -1547,14 +1547,40 @@ public class CacheUtil {
         return s;
     }
 
-    private static String getDomain(Path path) {
-        String relativeToCache = path.toAbsolutePath().toString().replace(CacheLRUWrapper.getInstance().getCacheDir().getFullPath(), "");
-        for (int x = 0; x < 3; x++) {
-            int i = relativeToCache.indexOf(File.separator);
-            relativeToCache = relativeToCache.substring(i + 1);
+    /**
+     * Hostname for a cache {@code .info} file ({@code 127.0.0.1}, {@code example.com}).
+     * Uses the same canonical relative path as URL matching so Windows drive-letter
+     * case and {@code \} vs {@code /} cannot invent a false domain.
+     */
+    static String getDomain(Path path) {
+        return hostFromCacheRelativePath(cacheRelativePathFromInfo(path));
+    }
+
+    static String hostFromCacheRelativePath(String rel) {
+        if (rel == null || rel.isEmpty()) {
+            return null;
         }
-        int i = relativeToCache.indexOf(File.separator);
-        relativeToCache = relativeToCache.substring(0, i);
-        return relativeToCache;
+        String href = hrefFromCacheRelativePath(rel.replace('\\', '/'));
+        if (href != null) {
+            try {
+                String host = new URL(href).getHost();
+                if (host != null && !host.isEmpty()) {
+                    return host;
+                }
+            } catch (MalformedURLException ignored) {
+            }
+        }
+        String s = rel.replace('\\', '/');
+        while (s.startsWith("/")) {
+            s = s.substring(1);
+        }
+        int slash1 = s.indexOf('/');
+        if (slash1 <= 0) {
+            return null;
+        }
+        String rest = s.substring(slash1 + 1);
+        int slash2 = rest.indexOf('/');
+        String host = slash2 < 0 ? rest : rest.substring(0, slash2);
+        return host.isEmpty() ? null : host;
     }
 }
