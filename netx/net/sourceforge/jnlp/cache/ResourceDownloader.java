@@ -1134,6 +1134,9 @@ public class ResourceDownloader implements Runnable {
                     slot.onFirstByte(now);
                     slot.addTransferred(rlen);
                 }
+                if (DownloadProgress.isActive()) {
+                    DownloadProgress.addBytes(rlen);
+                }
                 out.write(buf, 0, rlen);
             }
             if (slot != null) {

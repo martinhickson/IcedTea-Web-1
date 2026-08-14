@@ -387,6 +387,12 @@ public final class DeploymentConfiguration {
      * largest-first so fat transfers overlap on a saturated pipe.
      */
     public static final String KEY_HTTP_SIZE_FIRST_DOWNLOADS = "deployment.http.sizeFirstDownloads";
+    /**
+     * Boolean. If true (default), show a determinate download progress window
+     * (overall bar, mean/10s throughput, ETA, expandable 12-slot detail).
+     * When false the write path does not call progress counters.
+     */
+    public static final String KEY_HTTP_DOWNLOAD_PROGRESS = "deployment.http.downloadProgress";
 
     public static final String TRANSFER_TITLE = "Legacy configuration and cache found. Those will be now transported to new locations";
     

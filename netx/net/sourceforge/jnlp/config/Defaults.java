@@ -580,6 +580,11 @@ public class Defaults {
                         BasicValueValidators.getBooleanValidator(),
                         String.valueOf(true)
                 },
+                {
+                        DeploymentConfiguration.KEY_HTTP_DOWNLOAD_PROGRESS,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
                 //**************
                 //* Native (rust) only - beggin
                 //**************

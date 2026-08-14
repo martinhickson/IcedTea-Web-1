@@ -197,25 +197,27 @@ public final class SizeFirstDownloadQueue {
         });
         GET_LANES = lanes;
         for (int i = 0; i < largeLanes; i++) {
+            final int lane = i;
             lanes.execute(new Runnable() {
                 @Override
                 public void run() {
-                    laneLoop(dq, true);
+                    laneLoop(dq, true, lane);
                 }
             });
         }
         for (int i = 0; i < smallLanes; i++) {
+            final int lane = largeLanes + i;
             lanes.execute(new Runnable() {
                 @Override
                 public void run() {
-                    laneLoop(dq, false);
+                    laneLoop(dq, false, lane);
                 }
             });
         }
         lanes.shutdown();
     }
 
-    private static void laneLoop(Deque<Resource> dq, boolean largeLane) {
+    private static void laneLoop(Deque<Resource> dq, boolean largeLane, int lane) {
         while (true) {
             Resource resource;
             synchronized (dq) {
@@ -231,7 +233,12 @@ public final class SizeFirstDownloadQueue {
                     "Size-first GET " + (largeLane ? "large" : "small") + "-lane "
                             + formatSize(resource.getSize()) + " " + resourceName(resource));
             CachedDaemonThreadPoolProvider.noteJarDownloadStarting();
-            new ResourceDownloader(resource, null).run();
+            DownloadProgress.bindLane(lane, resource);
+            try {
+                new ResourceDownloader(resource, null).run();
+            } finally {
+                DownloadProgress.unbindLane(lane);
+            }
         }
     }
 

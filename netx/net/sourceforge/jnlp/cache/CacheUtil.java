@@ -1090,6 +1090,23 @@ public class CacheUtil {
         DownloadServiceListener listener = null;
 
         try {
+            if (DownloadProgress.isEnabled()) {
+                long known = 0L;
+                for (int i = 0; i < resources.length; i++) {
+                    long s = tracker.getTotalSize(resources[i]);
+                    if (s > 0) {
+                        known += s;
+                    }
+                }
+                DownloadProgress.begin(title, tracker, resources, downloadProgressSlots(), known);
+                try {
+                    tracker.waitForResources(resources, 0);
+                    DownloadProgress.refreshKnownTotal(tracker, resources);
+                } finally {
+                    DownloadProgress.end();
+                }
+                return;
+            }
             if (indicator == null) {
                 tracker.waitForResources(resources, 0);
                 return;
@@ -1155,6 +1172,25 @@ public class CacheUtil {
             if (listener != null)
                 indicator.disposeListener(listener);
         }
+    }
+
+    private static int downloadProgressSlots() {
+        int n = 6;
+        boolean adaptive = true;
+        try {
+            n = Integer.parseInt(JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_BACKGROUND_THREADS_COUNT));
+        } catch (Exception ignored) {
+        }
+        try {
+            String a = JNLPRuntime.getConfiguration()
+                    .getProperty(DeploymentConfiguration.KEY_BACKGROUND_THREADS_ADAPTIVE);
+            if (a != null && !a.trim().isEmpty()) {
+                adaptive = Boolean.parseBoolean(a.trim());
+            }
+        } catch (Exception ignored) {
+        }
+        return AdaptiveBackgroundThreads.connectionSlots(n, adaptive);
     }
 
     /**
