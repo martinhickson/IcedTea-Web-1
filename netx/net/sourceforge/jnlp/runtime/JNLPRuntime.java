@@ -346,15 +346,17 @@ public class JNLPRuntime {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
         }
 
-        // Build the download HTTP client now so the first jar GET already uses
-        // ItwSslSocketFactory (Apache does not consult HttpsURLConnection's default).
-        HttpClientProvider.getDefault();
-
-        // plug in a custom authenticator and proxy selector
+        // plug in a custom authenticator and proxy selector before the download
+        // client is built so Apache HttpClient sees deployment.proxy.* on the
+        // first GET (route planner also re-reads ProxySelector.getDefault()).
         Authenticator.setDefault(new JNLPAuthenticator());
         BrowserAwareProxySelector proxySelector = new BrowserAwareProxySelector(getConfiguration());
         proxySelector.initialize();
         ProxySelector.setDefault(proxySelector);
+
+        // Build the download HTTP client now so the first jar GET already uses
+        // ItwSslSocketFactory (Apache does not consult HttpsURLConnection's default).
+        HttpClientProvider.getDefault();
 
         // Configure cookie handling for JNLP/WebStart
         initializeCookieHandler();

@@ -240,6 +240,25 @@ public class JNLPProxySelectorTest {
     }
 
     @Test
+    public void testManualHttpProxyUsedForLoopbackWhenBypassLocalFalse() throws URISyntaxException {
+        String HTTP_HOST = "127.0.0.1";
+        int HTTP_PORT = 9;
+
+        DeploymentConfiguration config = new DeploymentConfiguration();
+        config.setProperty(DeploymentConfiguration.KEY_PROXY_TYPE, String.valueOf(JNLPProxySelector.PROXY_TYPE_MANUAL));
+        config.setProperty(DeploymentConfiguration.KEY_PROXY_SAME, String.valueOf(true));
+        config.setProperty(DeploymentConfiguration.KEY_PROXY_HTTP_HOST, HTTP_HOST);
+        config.setProperty(DeploymentConfiguration.KEY_PROXY_HTTP_PORT, String.valueOf(HTTP_PORT));
+        config.setProperty(DeploymentConfiguration.KEY_PROXY_BYPASS_LOCAL, String.valueOf(false));
+
+        JNLPProxySelector selector = new TestProxySelector(config);
+        List<Proxy> result = selector.select(new URI("http://127.0.0.1:18080/jnlp/app.jnlp"));
+
+        assertEquals(1, result.size());
+        assertEquals(new Proxy(Type.HTTP, new InetSocketAddress(HTTP_HOST, HTTP_PORT)), result.get(0));
+    }
+
+    @Test
     public void testManualSameProxy() throws URISyntaxException {
         final String HTTP_HOST = "example.org";
         final int HTTP_PORT = 42;
