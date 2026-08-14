@@ -42,6 +42,10 @@ final class MultipartRangeDownloader {
     private static final int MAX_PARALLEL = 8;
     /** Safety valve against pathological slot sizes (e.g. a few-byte slot on a huge file). */
     private static final int MAX_CHUNKS = 100_000;
+    /** Per-chunk retries on a transient failure before aborting the whole transfer. */
+    private static final int CHUNK_RETRIES = 2;
+    /** Base backoff (ms) between chunk retries; scaled by attempt number. */
+    private static final long CHUNK_RETRY_DELAY_MS = 500L;
 
     private final URL url;
     private final long totalLength;
@@ -76,11 +80,12 @@ final class MultipartRangeDownloader {
     }
 
     private File run(HttpResponse firstResponse) throws IOException {
-        int n = Math.max(1, (int) ((totalLength + slotSize - 1) / slotSize));
-        if (n > MAX_CHUNKS) {
-            throw new IOException("Refusing multipart download: " + n
+        long nLong = Math.max(1L, (totalLength + slotSize - 1) / slotSize);
+        if (nLong > MAX_CHUNKS) {
+            throw new IOException("Refusing multipart download: " + nLong
                     + " chunks exceeds limit (slotSize=" + slotSize + ", total=" + totalLength + ")");
         }
+        int n = (int) nLong;
         if (!tmpDir.mkdirs() && !tmpDir.isDirectory()) {
             throw new IOException("Cannot create multipart temp dir: " + tmpDir);
         }
@@ -159,7 +164,32 @@ final class MultipartRangeDownloader {
         }
     }
 
+    /**
+     * Fetch one chunk, retrying transient failures (a dropped connection mid-chunk is exactly
+     * what Range resume exists for). A persistent failure re-throws after {@link #CHUNK_RETRIES}
+     * attempts so the caller can abort the whole transfer and fall back to a full GET.
+     */
     private long fetchChunk(int idx, File part) throws IOException {
+        IOException last = null;
+        for (int attempt = 0; attempt <= CHUNK_RETRIES; attempt++) {
+            try {
+                return fetchChunkOnce(idx, part);
+            } catch (IOException e) {
+                last = e;
+                if (attempt < CHUNK_RETRIES) {
+                    try {
+                        Thread.sleep(CHUNK_RETRY_DELAY_MS * (attempt + 1));
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("Interrupted retrying multipart chunk " + idx, ie);
+                    }
+                }
+            }
+        }
+        throw last;
+    }
+
+    private long fetchChunkOnce(int idx, File part) throws IOException {
         long start = (long) idx * slotSize;
         long end = Math.min(start + slotSize - 1, totalLength - 1);
         Map<String, String> headers = new HashMap<>();
