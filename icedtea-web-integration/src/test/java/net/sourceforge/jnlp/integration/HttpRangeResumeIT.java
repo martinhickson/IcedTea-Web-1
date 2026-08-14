@@ -66,6 +66,7 @@ public class HttpRangeResumeIT {
     private volatile long resourceLastModified = 0L;
 
     private final AtomicInteger jarGets = new AtomicInteger();
+    private final AtomicInteger rangeRequests = new AtomicInteger();
     private final AtomicReference<String> lastRangeHeader = new AtomicReference<>();
     private final AtomicReference<String> lastIfRangeHeader = new AtomicReference<>();
     private final AtomicInteger count206 = new AtomicInteger();
@@ -125,6 +126,7 @@ public class HttpRangeResumeIT {
 
     private void resetCaptures() {
         jarGets.set(0);
+        rangeRequests.set(0);
         lastRangeHeader.set(null);
         lastIfRangeHeader.set(null);
         count206.set(0);
@@ -289,13 +291,13 @@ public class HttpRangeResumeIT {
     }
 
     /**
-     * With {@code deployment.http.range.resume=false} the client must never send a Range
+     * With {@code deployment.http.range.enabled=false} the client must never send a Range
      * header, so even a Range-capable server serves a plain 200 full download and the
      * truncated cache is replaced. Guards the config escape hatch end-to-end.
      */
     @Test
     void rangeDisabledDoesFullGetOnly() throws Exception {
-        writeUserDeploymentProperty("deployment.http.range.resume", "false");
+        writeUserDeploymentProperty("deployment.http.range.enabled", "false");
         mode = RangeMode.HONOR;
 
         Path marker1 = markerDir.resolve("success1.marker");
@@ -361,6 +363,35 @@ public class HttpRangeResumeIT {
         assertEquals(fullJar.length, Files.size(replaced),
                 "mismatch fallback full GET must restore full length");
         assertArrayEquals(fullJar, Files.readAllBytes(replaced));
+    }
+
+    /**
+     * With a tiny {@code deployment.http.range.maxSlotBytes} a fresh large download is split
+     * into many parallel Range chunks (probe + workers), fetched concurrently and reassembled
+     * into a byte-identical, signature-verifiable jar that then launches. Proves the multipart
+     * split path end-to-end against a real {@code javaws}.
+     */
+    @Test
+    void multipartRangeSplitsReassemblesAndLaunches() throws Exception {
+        writeUserDeploymentProperty("deployment.http.range.maxSlotBytes", "64");
+        mode = RangeMode.HONOR;
+
+        Path marker1 = markerDir.resolve("success1.marker");
+        writeJnlp(marker1);
+        LaunchResult first = launch(marker1);
+        assertTrue(first.success, "multipart launch must reassemble and succeed:\n" + first.output);
+        assertFalse(first.output.contains("ZipException"),
+                "reassembled jar must not fail signature/zip checks:\n" + first.output);
+
+        // Many Range requests (probe + ceil(len/64) - 1 chunks) prove the file was actually split.
+        assertTrue(rangeRequests.get() > 1,
+                "expected multiple parallel Range chunk requests, saw " + rangeRequests.get());
+        assertTrue(count206.get() > 1, "each chunk is served as 206");
+
+        Path cachedJar = findCachedJar(cacheHome, JAR_NAME);
+        assertNotNull(cachedJar, "reassembled jar must be cached");
+        assertEquals(fullJar.length, Files.size(cachedJar), "reassembled length must equal original");
+        assertArrayEquals(fullJar, Files.readAllBytes(cachedJar));
     }
 
     // ----- helpers -----
@@ -565,6 +596,7 @@ public class HttpRangeResumeIT {
             jarGets.incrementAndGet();
             String rangeHeader = exchange.getRequestHeaders().getFirst(Headers.RANGE);
             if (rangeHeader != null) {
+                rangeRequests.incrementAndGet();
                 lastRangeHeader.set(rangeHeader);
             }
             String ifRange = exchange.getRequestHeaders().getFirst(Headers.IF_RANGE);
@@ -600,20 +632,20 @@ public class HttpRangeResumeIT {
                     break;
             }
 
-            long start = parseRangeStart(rangeHeader, body.length);
+            long[] range = parseRange(rangeHeader, body.length);
             if (mode == RangeMode.MISMATCH) {
                 // Claim the suffix starts at 0 so it cannot line up with the requested offset.
                 count206.incrementAndGet();
                 servePartial(exchange, body, 0, body.length - 1);
                 return;
             }
-            if (start < 0 || start >= body.length) {
+            if (range == null) {
                 count416.incrementAndGet();
                 rejectRange(exchange, body.length);
                 return;
             }
             count206.incrementAndGet();
-            servePartial(exchange, body, start, body.length - 1);
+            servePartial(exchange, body, range[0], range[1]);
         }
 
         private void serveFull(HttpServerExchange exchange, byte[] body) {
@@ -667,11 +699,16 @@ public class HttpRangeResumeIT {
             }
         }
 
-        private long parseRangeStart(String rangeHeader, int length) {
+        /**
+         * Parse a single byte range into {@code [start, end]} (inclusive). Supports the bounded
+         * {@code bytes=start-end} and open-ended {@code bytes=start-} forms used by ITW. Suffix
+         * form and unsatisfiable ranges return {@code null} (caller emits 416).
+         */
+        private long[] parseRange(String rangeHeader, int length) {
             String h = rangeHeader.trim();
             int eq = h.indexOf('=');
             if (eq == -1 || !h.substring(0, eq).trim().equalsIgnoreCase("bytes")) {
-                return -1;
+                return null;
             }
             String spec = h.substring(eq + 1).trim();
             int comma = spec.indexOf(',');
@@ -680,16 +717,25 @@ public class HttpRangeResumeIT {
             }
             int dash = spec.indexOf('-');
             if (dash == -1) {
-                return -1;
+                return null;
             }
-            String start = spec.substring(0, dash).trim();
+            String s = spec.substring(0, dash).trim();
+            String e = spec.substring(dash + 1).trim();
             try {
-                if (start.isEmpty()) {
-                    return -1; // suffix form not used by ITW resume requests
+                if (s.isEmpty()) {
+                    return null; // suffix form not used by ITW resume/multipart requests
                 }
-                return Long.parseLong(start);
-            } catch (NumberFormatException e) {
-                return -1;
+                long start = Long.parseLong(s);
+                long end = e.isEmpty() ? length - 1L : Long.parseLong(e);
+                if (length <= 0 || start >= length || start > end) {
+                    return null;
+                }
+                if (end >= length) {
+                    end = length - 1L;
+                }
+                return new long[]{start, end};
+            } catch (NumberFormatException ex) {
+                return null;
             }
         }
     }
