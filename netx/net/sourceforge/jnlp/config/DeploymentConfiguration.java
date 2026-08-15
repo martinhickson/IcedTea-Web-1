@@ -289,7 +289,7 @@ public final class DeploymentConfiguration {
     public static final String KEY_HTTPCONNECTION_READ_TIMEOUT = "deployment.http.connection.readTimeout";
     /**
      * Socket {@code SO_RCVBUF} in bytes for HTTP(S) downloads. Default
-     * {@code 262144} (256 KiB) so one GET can advertise a window that covers a
+     * {@code 1048576} (1024 KiB) so one GET can advertise a window that covers a
      * high-RTT path. {@code 0} leaves the OS autotune / stack default.
      * Parallel downloads are unchanged.
      */

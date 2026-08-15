@@ -35,13 +35,14 @@ public class HttpSocketBuffersTest {
     }
 
     @Test
-    public void defaultReceiveBufferIs256KiB() {
+    public void defaultReceiveBufferIs1024KiB() {
         save();
         JNLPRuntime.getConfiguration().setProperty(
-                DeploymentConfiguration.KEY_HTTPCONNECTION_RECEIVE_BUFFER_SIZE, "262144");
+                DeploymentConfiguration.KEY_HTTPCONNECTION_RECEIVE_BUFFER_SIZE, "1048576");
         JNLPRuntime.getConfiguration().setProperty(
                 DeploymentConfiguration.KEY_HTTPCONNECTION_SEND_BUFFER_SIZE, "0");
-        assertEquals(256 * 1024, HttpSocketBuffers.receiveBufferSize());
+        assertEquals(1024 * 1024, HttpSocketBuffers.DEFAULT_RECEIVE_BUFFER);
+        assertEquals(1024 * 1024, HttpSocketBuffers.receiveBufferSize());
         assertEquals(0, HttpSocketBuffers.sendBufferSize());
     }
 
@@ -65,7 +66,7 @@ public class HttpSocketBuffersTest {
     @Test
     public void applyRaisesReceiveBuffer() throws Exception {
         save();
-        int want = 256 * 1024;
+        int want = 1024 * 1024;
         JNLPRuntime.getConfiguration().setProperty(
                 DeploymentConfiguration.KEY_HTTPCONNECTION_RECEIVE_BUFFER_SIZE, String.valueOf(want));
         try (ServerSocket server = new ServerSocket(0);

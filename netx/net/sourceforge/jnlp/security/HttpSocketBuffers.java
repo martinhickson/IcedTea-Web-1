@@ -13,7 +13,7 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  */
 public final class HttpSocketBuffers {
 
-    public static final int DEFAULT_RECEIVE_BUFFER = 256 * 1024;
+    public static final int DEFAULT_RECEIVE_BUFFER = 1024 * 1024;
 
     private HttpSocketBuffers() {
     }

@@ -434,11 +434,11 @@ public class Defaults {
                         BasicValueValidators.getRangedIntegerValidator(0, 300000),
                         String.valueOf(30000)
                 },
-                /* SO_RCVBUF (bytes). 256 KiB covers ~6.8 Mbps at 300 ms RTT. 0 = OS default. */
+                /* SO_RCVBUF (bytes). 1024 KiB covers ~27 Mbps at 300 ms RTT. 0 = OS default. */
                 {
                         DeploymentConfiguration.KEY_HTTPCONNECTION_RECEIVE_BUFFER_SIZE,
                         BasicValueValidators.getRangedIntegerValidator(0, 16 * 1024 * 1024),
-                        String.valueOf(256 * 1024)
+                        String.valueOf(1024 * 1024)
                 },
                 /* SO_SNDBUF (bytes). 0 = do not set. */
                 {
