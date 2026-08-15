@@ -287,6 +287,19 @@ public final class DeploymentConfiguration {
     public static final String KEY_UPDATE_TIMEOUT = "deployment.javaws.update.timeout";
     public static final String KEY_HTTPCONNECTION_CONNECT_TIMEOUT = "deployment.http.connection.connectTimeout";
     public static final String KEY_HTTPCONNECTION_READ_TIMEOUT = "deployment.http.connection.readTimeout";
+    /**
+     * Socket {@code SO_RCVBUF} in bytes for HTTP(S) downloads. Default
+     * {@code 262144} (256 KiB) so one GET can advertise a window that covers a
+     * high-RTT path. {@code 0} leaves the OS autotune / stack default.
+     * Parallel downloads are unchanged.
+     */
+    public static final String KEY_HTTPCONNECTION_RECEIVE_BUFFER_SIZE =
+            "deployment.http.connection.receiveBufferSize";
+    /**
+     * Socket {@code SO_SNDBUF} in bytes. {@code 0} (default) does not set it.
+     */
+    public static final String KEY_HTTPCONNECTION_SEND_BUFFER_SIZE =
+            "deployment.http.connection.sendBufferSize";
     public static final String KEY_TLS_CLIENT_CIPHER_SUITES = "deployment.tls.client.cipherSuites";
     /**
      * When {@code true}, TLS offers a short fastest-cipher probe (see

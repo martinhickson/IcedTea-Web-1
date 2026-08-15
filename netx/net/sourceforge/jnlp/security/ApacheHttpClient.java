@@ -29,6 +29,7 @@ import org.apache.hc.core5.http.ClassicHttpResponse;
 import org.apache.hc.core5.http.Header;
 import org.apache.hc.core5.http.HttpEntity;
 import org.apache.hc.core5.http.io.entity.EntityUtils;
+import org.apache.hc.core5.http.io.SocketConfig;
 import org.apache.hc.core5.http.protocol.HttpContext;
 import org.apache.hc.core5.pool.PoolStats;
 import org.apache.hc.core5.util.TimeValue;
@@ -58,6 +59,7 @@ public final class ApacheHttpClient implements ItwHttpClient {
                 ItwSslSocketFactory.shared(), null) {
             @Override
             protected void prepareSocket(SSLSocket socket, HttpContext context) throws IOException {
+                HttpSocketBuffers.apply(socket);
                 ItwSslSocketFactory.applyParameters(socket);
             }
         };
@@ -76,15 +78,26 @@ public final class ApacheHttpClient implements ItwHttpClient {
         int perRoute = downloadSlots();
         int maxTotal = Math.max(perRoute * 2, perRoute);
         System.setProperty("http.maxConnections", String.valueOf(perRoute));
+        SocketConfig.Builder socket = SocketConfig.custom();
+        int rcvBuf = HttpSocketBuffers.receiveBufferSize();
+        if (rcvBuf > 0) {
+            socket.setRcvBufSize(rcvBuf);
+        }
+        int sndBuf = HttpSocketBuffers.sendBufferSize();
+        if (sndBuf > 0) {
+            socket.setSndBufSize(sndBuf);
+        }
         PoolingHttpClientConnectionManager pool = PoolingHttpClientConnectionManagerBuilder.create()
                 .setSSLSocketFactory(sslsf)
                 .setMaxConnTotal(maxTotal)
                 .setMaxConnPerRoute(perRoute)
                 .setDefaultConnectionConfig(connectionConfig)
+                .setDefaultSocketConfig(socket.build())
                 .build();
         try {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
-                    "HTTP connection pool maxPerRoute=" + perRoute + " maxTotal=" + maxTotal);
+                    "HTTP connection pool maxPerRoute=" + perRoute + " maxTotal=" + maxTotal
+                            + " rcvBuf=" + rcvBuf + " sndBuf=" + sndBuf);
         } catch (Exception ignored) {
         }
 
