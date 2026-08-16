@@ -157,7 +157,7 @@ public class SqliteCacheCatalogTest {
                 }
                 try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
                     assertTrue(rs.next());
-                    assertEquals(2, rs.getInt(1));
+                    assertEquals(3, rs.getInt(1));
                 }
                 try (ResultSet rs = st.executeQuery(
                         "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_cache_entry_folder'")) {
