@@ -68,6 +68,21 @@ public class SqliteCacheCatalogIT {
         assertTrue(count, count.contains("count=" + (PER_WORKER * 2)));
         assertEquals("LEGACY-MARKER\n",
                 new String(java.nio.file.Files.readAllBytes(legacy.toPath()), StandardCharsets.UTF_8));
+        assertNoSplitCatalog(parentCache);
+    }
+
+    @Test(timeout = 120000)
+    public void firstCreateTwoProcessesDoNotSplitCatalog() throws Exception {
+        for (int round = 0; round < 5; round++) {
+            File parentCache = tmp.newFolder("first-create-" + round);
+            Process a = startWorker(parentCache, "insert", "1", "20");
+            Process b = startWorker(parentCache, "insert", "2", "20");
+            assertTrue(waitOk(a).contains("added=20"));
+            assertTrue(waitOk(b).contains("added=20"));
+            String count = waitOk(startWorker(parentCache, "count"));
+            assertTrue("round " + round + " " + count, count.contains("count=40"));
+            assertNoSplitCatalog(parentCache);
+        }
     }
 
     @Test(timeout = 90000)
@@ -77,7 +92,9 @@ public class SqliteCacheCatalogIT {
         long deadline = System.currentTimeMillis() + 15000L;
         boolean started = false;
         while (System.currentTimeMillis() < deadline) {
-            if (new File(parentCache, "db/cache_catalog.sqlite").isFile()) {
+            File catalog = new File(CacheLRUWrapper.sqliteCacheRoot(parentCache),
+                    SqliteCacheCatalog.DB_FILE_NAME);
+            if (catalog.isFile()) {
                 started = true;
                 break;
             }
@@ -346,6 +363,18 @@ public class SqliteCacheCatalogIT {
             }
         }
         return ids;
+    }
+
+    private static void assertNoSplitCatalog(File parentCache) {
+        File dbDir = CacheLRUWrapper.sqliteCacheRoot(parentCache);
+        File[] bad = dbDir.isDirectory()
+                ? dbDir.listFiles((d, n) -> n.contains(".corrupt-")
+                        || n.equals(SqliteCacheCatalog.FAILED_MARKER))
+                : null;
+        assertTrue("split/quarantine under " + dbDir + ": " + java.util.Arrays.toString(bad),
+                bad == null || bad.length == 0);
+        File catalog = new File(dbDir, SqliteCacheCatalog.DB_FILE_NAME);
+        assertTrue("expected single catalog at " + catalog, catalog.isFile());
     }
 
     private static boolean isWindows() {

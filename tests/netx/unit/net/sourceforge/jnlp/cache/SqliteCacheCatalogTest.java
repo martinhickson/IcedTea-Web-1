@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.List;
 import java.util.Map.Entry;
@@ -266,6 +267,42 @@ public class SqliteCacheCatalogTest {
         File[] quarantined = dbRoot.listFiles((d, n) -> n.contains(".corrupt-"));
         assertTrue("corrupt file should be quarantined", quarantined != null && quarantined.length > 0);
         assertFalse(new File(dbRoot, SqliteCacheCatalog.FAILED_MARKER).isFile());
+    }
+
+    @Test
+    public void busyOrWalDoesNotQuarantineALiveCatalog() throws Exception {
+        File dbFile = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
+        wrapper.lock();
+        try {
+            wrapper.load();
+        } finally {
+            wrapper.unlock();
+        }
+        assertTrue(SqliteCacheCatalog.looksLikeSqliteHeader(dbFile));
+        SQLException busy = new SQLException("database is locked", "HY000", 5);
+        assertFalse(SqliteCacheCatalog.shouldQuarantine(busy, dbFile));
+        File wal = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-wal");
+        assertTrue(wal.createNewFile() || wal.isFile());
+        SQLException notAdb = new SQLException("file is not a database", "HY000", 26);
+        assertFalse("live WAL must not be renamed away",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, dbFile));
+        wal.delete();
+        File garbage = new File(tmp.newFolder("garbage-db"), SqliteCacheCatalog.DB_FILE_NAME);
+        java.nio.file.Files.write(garbage.toPath(),
+                "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertTrue(SqliteCacheCatalog.shouldQuarantine(notAdb, garbage));
+        SQLException corrupt = new SQLException("database disk image is malformed", "HY000", 11);
+        assertFalse("valid header must not be renamed even if sqlite says CORRUPT",
+                SqliteCacheCatalog.shouldQuarantine(corrupt, dbFile));
+        File empty = new File(tmp.newFolder("empty-db"), SqliteCacheCatalog.DB_FILE_NAME);
+        assertTrue(empty.createNewFile());
+        assertFalse("peer may still be writing the header",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, empty));
+        assertTrue(empty.setLastModified(System.currentTimeMillis() - 60_000L));
+        assertTrue("stale 0-byte leftover can be replaced",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, empty));
+        assertTrue(SqliteCacheCatalog.isBusy(busy));
+        assertFalse(SqliteCacheCatalog.isBusy(new SQLException("UNIQUE constraint failed", "HY000", 19)));
     }
 
     @Test
