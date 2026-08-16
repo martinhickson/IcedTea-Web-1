@@ -44,9 +44,11 @@ final class SqliteCacheCatalog implements CacheCatalog {
     static final String DB_FILE_NAME = "cache_catalog.sqlite";
     /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
     static final String FAILED_MARKER = ".sqlite_catalog_failed";
-    private static final int BUSY_TIMEOUT_MS = 10_000;
-    private static final long INIT_LOCK_MS = 10_000L;
-    private static final long CLOSE_JOIN_MS = 2_000L;
+    /** One-fifth of a minute. Busy wait, first-create lock, and close all cap here. */
+    private static final int TIME_BOX_MS = 12_000;
+    private static final int BUSY_TIMEOUT_MS = TIME_BOX_MS;
+    private static final long INIT_LOCK_MS = TIME_BOX_MS;
+    private static final long CLOSE_JOIN_MS = TIME_BOX_MS;
     /** Disambiguates same-millisecond {@code lru_key} values (UNIQUE constraint). */
     private static final AtomicLong LRU_KEY_SEQ = new AtomicLong();
 
@@ -81,18 +83,17 @@ final class SqliteCacheCatalog implements CacheCatalog {
             throw new SQLException("sqlite-jdbc driver missing", e);
         }
         SQLException last = null;
+        long deadline = System.currentTimeMillis() + TIME_BOX_MS;
         for (int attempt = 0; attempt < 8; attempt++) {
             try {
                 return openAndInitGuarded(path);
             } catch (SQLException e) {
                 last = e;
                 closeQuietly();
-                if (shouldQuarantine(e, dbFile)) {
+                if (shouldQuarantine(e, dbFile) || System.currentTimeMillis() >= deadline) {
                     break;
                 }
-                if (attempt < 7) {
-                    sleepQuietly(50L * (1L << Math.min(attempt, 4)));
-                }
+                sleepQuietly(50L * (1L << Math.min(attempt, 4)));
             }
         }
         if (shouldQuarantine(last, dbFile)) {
@@ -301,7 +302,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return false;
         }
         if (!dbFile.isFile() || dbFile.length() < 16) {
-            return dbFile.isFile() && !isRecentlyModified(dbFile, 15_000L);
+            return dbFile.isFile() && !isRecentlyModified(dbFile, TIME_BOX_MS);
         }
         return true;
     }
@@ -359,12 +360,13 @@ final class SqliteCacheCatalog implements CacheCatalog {
 
     private <T> T runBusy(SqlOp<T> op) throws SQLException {
         SQLException last = null;
+        long deadline = System.currentTimeMillis() + TIME_BOX_MS;
         for (int attempt = 0; attempt < 8; attempt++) {
             try {
                 return op.run(conn());
             } catch (SQLException e) {
                 last = e;
-                if (!isBusy(e) || attempt == 7) {
+                if (!isBusy(e) || System.currentTimeMillis() >= deadline) {
                     throw e;
                 }
                 closeQuietly();
@@ -464,7 +466,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             public void run() {
                 try {
                     try (Statement st = toClose.createStatement()) {
-                        st.setQueryTimeout(2);
+                        st.setQueryTimeout(TIME_BOX_MS / 1000);
                         st.execute("PRAGMA wal_checkpoint(PASSIVE)");
                     } catch (SQLException e) {
                         OutputController.getLogger().log(e);
