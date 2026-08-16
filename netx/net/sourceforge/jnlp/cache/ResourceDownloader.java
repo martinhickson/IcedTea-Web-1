@@ -368,6 +368,9 @@ public class ResourceDownloader implements Runnable {
             // validate we can go straight to the download phase.
             if (isSkipHeadIfNotCached() && !entry.isCached()) {
                 resource.setSize(location.length != null ? location.length : -1);
+                if (location.length != null) {
+                    resource.setWireSize(location.length.longValue());
+                }
 
                 resource.fireDownloadEvent(); // fire CONNECTED
                 return;
@@ -431,6 +434,9 @@ public class ResourceDownloader implements Runnable {
             resource.setLocalFile(localFile);
             // resource.connection = connection;
             resource.setSize(size);
+            if (size != null) {
+                resource.setWireSize(size.longValue());
+            }
 
             // Never mark DOWNLOADED when the local file is missing — that is what produced
             // NoSuchFileException in JarCertVerifier with corrupt/partial cache state.
@@ -650,6 +656,9 @@ public class ResourceDownloader implements Runnable {
             long responseLength = response.getContentLength();
             if (responseLength > 0 && resource.getSize() <= 0) {
                 resource.setSize(responseLength);
+            }
+            if (responseLength > 0) {
+                resource.setWireSize(responseLength);
             }
 
             String contentEncoding = response.getContentEncoding();
@@ -1132,6 +1141,7 @@ public class ResourceDownloader implements Runnable {
         byte buf[] = new byte[COPY_BUFFER_SIZE_64KB];
         int rlen;
         long written = 0L;
+        DownloadProgress.noteWireStart();
         try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest))) {
             while (-1 != (rlen = in.read(buf))) {
                 written += rlen;
@@ -1156,6 +1166,8 @@ public class ResourceDownloader implements Runnable {
                 slot.onLastByte(System.currentTimeMillis());
             }
             in.close();
+        } finally {
+            DownloadProgress.noteWireEnd();
         }
         if (expected > 0 && written != expected) {
             throw new IOException("Download of " + dest

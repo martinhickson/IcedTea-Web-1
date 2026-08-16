@@ -94,6 +94,15 @@ public class Resource {
     /** total size of the resource, or -1 if unknown */
     private volatile long size = -1;
 
+    /**
+     * HTTP body length (HEAD/GET Content-Length). Never the unpacked jar.
+     * {@link #size} is overwritten with on-disk length after Pack200.
+     */
+    private volatile long wireSize = -1;
+
+    /** GET body bytes only. Never Pack200 output. */
+    private volatile long wireTransferred = 0;
+
     /** lock-free slot for timing/metrics/settle (set when a JarGroupState is created for the group) */
     private volatile JarSlot jarSlot;
 
@@ -257,6 +266,9 @@ public class Resource {
      */
     public void incrementTransferred(long incTrans) {
     	transferred += incTrans;
+        if (incTrans > 0L) {
+            wireTransferred += incTrans;
+        }
     }
 
     /**
@@ -273,6 +285,21 @@ public class Resource {
      */
     public void setSize(long size) {
         this.size = size;
+    }
+
+    /** HEAD/GET Content-Length. Ignored when {@code n <= 0}. */
+    public void setWireSize(long n) {
+        if (n > 0L) {
+            this.wireSize = n;
+        }
+    }
+
+    public long getWireSize() {
+        return wireSize;
+    }
+
+    public long getWireTransferred() {
+        return wireTransferred;
     }
 
     public JarSlot getJarSlot() {

@@ -369,6 +369,7 @@ public final class SizeFirstDownloadQueue {
                 long len = contentLength(response);
                 if (len > 0) {
                     resource.setSize(len);
+                    resource.setWireSize(len);
                     resource.setDownloadLocation(url);
                     HEAD_WINNER.put(resource, url);
                     ResourceUrlCreator.notePackHost(url, url.getPath() != null

@@ -73,6 +73,24 @@ public class DownloadProgressTest {
     }
 
     @Test
+    public void openGetKeepsDownloadingEvenAt99Percent() {
+        DownloadProgress p = new DownloadProgress(2);
+        p.knownTotal = 209_000_000L;
+        p.bytes.set(207_000_000L);
+        p.wireStarted = true;
+        p.wireOpen.set(3);
+        p.startUnpack(Integer.valueOf(0), "fonts.jar", 500_000L);
+        DownloadProgress.Snapshot s = p.snapshot();
+        assertEquals(99, s.percent);
+        assertTrue(s.unpack.active);
+        assertTrue(!s.unpacking, "open GETs are still Downloading");
+        p.bytes.set(209_000_000L);
+        p.wireOpen.set(0);
+        s = p.snapshot();
+        assertTrue(s.unpacking, "all GETs finished → Unpacking");
+    }
+
+    @Test
     public void unpackBarTracksOutputAndStaysAt99UntilJobEnds() {
         DownloadProgress p = new DownloadProgress(2);
         p.knownTotal = 1_000L;

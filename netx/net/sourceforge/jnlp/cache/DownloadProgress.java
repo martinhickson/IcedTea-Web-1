@@ -10,6 +10,7 @@ import java.io.OutputStream;
 import java.net.URL;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -35,8 +36,13 @@ public final class DownloadProgress {
     private static volatile boolean closeAllowed;
 
     final Slot[] slots;
+    /** GET body only. Never Pack200 output. */
     final AtomicLong bytes = new AtomicLong();
+    /** Open GET drains. Unpacking is forbidden while this is &gt; 0. */
+    final AtomicInteger wireOpen = new AtomicInteger();
+    volatile boolean wireStarted;
     volatile long startMillis;
+    /** Sum of HTTP Content-Lengths. Never unpacked jar lengths. */
     volatile long knownTotal;
     volatile String title = "";
     volatile ResourceTracker tracker;
@@ -180,6 +186,25 @@ public final class DownloadProgress {
         }
     }
 
+    /** One GET body started. Pair with {@link #noteWireEnd()}. */
+    public static void noteWireStart() {
+        DownloadProgress p = instance;
+        if (!active || p == null) {
+            return;
+        }
+        p.wireStarted = true;
+        p.wireOpen.incrementAndGet();
+    }
+
+    /** That GET body finished (Pack200 may still run). */
+    public static void noteWireEnd() {
+        DownloadProgress p = instance;
+        if (!active || p == null) {
+            return;
+        }
+        p.wireOpen.decrementAndGet();
+    }
+
     /** Called from the copy loop only when {@link #isActive()}. */
     public static void addBytes(long n) {
         DownloadProgress p = instance;
@@ -248,7 +273,7 @@ public final class DownloadProgress {
     }
 
     void startUnpack(Object key, String name, long wireBytes) {
-        if (knownTotal > 0L && bytes.get() * 100L / knownTotal >= 99L) {
+        if (wireDone()) {
             deferredUnpack = true;
         }
         long est = estimateUnpackBytes(wireBytes);
@@ -306,28 +331,62 @@ public final class DownloadProgress {
         return Math.max(wire, (long) (wire * ratio));
     }
 
+    /**
+     * Wire is done only when no GET is open and every resource has
+     * finished its HTTP body (or already settled). Queued jars with a
+     * known Content-Length and 0 wire bytes are still downloading.
+     */
+    boolean wireDone() {
+        if (wireOpen.get() > 0) {
+            return false;
+        }
+        if (tracker != null && resources != null) {
+            for (int i = 0; i < resources.length; i++) {
+                try {
+                    long ws = tracker.getWireSize(resources[i]);
+                    long wt = tracker.getWireTransferred(resources[i]);
+                    if (ws > 0L) {
+                        if (wt < ws) {
+                            return false;
+                        }
+                        continue;
+                    }
+                    if (!tracker.checkResource(resources[i])) {
+                        return false;
+                    }
+                } catch (RuntimeException ignored) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return knownTotal > 0L && bytes.get() >= knownTotal;
+    }
+
     public static void refreshKnownTotal(ResourceTracker tracker, URL[] resources) {
         DownloadProgress p = instance;
         if (!active || p == null || tracker == null || resources == null) {
             return;
         }
-        long total = 0L;
-        long read = 0L;
+        long wireTotal = 0L;
+        long wireRead = 0L;
         for (int i = 0; i < resources.length; i++) {
-            long s = tracker.getTotalSize(resources[i]);
-            if (s > 0) {
-                total += s;
+            long s = tracker.getWireSize(resources[i]);
+            if (s <= 0L) {
+                continue;
             }
-            long r = tracker.getAmountRead(resources[i]);
-            if (r > 0) {
-                read += r;
+            wireTotal += s;
+            long r = tracker.getWireTransferred(resources[i]);
+            if (r > 0L) {
+                wireRead += Math.min(r, s);
             }
         }
-        if (total > p.knownTotal) {
-            p.knownTotal = total;
+        if (wireTotal > p.knownTotal) {
+            p.knownTotal = wireTotal;
         }
-        if (read > p.bytes.get()) {
-            p.bytes.set(read);
+        // Never pull unpacked jar lengths into the wire counters.
+        if (wireRead > p.bytes.get()) {
+            p.bytes.set(wireRead);
         }
     }
 
@@ -349,9 +408,9 @@ public final class DownloadProgress {
         // Never paint 100% until wait() returns or users think it hung.
         int pct = complete ? 100 : Math.min(99, wirePct);
         UnpackSnap unpack = unpackSnapshot();
-        // Pack200 runs on the download workers. That is still Downloading.
-        // Unpacking is only the post-wire hold (99%) before launch.
-        boolean unpacking = !complete && wirePct >= 99
+        // Pack200 on a download worker is still Downloading. Unpacking is only
+        // after every GET body is finished — not when a percent hits 99.
+        boolean unpacking = !complete && wireDone()
                 && (deferredUnpack || unpack.active || unpack.queued > 0);
         String finishing = "";
         if (isAdvanced()) {
