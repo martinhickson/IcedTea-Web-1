@@ -63,6 +63,13 @@ public class ResourceDownloader implements Runnable {
         return PACK200_GZIP_ENCODING;
     }
     private static final Set<String> LOGGED_MISSING_FAVICONS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    /**
+     * Per-session memory of origins that answered a {@code Range} request with a full 200
+     * (i.e. ignored RFC 7233 Range). Once noted, the remaining downloads in the session from
+     * that origin use a plain GET — no resume suffix and no multipart probe. Scoped to the
+     * JVM, which is one launch; a fresh {@code javaws} probes again.
+     */
+    private static final Set<String> RANGE_UNSUPPORTED_HOSTS = java.util.concurrent.ConcurrentHashMap.newKeySet();
     private final Resource resource;
     /**
      * Pre-computed URL candidates (version-encoded, query-param, plain) to
@@ -213,6 +220,49 @@ public class ResourceDownloader implements Runnable {
         } catch (Exception e) {
             return 0L;
         }
+    }
+
+    /**
+     * Origin key ({@code scheme://host[:port]}) used for the per-session no-Range memory,
+     * so all downloads on the same origin share one flag.
+     */
+    static String rangeHostKey(URL url) {
+        if (url == null) {
+            return null;
+        }
+        String host = url.getHost();
+        if (host == null || host.isEmpty()) {
+            return null;
+        }
+        int port = url.getPort();
+        return url.getProtocol() + "://" + host + (port >= 0 ? ":" + port : "");
+    }
+
+    /**
+     * Whether this origin has already shown it ignores Range (answered a Range request with
+     * a full 200). When true the download skips resume and the multipart probe.
+     */
+    static boolean isRangeUnsupportedHost(URL url) {
+        String key = rangeHostKey(url);
+        return key != null && RANGE_UNSUPPORTED_HOSTS.contains(key);
+    }
+
+    /**
+     * Remember that the origin of {@code url} ignored Range. Called once per session when a
+     * Range request comes back as a full 200, so later downloads from the host stop probing.
+     */
+    static void noteRangeUnsupported(URL url) {
+        String key = rangeHostKey(url);
+        if (key == null || !RANGE_UNSUPPORTED_HOSTS.add(key)) {
+            return;
+        }
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                "Server " + key + " ignored Range (full 200) - using plain GET for this session");
+    }
+
+    /** Test seam - clears the per-session no-Range memory. */
+    static void resetRangeUnsupportedHosts() {
+        RANGE_UNSUPPORTED_HOSTS.clear();
     }
 
     /**
@@ -640,6 +690,8 @@ public class ResourceDownloader implements Runnable {
         final boolean multipartEligible = effectiveResume == 0
                 && slotSize > 0
                 && isRangeEnabled()
+                && !isRangeUnsupportedHost(rangeLoc)
+                && CacheUtil.isJarResourceUrl(rangeLoc)
                 && ("http".equalsIgnoreCase(rangeLoc.getProtocol())
                         || "https".equalsIgnoreCase(rangeLoc.getProtocol()))
                 && !rangeLoc.getPath().toLowerCase().endsWith(".pack.gz");
@@ -661,6 +713,13 @@ public class ResourceDownloader implements Runnable {
                     response = getDownloadConnection(candidate, rangeHeader, resume.ifRangeLastModified);
                     int status = response.getStatusCode();
                     long requestedStart = effectiveResume > 0 ? effectiveResume : 0L;
+                    if (rangeHeader != null && status == HttpURLConnection.HTTP_OK
+                            && CacheUtil.isJarResourceUrl(candidate)) {
+                        // The server ignored Range and sent the full 200 body: remember the origin
+                        // so the remaining downloads in this session stop sending Range (no more
+                        // probes / resume attempts from the same host).
+                        noteRangeUnsupported(candidate);
+                    }
                     if (rangeHeader != null && isRangeRejection(response, status, requestedStart)) {
                         // Server rejected the Range (416) or returned a 206 whose Content-Range
                         // does not line up with the requested offset. Applies to both a resume
@@ -814,6 +873,12 @@ public class ResourceDownloader implements Runnable {
         }
         String protocol = loc.getProtocol();
         if (!"http".equalsIgnoreCase(protocol) && !"https".equalsIgnoreCase(protocol)) {
+            return ResumeTarget.NONE;
+        }
+        if (isRangeUnsupportedHost(loc)) {
+            return ResumeTarget.NONE;
+        }
+        if (!CacheUtil.isJarResourceUrl(loc)) {
             return ResumeTarget.NONE;
         }
         CacheEntry probe = new CacheEntry(loc, resource.getDownloadVersion());

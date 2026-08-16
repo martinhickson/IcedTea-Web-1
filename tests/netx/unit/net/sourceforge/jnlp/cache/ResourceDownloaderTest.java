@@ -1000,6 +1000,59 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         }
     }
 
+    @Test
+    public void testRangeUnsupportedHostMemoryIsPerOriginAndResettable() throws Exception {
+        URL a = rangeServer.getUrl("flag-a.jar");
+        URL b = testServer.getUrl("flag-b.jar");
+        Assert.assertFalse("a fresh origin must not be flagged",
+                ResourceDownloader.isRangeUnsupportedHost(a));
+        Assert.assertFalse("a fresh unrelated origin must not be flagged",
+                ResourceDownloader.isRangeUnsupportedHost(b));
+
+        ResourceDownloader.noteRangeUnsupported(a);
+        Assert.assertTrue("noted origin must be remembered for the session",
+                ResourceDownloader.isRangeUnsupportedHost(a));
+        Assert.assertFalse("an unrelated origin must not be flagged",
+                ResourceDownloader.isRangeUnsupportedHost(b));
+
+        ResourceDownloader.resetRangeUnsupportedHosts();
+        Assert.assertFalse("reset must clear the session memory",
+                ResourceDownloader.isRangeUnsupportedHost(a));
+    }
+
+    @Test
+    public void testNotedUnsupportedHostSkipsRangeResume() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.7");
+        File remote = new File(rangeServer.getDir(), "noted-resume.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = rangeServer.getUrl("noted-resume.jar");
+        int cut = Math.max(4, full.length / 2);
+        seedPartialCache(url, full, cut);
+
+        // The server would honour Range, but this session already saw the host ignore it
+        // (a 200 in answer to a Range). The client must not attempt a resume.
+        ResourceDownloader.noteRangeUnsupported(url);
+        rangeHeaderSeen.set(null);
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            resource.setDownloadOptions(new DownloadOptions(false, false));
+            new ResourceDownloader(resource, new Object()).run();
+
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull(downloaded);
+            byte[] result = Files.readAllBytes(downloaded.toPath());
+            Assert.assertEquals("noted host: full GET must restore the full length",
+                    full.length, result.length);
+            Assert.assertArrayEquals(full, result);
+            Assert.assertNull("noted host must not send a Range resume request",
+                    rangeHeaderSeen.get());
+        } finally {
+            ResourceDownloader.resetRangeUnsupportedHosts();
+        }
+    }
+
     private static Thread runDownloaderAsync(final Resource resource, final Throwable[] err, final int slot) {
         Thread t = new Thread(() -> {
             try {
