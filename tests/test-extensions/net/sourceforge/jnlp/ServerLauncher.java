@@ -69,6 +69,9 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
     private ServerSocket serverSocket;
     private boolean supportingHeadRequest = true;
     private ServerNaming serverNaming = ServerNaming.LOCALHOST;
+    private boolean supportRangeRequests = false;
+    private java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink = null;
+    private java.util.concurrent.atomic.AtomicInteger rangeRequestCounter = null;
 
     public void setSupportingHeadRequest(boolean supportsHead) {
         this.supportingHeadRequest = supportsHead;
@@ -76,6 +79,25 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
 
     public boolean isSupportingHeadRequest() {
         return supportingHeadRequest;
+    }
+
+    /** Enable RFC 7233 Range serving on every per-connection handler. */
+    public void setSupportRangeRequests(boolean supportRangeRequests) {
+        this.supportRangeRequests = supportRangeRequests;
+    }
+
+    public boolean isSupportingRangeRequests() {
+        return supportRangeRequests;
+    }
+
+    /** Shared holder recording the last Range header seen by any handler. */
+    public void setRangeHeaderSink(java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink) {
+        this.rangeHeaderSink = rangeHeaderSink;
+    }
+
+    /** Shared counter of Range-header requests, propagated to every per-connection handler. */
+    public void setRangeRequestCounter(java.util.concurrent.atomic.AtomicInteger rangeRequestCounter) {
+        this.rangeRequestCounter = rangeRequestCounter;
     }
 
     public void setServerNaming(ServerNaming naming) {
@@ -170,6 +192,9 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
                 server.setRedirectCode(redirectCode);
                 server.setRequestsCounter(requestsCounter);
                 server.setSupportingHeadRequest(isSupportingHeadRequest());
+                server.setSupportRangeRequests(supportRangeRequests);
+                server.setRangeHeaderSink(rangeHeaderSink);
+                server.setRangeRequestCounter(rangeRequestCounter);
                 if (isNeedsAuthentication511()) {
                     server.setAuthenticator(this);
                 }

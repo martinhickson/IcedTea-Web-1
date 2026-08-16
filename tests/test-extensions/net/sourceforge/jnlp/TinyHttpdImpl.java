@@ -74,6 +74,9 @@ public class TinyHttpdImpl extends Thread {
     private boolean canRun = true;
     private boolean supportingHeadRequest = true;
     private boolean supportLastModified = false;
+    private boolean supportRangeRequests = false;
+    private java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink = null;
+    private java.util.concurrent.atomic.AtomicInteger rangeRequestCounter = null;
     private Authentication511Requester authenticationRequester;
 
     public TinyHttpdImpl(Socket socket, File dir) {
@@ -106,6 +109,36 @@ public class TinyHttpdImpl extends Thread {
 
     public boolean isSupportingLastModified() {
         return this.supportLastModified;
+    }
+
+    /**
+     * Enable HTTP Range (RFC 7233) serving: parse a {@code Range} request header and
+     * answer with 206 Partial Content (or 416 when unsatisfiable). One request per
+     * connection in this mode. Off by default so existing tests are unaffected.
+     */
+    public void setSupportRangeRequests(boolean supportRangeRequests) {
+        this.supportRangeRequests = supportRangeRequests;
+    }
+
+    public boolean isSupportingRangeRequests() {
+        return this.supportRangeRequests;
+    }
+
+    /**
+     * Shared holder that records the last seen {@code Range} request header value, so a
+     * test can assert the client actually sent a resume request. Set by ServerLauncher
+     * so it survives across per-connection instances.
+     */
+    public void setRangeHeaderSink(java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink) {
+        this.rangeHeaderSink = rangeHeaderSink;
+    }
+
+    /**
+     * Shared counter incremented once per request that carries a Range header, so a test can
+     * assert how many Range requests were issued (e.g. multipart resume skip). Optional.
+     */
+    public void setRangeRequestCounter(java.util.concurrent.atomic.AtomicInteger rangeRequestCounter) {
+        this.rangeRequestCounter = rangeRequestCounter;
     }
 
     public int getPort() {
@@ -234,6 +267,26 @@ public class TinyHttpdImpl extends Thread {
                         fis.read(buff);
                         fis.close();
 
+                        // When Range support is on, consume the request headers to find a Range:
+                        // header and answer with 206 Partial Content (RFC 7233). One request per
+                        // connection in this mode (the headers are drained here, not after serving).
+                        String rangeHeader = null;
+                        if (supportRangeRequests) {
+                            String h;
+                            while ((h = reader.readLine()) != null && h.length() > 0) {
+                                if (rangeHeader == null && h.regionMatches(true, 0, "Range:", 0, 6)) {
+                                    rangeHeader = h.substring(6).trim();
+                                }
+                            }
+                            if (rangeHeaderSink != null && rangeHeader != null) {
+                                rangeHeaderSink.set(rangeHeader);
+                            }
+                            if (rangeRequestCounter != null && rangeHeader != null) {
+                                rangeRequestCounter.incrementAndGet();
+                            }
+                        }
+                        RangeSlice slice = supportRangeRequests ? parseRange(rangeHeader, resourceLength) : null;
+
                         String contentType = "Content-Type: ";
                         if (filePath.toLowerCase().endsWith(".jnlp")) {
                             contentType += "application/x-java-jnlp-file";
@@ -246,19 +299,40 @@ public class TinyHttpdImpl extends Thread {
                         if (supportLastModified) {
                             lastModified = "Last-Modified: " + new Date(resource.lastModified()) + CRLF;
                         }
-                        writer.writeBytes(HTTP_OK + "Content-Length:" + resourceLength + CRLF + lastModified + contentType + CRLF + CRLF);
 
-                        if (isGetRequest) {
-                            if (slowSend) {
-                                byte[][] bb = splitArray(buff, 10);
-                                for (int j = 0; j < bb.length; j++) {
-                                    Thread.sleep(2000);
-                                    byte[] bs = bb[j];
-                                    writer.write(bs, 0, bs.length);
-                                }
-                            } else {
-                                writer.write(buff, 0, resourceLength);
+                        if (slice != null && slice.unsatisfiable) {
+                            writer.writeBytes("HTTP/1.0 416 Range Not Satisfiable" + CRLF);
+                            writer.writeBytes("Content-Range: bytes */" + resourceLength + CRLF);
+                            writer.writeBytes("Accept-Ranges: bytes" + CRLF + CRLF);
+                        } else if (slice != null) {
+                            writer.writeBytes("HTTP/1.0 206 Partial Content" + CRLF);
+                            writer.writeBytes("Content-Length:" + slice.length + CRLF);
+                            writer.writeBytes("Content-Range: bytes " + slice.start + "-" + slice.end
+                                    + "/" + resourceLength + CRLF);
+                            writer.writeBytes("Accept-Ranges: bytes" + CRLF + lastModified + contentType + CRLF + CRLF);
+                            if (isGetRequest) {
+                                writer.write(buff, (int) slice.start, slice.length);
                             }
+                        } else {
+                            writer.writeBytes(HTTP_OK + "Content-Length:" + resourceLength + CRLF + lastModified + contentType + CRLF + CRLF);
+
+                            if (isGetRequest) {
+                                if (slowSend) {
+                                    byte[][] bb = splitArray(buff, 10);
+                                    for (int j = 0; j < bb.length; j++) {
+                                        Thread.sleep(2000);
+                                        byte[] bs = bb[j];
+                                        writer.write(bs, 0, bs.length);
+                                    }
+                                } else {
+                                    writer.write(buff, 0, resourceLength);
+                                }
+                            }
+                        }
+
+                        if (supportRangeRequests) {
+                            // Headers were drained above; this connection carries a single request.
+                            break;
                         }
                     }
                 }
@@ -273,6 +347,75 @@ public class TinyHttpdImpl extends Thread {
             }
         } catch (Exception e) {
             ServerAccess.logException(e, false);
+        }
+    }
+
+    /**
+     * Parse a single {@code Range: bytes=start-end|start-|-suffix} request value into the
+     * slice to serve. Returns {@code null} when there is no Range header (serve full 200),
+     * a satisfiable {@link RangeSlice} for a valid range, or an {@code unsatisfiable} slice
+     * (416) when the range is malformed/out of bounds.
+     */
+    static RangeSlice parseRange(String rangeHeader, int resourceLength) {
+        if (rangeHeader == null) {
+            return null;
+        }
+        String h = rangeHeader.trim();
+        int eq = h.indexOf('=');
+        if (eq == -1 || !h.substring(0, eq).trim().equalsIgnoreCase("bytes")) {
+            return null;
+        }
+        String spec = h.substring(eq + 1).trim();
+        int comma = spec.indexOf(',');
+        if (comma != -1) {
+            spec = spec.substring(0, comma).trim();
+        }
+        int dash = spec.indexOf('-');
+        if (dash == -1) {
+            return new RangeSlice(true, 0, 0, 0); // malformed -> treat as 416
+        }
+        String s = spec.substring(0, dash).trim();
+        String e = spec.substring(dash + 1).trim();
+        try {
+            long start;
+            long end;
+            if (s.isEmpty()) {
+                if (e.isEmpty()) {
+                    return new RangeSlice(true, 0, 0, 0);
+                }
+                long suffix = Long.parseLong(e);
+                if (suffix <= 0) {
+                    return new RangeSlice(true, 0, 0, 0);
+                }
+                start = Math.max(0L, resourceLength - suffix);
+                end = resourceLength - 1L;
+            } else {
+                start = Long.parseLong(s);
+                end = e.isEmpty() ? resourceLength - 1L : Long.parseLong(e);
+            }
+            if (resourceLength <= 0 || start >= resourceLength || start > end) {
+                return new RangeSlice(true, 0, 0, 0);
+            }
+            if (end >= resourceLength) {
+                end = resourceLength - 1L;
+            }
+            return new RangeSlice(false, start, end, (int) (end - start + 1));
+        } catch (NumberFormatException ex) {
+            return new RangeSlice(true, 0, 0, 0);
+        }
+    }
+
+    static final class RangeSlice {
+        final boolean unsatisfiable;
+        final long start;
+        final long end;
+        final int length;
+
+        RangeSlice(boolean unsatisfiable, long start, long end, int length) {
+            this.unsatisfiable = unsatisfiable;
+            this.start = start;
+            this.end = end;
+            this.length = length;
         }
     }
 

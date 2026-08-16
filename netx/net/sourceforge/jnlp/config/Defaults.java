@@ -615,6 +615,16 @@ public class Defaults {
                         BasicValueValidators.getRangedIntegerValidator(1, 200),
                         String.valueOf(1)
                 },
+                {
+                        DeploymentConfiguration.KEY_HTTP_RANGE_ENABLED,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(true)
+                },
+                {
+                        DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                        BasicValueValidators.getRangedIntegerValidator(0, Integer.MAX_VALUE),
+                        String.valueOf(50 * 1024 * 1024)
+                },
                 //**************
                 //* Native (rust) only - beggin
                 //**************
