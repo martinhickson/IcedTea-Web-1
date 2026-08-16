@@ -423,9 +423,61 @@ public class HttpRangeResumeIT {
         assertArrayEquals(fullJar, Files.readAllBytes(cachedJar));
     }
 
+    /**
+     * A range-unaware server (IGNORE) answers a jar's Range probe with a full 200. The session
+     * must remember that this origin ignores Range so jars that start later in the same launch
+     * use a plain GET — the slot/size-first algorithm stays active (its initial lanes probe, the
+     * note registers on the first 200, and lane-refill jars stop sending Range). Many jars ⇒
+     * only the first few probe, not one probe per jar.
+     */
+    @Test
+    void sessionRemembersIgnoredRangeAcrossJars() throws Exception {
+        writeUserDeploymentProperty("deployment.http.range.maxSlotBytes", "64");
+        mode = RangeMode.IGNORE;
+
+        int jarCount = 5;
+        for (int i = 2; i <= jarCount; i++) {
+            Files.write(webRoot.resolve("headless-app" + i + ".jar"), fullJar);
+        }
+        String[] jars = new String[jarCount];
+        for (int i = 0; i < jarCount; i++) {
+            jars[i] = i == 0 ? JAR_NAME : "headless-app" + (i + 1) + ".jar";
+        }
+
+        Path marker = markerDir.resolve("multi.marker");
+        writeJnlp(marker, jars);
+        LaunchResult result = launch(marker);
+
+        assertTrue(result.success, "multi-jar launch must succeed via plain GETs:\n" + result.output);
+        assertEquals(jarCount, jarGets.get(), "every jar must be downloaded");
+        assertTrue(rangeRequests.get() >= 1,
+                "at least the initial lane(s) must probe Range");
+        assertTrue(rangeRequests.get() < jarGets.get(),
+                "not every jar may probe Range; the session must remember the host ignores it "
+                        + "(saw " + rangeRequests.get() + " Range requests for " + jarGets.get()
+                        + " jar GETs)");
+        assertEquals(0, count206.get(), "range-unaware server never serves 206");
+
+        for (int i = 0; i < jarCount; i++) {
+            Path cached = findCachedJar(cacheHome, jars[i]);
+            assertNotNull(cached, jars[i] + " must be cached");
+            assertEquals(fullJar.length, Files.size(cached), jars[i] + " must be whole");
+            assertArrayEquals(fullJar, Files.readAllBytes(cached));
+        }
+    }
+
     // ----- helpers -----
 
     private void writeJnlp(Path marker) throws Exception {
+        writeJnlp(marker, JAR_NAME);
+    }
+
+    private void writeJnlp(Path marker, String... jars) throws Exception {
+        StringBuilder jarsXml = new StringBuilder();
+        for (int i = 0; i < jars.length; i++) {
+            jarsXml.append("    <jar href=\"").append(jars[i]).append("\"")
+                    .append(i == 0 ? " main=\"true\"" : "").append("/>\n");
+        }
         String jnlp = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
                 + "<jnlp spec=\"1.0+\" codebase=\"http://127.0.0.1:" + httpPort + "/\" href=\"range-resume.jnlp\">\n"
                 + "  <information><title>ITW range resume</title><vendor>ITW</vendor></information>\n"
@@ -434,7 +486,7 @@ public class HttpRangeResumeIT {
                 + "    <property name=\"itw.test.success.marker\" value=\""
                 + marker.toAbsolutePath().toString().replace("\\", "/") + "\"/>\n"
                 + "    <j2se version=\"1.8+\"/>\n"
-                + "    <jar href=\"" + JAR_NAME + "\" main=\"true\"/>\n"
+                + jarsXml
                 + "  </resources>\n"
                 + "  <application-desc main-class=\"net.sourceforge.jnlp.integration.HeadlessJnlpMain\"/>\n"
                 + "</jnlp>\n";
@@ -622,7 +674,10 @@ public class HttpRangeResumeIT {
                 return;
             }
 
-            jarGets.incrementAndGet();
+            boolean isGet = "GET".equalsIgnoreCase(exchange.getRequestMethod().toString());
+            if (isGet) {
+                jarGets.incrementAndGet();
+            }
             String rangeHeader = exchange.getRequestHeaders().getFirst(Headers.RANGE);
             if (rangeHeader != null) {
                 rangeRequests.incrementAndGet();
