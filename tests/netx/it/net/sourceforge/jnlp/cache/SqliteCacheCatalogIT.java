@@ -77,7 +77,9 @@ public class SqliteCacheCatalogIT {
         long deadline = System.currentTimeMillis() + 15000L;
         boolean started = false;
         while (System.currentTimeMillis() < deadline) {
-            if (new File(parentCache, "db/cache_catalog.sqlite").isFile()) {
+            File catalog = new File(CacheLRUWrapper.sqliteCacheRoot(parentCache),
+                    SqliteCacheCatalog.DB_FILE_NAME);
+            if (catalog.isFile()) {
                 started = true;
                 break;
             }

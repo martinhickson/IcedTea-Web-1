@@ -6,7 +6,9 @@
 package net.sourceforge.jnlp.cache;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -71,13 +73,27 @@ final class SqliteCacheCatalog implements CacheCatalog {
             markFailed();
             throw new SQLException("sqlite-jdbc driver missing", e);
         }
-        try {
-            return openAndInit(path);
-        } catch (SQLException first) {
+        SQLException last = null;
+        for (int attempt = 0; attempt < 8; attempt++) {
+            try {
+                return openAndInit(path);
+            } catch (SQLException e) {
+                last = e;
+                closeQuietly();
+                if (shouldQuarantine(e, dbFile)
+                        && !looksLikeSqliteHeader(dbFile)
+                        && !new File(dbFile.getPath() + "-wal").isFile()) {
+                    break;
+                }
+                if (attempt < 7) {
+                    sleepQuietly(50L * (1L << Math.min(attempt, 4)));
+                }
+            }
+        }
+        if (shouldQuarantine(last, dbFile)) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
                     "sqlite catalog open failed, quarantining: " + dbFile);
-            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, first);
-            closeQuietly();
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, last);
             quarantineSidecars();
             try {
                 return openAndInit(path);
@@ -87,6 +103,10 @@ final class SqliteCacheCatalog implements CacheCatalog {
                 throw second;
             }
         }
+        OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
+                "sqlite catalog open failed; leaving peer catalog in place: " + dbFile);
+        OutputController.getLogger().log(OutputController.Level.ERROR_ALL, last);
+        throw last;
     }
 
     private void ensureParentAndNativeTmpdir() {
@@ -199,6 +219,55 @@ final class SqliteCacheCatalog implements CacheCatalog {
         }
         if (!present) {
             st.execute("ALTER TABLE cache_entry ADD COLUMN " + name + " " + decl);
+        }
+    }
+
+    /**
+     * Quarantine only a dead/garbage file. A valid header or a live {@code -wal}
+     * means another process (or this one) still owns the catalog — renaming it
+     * drops the peer's rows.
+     */
+    static boolean shouldQuarantine(SQLException e, File dbFile) {
+        if (e == null || dbFile == null) {
+            return false;
+        }
+        if (new File(dbFile.getPath() + "-wal").isFile()) {
+            return false;
+        }
+        int code = e.getErrorCode();
+        if (code == 5 || code == 6) {
+            return false;
+        }
+        String m = e.getMessage() == null ? "" : e.getMessage().toLowerCase(Locale.ROOT);
+        if (m.contains("busy") || m.contains("locked")) {
+            return false;
+        }
+        if (looksLikeSqliteHeader(dbFile)) {
+            return code == 11 || m.contains("malformed");
+        }
+        return true;
+    }
+
+    static boolean looksLikeSqliteHeader(File dbFile) {
+        if (dbFile == null || !dbFile.isFile() || dbFile.length() < 16) {
+            return false;
+        }
+        try (FileInputStream in = new FileInputStream(dbFile)) {
+            byte[] h = new byte[16];
+            if (in.read(h) < 16) {
+                return false;
+            }
+            return "SQLite format 3".equals(new String(h, 0, 15, StandardCharsets.US_ASCII));
+        } catch (IOException ioe) {
+            return false;
+        }
+    }
+
+    private static void sleepQuietly(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 
