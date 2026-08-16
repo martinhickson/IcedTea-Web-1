@@ -209,11 +209,13 @@ class PackUnpackAdmissionTest {
     }
 
     @Test
-    void budgetIsHeapFractionWithNoAbsoluteCap() {
+    void budgetDefaultsTo1500mibProperty() {
         admission.setBudgetOverrideBytes(null);
         long heap = Runtime.getRuntime().maxMemory();
-        long expected = Math.max(PackUnpackAdmission.MIN_BUDGET_BYTES, heap);
+        long derived = Math.max(PackUnpackAdmission.MIN_BUDGET_BYTES, heap);
+        long expected = Math.min(derived, (long) PackUnpackAdmission.DEFAULT_BUDGET_MIB << 20);
         assertEquals(expected, admission.budgetBytes());
+        assertEquals(1500, PackUnpackAdmission.DEFAULT_BUDGET_MIB);
     }
 
     @Test

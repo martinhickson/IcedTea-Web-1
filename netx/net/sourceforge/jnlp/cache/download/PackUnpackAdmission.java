@@ -20,7 +20,9 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  * Class-heavy packs use {@link #WIRE_TO_HEAP_MULTIPLIER}×. Packs at or above
  * {@link #LARGE_WIRE_MIB} (native-heavy, ~1× expand) use
  * {@link #LARGE_WIRE_MULTIPLIER}× so an ~81 MiB unpack shares the heap with
- * the two large class packs. No absolute budget ceiling.
+ * the two large class packs. Default
+ * {@code deployment.http.pack200.admission.budgetMiB} is 1500 so three
+ * medium 30× reserves cannot fit.
  */
 public final class PackUnpackAdmission {
 
@@ -34,6 +36,8 @@ public final class PackUnpackAdmission {
     /** Minimum reservation so tiny/unknown sizes still serialize somewhat. */
     static final long MIN_RESERVE_BYTES = 1L << 20; // 1 MiB
     static final long MIN_BUDGET_BYTES = 64L << 20;  // 64 MiB
+    /** Default {@code deployment.http.pack200.admission.budgetMiB}. */
+    static final int DEFAULT_BUDGET_MIB = 1500;
     /**
      * Measured peak retained / pack.gz wire on the OOM dump ≈ 30–34×.
      * 30× lets the two largest class packs share an 1800 MiB heap; 40× did not.
@@ -47,6 +51,7 @@ public final class PackUnpackAdmission {
     /** Same strings as {@code DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_*}. */
     static final String KEY_WIRE_MULTIPLIER = "deployment.http.pack200.admission.wireMultiplier";
     static final String KEY_HEAP_PERCENT = "deployment.http.pack200.admission.heapPercent";
+    static final String KEY_BUDGET_MIB = "deployment.http.pack200.admission.budgetMiB";
     static final String KEY_DEFAULT_RESERVE_MIB = "deployment.http.pack200.admission.defaultReserveMiB";
     static final String KEY_LARGE_WIRE_MIB = "deployment.http.pack200.admission.largeWireMiB";
     static final String KEY_LARGE_WIRE_MULTIPLIER = "deployment.http.pack200.admission.largeWireMultiplier";
@@ -113,7 +118,11 @@ public final class PackUnpackAdmission {
         int percent = clamp(readInt(KEY_HEAP_PERCENT, 100), 1, 100);
         long derived = maxHeap * (long) percent / 100L;
         if (derived < MIN_BUDGET_BYTES) {
-            return MIN_BUDGET_BYTES;
+            derived = MIN_BUDGET_BYTES;
+        }
+        int budgetMiB = clamp(readInt(KEY_BUDGET_MIB, DEFAULT_BUDGET_MIB), 0, 65536);
+        if (budgetMiB > 0) {
+            return Math.min(derived, (long) budgetMiB << 20);
         }
         return derived;
     }

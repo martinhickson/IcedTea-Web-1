@@ -422,10 +422,18 @@ public final class DeploymentConfiguration {
             "deployment.http.pack200.admission.wireMultiplier";
     /**
      * Integer 1–100. Pack200 admission budget as a percent of
-     * {@code Runtime.maxMemory()}. Default 100. No absolute MiB ceiling.
+     * {@code Runtime.maxMemory()}. Default 100. The result is then
+     * limited by {@link #KEY_HTTP_PACK200_ADMISSION_BUDGET_MIB}.
      */
     public static final String KEY_HTTP_PACK200_ADMISSION_HEAP_PERCENT =
             "deployment.http.pack200.admission.heapPercent";
+    /**
+     * Integer MiB. Pack200 admission budget cap. Default 1500 so two
+     * largest 30× class packs fit and a third medium pack waits.
+     * {@code 0} disables the MiB cap (heap percent only).
+     */
+    public static final String KEY_HTTP_PACK200_ADMISSION_BUDGET_MIB =
+            "deployment.http.pack200.admission.budgetMiB";
     /**
      * Integer MiB. Reserve used when pack wire size is unknown. {@code 0}
      * (default) derives {@code budget/3+1} so two unknowns fit and a third waits.
