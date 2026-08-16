@@ -613,6 +613,11 @@ public class Defaults {
                         String.valueOf(100)
                 },
                 {
+                        DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_BUDGET_MIB,
+                        BasicValueValidators.getRangedIntegerValidator(0, 65536),
+                        String.valueOf(1500)
+                },
+                {
                         DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_DEFAULT_RESERVE_MIB,
                         BasicValueValidators.getRangedIntegerValidator(0, 65536),
                         String.valueOf(0)
