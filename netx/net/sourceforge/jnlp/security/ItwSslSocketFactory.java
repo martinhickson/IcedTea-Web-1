@@ -92,10 +92,12 @@ public final class ItwSslSocketFactory extends SSLSocketFactory {
      * pass, which otherwise overwrites {@link SSLSocket#setEnabledCipherSuites}.
      */
     static void applyParameters(SSLSocket sock) {
+        HttpSocketBuffers.apply(sock);
         sock.setSSLParameters(ItwTls.parametersFor(peerHost(sock)));
     }
 
     private SSLSocket stamp(SSLSocket sock, String host) {
+        HttpSocketBuffers.apply(sock);
         sock.setSSLParameters(ItwTls.parametersFor(host != null ? host : peerHost(sock)));
         sock.addHandshakeCompletedListener(e -> {
             SSLSession s = e.getSession();
