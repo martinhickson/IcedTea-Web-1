@@ -8,6 +8,10 @@ package net.sourceforge.jnlp.cache;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
+import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -76,13 +80,11 @@ final class SqliteCacheCatalog implements CacheCatalog {
         SQLException last = null;
         for (int attempt = 0; attempt < 8; attempt++) {
             try {
-                return openAndInit(path);
+                return openAndInitGuarded(path);
             } catch (SQLException e) {
                 last = e;
                 closeQuietly();
-                if (shouldQuarantine(e, dbFile)
-                        && !looksLikeSqliteHeader(dbFile)
-                        && !new File(dbFile.getPath() + "-wal").isFile()) {
+                if (shouldQuarantine(e, dbFile)) {
                     break;
                 }
                 if (attempt < 7) {
@@ -96,7 +98,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, last);
             quarantineSidecars();
             try {
-                return openAndInit(path);
+                return openAndInitGuarded(path);
             } catch (SQLException second) {
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL, second);
                 markFailed();
@@ -124,6 +126,42 @@ final class SqliteCacheCatalog implements CacheCatalog {
                     System.setProperty("org.sqlite.tmpdir", nativeDir.getAbsolutePath());
                 }
             }
+        }
+    }
+
+    /**
+     * First create is serialized across processes so a 0-byte file is not
+     * mistaken for garbage while a peer writes the SQLite header.
+     */
+    private Connection openAndInitGuarded(String path) throws SQLException {
+        if (dbFile.isFile() && dbFile.length() >= 16) {
+            return openAndInit(path);
+        }
+        File lockFile = new File(dbFile.getPath() + ".initlock");
+        File parent = lockFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        try (RandomAccessFile raf = new RandomAccessFile(lockFile, "rw");
+             FileChannel ch = raf.getChannel()) {
+            FileLock lock = null;
+            try {
+                lock = ch.lock();
+                return openAndInit(path);
+            } catch (OverlappingFileLockException overlap) {
+                return openAndInit(path);
+            } finally {
+                if (lock != null) {
+                    try {
+                        lock.release();
+                    } catch (IOException ignored) {
+                        // process is leaving the init section
+                    }
+                }
+            }
+        } catch (IOException ioe) {
+            OutputController.getLogger().log(ioe);
+            return openAndInit(path);
         }
     }
 
@@ -223,9 +261,9 @@ final class SqliteCacheCatalog implements CacheCatalog {
     }
 
     /**
-     * Quarantine only a dead/garbage file. A valid header or a live {@code -wal}
-     * means another process (or this one) still owns the catalog — renaming it
-     * drops the peer's rows.
+     * Quarantine only stable garbage. Never rename a real catalog (valid header),
+     * a live {@code -wal}, a busy/locked peer, or a brand-new empty file that
+     * another process is still initializing.
      */
     static boolean shouldQuarantine(SQLException e, File dbFile) {
         if (e == null || dbFile == null) {
@@ -243,9 +281,20 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return false;
         }
         if (looksLikeSqliteHeader(dbFile)) {
-            return code == 11 || m.contains("malformed");
+            return false;
+        }
+        if (!dbFile.isFile() || dbFile.length() < 16) {
+            return dbFile.isFile() && !isRecentlyModified(dbFile, 15_000L);
         }
         return true;
+    }
+
+    static boolean isRecentlyModified(File dbFile, long maxAgeMs) {
+        if (dbFile == null || !dbFile.isFile()) {
+            return false;
+        }
+        long age = System.currentTimeMillis() - dbFile.lastModified();
+        return age >= 0 && age < maxAgeMs;
     }
 
     static boolean looksLikeSqliteHeader(File dbFile) {

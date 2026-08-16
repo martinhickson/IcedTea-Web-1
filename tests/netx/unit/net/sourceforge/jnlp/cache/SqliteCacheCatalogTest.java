@@ -291,6 +291,16 @@ public class SqliteCacheCatalogTest {
         java.nio.file.Files.write(garbage.toPath(),
                 "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         assertTrue(SqliteCacheCatalog.shouldQuarantine(notAdb, garbage));
+        SQLException corrupt = new SQLException("database disk image is malformed", "HY000", 11);
+        assertFalse("valid header must not be renamed even if sqlite says CORRUPT",
+                SqliteCacheCatalog.shouldQuarantine(corrupt, dbFile));
+        File empty = new File(tmp.newFolder("empty-db"), SqliteCacheCatalog.DB_FILE_NAME);
+        assertTrue(empty.createNewFile());
+        assertFalse("peer may still be writing the header",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, empty));
+        assertTrue(empty.setLastModified(System.currentTimeMillis() - 60_000L));
+        assertTrue("stale 0-byte leftover can be replaced",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, empty));
     }
 
     @Test
