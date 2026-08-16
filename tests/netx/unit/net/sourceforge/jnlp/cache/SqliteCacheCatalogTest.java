@@ -301,6 +301,8 @@ public class SqliteCacheCatalogTest {
         assertTrue(empty.setLastModified(System.currentTimeMillis() - 60_000L));
         assertTrue("stale 0-byte leftover can be replaced",
                 SqliteCacheCatalog.shouldQuarantine(notAdb, empty));
+        assertTrue(SqliteCacheCatalog.isBusy(busy));
+        assertFalse(SqliteCacheCatalog.isBusy(new SQLException("UNIQUE constraint failed", "HY000", 19)));
     }
 
     @Test
