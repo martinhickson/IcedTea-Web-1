@@ -45,6 +45,8 @@ final class SqliteCacheCatalog implements CacheCatalog {
     /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
     static final String FAILED_MARKER = ".sqlite_catalog_failed";
     private static final int BUSY_TIMEOUT_MS = 10_000;
+    private static final long INIT_LOCK_MS = 10_000L;
+    private static final long CLOSE_JOIN_MS = 2_000L;
     /** Disambiguates same-millisecond {@code lru_key} values (UNIQUE constraint). */
     private static final AtomicLong LRU_KEY_SEQ = new AtomicLong();
 
@@ -147,7 +149,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
              FileChannel ch = raf.getChannel()) {
             FileLock lock = null;
             try {
-                lock = ch.lock();
+                lock = tryLockFor(ch, INIT_LOCK_MS);
                 return openAndInit(path);
             } catch (OverlappingFileLockException overlap) {
                 return openAndInit(path);
@@ -163,6 +165,20 @@ final class SqliteCacheCatalog implements CacheCatalog {
         } catch (IOException ioe) {
             OutputController.getLogger().log(ioe);
             return openAndInit(path);
+        }
+    }
+
+    private static FileLock tryLockFor(FileChannel ch, long maxWaitMs) throws IOException {
+        long deadline = System.currentTimeMillis() + maxWaitMs;
+        while (true) {
+            FileLock lock = ch.tryLock();
+            if (lock != null) {
+                return lock;
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                return null;
+            }
+            sleepQuietly(50);
         }
     }
 
@@ -437,23 +453,34 @@ final class SqliteCacheCatalog implements CacheCatalog {
     }
 
     private void closeQuietly() {
-        if (connection != null) {
-            try {
-                try (Statement st = connection.createStatement()) {
-                    // PASSIVE never waits for other connections. TRUNCATE/FULL deadlock
-                    // dual-JVM shutdown: close() blocks until the other process disconnects.
-                    // sqlite3_close of the last connection still checkpoints WAL.
-                    st.setQueryTimeout(2);
-                    st.execute("PRAGMA wal_checkpoint(PASSIVE)");
+        final Connection toClose = connection;
+        connection = null;
+        openPath = null;
+        if (toClose == null) {
+            return;
+        }
+        Thread closer = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    try (Statement st = toClose.createStatement()) {
+                        st.setQueryTimeout(2);
+                        st.execute("PRAGMA wal_checkpoint(PASSIVE)");
+                    } catch (SQLException e) {
+                        OutputController.getLogger().log(e);
+                    }
+                    toClose.close();
                 } catch (SQLException e) {
                     OutputController.getLogger().log(e);
                 }
-                connection.close();
-            } catch (SQLException e) {
-                OutputController.getLogger().log(e);
             }
-            connection = null;
-            openPath = null;
+        }, "sqlite-catalog-close");
+        closer.setDaemon(true);
+        closer.start();
+        try {
+            closer.join(CLOSE_JOIN_MS);
+        } catch (InterruptedException ie) {
+            Thread.currentThread().interrupt();
         }
     }
 
@@ -482,7 +509,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
     @Override
     public boolean load() {
         try {
-            conn();
+            runBusy(c -> Boolean.FALSE);
             return false;
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
@@ -625,23 +652,27 @@ final class SqliteCacheCatalog implements CacheCatalog {
 
     @Override
     public List<Entry<String, String>> findEntriesByUrlPath(String urlPath, String cacheDirPath) {
-        List<Entry<String, String>> entries = new ArrayList<>();
         long t0 = System.nanoTime();
+        List<Entry<String, String>> entries;
         try {
-            Connection c = conn();
-            try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT lru_key, path FROM cache_entry WHERE resource_url = ? "
-                            + "AND state IN ('reserved','ready') ORDER BY last_access DESC")) {
-                ps.setString(1, urlPath);
-                try (ResultSet rs = ps.executeQuery()) {
-                    while (rs.next()) {
-                        entries.add(new AbstractMap.SimpleImmutableEntry<>(
-                                rs.getString(1), rs.getString(2)));
+            entries = runBusy(c -> {
+                List<Entry<String, String>> found = new ArrayList<>();
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT lru_key, path FROM cache_entry WHERE resource_url = ? "
+                                + "AND state IN ('reserved','ready') ORDER BY last_access DESC")) {
+                    ps.setString(1, urlPath);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        while (rs.next()) {
+                            found.add(new AbstractMap.SimpleImmutableEntry<>(
+                                    rs.getString(1), rs.getString(2)));
+                        }
                     }
                 }
-            }
+                return found;
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            entries = new ArrayList<>();
         }
         long us = (System.nanoTime() - t0) / 1000L;
         OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
@@ -652,20 +683,19 @@ final class SqliteCacheCatalog implements CacheCatalog {
     @Override
     public String getValue(String key) {
         try {
-            Connection c = conn();
-            try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT path FROM cache_entry WHERE lru_key = ?")) {
-                ps.setString(1, key);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (rs.next()) {
-                        return rs.getString(1);
+            return runBusy(c -> {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT path FROM cache_entry WHERE lru_key = ?")) {
+                    ps.setString(1, key);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        return rs.next() ? rs.getString(1) : null;
                     }
                 }
-            }
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return null;
         }
-        return null;
     }
 
     @Override
@@ -676,14 +706,15 @@ final class SqliteCacheCatalog implements CacheCatalog {
     @Override
     public boolean containsValue(String value) {
         try {
-            Connection c = conn();
-            try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT 1 FROM cache_entry WHERE path = ?")) {
-                ps.setString(1, value);
-                try (ResultSet rs = ps.executeQuery()) {
-                    return rs.next();
+            return runBusy(c -> {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT 1 FROM cache_entry WHERE path = ?")) {
+                    ps.setString(1, value);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        return rs.next();
+                    }
                 }
-            }
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
             return false;
@@ -720,13 +751,12 @@ final class SqliteCacheCatalog implements CacheCatalog {
     public int nextFolderId(File cacheDir) {
         int candidate = 0;
         try {
-            Connection c = conn();
-            try (Statement st = c.createStatement();
-                 ResultSet rs = st.executeQuery("SELECT COALESCE(MAX(folder_id), -1) FROM cache_entry")) {
-                if (rs.next()) {
-                    candidate = rs.getInt(1) + 1;
+            candidate = runBusy(c -> {
+                try (Statement st = c.createStatement();
+                     ResultSet rs = st.executeQuery("SELECT COALESCE(MAX(folder_id), -1) FROM cache_entry")) {
+                    return rs.next() ? rs.getInt(1) + 1 : 0;
                 }
-            }
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
             candidate = 0;
@@ -740,18 +770,16 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return null;
         }
         try {
-            Connection c = conn();
-            try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT path, resource_url, jnlp_path, content_length, last_modified, "
-                            + "last_updated, marked_delete FROM cache_entry WHERE path = ?")) {
-                ps.setString(1, path);
-                try (ResultSet rs = ps.executeQuery()) {
-                    if (!rs.next()) {
-                        return null;
+            return runBusy(c -> {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT path, resource_url, jnlp_path, content_length, last_modified, "
+                                + "last_updated, marked_delete FROM cache_entry WHERE path = ?")) {
+                    ps.setString(1, path);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        return rs.next() ? rowToMeta(rs) : null;
                     }
-                    return rowToMeta(rs);
                 }
-            }
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
             return null;
@@ -822,12 +850,14 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return;
         }
         try {
-            Connection c = conn();
-            ensureRunningAppTable(c);
-            try (PreparedStatement ps = c.prepareStatement("DELETE FROM running_app WHERE pid = ?")) {
-                ps.setInt(1, pid);
-                ps.executeUpdate();
-            }
+            runBusy(c -> {
+                ensureRunningAppTable(c);
+                try (PreparedStatement ps = c.prepareStatement("DELETE FROM running_app WHERE pid = ?")) {
+                    ps.setInt(1, pid);
+                    ps.executeUpdate();
+                }
+                return Boolean.TRUE;
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(e);
         }
@@ -835,40 +865,44 @@ final class SqliteCacheCatalog implements CacheCatalog {
 
     @Override
     public List<CacheRunningApp> listRunningApps() {
-        List<CacheRunningApp> rows = new ArrayList<CacheRunningApp>();
         try {
-            Connection c = conn();
-            ensureRunningAppTable(c);
-            try (Statement st = c.createStatement();
-                    ResultSet rs = st.executeQuery(
-                            "SELECT pid, jnlp_path, process_start FROM running_app")) {
-                while (rs.next()) {
-                    rows.add(new CacheRunningApp(rs.getInt(1), rs.getString(2), rs.getString(3)));
+            return runBusy(c -> {
+                ensureRunningAppTable(c);
+                List<CacheRunningApp> rows = new ArrayList<CacheRunningApp>();
+                try (Statement st = c.createStatement();
+                        ResultSet rs = st.executeQuery(
+                                "SELECT pid, jnlp_path, process_start FROM running_app")) {
+                    while (rs.next()) {
+                        rows.add(new CacheRunningApp(rs.getInt(1), rs.getString(2), rs.getString(3)));
+                    }
                 }
-            }
+                return rows;
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(e);
+            return new ArrayList<CacheRunningApp>();
         }
-        return rows;
     }
 
     @Override
     public List<CacheEntryMeta> listAllMeta() {
-        List<CacheEntryMeta> rows = new ArrayList<>();
         try {
-            Connection c = conn();
-            try (Statement st = c.createStatement();
-                 ResultSet rs = st.executeQuery(
-                         "SELECT path, resource_url, jnlp_path, content_length, last_modified, "
-                                 + "last_updated, marked_delete FROM cache_entry")) {
-                while (rs.next()) {
-                    rows.add(rowToMeta(rs));
+            return runBusy(c -> {
+                List<CacheEntryMeta> rows = new ArrayList<>();
+                try (Statement st = c.createStatement();
+                     ResultSet rs = st.executeQuery(
+                             "SELECT path, resource_url, jnlp_path, content_length, last_modified, "
+                                     + "last_updated, marked_delete FROM cache_entry")) {
+                    while (rs.next()) {
+                        rows.add(rowToMeta(rs));
+                    }
                 }
-            }
+                return rows;
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return new ArrayList<>();
         }
-        return rows;
     }
 
     private static CacheEntryMeta rowToMeta(ResultSet rs) throws SQLException {
@@ -1003,14 +1037,15 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return null;
         }
         try {
-            Connection c = conn();
-            try (PreparedStatement ps = c.prepareStatement(
-                    "SELECT extract_path FROM native_lib WHERE lib_name = ? ORDER BY rowid DESC LIMIT 1")) {
-                ps.setString(1, libName);
-                try (ResultSet rs = ps.executeQuery()) {
-                    return rs.next() ? rs.getString(1) : null;
+            return runBusy(c -> {
+                try (PreparedStatement ps = c.prepareStatement(
+                        "SELECT extract_path FROM native_lib WHERE lib_name = ? ORDER BY rowid DESC LIMIT 1")) {
+                    ps.setString(1, libName);
+                    try (ResultSet rs = ps.executeQuery()) {
+                        return rs.next() ? rs.getString(1) : null;
+                    }
                 }
-            }
+            });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, e);
             return null;
