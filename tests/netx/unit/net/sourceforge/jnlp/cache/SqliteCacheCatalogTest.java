@@ -246,6 +246,8 @@ public class SqliteCacheCatalogTest {
                 "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-wal").delete();
         new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-shm").delete();
+        // Stable garbage only: a just-written file may be a peer still heading the DB.
+        assertTrue(dbFile.setLastModified(System.currentTimeMillis() - 60_000L));
 
         CacheLRUWrapper recovered = CacheLRUWrapper.createForTests(true, parentCache);
         try {
@@ -294,7 +296,13 @@ public class SqliteCacheCatalogTest {
         File garbage = new File(tmp.newFolder("garbage-db"), SqliteCacheCatalog.DB_FILE_NAME);
         java.nio.file.Files.write(garbage.toPath(),
                 "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
-        assertTrue(SqliteCacheCatalog.shouldQuarantine(notAdb, garbage));
+        assertFalse("fresh invalid bytes may be a peer still writing the header",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, garbage));
+        assertTrue(garbage.setLastModified(System.currentTimeMillis() - 60_000L));
+        assertTrue("stale invalid bytes can be quarantined",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, garbage));
+        assertTrue(SqliteCacheCatalog.peerCatalogLooksLive(dbFile));
+        assertFalse(SqliteCacheCatalog.peerCatalogLooksLive(garbage));
         SQLException corrupt = new SQLException("database disk image is malformed", "HY000", 11);
         assertFalse("valid header must not be renamed even if sqlite says CORRUPT",
                 SqliteCacheCatalog.shouldQuarantine(corrupt, dbFile));
