@@ -429,4 +429,28 @@ public class UrlUtilsTest {
 	Assert.assertTrue(UrlUtils.urlRelativeTo(new URL("http://a/b/d/c.jar"), new URL("http://a/b")));
 	Assert.assertFalse(UrlUtils.urlRelativeTo(new URL("http://a/b/c.jar"), new URL("https://a/")));
     }
+
+    @Test
+    public void urlKeyIsExternalFormAndNotUrlHashCode() throws MalformedURLException {
+        URL u = new URL("https://example.test:8443/app/a.jar");
+        Assert.assertEquals(u.toExternalForm(), UrlUtils.urlKey(u));
+        Assert.assertNull(UrlUtils.urlKey(null));
+        java.util.Map<String, Integer> map = new java.util.HashMap<String, Integer>();
+        map.put(UrlUtils.urlKey(u), 1);
+        Assert.assertEquals(Integer.valueOf(1), map.get(UrlUtils.urlKey(new URL(u.toExternalForm()))));
+    }
+
+    @Test
+    public void loopbackHostIsLexical() {
+        Assert.assertTrue(UrlUtils.isLoopbackHost("localhost"));
+        Assert.assertTrue(UrlUtils.isLoopbackHost("LOCALHOST"));
+        Assert.assertTrue(UrlUtils.isLoopbackHost("127.0.0.1"));
+        Assert.assertTrue(UrlUtils.isLoopbackHost("127.1.2.3"));
+        Assert.assertTrue(UrlUtils.isLoopbackHost("::1"));
+        Assert.assertTrue(UrlUtils.isLoopbackHost("[::1]"));
+        Assert.assertTrue(UrlUtils.isLocalHostName("127.0.0.1"));
+        Assert.assertFalse(UrlUtils.isLoopbackHost("example.test"));
+        Assert.assertFalse(UrlUtils.isLoopbackHost("192.0.2.10"));
+        Assert.assertFalse(UrlUtils.isLocalHostName("app.example.test"));
+    }
 }

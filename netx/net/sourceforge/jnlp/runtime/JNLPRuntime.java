@@ -31,10 +31,8 @@ import java.net.Authenticator;
 import java.net.CookieHandler;
 import java.net.CookieManager;
 import java.net.CookiePolicy;
-import java.net.InetAddress;
 import java.net.ProxySelector;
 import java.net.URL;
-import java.net.UnknownHostException;
 import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.security.AllPermission;
@@ -527,18 +525,14 @@ public class JNLPRuntime {
     }
 
     public static boolean isConnectable(URL location) {
+        if (location == null) {
+            return false;
+        }
         if (location.getProtocol().equals("file")) {
             return true;
         }
-
-        try {
-            InetAddress.getByName(location.getHost());
-        } catch (UnknownHostException e) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, "The host of " + location.toExternalForm() + " file seems down, or you are simply offline.");
-            return false;
-        }
-
-        return true;
+        String host = location.getHost();
+        return host != null && !host.isEmpty();
     }
    
     /**

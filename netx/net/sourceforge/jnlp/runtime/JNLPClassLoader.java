@@ -244,11 +244,11 @@ public class JNLPClassLoader extends URLClassLoader {
      * classloading threads. See loadClass(String) and
      * CodebaseClassLoader.findClassNonRecursive(String).
      */
-    private final Map<URL, SecurityDesc> jarLocationSecurityMap
-            = Collections.synchronizedMap(new HashMap<URL, SecurityDesc>());
+    private final Map<String, SecurityDesc> jarLocationSecurityMap
+            = Collections.synchronizedMap(new HashMap<String, SecurityDesc>());
 
     /*Set to prevent once tried-to-get resources to be tried again*/
-    private final Set<URL> alreadyTried = Collections.synchronizedSet(new HashSet<URL>());
+    private final Set<String> alreadyTried = Collections.synchronizedSet(new HashSet<String>());
 
     /**
      * Loader for codebase (which is a path, rather than a file)
@@ -857,7 +857,7 @@ public class JNLPClassLoader extends URLClassLoader {
         for (JARDesc jarDesc : validJars) {
             final URL codebase = getJnlpFileCodebase();
             final SecurityDesc jarSecurity = securityDelegate.getCodebaseSecurityDesc(jarDesc, codebase);
-            jarLocationSecurityMap.put(jarDesc.getLocation(), jarSecurity);
+            jarLocationSecurityMap.put(UrlUtils.urlKey(jarDesc.getLocation()), jarSecurity);
         }
 
         JdkSigningRequirementPolicy.enforceSignedApplicationIfRequired(file, signing, jcv);
@@ -1450,7 +1450,7 @@ public class JNLPClassLoader extends URLClassLoader {
             URL fakeRemote = new URL(jar.getLocation().toString() + "!" + innerName);
             CachedJarFileCallback.getInstance().addMapping(fakeRemote, fileURL);
             addURL(fakeRemote);
-            jarLocationSecurityMap.put(fakeRemote, jarSecurity);
+            jarLocationSecurityMap.put(UrlUtils.urlKey(fakeRemote), jarSecurity);
         } catch (MalformedURLException mfue) {
             OutputController.getLogger().log(OutputController.Level.WARNING_DEBUG, "Unable to add extracted nested jar to classpath");
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, mfue);
@@ -1734,7 +1734,7 @@ public class JNLPClassLoader extends URLClassLoader {
 
                     final SecurityDesc security = securityDelegate.getJarPermissions(file.getCodeBase());
 
-                    jarLocationSecurityMap.put(remoteURL, security);
+                    jarLocationSecurityMap.put(UrlUtils.urlKey(remoteURL), security);
 
                     return null;
                 }
@@ -2100,16 +2100,17 @@ public class JNLPClassLoader extends URLClassLoader {
      * @return The SecurityDescriptor for that source
      */
     protected SecurityDesc getCodeSourceSecurity(URL source) {
-        SecurityDesc sec = jarLocationSecurityMap.get(source);
+        String sourceKey = UrlUtils.urlKey(source);
+        SecurityDesc sec = jarLocationSecurityMap.get(sourceKey);
         synchronized (alreadyTried) {
-            if (sec == null && !alreadyTried.contains(source)) {
-                alreadyTried.add(source);
+            if (sec == null && !alreadyTried.contains(sourceKey)) {
+                alreadyTried.add(sourceKey);
                 //try to load the jar which is requesting the permissions, but was NOT downloaded by standard way
                 OutputController.getLogger().log("Application is trying to get permissions for " + source.toString() + ", which was not added by standard way. Trying to download and verify!");
                 try {
                     JARDesc des = new JARDesc(source, null, null, false, false, false, false);
                     addNewJar(des);
-                    sec = jarLocationSecurityMap.get(source);
+                    sec = jarLocationSecurityMap.get(sourceKey);
                 } catch (Throwable t) {
                     OutputController.getLogger().log(t);
                     sec = null;
@@ -2148,7 +2149,7 @@ public class JNLPClassLoader extends URLClassLoader {
         }
         // security descriptors
         synchronized (jarLocationSecurityMap) {
-            for (URL key : extLoader.jarLocationSecurityMap.keySet()) {
+            for (String key : extLoader.jarLocationSecurityMap.keySet()) {
                 jarLocationSecurityMap.put(key, extLoader.jarLocationSecurityMap.get(key));
             }
         }
@@ -2386,9 +2387,13 @@ public class JNLPClassLoader extends URLClassLoader {
 
         // Permissions for all remote hosting urls
         synchronized (jarLocationSecurityMap) {
-            for (URL u : jarLocationSecurityMap.keySet()) {
-                permissions.add(new SocketPermission(UrlUtils.getHostAndPort(u),
-                        "connect, accept"));
+            for (String key : jarLocationSecurityMap.keySet()) {
+                try {
+                    permissions.add(new SocketPermission(UrlUtils.getHostAndPort(new URL(key)),
+                            "connect, accept"));
+                } catch (MalformedURLException ignored) {
+                    // key is toExternalForm of a URL we already stored
+                }
             }
         }
 

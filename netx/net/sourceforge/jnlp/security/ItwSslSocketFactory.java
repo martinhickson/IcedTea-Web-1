@@ -76,14 +76,14 @@ public final class ItwSslSocketFactory extends SSLSocketFactory {
 
     @Override
     public Socket createSocket(InetAddress host, int port) throws IOException {
-        String name = host != null ? host.getHostName() : null;
+        String name = host != null ? host.getHostAddress() : null;
         return stamp((SSLSocket) delegate().createSocket(host, port), name);
     }
 
     @Override
     public Socket createSocket(InetAddress address, int port, InetAddress localAddress, int localPort)
             throws IOException {
-        String name = address != null ? address.getHostName() : null;
+        String name = address != null ? address.getHostAddress() : null;
         return stamp((SSLSocket) delegate().createSocket(address, port, localAddress, localPort), name);
     }
 
@@ -124,6 +124,6 @@ public final class ItwSslSocketFactory extends SSLSocketFactory {
             }
         }
         InetAddress addr = sock.getInetAddress();
-        return addr != null ? addr.getHostName() : null;
+        return addr != null ? addr.getHostAddress() : null;
     }
 }

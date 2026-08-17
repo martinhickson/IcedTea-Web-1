@@ -71,23 +71,23 @@ final class CachedJarFileCallback {
         return INSTANCE;
     }
 
-    private final Map<URL, URL> mapping = new ConcurrentHashMap<>();
+    private final Map<String, URL> mapping = new ConcurrentHashMap<>();
 
     private CachedJarFileCallback() {
     }
 
     void addMapping(URL remoteUrl, URL localUrl) {
-        mapping.put(remoteUrl, localUrl);
+        mapping.put(UrlUtils.urlKey(remoteUrl), localUrl);
     }
 
     /**
      * Return a cached/open JarFile for the given jar URL, downloading through ITW if needed.
      */
     public JarFile retrieve(URL url) throws IOException {
-        URL localUrl = mapping.get(url);
+        URL localUrl = mapping.get(UrlUtils.urlKey(url));
         if (localUrl == null && url.getRef() != null) {
             url = new URL(url.toString().substring(0, url.toString().lastIndexOf(url.getRef()) - 1));
-            localUrl = mapping.get(url);
+            localUrl = mapping.get(UrlUtils.urlKey(url));
         }
 
         if (localUrl == null) {
@@ -118,7 +118,7 @@ final class CachedJarFileCallback {
                                 tempBaseDir.mkdirs();
                             }
                             tmpFile = new File(tempBaseDir,
-                                    "jar_cache_" + System.currentTimeMillis() + "_" + url.hashCode() + ".jar");
+                                    "jar_cache_" + System.currentTimeMillis() + "_" + UrlUtils.urlKey(url).hashCode() + ".jar");
 
                             out = new FileOutputStream(tmpFile);
                             byte[] buf = new byte[bufSize];

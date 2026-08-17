@@ -544,7 +544,8 @@ public class Resource {
         // #equals(Object) was already defined first (without also overriding hashcode!),
         // this is just being implemented in line with that so we don't break HashMaps,
         // HashSets, etc
-        return location.hashCode();
+        String key = UrlUtils.urlKey(location);
+        return key == null ? 0 : key.hashCode();
     }
 
     @Override

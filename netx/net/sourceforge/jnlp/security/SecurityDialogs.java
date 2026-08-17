@@ -43,7 +43,7 @@ import java.net.NetPermission;
 import java.net.URL;
 import java.security.AccessController;
 import java.security.PrivilegedAction;
-import java.util.Set;
+import java.util.Collection;
 import java.util.concurrent.Semaphore;
 
 import javax.swing.JDialog;
@@ -239,7 +239,7 @@ public class SecurityDialogs {
         return (NamePassword) response;
     }
 
-    public static boolean showMissingALACAttributePanel(JNLPFile file, URL codeBase, Set<URL> remoteUrls) {
+    public static boolean showMissingALACAttributePanel(JNLPFile file, URL codeBase, Collection<URL> remoteUrls) {
 
         SecurityDialogMessage message = new SecurityDialogMessage(file);
         message.dialogType = DialogType.MISSING_ALACA;
@@ -260,7 +260,7 @@ public class SecurityDialogs {
         return selectedValue.toBoolean();
     }
 
-    public static boolean showMatchingALACAttributePanel(JNLPFile file, URL documentBase, Set<URL> remoteUrls) {
+    public static boolean showMatchingALACAttributePanel(JNLPFile file, URL documentBase, Collection<URL> remoteUrls) {
 
         SecurityDialogMessage message = new SecurityDialogMessage(file);
         message.dialogType = DialogType.MATCHING_ALACA;
