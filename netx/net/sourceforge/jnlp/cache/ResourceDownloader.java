@@ -315,11 +315,18 @@ public class ResourceDownloader implements Runnable {
 
     private void initializeOnlineResource() {
         try {
-            URL headWinner = SizeFirstDownloadQueue.headWinner(resource);
-            if (headWinner != null) {
-                downloadUrlCandidates = Collections.singletonList(headWinner);
-                resource.setDownloadLocation(headWinner);
-                resource.fireDownloadEvent(); // fire CONNECTED
+            SizeFirstDownloadQueue.HeadMeta head = SizeFirstDownloadQueue.headMeta(resource);
+            if (head != null && head.url != null) {
+                downloadUrlCandidates = Collections.singletonList(head.url);
+                resource.setDownloadLocation(head.url);
+                if (trySettleFromHead(head)) {
+                    return;
+                }
+                if (head.contentLength > 0L) {
+                    resource.setSize(head.contentLength);
+                    resource.setWireSize(head.contentLength);
+                }
+                resource.fireDownloadEvent(); // fire CONNECTED — GET next
                 return;
             }
             // When skipHeadIfNotCached is enabled (default) and the resource is
@@ -449,7 +456,10 @@ public class ResourceDownloader implements Runnable {
 
             // update cache entry
             if (!current) {
-                entry.setRemoteContentLength(size);
+                if (size != null) {
+                    entry.setRemoteContentLength(size);
+                    entry.setRemoteWireLength(size);
+                }
                 entry.setLastModified(lm);
             }
             entry.setLastUpdated(System.currentTimeMillis());
@@ -817,7 +827,8 @@ public class ResourceDownloader implements Runnable {
 
         uncompressPackGz(downloadFrom, downloadTo, resource.getDownloadVersion());
         CacheEntry entry = new CacheEntry(downloadFrom, resource.getDownloadVersion());
-        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified());
+        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified(),
+                response.getContentLength());
         markForDelete(downloadFrom);
     }
 
@@ -827,7 +838,8 @@ public class ResourceDownloader implements Runnable {
         }
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion(), true);
         downloadFile(response, downloadFrom, true, entry);
-        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified());
+        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified(),
+                response.getContentLength());
     }
 
     private void downloadGZipFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom, URL downloadTo) throws IOException {
@@ -837,7 +849,8 @@ public class ResourceDownloader implements Runnable {
 
         uncompressGzip(downloadFrom, downloadTo, resource.getDownloadVersion());
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion());
-        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified());
+        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified(),
+                response.getContentLength());
         markForDelete(downloadFrom);
     }
 
@@ -928,7 +941,8 @@ public class ResourceDownloader implements Runnable {
         long storedLength = storedFile != null && storedFile.isFile()
                 ? storedFile.length()
                 : response.getContentLength();
-        storeEntryFields(downloadEntry, storedLength, response.getLastModified());
+        storeEntryFields(downloadEntry, storedLength, response.getLastModified(),
+                response.getContentLength());
     }
 
     /**
@@ -1069,15 +1083,85 @@ public class ResourceDownloader implements Runnable {
         }
     }
 
-    private void storeEntryFields(CacheEntry entry, long contentLength, long lastModified) {
+    private void storeEntryFields(CacheEntry entry, long diskLength, long lastModified, long wireLength) {
         entry.lock();
         try {
-            entry.setRemoteContentLength(contentLength);
+            entry.setRemoteContentLength(diskLength);
             entry.setLastModified(lastModified);
+            if (wireLength > 0L) {
+                entry.setRemoteWireLength(wireLength);
+            }
             entry.store();
         } finally {
             entry.unlock();
         }
+    }
+
+    /**
+     * Size-first already HEADed. If the catalog Last-Modified or wire length
+     * matches, settle from cache — do not GET (close() would drain the body).
+     */
+    boolean trySettleFromHead(SizeFirstDownloadQueue.HeadMeta head) {
+        if (head == null || !peekCacheHit(resource, head)) {
+            return false;
+        }
+        File local = peekCachedFile(resource);
+        if (local == null) {
+            return false;
+        }
+        resource.setLocalFile(local);
+        resource.setDownloadLocation(head.url);
+        // Local bytes only. Do not plant wireSize — that makes wireDone() wait
+        // for a GET that will never run.
+        resource.setSize(local.length());
+        resource.setTransferred(local.length());
+        DownloadProgress.noteCacheHit(local.length());
+        settleSlotGood(true);
+        resource.fireDownloadEvent();
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                "HEAD cache hit skip GET " + SizeFirstDownloadQueue.resourceName(resource)
+                        + " lm=" + head.lastModified + " wire=" + head.contentLength
+                        + " disk=" + local.length());
+        return true;
+    }
+
+    static boolean peekCacheHit(Resource resource, SizeFirstDownloadQueue.HeadMeta head) {
+        if (resource == null || head == null) {
+            return false;
+        }
+        if (resource.getUpdatePolicy() == UpdatePolicy.FORCE) {
+            return false;
+        }
+        File local = peekCachedFile(resource);
+        if (local == null) {
+            return false;
+        }
+        CacheEntry entry = new CacheEntry(resource.getLocation(), resource.getRequestVersion());
+        return entry.matchesHead(head.lastModified, head.contentLength, local);
+    }
+
+    static File peekCachedFile(Resource resource) {
+        if (resource == null) {
+            return null;
+        }
+        File local = resource.getLocalFile();
+        if (usableCacheFile(local, resource.getLocation())) {
+            return local;
+        }
+        CacheEntry entry = new CacheEntry(resource.getLocation(), resource.getRequestVersion());
+        File catalog = entry.getCacheFile();
+        if (usableCacheFile(catalog, resource.getLocation())) {
+            return catalog;
+        }
+        File existing = CacheUtil.findExistingCacheFile(resource.getLocation(), resource.getDownloadVersion());
+        return usableCacheFile(existing, resource.getLocation()) ? existing : null;
+    }
+
+    private static boolean usableCacheFile(File file, URL location) {
+        if (file == null || !file.isFile() || file.length() == 0L) {
+            return false;
+        }
+        return !CacheUtil.isJarResourceUrl(location) || CacheUtil.isValidJarFile(file);
     }
 
     private void markForDelete(URL location) {

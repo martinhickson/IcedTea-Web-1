@@ -219,6 +219,26 @@ public class CacheEntryTest {
         assertFalse(entry.isCurrent(newTimeStamp));
     }
 
+    @Test
+    public void matchesHeadWhenLastModifiedEqualsCatalog() throws IOException {
+        File cachedFile = createMinimalJar();
+        CacheEntry entry = new TestCacheEntry(url, version, cachedFile);
+        entry.setRemoteContentLength(cachedFile.length());
+        entry.setLastModified(1_700_000_000_000L);
+        assertTrue(entry.matchesHead(1_700_000_000_000L, -1L, cachedFile));
+        assertFalse(entry.matchesHead(1_800_000_000_000L, -1L, cachedFile));
+    }
+
+    @Test
+    public void matchesHeadWhenWireLengthEqualsCatalog() throws IOException {
+        File cachedFile = createMinimalJar();
+        CacheEntry entry = new TestCacheEntry(url, version, cachedFile);
+        entry.setRemoteContentLength(cachedFile.length());
+        entry.setRemoteWireLength(42_000L);
+        assertTrue(entry.matchesHead(-1L, 42_000L, cachedFile));
+        assertFalse(entry.matchesHead(-1L, 99L, cachedFile));
+    }
+
     private static File createMinimalJar() throws IOException {
         File cachedFile = File.createTempFile("CacheEntryTest", ".jar");
         Manifest manifest = new Manifest();

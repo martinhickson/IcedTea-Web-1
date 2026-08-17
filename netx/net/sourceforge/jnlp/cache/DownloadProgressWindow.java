@@ -209,7 +209,9 @@ final class DownloadProgressWindow {
         }
         DownloadProgress.Snapshot s = p.snapshot();
         boolean advanced = DownloadProgress.isAdvanced();
-        String phase = s.unpacking ? R("CUnpacking") : R("CDownloading");
+        String phase = s.unpacking ? R("CUnpacking")
+                : (s.preparing ? R("CPreparing")
+                : (s.loading ? R("CLoading") : R("CDownloading")));
         if (!advanced) {
             header.setText(phase + "  " + s.percent + "%");
             overallBar.setValue(s.percent);

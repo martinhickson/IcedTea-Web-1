@@ -159,7 +159,7 @@ final class PropertiesCacheCatalog implements CacheCatalog {
             meta.load();
             String[] suffixes = {
                 "|path", "|jnlp_path", "|resource_url", "|content_length",
-                "|last_modified", "|last_updated", "|marked_delete"
+                "|wire_length", "|last_modified", "|last_updated", "|marked_delete"
             };
             for (String suffix : suffixes) {
                 if (meta.remove(path + suffix) != null) {
@@ -279,6 +279,7 @@ final class PropertiesCacheCatalog implements CacheCatalog {
         m.jnlpPath = p.getProperty(path + "|jnlp_path");
         m.resourceUrl = p.getProperty(path + "|resource_url");
         m.contentLength = parseLongOrNull(p.getProperty(path + "|content_length"));
+        m.wireLength = parseLongOrNull(p.getProperty(path + "|wire_length"));
         m.lastModified = parseLongOrNull(p.getProperty(path + "|last_modified"));
         m.lastUpdated = parseLongOrNull(p.getProperty(path + "|last_updated"));
         m.markedDelete = Boolean.parseBoolean(p.getProperty(path + "|marked_delete"));
@@ -298,6 +299,8 @@ final class PropertiesCacheCatalog implements CacheCatalog {
             setOrClear(p, meta.path + "|resource_url", meta.resourceUrl);
             setOrClear(p, meta.path + "|content_length",
                     meta.contentLength == null ? null : Long.toString(meta.contentLength));
+            setOrClear(p, meta.path + "|wire_length",
+                    meta.wireLength == null ? null : Long.toString(meta.wireLength));
             setOrClear(p, meta.path + "|last_modified",
                     meta.lastModified == null ? null : Long.toString(meta.lastModified));
             setOrClear(p, meta.path + "|last_updated",

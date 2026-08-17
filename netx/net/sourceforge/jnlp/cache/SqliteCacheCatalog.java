@@ -196,7 +196,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             st.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
             try (ResultSet rs = st.executeQuery("SELECT COUNT(*) FROM schema_version")) {
                 if (rs.next() && rs.getInt(1) == 0) {
-                    st.executeUpdate("INSERT INTO schema_version(version) VALUES (3)");
+                    st.executeUpdate("INSERT INTO schema_version(version) VALUES (4)");
                 }
             }
             st.execute("CREATE TABLE IF NOT EXISTS cache_entry ("
@@ -217,6 +217,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_folder "
                     + "ON cache_entry (folder_id)");
             ensureEntryMetadataColumns(st);
+            ensureWireLengthColumn(st);
             ensureNativeLibTable(st);
             st.execute("CREATE TABLE IF NOT EXISTS running_app ("
                     + "pid INTEGER PRIMARY KEY,"
@@ -240,6 +241,19 @@ final class SqliteCacheCatalog implements CacheCatalog {
         try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
             if (rs.next() && rs.getInt(1) < 2) {
                 st.executeUpdate("UPDATE schema_version SET version = 2");
+            }
+        }
+    }
+
+    /**
+     * Schema v4: HTTP Content-Length (pack.gz wire). {@code content_length} stays
+     * the unpacked jar on disk so {@code isCached} can compare file length.
+     */
+    private void ensureWireLengthColumn(Statement st) throws SQLException {
+        addColumnIfMissing(st, "wire_length", "INTEGER");
+        try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
+            if (rs.next() && rs.getInt(1) < 4) {
+                st.executeUpdate("UPDATE schema_version SET version = 4");
             }
         }
     }
@@ -775,7 +789,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return runBusy(c -> {
                 try (PreparedStatement ps = c.prepareStatement(
                         "SELECT path, resource_url, jnlp_path, content_length, last_modified, "
-                                + "last_updated, marked_delete FROM cache_entry WHERE path = ?")) {
+                                + "last_updated, marked_delete, wire_length FROM cache_entry WHERE path = ?")) {
                     ps.setString(1, path);
                     try (ResultSet rs = ps.executeQuery()) {
                         return rs.next() ? rowToMeta(rs) : null;
@@ -797,13 +811,14 @@ final class SqliteCacheCatalog implements CacheCatalog {
             runBusy(c -> {
                 try (PreparedStatement ps = c.prepareStatement(
                         "UPDATE cache_entry SET jnlp_path = ?, content_length = ?, last_modified = ?, "
-                                + "last_updated = ?, marked_delete = ? WHERE path = ?")) {
+                                + "last_updated = ?, marked_delete = ?, wire_length = ? WHERE path = ?")) {
                     ps.setString(1, meta.jnlpPath);
                     setNullableLong(ps, 2, meta.contentLength);
                     setNullableLong(ps, 3, meta.lastModified);
                     setNullableLong(ps, 4, meta.lastUpdated);
                     ps.setInt(5, meta.markedDelete ? 1 : 0);
-                    ps.setString(6, meta.path);
+                    setNullableLong(ps, 6, meta.wireLength);
+                    ps.setString(7, meta.path);
                     ps.executeUpdate();
                 }
                 return Boolean.TRUE;
@@ -894,7 +909,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
                 try (Statement st = c.createStatement();
                      ResultSet rs = st.executeQuery(
                              "SELECT path, resource_url, jnlp_path, content_length, last_modified, "
-                                     + "last_updated, marked_delete FROM cache_entry")) {
+                                     + "last_updated, marked_delete, wire_length FROM cache_entry")) {
                     while (rs.next()) {
                         rows.add(rowToMeta(rs));
                     }
@@ -916,6 +931,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
         m.lastModified = getNullableLong(rs, 5);
         m.lastUpdated = getNullableLong(rs, 6);
         m.markedDelete = rs.getInt(7) != 0;
+        m.wireLength = getNullableLong(rs, 8);
         return m;
     }
 
