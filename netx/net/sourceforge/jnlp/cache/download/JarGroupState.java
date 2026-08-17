@@ -10,10 +10,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import net.sourceforge.jnlp.util.UrlUtils;
+
 public final class JarGroupState {
 
     final JarSlot[] jars;
-    final ConcurrentHashMap<URL, JarSlot> byUrl;
+    final ConcurrentHashMap<String, JarSlot> byUrl;
     final AtomicInteger settledCount = new AtomicInteger();
     final AtomicBoolean statsLogged = new AtomicBoolean();
     final CompletableFuture<Void> done = new CompletableFuture<>();
@@ -34,7 +36,7 @@ public final class JarGroupState {
         for (int i = 0; i < jarUrls.size(); i++) {
             JarSlot slot = new JarSlot(i, jarUrls.get(i), g, start);
             g.jars[i] = slot;
-            g.byUrl.put(jarUrls.get(i), slot);
+            g.byUrl.put(UrlUtils.urlKey(jarUrls.get(i)), slot);
         }
         return g;
     }
@@ -45,11 +47,11 @@ public final class JarGroupState {
     }
 
     public JarSlot slot(int index)        { return jars[index]; }
-    public JarSlot slot(URL url)          { return byUrl.get(url); }
+    public JarSlot slot(URL url)          { return byUrl.get(UrlUtils.urlKey(url)); }
     public int size()                     { return jars.length; }
     public CompletableFuture<Void> done() { return done; }
     public void awaitAll()                { done.join(); }
-    public CompletableFuture<Void> await(URL url) { return byUrl.get(url).settled(); }
+    public CompletableFuture<Void> await(URL url) { return byUrl.get(UrlUtils.urlKey(url)).settled(); }
 
     void onSettled() {
         if (settledCount.incrementAndGet() == jars.length) {

@@ -39,9 +39,7 @@ package net.sourceforge.jnlp.runtime;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Set;
 
 import net.sourceforge.jnlp.ExtensionDesc;
 import net.sourceforge.jnlp.JARDesc;
@@ -344,18 +342,18 @@ public class ManifestAttributesChecker {
         }
 
         //cases
-        Set<URL> usedUrls = new HashSet<URL>();
+        java.util.Map<String, URL> usedByKey = new java.util.LinkedHashMap<String, URL>();
         URL sourceLocation = file.getSourceLocation();
         ResourcesDesc[] resourcesDescs = file.getResourcesDescs();
         if (sourceLocation != null) {
-            usedUrls.add(UrlUtils.removeFileName(sourceLocation));
+            addUsedUrl(usedByKey, UrlUtils.removeFileName(sourceLocation));
         }
         for (ResourcesDesc resourcesDesc : resourcesDescs) {
             ExtensionDesc[] ex = resourcesDesc.getExtensions();
             if (ex != null) {
                 for (ExtensionDesc extensionDesc : ex) {
                     if (extensionDesc != null) {
-                        usedUrls.add(UrlUtils.removeFileName(extensionDesc.getLocation()));
+                        addUsedUrl(usedByKey, UrlUtils.removeFileName(extensionDesc.getLocation()));
                     }
                 }
             }
@@ -363,12 +361,13 @@ public class ManifestAttributesChecker {
             if (jars != null) {
                 for (JARDesc jarDesc : jars) {
                     if (jarDesc != null) {
-                        usedUrls.add(UrlUtils.removeFileName(jarDesc.getLocation()));
+                        addUsedUrl(usedByKey, UrlUtils.removeFileName(jarDesc.getLocation()));
                     }
                 }
             }
 
         }
+        java.util.Collection<URL> usedUrls = usedByKey.values();
         OutputController.getLogger().log("Found alaca URLs to be verified");
         for (URL url : usedUrls) {
             OutputController.getLogger().log(" - " + url.toExternalForm());
@@ -425,6 +424,13 @@ public class ManifestAttributesChecker {
         } else {
             OutputController.getLogger().log("The application uses non-codebase resources, which do match its Application-Library-Allowable-Codebase Attribute, and was allowed to run by the user or user's security settings.");
         }
+    }
+
+    private static void addUsedUrl(java.util.Map<String, URL> usedByKey, URL url) {
+        if (url == null) {
+            return;
+        }
+        usedByKey.put(UrlUtils.urlKey(url), url);
     }
     
     //package private for testing

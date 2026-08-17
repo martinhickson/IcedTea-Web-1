@@ -17,7 +17,6 @@
 package net.sourceforge.jnlp.runtime;
 
 import java.io.IOException;
-import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.MalformedURLException;
 import java.net.Proxy;
@@ -25,7 +24,6 @@ import java.net.ProxySelector;
 import java.net.SocketAddress;
 import java.net.URI;
 import java.net.URL;
-import java.net.UnknownHostException;
 import java.net.Proxy.Type;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -36,6 +34,7 @@ import java.util.StringTokenizer;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
+import net.sourceforge.jnlp.util.UrlUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
@@ -274,32 +273,7 @@ public abstract class JNLPProxySelector extends ProxySelector {
      * @param  host host to verify
      */
     private boolean isLocalHost(String host) {
-
-        try {
-            if (InetAddress.getByName(host).isLoopbackAddress()) {
-                return true;
-            }
-        } catch (UnknownHostException e1) {
-            // continue
-        }
-
-        try {
-            if (host.equals(InetAddress.getLocalHost().getHostName())) {
-                return true;
-            }
-        } catch (UnknownHostException e) {
-            // continue
-        }
-
-        try {
-            if (host.equals(InetAddress.getLocalHost().getHostAddress())) {
-                return true;
-            }
-        } catch (UnknownHostException e) {
-            // continue
-        }
-
-        return false;
+        return UrlUtils.isLocalHostName(host);
     }
 
     /**

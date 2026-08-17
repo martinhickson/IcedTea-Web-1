@@ -57,6 +57,7 @@ import java.net.URLConnection;
 import java.net.URLDecoder;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Locale;
 import javax.net.ssl.SSLSocketFactory;
 import net.sourceforge.jnlp.JNLPFile;
 
@@ -301,6 +302,81 @@ public class UrlUtils {
      * @param u2 second url to compareNullableStrings
      * @return whether the u1 and u2 points to same resource or not
      */
+    /**
+     * Map/set key for a URL that must not trigger {@link URL#hashCode()} or
+     * {@link URL#equals(Object)}. Those resolve the host (and under a
+     * SecurityManager, reverse-DNS via {@code SocketPermission.getCanonName}).
+     */
+    public static String urlKey(URL url) {
+        return url == null ? null : url.toExternalForm();
+    }
+
+    /**
+     * Loopback / localhost by string only. Does not call {@link java.net.InetAddress}.
+     */
+    public static boolean isLoopbackHost(String host) {
+        if (host == null || host.isEmpty()) {
+            return false;
+        }
+        String h = host.trim();
+        if (h.startsWith("[") && h.endsWith("]") && h.length() > 2) {
+            h = h.substring(1, h.length() - 1);
+        }
+        if (h.equalsIgnoreCase("localhost") || h.equalsIgnoreCase("localhost.")) {
+            return true;
+        }
+        if (h.equals("::1") || h.equalsIgnoreCase("0:0:0:0:0:0:0:1")) {
+            return true;
+        }
+        String lower = h.toLowerCase(Locale.ROOT);
+        int mapped = lower.lastIndexOf(":ffff:");
+        if (mapped >= 0) {
+            return isIpv4Loopback(h.substring(mapped + 6));
+        }
+        return isIpv4Loopback(h);
+    }
+
+    /**
+     * Local host for proxy bypass: loopback literals, or this machine's
+     * {@code COMPUTERNAME}/{@code HOSTNAME} env. No DNS, no {@code getLocalHost}.
+     */
+    public static boolean isLocalHostName(String host) {
+        if (isLoopbackHost(host)) {
+            return true;
+        }
+        if (host == null) {
+            return false;
+        }
+        String n = host.trim();
+        String computer = System.getenv("COMPUTERNAME");
+        if (computer != null && n.equalsIgnoreCase(computer)) {
+            return true;
+        }
+        String hostname = System.getenv("HOSTNAME");
+        return hostname != null && n.equalsIgnoreCase(hostname);
+    }
+
+    private static boolean isIpv4Loopback(String h) {
+        String[] p = h.split("\\.");
+        if (p.length != 4) {
+            return false;
+        }
+        try {
+            if (Integer.parseInt(p[0]) != 127) {
+                return false;
+            }
+            for (int i = 1; i < 4; i++) {
+                int o = Integer.parseInt(p[i]);
+                if (o < 0 || o > 255) {
+                    return false;
+                }
+            }
+            return true;
+        } catch (NumberFormatException e) {
+            return false;
+        }
+    }
+
     public static boolean urlEquals(URL u1, URL u2) {
         if (u1 == u2) {
             return true;

@@ -758,7 +758,7 @@ public class ResourceTracker {
             if (slot == null || resources[i].getJarSlot() != slot) {
                 return false;
             }
-            if (!resources[i].getLocation().equals(slot.location())) {
+            if (!UrlUtils.urlEquals(resources[i].getLocation(), slot.location())) {
                 return false;
             }
         }
@@ -777,7 +777,7 @@ public class ResourceTracker {
         for (int i = 0; i < resources.length; i++) {
             net.sourceforge.jnlp.cache.download.JarSlot slot = group.slot(i);
             if (slot == null || resources[i].getLocation() == null
-                    || !resources[i].getLocation().equals(slot.location())) {
+                    || !UrlUtils.urlEquals(resources[i].getLocation(), slot.location())) {
                 return false;
             }
         }
