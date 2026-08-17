@@ -356,24 +356,121 @@ public class UrlUtils {
         return hostname != null && n.equalsIgnoreCase(hostname);
     }
 
-    private static boolean isIpv4Loopback(String h) {
-        String[] p = h.split("\\.");
-        if (p.length != 4) {
+    /**
+     * Host part of a {@link java.net.SocketPermission} name ({@code ip},
+     * {@code ip:port}, {@code [v6]}, {@code [v6]:port}). No DNS.
+     */
+    public static String hostFromSocketPermissionName(String name) {
+        if (name == null || name.isEmpty()) {
+            return name;
+        }
+        String n = name.trim();
+        if (n.startsWith("[")) {
+            int end = n.indexOf(']');
+            if (end > 1) {
+                return n.substring(1, end);
+            }
+        }
+        int colon = n.lastIndexOf(':');
+        if (colon > 0 && n.indexOf(':') == colon && n.indexOf('.') > 0) {
+            return n.substring(0, colon);
+        }
+        return n;
+    }
+
+    /**
+     * Literal loopback, RFC1918, link-local, ULA, or CGNAT. Used to skip
+     * reverse-DNS {@code resolve} checks. Does not call {@link java.net.InetAddress}.
+     */
+    public static boolean isPrivateOrLinkLocalLiteralIp(String host) {
+        if (host == null || host.isEmpty()) {
             return false;
         }
+        String h = host.trim();
+        if (h.startsWith("[") && h.endsWith("]") && h.length() > 2) {
+            h = h.substring(1, h.length() - 1);
+        }
+        int zone = h.indexOf('%');
+        if (zone > 0) {
+            h = h.substring(0, zone);
+        }
+        if (isLoopbackHost(h)) {
+            return true;
+        }
+        int[] v4 = parseIpv4Octets(h);
+        if (v4 != null) {
+            return isPrivateOrLinkLocalIpv4(v4);
+        }
+        int mapped = h.toLowerCase(Locale.ROOT).lastIndexOf(":ffff:");
+        if (mapped >= 0) {
+            int[] mappedV4 = parseIpv4Octets(h.substring(mapped + 6));
+            return mappedV4 != null && isPrivateOrLinkLocalIpv4(mappedV4);
+        }
+        if (h.indexOf(':') < 0) {
+            return false;
+        }
+        String hex = h.toLowerCase(Locale.ROOT);
+        return hex.startsWith("fe8") || hex.startsWith("fe9")
+                || hex.startsWith("fea") || hex.startsWith("feb")
+                || hex.startsWith("fc") || hex.startsWith("fd");
+    }
+
+    /**
+     * {@code SocketPermission} {@code resolve} of a private/link-local literal
+     * IP. Policy {@code implies} would PTR via {@code getCanonName}; denying
+     * here lets {@code InetAddress.getHostName()} return the IP immediately.
+     */
+    public static boolean isResolveOfPrivateLiteralIp(java.security.Permission perm) {
+        if (!(perm instanceof java.net.SocketPermission)) {
+            return false;
+        }
+        String actions = perm.getActions();
+        if (actions == null || !actions.contains("resolve")) {
+            return false;
+        }
+        if (actions.contains("connect") || actions.contains("accept") || actions.contains("listen")) {
+            return false;
+        }
+        return isPrivateOrLinkLocalLiteralIp(hostFromSocketPermissionName(perm.getName()));
+    }
+
+    private static boolean isIpv4Loopback(String h) {
+        int[] p = parseIpv4Octets(h);
+        return p != null && p[0] == 127;
+    }
+
+    private static boolean isPrivateOrLinkLocalIpv4(int[] p) {
+        if (p[0] == 10 || p[0] == 127) {
+            return true;
+        }
+        if (p[0] == 192 && p[1] == 168) {
+            return true;
+        }
+        if (p[0] == 169 && p[1] == 254) {
+            return true;
+        }
+        if (p[0] == 172 && p[1] >= 16 && p[1] <= 31) {
+            return true;
+        }
+        return p[0] == 100 && p[1] >= 64 && p[1] <= 127;
+    }
+
+    private static int[] parseIpv4Octets(String h) {
+        String[] parts = h.split("\\.");
+        if (parts.length != 4) {
+            return null;
+        }
+        int[] p = new int[4];
         try {
-            if (Integer.parseInt(p[0]) != 127) {
-                return false;
-            }
-            for (int i = 1; i < 4; i++) {
-                int o = Integer.parseInt(p[i]);
-                if (o < 0 || o > 255) {
-                    return false;
+            for (int i = 0; i < 4; i++) {
+                p[i] = Integer.parseInt(parts[i]);
+                if (p[i] < 0 || p[i] > 255) {
+                    return null;
                 }
             }
-            return true;
+            return p;
         } catch (NumberFormatException e) {
-            return false;
+            return null;
         }
     }
 
