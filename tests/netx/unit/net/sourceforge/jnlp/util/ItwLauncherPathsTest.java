@@ -8,10 +8,13 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.Launcher;
 import net.sourceforge.jnlp.runtime.JavawsUberLauncher;
 import org.junit.After;
@@ -131,6 +134,48 @@ public class ItwLauncherPathsTest {
             assertTrue(command.contains("--add-exports"));
             assertTrue(command.contains("java.base/sun.security.provider=ALL-UNNAMED"));
         }
+    }
+
+    @Test
+    public void javaCpPolicyEditorPrefersBinNextToUberJar() throws IOException {
+        System.setProperty(ItwLauncherPaths.PROP_NATIVE_LAUNCHER, "false");
+        File root = Files.createTempDirectory("itw-extract").toFile();
+        File lib = new File(root, "lib");
+        File bin = new File(root, "bin");
+        assertTrue(lib.mkdirs());
+        assertTrue(bin.mkdirs());
+        File uberJar = new File(lib, "icedtea-web-uber.jar");
+        assertTrue(uberJar.createNewFile());
+        File policyeditor = new File(bin, "policyeditor");
+        writeExecutable(policyeditor, "#!/bin/sh\necho policyeditor\n");
+        System.setProperty(Launcher.KEY_JAVAWS_LOCATION, uberJar.getAbsolutePath());
+
+        List<String> command = ItwLauncherPaths.buildPolicyEditorLaunchCommand("/tmp/java.policy");
+        assertEquals(policyeditor.getAbsolutePath(), command.get(0));
+        assertTrue(command.contains("-file"));
+        assertTrue(command.contains("/tmp/java.policy"));
+    }
+
+    @Test
+    public void ensureSunSecurityProviderAccessWorksWithoutAddExports() throws Exception {
+        if (JavaVersionUtils.getRunningMajorVersion() < 9) {
+            return;
+        }
+        String javaName = JNLPRuntime.isWindows() ? "java.exe" : "java";
+        File java = new File(new File(System.getProperty("java.home"), "bin"), javaName);
+        assertTrue(java.isFile());
+        ProcessBuilder pb = new ProcessBuilder(
+                java.getAbsolutePath(),
+                "-cp",
+                System.getProperty("java.class.path"),
+                SunSecurityProviderAccessProbe.class.getName());
+        pb.redirectErrorStream(true);
+        Process process = pb.start();
+        byte[] raw = process.getInputStream().readAllBytes();
+        String output = new String(raw, StandardCharsets.UTF_8);
+        assertTrue("probe timed out: " + output, process.waitFor(30, TimeUnit.SECONDS));
+        assertEquals("probe failed: " + output, 0, process.exitValue());
+        assertTrue(output.contains("OK"));
     }
 
     @Test

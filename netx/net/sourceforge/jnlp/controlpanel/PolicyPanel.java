@@ -50,6 +50,7 @@ import java.lang.reflect.Method;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import javax.swing.Box;
 import javax.swing.JButton;
@@ -63,6 +64,7 @@ import net.sourceforge.jnlp.security.policyeditor.PolicyEditor;
 import net.sourceforge.jnlp.security.policyeditor.PolicyEditor.PolicyEditorWindow;
 import net.sourceforge.jnlp.util.FileUtils;
 import net.sourceforge.jnlp.util.FileUtils.OpenFileResult;
+import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.util.ItwLauncherPaths;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.swing.SwingUtils;
@@ -166,6 +168,7 @@ public class PolicyPanel extends NamedBorderPanel {
      * @param filePath a {@link String} representing the path to the file to be opened
      */
     private void launchSimplePolicyEditor(final String filePath) {
+        ItwLauncherPaths.ensureSunSecurityProviderAccess();
         if (ItwLauncherPaths.canAccessSunSecurityProvider()) {
             launchSimplePolicyEditorInProcess(filePath);
             return;
@@ -185,10 +188,9 @@ public class PolicyPanel extends NamedBorderPanel {
     }
 
     /**
-     * PolicyEditor links {@code sun.security.provider.PolicyParser}. When this
-     * JVM was started without {@code --add-exports} (bare {@code java -cp} /
-     * in-process Control Panel), constructing it throws IllegalAccessError.
-     * The standalone {@code policyeditor} launcher already adds those flags.
+     * Last-resort child JVM when {@link ItwLauncherPaths#ensureSunSecurityProviderAccess()}
+     * could not export {@code PolicyParser}. Redirect stdio to the null device so
+     * a full pipe cannot stall the child before it shows a window.
      */
     private void launchSimplePolicyEditorExternally(final String filePath) {
         new Thread(new Runnable() {
@@ -196,7 +198,21 @@ public class PolicyPanel extends NamedBorderPanel {
             public void run() {
                 try {
                     final List<String> command = ItwLauncherPaths.buildPolicyEditorLaunchCommand(filePath);
-                    new ProcessBuilder(command).directory(new File(System.getProperty("user.home"))).start();
+                    final ProcessBuilder pb = new ProcessBuilder(command);
+                    pb.directory(new File(System.getProperty("user.home")));
+                    copyEnvIfSet(pb, "DISPLAY");
+                    copyEnvIfSet(pb, "XAUTHORITY");
+                    copyEnvIfSet(pb, "XDG_CONFIG_HOME");
+                    copyEnvIfSet(pb, "XDG_CACHE_HOME");
+                    copyEnvIfSet(pb, "XDG_DATA_HOME");
+                    final File nullDevice = JNLPRuntime.isWindows() ? new File("NUL") : new File("/dev/null");
+                    pb.redirectErrorStream(true);
+                    pb.redirectInput(ProcessBuilder.Redirect.from(nullDevice));
+                    pb.redirectOutput(ProcessBuilder.Redirect.to(nullDevice));
+                    final Process child = pb.start();
+                    if (child.waitFor(750, TimeUnit.MILLISECONDS) && child.exitValue() != 0) {
+                        throw new IOException("PolicyEditor exited with status " + child.exitValue());
+                    }
                 } catch (Exception e) {
                     OutputController.getLogger().log(e);
                     OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
@@ -205,6 +221,13 @@ public class PolicyPanel extends NamedBorderPanel {
                 }
             }
         }, "itw-policyeditor-launch").start();
+    }
+
+    private static void copyEnvIfSet(final ProcessBuilder pb, final String name) {
+        final String value = System.getenv(name);
+        if (value != null && !value.trim().isEmpty()) {
+            pb.environment().put(name, value.trim());
+        }
     }
 
     /**

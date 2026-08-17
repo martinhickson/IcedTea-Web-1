@@ -2,6 +2,11 @@ package net.sourceforge.jnlp.util;
 
 import java.io.File;
 import java.io.UnsupportedEncodingException;
+import java.lang.invoke.MethodHandle;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.MethodType;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.util.ArrayList;
@@ -10,6 +15,7 @@ import java.util.Locale;
 import net.sourceforge.jnlp.Launcher;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 import net.sourceforge.jnlp.runtime.JavawsUberLauncher;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
  * Resolves how to launch an external {@code javaws} process.
@@ -80,8 +86,8 @@ public final class ItwLauncherPaths {
 
     /**
      * {@code true} when this JVM can load {@code sun.security.provider.PolicyParser}
-     * (JDK 8, or JDK 9+ with {@code --add-exports java.base/sun.security.provider=…}).
-     * Control Panel Simple editor uses this to decide in-process vs a child JVM.
+     * (JDK 8, JDK 9+ with {@code --add-exports}, or after
+     * {@link #ensureSunSecurityProviderAccess()}).
      */
     public static boolean canAccessSunSecurityProvider() {
         if (JavaVersionUtils.getRunningMajorVersion() < 9) {
@@ -92,17 +98,87 @@ public final class ItwLauncherPaths {
     }
 
     /**
+     * Open {@code sun.security.provider} to the unnamed module when this JVM
+     * was started without {@code --add-exports}. PolicyEditor needs
+     * {@code PolicyParser}; bare {@code java -cp} / {@code groovy -cp}
+     * Control Panel otherwise cannot show Simple editor in-process.
+     */
+    public static void ensureSunSecurityProviderAccess() {
+        if (canAccessSunSecurityProvider()) {
+            return;
+        }
+        try {
+            exportPackageToAllUnnamed(SUN_SECURITY_PROVIDER);
+        } catch (Throwable t) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_DEBUG, t);
+        }
+    }
+
+    /**
      * Command to start PolicyEditor with JPMS exports, so Simple editor works
      * even when the Control Panel JVM was started without {@code --add-exports}.
+     * Prefers this install's {@code bin/policyeditor} (never {@code PATH}, which
+     * can pick another install). Falls back to {@code java -cp} plus modular flags.
      */
     public static List<String> buildPolicyEditorLaunchCommand(String filePath) {
         if (filePath == null || filePath.trim().isEmpty()) {
             throw new IllegalArgumentException("policy file path is required");
         }
-        if (isNativeLauncherProcess()) {
-            return buildNativePolicyEditorCommand(filePath.trim());
+        String path = filePath.trim();
+        File editor = resolvePolicyEditorForThisInstall();
+        if (editor != null) {
+            List<String> commands = new ArrayList<>();
+            commands.add(editor.getAbsolutePath());
+            commands.add("-file");
+            commands.add(path);
+            return commands;
         }
-        return buildJavaCpPolicyEditorCommand(filePath.trim(), null);
+        return buildJavaCpPolicyEditorCommand(path, null);
+    }
+
+    static File resolvePolicyEditorForThisInstall() {
+        if (isNativeLauncherProcess()) {
+            File fromLauncher = resolveSiblingNamed(
+                    System.getProperty(Launcher.KEY_JAVAWS_LOCATION), POLICYEDITOR_NAME);
+            if (fromLauncher != null) {
+                return fromLauncher;
+            }
+        }
+        return resolvePolicyEditorNextToUberJar();
+    }
+
+    static File resolvePolicyEditorNextToUberJar() {
+        File uberJar = resolveUberJar();
+        if (uberJar == null) {
+            return null;
+        }
+        File libDir = uberJar.getParentFile();
+        if (libDir == null || !"lib".equalsIgnoreCase(libDir.getName())) {
+            return null;
+        }
+        File root = libDir.getParentFile();
+        if (root == null) {
+            return null;
+        }
+        return findNamedInDirectory(new File(root, "bin"), POLICYEDITOR_NAME);
+    }
+
+    private static void exportPackageToAllUnnamed(String packageName) throws Throwable {
+        Class<?> unsafeClass = Class.forName("sun.misc.Unsafe");
+        Field theUnsafe = unsafeClass.getDeclaredField("theUnsafe");
+        theUnsafe.setAccessible(true);
+        Object unsafe = theUnsafe.get(null);
+        Method staticFieldOffset = unsafeClass.getMethod("staticFieldOffset", Field.class);
+        Method staticFieldBase = unsafeClass.getMethod("staticFieldBase", Field.class);
+        Method getObject = unsafeClass.getMethod("getObject", Object.class, long.class);
+        Field implLookupField = MethodHandles.Lookup.class.getDeclaredField("IMPL_LOOKUP");
+        Object trusted = getObject.invoke(unsafe,
+                staticFieldBase.invoke(unsafe, implLookupField),
+                staticFieldOffset.invoke(unsafe, implLookupField));
+        MethodHandles.Lookup lookup = (MethodHandles.Lookup) trusted;
+        MethodHandle addExports = lookup.findVirtual(Module.class, "implAddExportsToAllUnnamed",
+                MethodType.methodType(void.class, String.class));
+        addExports.invoke(Object.class.getModule(), packageName);
     }
 
     public static String resolveJavawsBin() {
@@ -211,18 +287,6 @@ public final class ItwLauncherPaths {
         return null;
     }
 
-    private static List<String> buildNativePolicyEditorCommand(String filePath) {
-        File policyEditor = resolvePolicyEditorBin();
-        if (policyEditor == null) {
-            throw new IllegalStateException("policyeditor launcher not found next to native ITW wrapper");
-        }
-        List<String> commands = new ArrayList<>();
-        commands.add(policyEditor.getAbsolutePath());
-        commands.add("-file");
-        commands.add(filePath);
-        return commands;
-    }
-
     private static List<String> buildJavaCpPolicyEditorCommand(String filePath, String javaHome) {
         File java = resolveJavaExecutable(javaHome);
         File uberJar = resolveUberJar();
@@ -246,15 +310,6 @@ public final class ItwLauncherPaths {
         commands.add("-file");
         commands.add(filePath);
         return commands;
-    }
-
-    static File resolvePolicyEditorBin() {
-        String location = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
-        File fromLocation = resolveSiblingNamed(location, POLICYEDITOR_NAME);
-        if (fromLocation != null) {
-            return fromLocation;
-        }
-        return findNamedOnPath(POLICYEDITOR_NAME);
     }
 
     private static File resolveSiblingNamed(String location, String baseName) {
@@ -312,35 +367,6 @@ public final class ItwLauncherPaths {
         for (File candidate : candidates) {
             if (asExecutableFile(candidate.getPath()) != null) {
                 return candidate;
-            }
-        }
-        return null;
-    }
-
-    private static File findNamedOnPath(String baseName) {
-        String path = System.getenv("PATH");
-        if (path == null || path.trim().isEmpty()) {
-            path = System.getenv("Path");
-        }
-        if (path == null || path.trim().isEmpty()) {
-            return null;
-        }
-        String[] names = JNLPRuntime.isWindows()
-                ? new String[] {baseName + ".exe", baseName + ".cmd", baseName}
-                : new String[] {baseName, baseName + ".exe"};
-        for (String dir : path.split(File.pathSeparator)) {
-            if (dir == null || dir.trim().isEmpty()) {
-                continue;
-            }
-            for (String name : names) {
-                File candidate = new File(dir.trim(), name);
-                if (name.endsWith(".cmd") && candidate.isFile()) {
-                    return candidate;
-                }
-                File executable = asExecutableFile(candidate.getPath());
-                if (executable != null) {
-                    return executable;
-                }
             }
         }
         return null;
