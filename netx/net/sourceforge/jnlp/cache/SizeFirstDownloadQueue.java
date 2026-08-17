@@ -107,16 +107,25 @@ public final class SizeFirstDownloadQueue {
             List<Resource> largestFirst = orderLargestFirst(batch);
             long wall = System.currentTimeMillis() - t0;
             int known = 0;
+            long sizeSum = 0L;
+            long wireSum = 0L;
             for (Resource r : largestFirst) {
-                if (r.getSize() > 0) {
+                long size = r.getSize();
+                if (size > 0) {
                     known++;
+                    sizeSum += size;
+                }
+                long wire = r.getWireSize();
+                if (wire > 0) {
+                    wireSum += wire;
                 }
             }
             int smallLanes = smallLaneCount(width);
             int largeLanes = width - smallLanes;
             log(OutputController.Level.MESSAGE_ALL,
                     "Size-first HEAD complete: " + known + "/" + largestFirst.size()
-                            + " sizes in " + wall + "ms (" + width + " in flight)");
+                            + " sizes in " + wall + "ms (" + width + " in flight)"
+                            + " sizeSum=" + sizeSum + " wireSum=" + wireSum);
             logLanePlan(largestFirst, largeLanes, smallLanes);
             MAIN_SWEEP_DONE.set(true);
             startTwoLaneDownloads(largestFirst, largeLanes, smallLanes);
@@ -369,6 +378,7 @@ public final class SizeFirstDownloadQueue {
                 long len = contentLength(response);
                 if (len > 0) {
                     resource.setSize(len);
+                    resource.setWireSize(len);
                     resource.setDownloadLocation(url);
                     HEAD_WINNER.put(resource, url);
                     ResourceUrlCreator.notePackHost(url, url.getPath() != null

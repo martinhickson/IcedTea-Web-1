@@ -66,10 +66,34 @@ public class DownloadProgressTest {
         assertTrue(s.unpack.active, "pack.gz may unpack while other GETs run");
         assertTrue(!s.unpacking, "still downloading — do not say Unpacking");
         assertEquals(29, s.percent, "percent is wire bytes, not unpack output");
+        assertEquals(29, s.wirePct);
+        assertEquals(2900L, s.bytes);
+        assertEquals(10_000L, s.knownTotal);
         p.bytes.set(10_000L);
         s = p.snapshot();
         assertEquals(99, s.percent);
         assertTrue(s.unpacking, "wire done + unpack still running → Unpacking 99%");
+    }
+
+    @Test
+    public void openGetKeepsDownloadingEvenAt99Percent() {
+        DownloadProgress p = new DownloadProgress(2);
+        p.knownTotal = 209_000_000L;
+        p.bytes.set(207_000_000L);
+        p.wireStarted = true;
+        p.wireOpen.set(3);
+        p.startUnpack(Integer.valueOf(0), "fonts.jar", 500_000L);
+        DownloadProgress.Snapshot s = p.snapshot();
+        assertEquals(99, s.percent);
+        assertEquals(99, s.wirePct);
+        assertEquals(3, s.wireOpen);
+        assertTrue(!s.wireDone);
+        assertTrue(s.unpack.active);
+        assertTrue(!s.unpacking, "open GETs are still Downloading");
+        p.bytes.set(209_000_000L);
+        p.wireOpen.set(0);
+        s = p.snapshot();
+        assertTrue(s.unpacking, "all GETs finished → Unpacking");
     }
 
     @Test

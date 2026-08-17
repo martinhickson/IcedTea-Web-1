@@ -1140,7 +1140,10 @@ public class CacheUtil {
                 }
                 long known = 0L;
                 for (int i = 0; i < resources.length; i++) {
-                    long s = tracker.getTotalSize(resources[i]);
+                    long s = tracker.getWireSize(resources[i]);
+                    if (s <= 0L) {
+                        s = tracker.getTotalSize(resources[i]);
+                    }
                     if (s > 0) {
                         known += s;
                     }

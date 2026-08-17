@@ -3,6 +3,7 @@ package net.sourceforge.jnlp.cache;
 import net.sourceforge.jnlp.cache.download.PackUnpackAdmission;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.io.FilterOutputStream;
 import java.io.IOException;
@@ -10,6 +11,7 @@ import java.io.OutputStream;
 import java.net.URL;
 import java.util.Locale;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -35,8 +37,13 @@ public final class DownloadProgress {
     private static volatile boolean closeAllowed;
 
     final Slot[] slots;
+    /** GET body only. Never Pack200 output. */
     final AtomicLong bytes = new AtomicLong();
+    /** Open GET drains. Unpacking is forbidden while this is &gt; 0. */
+    final AtomicInteger wireOpen = new AtomicInteger();
+    volatile boolean wireStarted;
     volatile long startMillis;
+    /** Sum of HTTP Content-Lengths. Never unpacked jar lengths. */
     volatile long knownTotal;
     volatile String title = "";
     volatile ResourceTracker tracker;
@@ -115,6 +122,10 @@ public final class DownloadProgress {
             }
             p.tracker = tracker;
             p.resources = resources;
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Download progress begin reuse known=" + p.knownTotal
+                            + " incoming=" + knownTotal
+                            + " resources=" + (resources == null ? 0 : resources.length));
             return;
         }
         DownloadProgress next = new DownloadProgress(slotCount);
@@ -125,6 +136,9 @@ public final class DownloadProgress {
         instance = next;
         active = true;
         closeAllowed = false;
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                "Download progress begin known=" + knownTotal
+                        + " resources=" + (resources == null ? 0 : resources.length));
         DownloadProgressWindow.open(next);
     }
 
@@ -178,6 +192,25 @@ public final class DownloadProgress {
         if (index >= 0 && index < instance.slots.length) {
             instance.slots[index].idle();
         }
+    }
+
+    /** One GET body started. Pair with {@link #noteWireEnd()}. */
+    public static void noteWireStart() {
+        DownloadProgress p = instance;
+        if (!active || p == null) {
+            return;
+        }
+        p.wireStarted = true;
+        p.wireOpen.incrementAndGet();
+    }
+
+    /** That GET body finished (Pack200 may still run). */
+    public static void noteWireEnd() {
+        DownloadProgress p = instance;
+        if (!active || p == null) {
+            return;
+        }
+        p.wireOpen.decrementAndGet();
     }
 
     /** Called from the copy loop only when {@link #isActive()}. */
@@ -248,7 +281,7 @@ public final class DownloadProgress {
     }
 
     void startUnpack(Object key, String name, long wireBytes) {
-        if (knownTotal > 0L && bytes.get() * 100L / knownTotal >= 99L) {
+        if (wireDone()) {
             deferredUnpack = true;
         }
         long est = estimateUnpackBytes(wireBytes);
@@ -306,28 +339,69 @@ public final class DownloadProgress {
         return Math.max(wire, (long) (wire * ratio));
     }
 
+    /**
+     * Wire is done only when no GET is open and every resource has
+     * finished its HTTP body (or already settled). Queued jars with a
+     * known Content-Length and 0 wire bytes are still downloading.
+     */
+    boolean wireDone() {
+        if (wireOpen.get() > 0) {
+            return false;
+        }
+        if (tracker != null && resources != null) {
+            for (int i = 0; i < resources.length; i++) {
+                try {
+                    long ws = tracker.getWireSize(resources[i]);
+                    long wt = tracker.getWireTransferred(resources[i]);
+                    if (ws > 0L) {
+                        if (wt < ws) {
+                            return false;
+                        }
+                        continue;
+                    }
+                    if (!tracker.checkResource(resources[i])) {
+                        return false;
+                    }
+                } catch (RuntimeException ignored) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return knownTotal > 0L && bytes.get() >= knownTotal;
+    }
+
     public static void refreshKnownTotal(ResourceTracker tracker, URL[] resources) {
         DownloadProgress p = instance;
         if (!active || p == null || tracker == null || resources == null) {
             return;
         }
-        long total = 0L;
-        long read = 0L;
+        long wireTotal = 0L;
+        long wireRead = 0L;
         for (int i = 0; i < resources.length; i++) {
-            long s = tracker.getTotalSize(resources[i]);
-            if (s > 0) {
-                total += s;
+            long s = tracker.getWireSize(resources[i]);
+            if (s <= 0L) {
+                continue;
             }
-            long r = tracker.getAmountRead(resources[i]);
-            if (r > 0) {
-                read += r;
+            wireTotal += s;
+            long r = tracker.getWireTransferred(resources[i]);
+            if (r > 0L) {
+                wireRead += Math.min(r, s);
             }
         }
-        if (total > p.knownTotal) {
-            p.knownTotal = total;
+        if (wireTotal > p.knownTotal) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Download progress refresh known " + p.knownTotal + " -> " + wireTotal
+                            + " wireRead=" + wireRead);
+            p.knownTotal = wireTotal;
         }
-        if (read > p.bytes.get()) {
-            p.bytes.set(read);
+        // Never pull unpacked jar lengths into the wire counters.
+        long have = p.bytes.get();
+        if (wireRead > have) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Download progress refresh bytes " + have + " -> " + wireRead
+                            + " known=" + p.knownTotal);
+            p.bytes.set(wireRead);
         }
     }
 
@@ -349,9 +423,9 @@ public final class DownloadProgress {
         // Never paint 100% until wait() returns or users think it hung.
         int pct = complete ? 100 : Math.min(99, wirePct);
         UnpackSnap unpack = unpackSnapshot();
-        // Pack200 runs on the download workers. That is still Downloading.
-        // Unpacking is only the post-wire hold (99%) before launch.
-        boolean unpacking = !complete && wirePct >= 99
+        // Pack200 on a download worker is still Downloading. Unpacking is only
+        // after every GET body is finished — not when a percent hits 99.
+        boolean unpacking = !complete && wireDone()
                 && (deferredUnpack || unpack.active || unpack.queued > 0);
         String finishing = "";
         if (isAdvanced()) {
@@ -365,8 +439,8 @@ public final class DownloadProgress {
         for (int i = 0; i < slots.length; i++) {
             snaps[i] = slots[i].snapshot(now);
         }
-        return new Snapshot(title, b, knownTotal, pct, meanBps, nowBps, etaMs, finishing,
-                unpacking, unpack, snaps);
+        return new Snapshot(title, b, knownTotal, pct, wirePct, wireOpen.get(), wireDone(),
+                meanBps, nowBps, etaMs, finishing, unpacking, unpack, snaps);
     }
 
     UnpackSnap unpackSnapshot() {
@@ -690,6 +764,9 @@ public final class DownloadProgress {
         final long bytes;
         final long knownTotal;
         final int percent;
+        final int wirePct;
+        final int wireOpen;
+        final boolean wireDone;
         final double meanBps;
         final double nowBps;
         final long etaMs;
@@ -698,13 +775,16 @@ public final class DownloadProgress {
         final UnpackSnap unpack;
         final SlotSnap[] slots;
 
-        Snapshot(String title, long bytes, long knownTotal, int percent,
-                double meanBps, double nowBps, long etaMs, String finishing,
-                boolean unpacking, UnpackSnap unpack, SlotSnap[] slots) {
+        Snapshot(String title, long bytes, long knownTotal, int percent, int wirePct,
+                int wireOpen, boolean wireDone, double meanBps, double nowBps, long etaMs,
+                String finishing, boolean unpacking, UnpackSnap unpack, SlotSnap[] slots) {
             this.title = title;
             this.bytes = bytes;
             this.knownTotal = knownTotal;
             this.percent = percent;
+            this.wirePct = wirePct;
+            this.wireOpen = wireOpen;
+            this.wireDone = wireDone;
             this.meanBps = meanBps;
             this.nowBps = nowBps;
             this.etaMs = etaMs;
@@ -712,6 +792,17 @@ public final class DownloadProgress {
             this.unpacking = unpacking;
             this.unpack = unpack != null ? unpack : new UnpackSnap(false, "", 0L, 0L, 0, 0);
             this.slots = slots;
+        }
+
+        /** Raw longs used by the bar. Keep units as bytes — do not format. */
+        String mathLine() {
+            long remain = knownTotal > bytes ? knownTotal - bytes : 0L;
+            return percent + "% b=" + bytes + " known=" + knownTotal
+                    + " remain=" + remain + " wirePct=" + wirePct
+                    + " open=" + wireOpen + " wireDone=" + wireDone
+                    + " unpacking=" + unpacking
+                    + " unpackActive=" + unpack.active
+                    + " queued=" + unpack.queued;
         }
     }
 }

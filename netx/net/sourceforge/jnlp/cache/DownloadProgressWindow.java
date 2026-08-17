@@ -219,7 +219,7 @@ final class DownloadProgressWindow {
             }
             if (ratesTick) {
                 OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
-                        phase + " progress " + s.percent + "%");
+                        phase + " progress " + s.mathLine());
             }
             return;
         }
@@ -261,9 +261,7 @@ final class DownloadProgressWindow {
                     + "   " + left);
             if (ratesTick) {
                 OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
-                        "Download progress " + s.percent + "% "
-                                + DownloadProgress.formatBytes(s.bytes) + "/"
-                                + DownloadProgress.formatBytes(s.knownTotal)
+                        "Download progress " + s.mathLine()
                                 + " mean=" + DownloadProgress.formatRate(s.meanBps)
                                 + " now=" + DownloadProgress.formatRate(s.nowBps)
                                 + " eta=" + DownloadProgress.formatEta(s.etaMs)

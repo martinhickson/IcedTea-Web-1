@@ -569,6 +569,16 @@ public class ResourceTracker {
         return getResource(location).getSize(); // atomic
     }
 
+    /** HTTP Content-Length. Not the unpacked jar. */
+    public long getWireSize(URL location) {
+        return getResource(location).getWireSize();
+    }
+
+    /** GET body bytes. Not Pack200 output. */
+    public long getWireTransferred(URL location) {
+        return getResource(location).getWireTransferred();
+    }
+
     /**
      * Start a new download thread.
      * <p>
