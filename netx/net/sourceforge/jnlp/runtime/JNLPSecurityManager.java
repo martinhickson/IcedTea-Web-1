@@ -27,6 +27,7 @@ import java.security.Permission;
 
 import net.sourceforge.jnlp.security.SecurityDialogs.AccessType;
 import net.sourceforge.jnlp.services.ServiceUtil;
+import net.sourceforge.jnlp.util.UrlUtils;
 import net.sourceforge.jnlp.util.logging.OutputController;
 import net.sourceforge.jnlp.util.WeakList;
 import net.sourceforge.swing.SwingUtils;
@@ -301,6 +302,15 @@ class JNLPSecurityManager extends SecurityManager {
             return;
         }
 
+        // Resolve of a private/link-local literal IP (VPN / RFC1918 / loopback).
+        // Must run before the trusted-app bypass: allowing resolve lets
+        // InetAddress.getHostName() call getHostByAddr. Policy implies() also
+        // PTRs via SocketPermission.getCanonName before it denies. Throw here
+        // so getHostName() returns the IP with no DNS (CXF local-address).
+        if (UrlUtils.isResolveOfPrivateLiteralIp(perm)) {
+            throw new SecurityException(perm.toString());
+        }
+
         // JDK dynamic proxies / instrumentation often use static ProtectionDomains
         // that never consult JNLPPolicy. AccessController then denies getClassLoader
         // even for trusted <all-permissions/> apps (seen in GTT/TestComplete stacks).
@@ -423,6 +433,27 @@ class JNLPSecurityManager extends SecurityManager {
         } catch (Exception se) {
             return false;
         }
+    }
+
+    /**
+     * {@code port == -1} is {@code resolve} ({@link java.net.InetAddress#getHostName()}).
+     * Private literals are denied here so the JDK never builds a
+     * {@link SocketPermission} that would PTR in {@code implies}.
+     */
+    @Override
+    public void checkConnect(String host, int port) {
+        if (port == -1 && UrlUtils.isPrivateOrLinkLocalLiteralIp(host)) {
+            throw new SecurityException("resolve " + host);
+        }
+        super.checkConnect(host, port);
+    }
+
+    @Override
+    public void checkConnect(String host, int port, Object context) {
+        if (port == -1 && UrlUtils.isPrivateOrLinkLocalLiteralIp(host)) {
+            throw new SecurityException("resolve " + host);
+        }
+        super.checkConnect(host, port, context);
     }
 
     /**
