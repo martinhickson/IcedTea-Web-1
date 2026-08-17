@@ -45,6 +45,10 @@ public final class DownloadProgress {
     volatile long startMillis;
     /** Sum of HTTP Content-Lengths. Never unpacked jar lengths. */
     volatile long knownTotal;
+    /** Local file bytes when settling from cache (not wire). */
+    final AtomicLong cacheBytes = new AtomicLong();
+    volatile long cacheKnown;
+    volatile boolean cacheLoad;
     volatile String title = "";
     volatile ResourceTracker tracker;
     volatile URL[] resources;
@@ -140,6 +144,28 @@ public final class DownloadProgress {
                 "Download progress begin known=" + knownTotal
                         + " resources=" + (resources == null ? 0 : resources.length));
         DownloadProgressWindow.open(next);
+    }
+
+    /** Denominator for the Loading bar: sum of local cache file lengths. */
+    public static void setCacheKnown(long n) {
+        DownloadProgress p = instance;
+        if (!active || p == null || n <= 0L) {
+            return;
+        }
+        p.cacheLoad = true;
+        if (n > p.cacheKnown) {
+            p.cacheKnown = n;
+        }
+    }
+
+    /** Numerator for the Loading bar. Local file length only. */
+    public static void noteCacheHit(long localBytes) {
+        DownloadProgress p = instance;
+        if (!active || p == null || localBytes <= 0L) {
+            return;
+        }
+        p.cacheLoad = true;
+        p.cacheBytes.addAndGet(localBytes);
     }
 
     public static void markComplete() {
@@ -410,22 +436,24 @@ public final class DownloadProgress {
             refreshKnownTotal(tracker, resources);
         }
         long now = System.currentTimeMillis();
-        long b = bytes.get();
+        boolean loading = cacheLoad && !wireStarted;
+        long b = loading ? cacheBytes.get() : bytes.get();
+        long known = loading && cacheKnown > 0L ? cacheKnown : knownTotal;
         recordSample(now, b);
         long elapsed = Math.max(1L, now - startMillis);
         double meanBps = (b * 1000.0) / elapsed;
         long[] instant = instantWindow(now, b);
         double nowBps = instant[1] > 0 ? (instant[0] * 1000.0) / instant[1] : 0.0;
-        long remain = knownTotal > b ? knownTotal - b : 0L;
+        long remain = known > b ? known - b : 0L;
         long etaMs = nowBps > 1.0 ? (long) (remain / nowBps * 1000.0) : -1L;
-        int wirePct = knownTotal > 0 ? (int) Math.min(100L, (b * 100L) / knownTotal) : 0;
-        // Wire bytes can finish a minute before Pack200 unpack / integrity.
-        // Never paint 100% until wait() returns or users think it hung.
+        int wirePct = known > 0 ? (int) Math.min(100L, (b * 100L) / known) : 0;
+        // Wire / cache bytes can finish before LaunchPrep. Never paint 100%
+        // until wait() returns or users think it hung.
         int pct = complete ? 100 : Math.min(99, wirePct);
         UnpackSnap unpack = unpackSnapshot();
         // Pack200 on a download worker is still Downloading. Unpacking is only
         // after every GET body is finished — not when a percent hits 99.
-        boolean unpacking = !complete && wireDone()
+        boolean unpacking = !complete && !loading && wireDone()
                 && (deferredUnpack || unpack.active || unpack.queued > 0);
         String finishing = "";
         if (isAdvanced()) {
@@ -439,8 +467,8 @@ public final class DownloadProgress {
         for (int i = 0; i < slots.length; i++) {
             snaps[i] = slots[i].snapshot(now);
         }
-        return new Snapshot(title, b, knownTotal, pct, wirePct, wireOpen.get(), wireDone(),
-                meanBps, nowBps, etaMs, finishing, unpacking, unpack, snaps);
+        return new Snapshot(title, b, known, pct, wirePct, wireOpen.get(), wireDone(),
+                meanBps, nowBps, etaMs, finishing, unpacking, loading, unpack, snaps);
     }
 
     UnpackSnap unpackSnapshot() {
@@ -772,12 +800,14 @@ public final class DownloadProgress {
         final long etaMs;
         final String finishing;
         final boolean unpacking;
+        final boolean loading;
         final UnpackSnap unpack;
         final SlotSnap[] slots;
 
         Snapshot(String title, long bytes, long knownTotal, int percent, int wirePct,
                 int wireOpen, boolean wireDone, double meanBps, double nowBps, long etaMs,
-                String finishing, boolean unpacking, UnpackSnap unpack, SlotSnap[] slots) {
+                String finishing, boolean unpacking, boolean loading, UnpackSnap unpack,
+                SlotSnap[] slots) {
             this.title = title;
             this.bytes = bytes;
             this.knownTotal = knownTotal;
@@ -790,6 +820,7 @@ public final class DownloadProgress {
             this.etaMs = etaMs;
             this.finishing = finishing;
             this.unpacking = unpacking;
+            this.loading = loading;
             this.unpack = unpack != null ? unpack : new UnpackSnap(false, "", 0L, 0L, 0, 0);
             this.slots = slots;
         }
@@ -800,6 +831,7 @@ public final class DownloadProgress {
             return percent + "% b=" + bytes + " known=" + knownTotal
                     + " remain=" + remain + " wirePct=" + wirePct
                     + " open=" + wireOpen + " wireDone=" + wireDone
+                    + " loading=" + loading
                     + " unpacking=" + unpacking
                     + " unpackActive=" + unpack.active
                     + " queued=" + unpack.queued;

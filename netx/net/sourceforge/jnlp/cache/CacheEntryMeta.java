@@ -11,6 +11,8 @@ public final class CacheEntryMeta {
     public String resourceUrl;
     public String jnlpPath;
     public Long contentLength;
+    /** HTTP Content-Length (pack.gz wire size). Not the unpacked jar length. */
+    public Long wireLength;
     public Long lastModified;
     public Long lastUpdated;
     public boolean markedDelete;
@@ -23,6 +25,7 @@ public final class CacheEntryMeta {
         StringBuilder sb = new StringBuilder();
         appendInfoLine(sb, CacheEntry.KEY_JNLP_PATH, jnlpPath);
         appendInfoLine(sb, "content-length", contentLength == null ? null : Long.toString(contentLength));
+        appendInfoLine(sb, "wire-length", wireLength == null ? null : Long.toString(wireLength));
         appendInfoLine(sb, "last-modified", lastModified == null ? null : Long.toString(lastModified));
         appendInfoLine(sb, "last-updated", lastUpdated == null ? null : Long.toString(lastUpdated));
         appendInfoLine(sb, "delete", Boolean.toString(markedDelete));
@@ -45,6 +48,7 @@ public final class CacheEntryMeta {
         c.resourceUrl = resourceUrl;
         c.jnlpPath = jnlpPath;
         c.contentLength = contentLength;
+        c.wireLength = wireLength;
         c.lastModified = lastModified;
         c.lastUpdated = lastUpdated;
         c.markedDelete = markedDelete;

@@ -69,11 +69,15 @@ public class SqliteCacheCatalogTest {
             meta.path = jar.getAbsolutePath();
             meta.jnlpPath = "http://example.com/app.jnlp";
             meta.contentLength = 12L;
+            meta.wireLength = 3L;
+            meta.lastModified = 1_700_000_000_000L;
             meta.markedDelete = false;
             wrapper.putMeta(meta);
             CacheEntryMeta stored = wrapper.getMetaByPath(jar.getAbsolutePath());
             assertEquals("http://example.com/app.jnlp", stored.jnlpPath);
             assertEquals(Long.valueOf(12L), stored.contentLength);
+            assertEquals(Long.valueOf(3L), stored.wireLength);
+            assertEquals(Long.valueOf(1_700_000_000_000L), stored.lastModified);
             assertFalse(new File(jar.getPath() + CacheDirectory.INFO_SUFFIX).exists());
         } finally {
             wrapper.unlock();
@@ -158,7 +162,7 @@ public class SqliteCacheCatalogTest {
                 }
                 try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
                     assertTrue(rs.next());
-                    assertEquals(3, rs.getInt(1));
+                    assertEquals(4, rs.getInt(1));
                 }
                 try (ResultSet rs = st.executeQuery(
                         "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_cache_entry_folder'")) {

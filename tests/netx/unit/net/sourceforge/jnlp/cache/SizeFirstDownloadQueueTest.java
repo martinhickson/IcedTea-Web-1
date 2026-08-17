@@ -101,6 +101,18 @@ public class SizeFirstDownloadQueueTest {
     }
 
     @Test
+    public void recordHeadStoresMetaForReuse() throws Exception {
+        Resource r = resource("meta.jar", -1);
+        URL u = r.getLocation();
+        SizeFirstDownloadQueue.recordHead(r, u, 12_345L, 1_700_000_000_000L);
+        SizeFirstDownloadQueue.HeadMeta meta = SizeFirstDownloadQueue.headMeta(r);
+        assertEquals(u, SizeFirstDownloadQueue.headWinner(r));
+        assertEquals(12_345L, meta.contentLength);
+        assertEquals(1_700_000_000_000L, meta.lastModified);
+        assertEquals(12_345L, r.getSize());
+    }
+
+    @Test
     public void singletonFlushDoesNotHead() throws Exception {
         Resource one = resource("only.jar", -1);
         java.util.concurrent.atomic.AtomicInteger heads = new java.util.concurrent.atomic.AtomicInteger();

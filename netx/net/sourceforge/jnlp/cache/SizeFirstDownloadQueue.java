@@ -44,7 +44,7 @@ public final class SizeFirstDownloadQueue {
     private static final Consumer<Resource> DEFAULT_STARTER = SizeFirstDownloadQueue::startDownload;
 
     private static final ConcurrentLinkedQueue<Resource> PENDING = new ConcurrentLinkedQueue<>();
-    private static final ConcurrentHashMap<Resource, URL> HEAD_WINNER = new ConcurrentHashMap<Resource, URL>();
+    private static final ConcurrentHashMap<Resource, HeadMeta> HEAD_META = new ConcurrentHashMap<Resource, HeadMeta>();
     private static final Object FLUSH_LOCK = new Object();
     private static final AtomicBoolean MAIN_SWEEP_DONE = new AtomicBoolean();
     private static volatile ExecutorService GET_LANES;
@@ -126,6 +126,10 @@ public final class SizeFirstDownloadQueue {
                     "Size-first HEAD complete: " + known + "/" + largestFirst.size()
                             + " sizes in " + wall + "ms (" + width + " in flight)"
                             + " sizeSum=" + sizeSum + " wireSum=" + wireSum);
+            int cacheHits = noteCacheHits(largestFirst);
+            log(OutputController.Level.MESSAGE_ALL,
+                    "Size-first HEAD cache hits: " + cacheHits + "/" + largestFirst.size()
+                            + " (skip GET when Last-Modified or wire length matches)");
             logLanePlan(largestFirst, largeLanes, smallLanes);
             MAIN_SWEEP_DONE.set(true);
             startTwoLaneDownloads(largestFirst, largeLanes, smallLanes);
@@ -252,7 +256,61 @@ public final class SizeFirstDownloadQueue {
     }
 
     static URL headWinner(Resource resource) {
-        return resource == null ? null : HEAD_WINNER.get(resource);
+        HeadMeta meta = headMeta(resource);
+        return meta == null ? null : meta.url;
+    }
+
+    static HeadMeta headMeta(Resource resource) {
+        return resource == null ? null : HEAD_META.get(resource);
+    }
+
+    /** Test seam: plant HEAD headers without HTTP. */
+    static void recordHead(Resource resource, URL url, long contentLength, long lastModified) {
+        if (resource == null || url == null) {
+            return;
+        }
+        if (contentLength > 0L) {
+            resource.setSize(contentLength);
+            resource.setWireSize(contentLength);
+        }
+        resource.setDownloadLocation(url);
+        HEAD_META.put(resource, new HeadMeta(url, contentLength, lastModified));
+    }
+
+    /**
+     * HEAD result reused by the GET lanes. Last-Modified and Content-Length
+     * are compared to the catalog so a current cache skips the body.
+     */
+    static final class HeadMeta {
+        final URL url;
+        final long contentLength;
+        final long lastModified;
+
+        HeadMeta(URL url, long contentLength, long lastModified) {
+            this.url = url;
+            this.contentLength = contentLength;
+            this.lastModified = lastModified;
+        }
+    }
+
+    private static int noteCacheHits(List<Resource> batch) {
+        long cacheKnown = 0L;
+        int hits = 0;
+        for (Resource r : batch) {
+            HeadMeta meta = HEAD_META.get(r);
+            if (meta == null || !ResourceDownloader.peekCacheHit(r, meta)) {
+                continue;
+            }
+            hits++;
+            java.io.File local = ResourceDownloader.peekCachedFile(r);
+            if (local != null) {
+                cacheKnown += local.length();
+            }
+        }
+        if (hits > 0) {
+            DownloadProgress.setCacheKnown(cacheKnown);
+        }
+        return hits;
     }
 
     /**
@@ -266,7 +324,7 @@ public final class SizeFirstDownloadQueue {
 
     static void resetForTests() {
         PENDING.clear();
-        HEAD_WINNER.clear();
+        HEAD_META.clear();
         MAIN_SWEEP_DONE.set(false);
         downloadStarter = DEFAULT_STARTER;
         headProbe = SizeFirstDownloadQueue::headOne;
@@ -376,16 +434,19 @@ public final class SizeFirstDownloadQueue {
                     continue;
                 }
                 long len = contentLength(response);
-                if (len > 0) {
-                    resource.setSize(len);
-                    resource.setWireSize(len);
+                long lastModified = response.getLastModified();
+                if (len > 0 || lastModified > 0) {
+                    if (len > 0) {
+                        resource.setSize(len);
+                        resource.setWireSize(len);
+                    }
                     resource.setDownloadLocation(url);
-                    HEAD_WINNER.put(resource, url);
+                    HEAD_META.put(resource, new HeadMeta(url, len, lastModified));
                     ResourceUrlCreator.notePackHost(url, url.getPath() != null
                             && url.getPath().endsWith(".pack.gz"));
                     log(OutputController.Level.MESSAGE_DEBUG,
                             "Size-first HEAD winner " + resourceName(resource)
-                                    + " " + formatSize(len) + " " + url);
+                                    + " " + formatSize(len) + " lm=" + lastModified + " " + url);
                     return;
                 }
             } catch (Exception e) {

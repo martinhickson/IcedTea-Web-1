@@ -34,6 +34,7 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 public class CacheEntry {
 
     private static final String KEY_CONTENT_LENGTH = "content-length";
+    private static final String KEY_WIRE_LENGTH = "wire-length";
     private static final String KEY_LAST_MODIFIED = "last-modified";
     private static final String KEY_LAST_UPDATED = "last-updated";
     public static final String KEY_JNLP_PATH = "jnlp-path";
@@ -76,6 +77,7 @@ public class CacheEntry {
             if (stored != null) {
                 this.meta.jnlpPath = stored.jnlpPath;
                 this.meta.contentLength = stored.contentLength;
+                this.meta.wireLength = stored.wireLength;
                 this.meta.lastModified = stored.lastModified;
                 this.meta.lastUpdated = stored.lastUpdated;
                 this.meta.markedDelete = stored.markedDelete;
@@ -146,6 +148,14 @@ public class CacheEntry {
         setLongKey(KEY_CONTENT_LENGTH, length);
     }
 
+    public long getRemoteWireLength() {
+        return getLongKey(KEY_WIRE_LENGTH);
+    }
+
+    public void setRemoteWireLength(long length) {
+        setLongKey(KEY_WIRE_LENGTH, length);
+    }
+
     public void setJnlpPath(String jnlpPath) {
         meta.jnlpPath = jnlpPath;
     }
@@ -166,6 +176,8 @@ public class CacheEntry {
     private void setLongKey(String key, long value) {
         if (KEY_CONTENT_LENGTH.equals(key)) {
             meta.contentLength = value;
+        } else if (KEY_WIRE_LENGTH.equals(key)) {
+            meta.wireLength = value;
         } else if (KEY_LAST_MODIFIED.equals(key)) {
             meta.lastModified = value;
         } else if (KEY_LAST_UPDATED.equals(key)) {
@@ -176,6 +188,9 @@ public class CacheEntry {
     private Long longField(String key) {
         if (KEY_CONTENT_LENGTH.equals(key)) {
             return meta.contentLength;
+        }
+        if (KEY_WIRE_LENGTH.equals(key)) {
+            return meta.wireLength;
         }
         if (KEY_LAST_MODIFIED.equals(key)) {
             return meta.lastModified;
@@ -264,6 +279,27 @@ public class CacheEntry {
 
             return false; // should throw?
         }
+    }
+
+    /**
+     * HEAD vs catalog: Last-Modified match, or HTTP Content-Length vs stored
+     * {@code wire_length} (pack.gz) / on-disk length (plain jar).
+     */
+    boolean matchesHead(long headLastModified, long headWireLength, File cachedFile) {
+        File file = cachedFile != null ? cachedFile : getCacheFile();
+        if (file == null || !file.isFile() || file.length() == 0) {
+            return false;
+        }
+        if (headLastModified > 0L && isCurrent(headLastModified, file)) {
+            return true;
+        }
+        if (headWireLength > 0L && isCached(file)) {
+            if (meta.wireLength != null && meta.wireLength.longValue() == headWireLength) {
+                return true;
+            }
+            return file.length() == headWireLength;
+        }
+        return false;
     }
 
     /**

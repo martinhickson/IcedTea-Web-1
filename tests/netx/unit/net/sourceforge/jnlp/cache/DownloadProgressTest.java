@@ -49,6 +49,21 @@ public class DownloadProgressTest {
     }
 
     @Test
+    public void cacheLoadUsesLocalBytesAndLoadingFlag() {
+        DownloadProgress p = new DownloadProgress(2);
+        p.cacheLoad = true;
+        p.cacheKnown = 1_000L;
+        p.cacheBytes.set(400L);
+        DownloadProgress.Snapshot s = p.snapshot();
+        assertTrue(s.loading);
+        assertTrue(!s.unpacking);
+        assertEquals(400L, s.bytes);
+        assertEquals(1_000L, s.knownTotal);
+        assertEquals(40, s.percent);
+        assertTrue(s.mathLine().contains("loading=true"));
+    }
+
+    @Test
     public void addBytesIsNoOpWhenInactive() {
         DownloadProgress.end();
         DownloadProgress.addBytes(999);
