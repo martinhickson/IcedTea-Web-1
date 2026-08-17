@@ -49,6 +49,26 @@ public class DownloadProgressTest {
     }
 
     @Test
+    public void preparingHeadPhaseIsNotDownloadingOrLoading() {
+        DownloadProgress p = new DownloadProgress(2);
+        p.preparing = true;
+        DownloadProgress.Snapshot s = p.snapshot();
+        assertTrue(s.preparing);
+        assertTrue(!s.loading);
+        assertTrue(!s.unpacking);
+        assertEquals(0, s.percent);
+        assertTrue(s.mathLine().contains("preparing=true"));
+        p.preparing = false;
+        p.cacheLoad = true;
+        p.cacheKnown = 100L;
+        p.cacheBytes.set(50L);
+        s = p.snapshot();
+        assertTrue(!s.preparing);
+        assertTrue(s.loading);
+        assertEquals(50, s.percent);
+    }
+
+    @Test
     public void cacheLoadUsesLocalBytesAndLoadingFlag() {
         DownloadProgress p = new DownloadProgress(2);
         p.cacheLoad = true;

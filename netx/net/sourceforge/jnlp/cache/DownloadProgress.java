@@ -49,6 +49,8 @@ public final class DownloadProgress {
     final AtomicLong cacheBytes = new AtomicLong();
     volatile long cacheKnown;
     volatile boolean cacheLoad;
+    /** Size-first HEAD in flight. Not a download. */
+    volatile boolean preparing;
     volatile String title = "";
     volatile ResourceTracker tracker;
     volatile URL[] resources;
@@ -126,6 +128,9 @@ public final class DownloadProgress {
             }
             p.tracker = tracker;
             p.resources = resources;
+            if (!p.wireStarted && resources != null && resources.length >= 2) {
+                p.preparing = true;
+            }
             OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
                     "Download progress begin reuse known=" + p.knownTotal
                             + " incoming=" + knownTotal
@@ -140,6 +145,9 @@ public final class DownloadProgress {
         instance = next;
         active = true;
         closeAllowed = false;
+        if (resources != null && resources.length >= 2) {
+            next.preparing = true;
+        }
         OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
                 "Download progress begin known=" + knownTotal
                         + " resources=" + (resources == null ? 0 : resources.length));
@@ -155,6 +163,21 @@ public final class DownloadProgress {
         p.cacheLoad = true;
         if (n > p.cacheKnown) {
             p.cacheKnown = n;
+        }
+    }
+
+    public static void markPreparing() {
+        DownloadProgress p = instance;
+        if (!active || p == null || p.wireStarted) {
+            return;
+        }
+        p.preparing = true;
+    }
+
+    public static void clearPreparing() {
+        DownloadProgress p = instance;
+        if (p != null) {
+            p.preparing = false;
         }
     }
 
@@ -436,7 +459,8 @@ public final class DownloadProgress {
             refreshKnownTotal(tracker, resources);
         }
         long now = System.currentTimeMillis();
-        boolean loading = cacheLoad && !wireStarted;
+        boolean preparingNow = preparing && !wireStarted;
+        boolean loading = cacheLoad && !wireStarted && !preparingNow;
         long b = loading ? cacheBytes.get() : bytes.get();
         long known = loading && cacheKnown > 0L ? cacheKnown : knownTotal;
         recordSample(now, b);
@@ -468,7 +492,7 @@ public final class DownloadProgress {
             snaps[i] = slots[i].snapshot(now);
         }
         return new Snapshot(title, b, known, pct, wirePct, wireOpen.get(), wireDone(),
-                meanBps, nowBps, etaMs, finishing, unpacking, loading, unpack, snaps);
+                meanBps, nowBps, etaMs, finishing, unpacking, loading, preparingNow, unpack, snaps);
     }
 
     UnpackSnap unpackSnapshot() {
@@ -801,13 +825,14 @@ public final class DownloadProgress {
         final String finishing;
         final boolean unpacking;
         final boolean loading;
+        final boolean preparing;
         final UnpackSnap unpack;
         final SlotSnap[] slots;
 
         Snapshot(String title, long bytes, long knownTotal, int percent, int wirePct,
                 int wireOpen, boolean wireDone, double meanBps, double nowBps, long etaMs,
-                String finishing, boolean unpacking, boolean loading, UnpackSnap unpack,
-                SlotSnap[] slots) {
+                String finishing, boolean unpacking, boolean loading, boolean preparing,
+                UnpackSnap unpack, SlotSnap[] slots) {
             this.title = title;
             this.bytes = bytes;
             this.knownTotal = knownTotal;
@@ -821,6 +846,7 @@ public final class DownloadProgress {
             this.finishing = finishing;
             this.unpacking = unpacking;
             this.loading = loading;
+            this.preparing = preparing;
             this.unpack = unpack != null ? unpack : new UnpackSnap(false, "", 0L, 0L, 0, 0);
             this.slots = slots;
         }
@@ -831,6 +857,7 @@ public final class DownloadProgress {
             return percent + "% b=" + bytes + " known=" + knownTotal
                     + " remain=" + remain + " wirePct=" + wirePct
                     + " open=" + wireOpen + " wireDone=" + wireDone
+                    + " preparing=" + preparing
                     + " loading=" + loading
                     + " unpacking=" + unpacking
                     + " unpackActive=" + unpack.active

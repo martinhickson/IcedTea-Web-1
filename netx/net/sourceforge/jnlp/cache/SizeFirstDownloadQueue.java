@@ -102,6 +102,7 @@ public final class SizeFirstDownloadQueue {
             log(OutputController.Level.MESSAGE_ALL,
                     "Size-first HEAD start: " + batch.size() + " jars, "
                             + width + " in flight");
+            DownloadProgress.markPreparing();
             long t0 = System.currentTimeMillis();
             probeHeads(batch, width);
             List<Resource> largestFirst = orderLargestFirst(batch);
@@ -130,6 +131,7 @@ public final class SizeFirstDownloadQueue {
             log(OutputController.Level.MESSAGE_ALL,
                     "Size-first HEAD cache hits: " + cacheHits + "/" + largestFirst.size()
                             + " (skip GET when Last-Modified or wire length matches)");
+            DownloadProgress.clearPreparing();
             logLanePlan(largestFirst, largeLanes, smallLanes);
             MAIN_SWEEP_DONE.set(true);
             startTwoLaneDownloads(largestFirst, largeLanes, smallLanes);
