@@ -13,6 +13,8 @@ import java.nio.channels.FileChannel;
 import java.nio.channels.FileLock;
 import java.nio.channels.OverlappingFileLockException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
+import java.nio.file.Files;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -42,6 +44,7 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 final class SqliteCacheCatalog implements CacheCatalog {
 
     static final String DB_FILE_NAME = "cache_catalog.sqlite";
+    static final String INIT_LOCK_SUFFIX = ".initlock";
     /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
     static final String FAILED_MARKER = ".sqlite_catalog_failed";
     /** One-fifth of a minute. Busy wait, first-create lock, and close all cap here. */
@@ -143,7 +146,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
         if (peerCatalogLooksLive(dbFile)) {
             return openAndInit(path);
         }
-        File lockFile = new File(dbFile.getPath() + ".initlock");
+        File lockFile = initLockFile(dbFile);
         File parent = lockFile.getParentFile();
         if (parent != null && !parent.exists()) {
             parent.mkdirs();
@@ -154,13 +157,12 @@ final class SqliteCacheCatalog implements CacheCatalog {
             try {
                 lock = tryLockFor(ch, INIT_LOCK_MS);
                 if (lock == null) {
-                    return openExistingCatalogOrThrow(path,
+                    return waitForLiveCatalogOrThrow(path, 1_000,
                             "catalog init lock timed out");
                 }
-                return openAndInit(path);
+                return createOrOpenExclusive(path);
             } catch (OverlappingFileLockException overlap) {
-                // Same JVM already holds the lock; open, do not create a second file.
-                return openExistingCatalogOrThrow(path,
+                return waitForLiveCatalogOrThrow(path, INIT_LOCK_MS,
                         "catalog init lock overlapped in-process");
             } finally {
                 if (lock != null) {
@@ -173,16 +175,56 @@ final class SqliteCacheCatalog implements CacheCatalog {
             }
         } catch (IOException ioe) {
             OutputController.getLogger().log(ioe);
-            // FileLock unavailable (some NFS): still create so a single JVM can start.
-            return openAndInit(path);
+            // FileLock unavailable (some NFS): exclusive create is the mutex.
+            return createOrOpenExclusive(path);
         }
     }
 
-    private Connection openExistingCatalogOrThrow(String path, String why) throws SQLException {
+    /**
+     * Winner of {@code CREATE_NEW} initializes this inode. Loser waits for a
+     * live header instead of opening a second database.
+     */
+    private Connection createOrOpenExclusive(String path) throws SQLException {
         if (peerCatalogLooksLive(dbFile)) {
             return openAndInit(path);
         }
-        throw new SQLException(why + "; leaving peer catalog in place: " + dbFile);
+        File parent = dbFile.getParentFile();
+        if (parent != null && !parent.exists()) {
+            parent.mkdirs();
+        }
+        if (!dbFile.isFile()) {
+            try {
+                Files.createFile(dbFile.toPath());
+            } catch (FileAlreadyExistsException exists) {
+                return waitForLiveCatalogOrThrow(path, TIME_BOX_MS,
+                        "catalog file appeared during create");
+            } catch (IOException ioe) {
+                OutputController.getLogger().log(ioe);
+                if (peerCatalogLooksLive(dbFile)) {
+                    return openAndInit(path);
+                }
+                throw new SQLException("unable to create catalog file: " + dbFile, ioe);
+            }
+        }
+        return openAndInit(path);
+    }
+
+    private Connection waitForLiveCatalogOrThrow(String path, long maxWaitMs, String why)
+            throws SQLException {
+        long deadline = System.currentTimeMillis() + Math.max(0L, maxWaitMs);
+        while (true) {
+            if (peerCatalogLooksLive(dbFile)) {
+                return openAndInit(path);
+            }
+            if (System.currentTimeMillis() >= deadline) {
+                throw new SQLException(why + "; leaving peer catalog in place: " + dbFile);
+            }
+            sleepQuietly(50);
+        }
+    }
+
+    static File initLockFile(File dbFile) {
+        return new File(dbFile.getPath() + INIT_LOCK_SUFFIX);
     }
 
     private static FileLock tryLockFor(FileChannel ch, long maxWaitMs) throws IOException {
@@ -326,6 +368,9 @@ final class SqliteCacheCatalog implements CacheCatalog {
         }
         String m = e.getMessage() == null ? "" : e.getMessage().toLowerCase(Locale.ROOT);
         if (m.contains("busy") || m.contains("locked")) {
+            return false;
+        }
+        if (isRecentlyModified(initLockFile(dbFile), TIME_BOX_MS)) {
             return false;
         }
         return dbFile.isFile() && !isRecentlyModified(dbFile, TIME_BOX_MS);

@@ -9,6 +9,9 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
+import java.io.RandomAccessFile;
+import java.nio.channels.FileChannel;
+import java.nio.channels.FileLock;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -19,6 +22,7 @@ import java.util.Map.Entry;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.After;
 import org.junit.Before;
@@ -246,6 +250,10 @@ public class SqliteCacheCatalogTest {
                 "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-wal").delete();
         new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-shm").delete();
+        File leftoverLock = SqliteCacheCatalog.initLockFile(dbFile);
+        if (leftoverLock.isFile()) {
+            assertTrue(leftoverLock.setLastModified(System.currentTimeMillis() - 60_000L));
+        }
         // Stable garbage only: a just-written file may be a peer still heading the DB.
         assertTrue(dbFile.setLastModified(System.currentTimeMillis() - 60_000L));
 
@@ -315,6 +323,128 @@ public class SqliteCacheCatalogTest {
                 SqliteCacheCatalog.shouldQuarantine(notAdb, empty));
         assertTrue(SqliteCacheCatalog.isBusy(busy));
         assertFalse(SqliteCacheCatalog.isBusy(new SQLException("UNIQUE constraint failed", "HY000", 19)));
+        File staleGarbage = new File(tmp.newFolder("stale-with-lock"), SqliteCacheCatalog.DB_FILE_NAME);
+        java.nio.file.Files.write(staleGarbage.toPath(),
+                "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        assertTrue(staleGarbage.setLastModified(System.currentTimeMillis() - 60_000L));
+        File recentLock = SqliteCacheCatalog.initLockFile(staleGarbage);
+        assertTrue(recentLock.createNewFile());
+        assertFalse("recent initlock means a peer is still creating",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, staleGarbage));
+    }
+
+    @Test
+    public void twoThreadsFirstCreateShareOneCatalog() throws Exception {
+        File parent = tmp.newFolder("dual-thread-create");
+        CountDownLatch start = new CountDownLatch(1);
+        AtomicInteger added = new AtomicInteger();
+        AtomicReference<Throwable> err = new AtomicReference<Throwable>();
+        Runnable work = new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    assertTrue(start.await(5, TimeUnit.SECONDS));
+                    CacheLRUWrapper w = CacheLRUWrapper.createForTests(true, parent);
+                    try {
+                        File db = w.getCacheDir().getFile();
+                        long tid = Thread.currentThread().getId();
+                        for (int i = 0; i < 20; i++) {
+                            File jar = new File(db, tid + "/http/thread.example/u" + i + ".jar");
+                            assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+                            assertTrue(jar.exists() || jar.createNewFile());
+                            w.lock();
+                            try {
+                                w.load();
+                                if (w.addEntry(System.nanoTime() + "," + tid, jar.getAbsolutePath())) {
+                                    added.incrementAndGet();
+                                }
+                                w.store();
+                            } finally {
+                                w.unlock();
+                            }
+                        }
+                    } finally {
+                        w.close();
+                    }
+                } catch (Throwable t) {
+                    err.compareAndSet(null, t);
+                }
+            }
+        };
+        Thread a = new Thread(work, "catalog-a");
+        Thread b = new Thread(work, "catalog-b");
+        a.start();
+        b.start();
+        start.countDown();
+        a.join(30_000L);
+        b.join(30_000L);
+        if (err.get() != null) {
+            throw new AssertionError(err.get());
+        }
+        assertEquals(40, added.get());
+        File dbDir = CacheLRUWrapper.sqliteCacheRoot(parent);
+        File[] bad = dbDir.listFiles((d, n) -> n.contains(".corrupt-")
+                || n.equals(SqliteCacheCatalog.FAILED_MARKER));
+        assertTrue("split/quarantine: " + java.util.Arrays.toString(bad),
+                bad == null || bad.length == 0);
+        assertTrue(SqliteCacheCatalog.looksLikeSqliteHeader(
+                new File(dbDir, SqliteCacheCatalog.DB_FILE_NAME)));
+    }
+
+    @Test
+    public void waiterOpensHeldInitLockCatalogInsteadOfCreating() throws Exception {
+        File parent = tmp.newFolder("held-initlock");
+        File dbDir = CacheLRUWrapper.sqliteCacheRoot(parent);
+        assertTrue(dbDir.mkdirs() || dbDir.isDirectory());
+        File dbFile = new File(dbDir, SqliteCacheCatalog.DB_FILE_NAME);
+        File lockFile = SqliteCacheCatalog.initLockFile(dbFile);
+        CountDownLatch locked = new CountDownLatch(1);
+        AtomicReference<Throwable> holderErr = new AtomicReference<Throwable>();
+        Thread holder = new Thread(new Runnable() {
+            @Override
+            public void run() {
+                try (RandomAccessFile raf = new RandomAccessFile(lockFile, "rw");
+                     FileChannel ch = raf.getChannel();
+                     FileLock lock = ch.lock()) {
+                    locked.countDown();
+                    Thread.sleep(150);
+                    Class.forName("org.sqlite.JDBC");
+                    try (Connection c = DriverManager.getConnection("jdbc:sqlite:" + dbFile.getAbsolutePath());
+                         Statement st = c.createStatement()) {
+                        st.execute("PRAGMA journal_mode=WAL");
+                        st.execute("CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL)");
+                    }
+                    Thread.sleep(400);
+                } catch (Throwable t) {
+                    holderErr.compareAndSet(null, t);
+                }
+            }
+        }, "hold-initlock");
+        holder.start();
+        assertTrue(locked.await(5, TimeUnit.SECONDS));
+        CacheLRUWrapper w = CacheLRUWrapper.createForTests(true, parent);
+        try {
+            w.lock();
+            try {
+                w.load();
+                File jar = new File(dbDir, "1/http/wait.example/x.jar");
+                assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+                assertTrue(jar.createNewFile());
+                assertTrue(w.addEntry("1,1", jar.getAbsolutePath()));
+            } finally {
+                w.unlock();
+            }
+        } finally {
+            w.close();
+        }
+        holder.join(15_000L);
+        if (holderErr.get() != null) {
+            throw new AssertionError(holderErr.get());
+        }
+        File[] bad = dbDir.listFiles((d, n) -> n.contains(".corrupt-"));
+        assertTrue("must not quarantine while peer holds initlock: " + java.util.Arrays.toString(bad),
+                bad == null || bad.length == 0);
+        assertTrue(SqliteCacheCatalog.looksLikeSqliteHeader(dbFile));
     }
 
     @Test
