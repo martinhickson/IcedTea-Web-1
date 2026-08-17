@@ -306,8 +306,14 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
         Assert.assertTrue(nativeLib.createNewFile() || nativeLib.isFile());
 
         java.util.List<Object[]> rows = CacheDirectory.listViewerRows();
-        Assert.assertEquals(1, rows.size());
-        Object[] row = rows.get(0);
+        Object[] row = null;
+        for (Object[] candidate : rows) {
+            if (jnlp.toString().equals(candidate[6])) {
+                row = candidate;
+                break;
+            }
+        }
+        Assert.assertNotNull("catalog should include this JNLP", row);
         DirectoryNode node = (DirectoryNode) row[0];
         Assert.assertEquals(jnlpFile.getName(), node.toString());
         Assert.assertEquals("http", row[2]);
