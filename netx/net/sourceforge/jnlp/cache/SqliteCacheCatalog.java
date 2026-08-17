@@ -136,9 +136,11 @@ final class SqliteCacheCatalog implements CacheCatalog {
     /**
      * First create is serialized across processes so a 0-byte file is not
      * mistaken for garbage while a peer writes the SQLite header.
+     * A live catalog (valid header or {@code -wal}) skips the lock. If the
+     * lock times out, do not create; only open a catalog the peer already made.
      */
     private Connection openAndInitGuarded(String path) throws SQLException {
-        if (dbFile.isFile() && dbFile.length() >= 16) {
+        if (peerCatalogLooksLive(dbFile)) {
             return openAndInit(path);
         }
         File lockFile = new File(dbFile.getPath() + ".initlock");
@@ -151,9 +153,15 @@ final class SqliteCacheCatalog implements CacheCatalog {
             FileLock lock = null;
             try {
                 lock = tryLockFor(ch, INIT_LOCK_MS);
+                if (lock == null) {
+                    return openExistingCatalogOrThrow(path,
+                            "catalog init lock timed out");
+                }
                 return openAndInit(path);
             } catch (OverlappingFileLockException overlap) {
-                return openAndInit(path);
+                // Same JVM already holds the lock; open, do not create a second file.
+                return openExistingCatalogOrThrow(path,
+                        "catalog init lock overlapped in-process");
             } finally {
                 if (lock != null) {
                     try {
@@ -165,8 +173,16 @@ final class SqliteCacheCatalog implements CacheCatalog {
             }
         } catch (IOException ioe) {
             OutputController.getLogger().log(ioe);
+            // FileLock unavailable (some NFS): still create so a single JVM can start.
             return openAndInit(path);
         }
+    }
+
+    private Connection openExistingCatalogOrThrow(String path, String why) throws SQLException {
+        if (peerCatalogLooksLive(dbFile)) {
+            return openAndInit(path);
+        }
+        throw new SQLException(why + "; leaving peer catalog in place: " + dbFile);
     }
 
     private static FileLock tryLockFor(FileChannel ch, long maxWaitMs) throws IOException {
@@ -294,14 +310,14 @@ final class SqliteCacheCatalog implements CacheCatalog {
 
     /**
      * Quarantine only stable garbage. Never rename a real catalog (valid header),
-     * a live {@code -wal}, a busy/locked peer, or a brand-new empty file that
-     * another process is still initializing.
+     * a live {@code -wal}, a busy/locked peer, or a file a peer may still be
+     * initializing (empty, tiny, or not-yet-a-header and recently touched).
      */
     static boolean shouldQuarantine(SQLException e, File dbFile) {
         if (e == null || dbFile == null) {
             return false;
         }
-        if (new File(dbFile.getPath() + "-wal").isFile()) {
+        if (peerCatalogLooksLive(dbFile)) {
             return false;
         }
         int code = e.getErrorCode();
@@ -312,13 +328,18 @@ final class SqliteCacheCatalog implements CacheCatalog {
         if (m.contains("busy") || m.contains("locked")) {
             return false;
         }
-        if (looksLikeSqliteHeader(dbFile)) {
+        return dbFile.isFile() && !isRecentlyModified(dbFile, TIME_BOX_MS);
+    }
+
+    /** True when WAL or a valid header means a peer already owns this catalog. */
+    static boolean peerCatalogLooksLive(File dbFile) {
+        if (dbFile == null) {
             return false;
         }
-        if (!dbFile.isFile() || dbFile.length() < 16) {
-            return dbFile.isFile() && !isRecentlyModified(dbFile, TIME_BOX_MS);
+        if (new File(dbFile.getPath() + "-wal").isFile()) {
+            return true;
         }
-        return true;
+        return looksLikeSqliteHeader(dbFile);
     }
 
     static boolean isRecentlyModified(File dbFile, long maxAgeMs) {
