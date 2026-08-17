@@ -3,6 +3,7 @@ package net.sourceforge.jnlp.cache;
 import net.sourceforge.jnlp.cache.download.PackUnpackAdmission;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 import java.io.FilterOutputStream;
 import java.io.IOException;
@@ -121,6 +122,10 @@ public final class DownloadProgress {
             }
             p.tracker = tracker;
             p.resources = resources;
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Download progress begin reuse known=" + p.knownTotal
+                            + " incoming=" + knownTotal
+                            + " resources=" + (resources == null ? 0 : resources.length));
             return;
         }
         DownloadProgress next = new DownloadProgress(slotCount);
@@ -131,6 +136,9 @@ public final class DownloadProgress {
         instance = next;
         active = true;
         closeAllowed = false;
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                "Download progress begin known=" + knownTotal
+                        + " resources=" + (resources == null ? 0 : resources.length));
         DownloadProgressWindow.open(next);
     }
 
@@ -382,10 +390,17 @@ public final class DownloadProgress {
             }
         }
         if (wireTotal > p.knownTotal) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Download progress refresh known " + p.knownTotal + " -> " + wireTotal
+                            + " wireRead=" + wireRead);
             p.knownTotal = wireTotal;
         }
         // Never pull unpacked jar lengths into the wire counters.
-        if (wireRead > p.bytes.get()) {
+        long have = p.bytes.get();
+        if (wireRead > have) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "Download progress refresh bytes " + have + " -> " + wireRead
+                            + " known=" + p.knownTotal);
             p.bytes.set(wireRead);
         }
     }
@@ -424,8 +439,8 @@ public final class DownloadProgress {
         for (int i = 0; i < slots.length; i++) {
             snaps[i] = slots[i].snapshot(now);
         }
-        return new Snapshot(title, b, knownTotal, pct, meanBps, nowBps, etaMs, finishing,
-                unpacking, unpack, snaps);
+        return new Snapshot(title, b, knownTotal, pct, wirePct, wireOpen.get(), wireDone(),
+                meanBps, nowBps, etaMs, finishing, unpacking, unpack, snaps);
     }
 
     UnpackSnap unpackSnapshot() {
@@ -749,6 +764,9 @@ public final class DownloadProgress {
         final long bytes;
         final long knownTotal;
         final int percent;
+        final int wirePct;
+        final int wireOpen;
+        final boolean wireDone;
         final double meanBps;
         final double nowBps;
         final long etaMs;
@@ -757,13 +775,16 @@ public final class DownloadProgress {
         final UnpackSnap unpack;
         final SlotSnap[] slots;
 
-        Snapshot(String title, long bytes, long knownTotal, int percent,
-                double meanBps, double nowBps, long etaMs, String finishing,
-                boolean unpacking, UnpackSnap unpack, SlotSnap[] slots) {
+        Snapshot(String title, long bytes, long knownTotal, int percent, int wirePct,
+                int wireOpen, boolean wireDone, double meanBps, double nowBps, long etaMs,
+                String finishing, boolean unpacking, UnpackSnap unpack, SlotSnap[] slots) {
             this.title = title;
             this.bytes = bytes;
             this.knownTotal = knownTotal;
             this.percent = percent;
+            this.wirePct = wirePct;
+            this.wireOpen = wireOpen;
+            this.wireDone = wireDone;
             this.meanBps = meanBps;
             this.nowBps = nowBps;
             this.etaMs = etaMs;
@@ -771,6 +792,17 @@ public final class DownloadProgress {
             this.unpacking = unpacking;
             this.unpack = unpack != null ? unpack : new UnpackSnap(false, "", 0L, 0L, 0, 0);
             this.slots = slots;
+        }
+
+        /** Raw longs used by the bar. Keep units as bytes — do not format. */
+        String mathLine() {
+            long remain = knownTotal > bytes ? knownTotal - bytes : 0L;
+            return percent + "% b=" + bytes + " known=" + knownTotal
+                    + " remain=" + remain + " wirePct=" + wirePct
+                    + " open=" + wireOpen + " wireDone=" + wireDone
+                    + " unpacking=" + unpacking
+                    + " unpackActive=" + unpack.active
+                    + " queued=" + unpack.queued;
         }
     }
 }
