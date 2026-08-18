@@ -272,7 +272,11 @@ public final class JnlpRunningProcessSupport {
                 continue;
             }
             String commandLine = existing != null ? existing.getCommandLine() : resolveCommandLine(lease.pid);
-            byPid.put(lease.pid, new RunningProcess(lease.pid, existing != null ? existing.getAppTitle() : null,
+            String title = existing != null ? existing.getAppTitle() : null;
+            if (isInfrastructureProcess(commandLine, title, lease.jnlpPath)) {
+                continue;
+            }
+            byPid.put(lease.pid, new RunningProcess(lease.pid, title,
                     existing != null ? existing.getAppVersion() : null, commandLine, lease.jnlpPath));
         }
     }
@@ -306,7 +310,7 @@ public final class JnlpRunningProcessSupport {
     }
 
     public static boolean isInfrastructureProcess(String commandLine, String appTitle, String jnlpPath) {
-        if (isSettingsProcess(commandLine)) {
+        if (isSettingsProcess(commandLine) || isSettingsProcess(appTitle) || isSettingsProcess(jnlpPath)) {
             return true;
         }
         if (appTitle != null) {
@@ -329,7 +333,7 @@ public final class JnlpRunningProcessSupport {
         if (lower.contains("-xclearcache") || lower.contains("-xlistcacheids")) {
             return true;
         }
-        return lower.contains("icedtea-web.bin.name=icedtea-web-settings")
+        return isSettingsProcess(lower)
                 || lower.contains("icedtea-web.bin.name=policyeditor")
                 || (lower.contains("icedtea-web-uber")
                 && !lower.contains(".jnlp")
@@ -857,6 +861,9 @@ public final class JnlpRunningProcessSupport {
             return false;
         }
         String lower = imageName.toLowerCase(Locale.ROOT);
+        if (isSettingsProcess(lower)) {
+            return false;
+        }
         return lower.contains("java") || lower.contains("javaws") || lower.contains("icedtea");
     }
 
@@ -880,7 +887,11 @@ public final class JnlpRunningProcessSupport {
                 || lower.contains("controlpanel.controlpanel")
                 || lower.contains("policyeditor.policyeditor")
                 || lower.contains("icedtea-web-settings")
+                || lower.contains("icedtea_web_settings")
+                || lower.contains("itweb-settings")
+                || lower.contains("itwsettings")
                 || lower.contains("icedtea-web.bin.name=icedtea-web-settings")
+                || lower.contains("icedtea-web.bin.name=itweb-settings")
                 || lower.contains("icedtea-web.bin.name=policyeditor");
     }
 }

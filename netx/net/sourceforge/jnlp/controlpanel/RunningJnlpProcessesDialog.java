@@ -171,7 +171,7 @@ public final class RunningJnlpProcessesDialog extends JDialog {
 
     private void refreshProcessList() {
         List<RunningProcess> latest = new ArrayList<>();
-        for (RunningProcess process : JnlpRunningProcessSupport.listRunningJnlpProcesses()) {
+        for (RunningProcess process : JnlpRunningProcessSupport.listRunningJnlpProcessesForCacheClear()) {
             if (jnlpPathFilter == null || jnlpPathFilter.trim().isEmpty()
                     || process.blocksCacheClear(jnlpPathFilter)) {
                 latest.add(process);
