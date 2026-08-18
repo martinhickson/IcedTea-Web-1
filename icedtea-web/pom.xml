@@ -329,6 +329,15 @@
               <shadedArtifactAttached>true</shadedArtifactAttached>
               <shadedClassifierName>${uberjar.classifier}</shadedClassifierName>
               <createDependencyReducedPom>false</createDependencyReducedPom>
+              <relocations>
+                <!-- Keep org.slf4j off the JNLP parent loader. HttpClient 5 and
+                     the ITW binder stay wired after rewrite; apps that ship
+                     SLF4J/Logback bind their own factory. -->
+                <relocation>
+                  <pattern>org.slf4j</pattern>
+                  <shadedPattern>net.sourceforge.jnlp.shaded.slf4j</shadedPattern>
+                </relocation>
+              </relocations>
               <transformers>
                 <transformer implementation="org.apache.maven.plugins.shade.resource.ManifestResourceTransformer">
                   <mainClass>${uberjar.mainClass}</mainClass>
@@ -347,6 +356,22 @@
                     <exclude>META-INF/*.SF</exclude>
                     <exclude>META-INF/*.DSA</exclude>
                     <exclude>META-INF/*.RSA</exclude>
+                  </excludes>
+                </filter>
+                <!-- Relocation rewrites every class; Shade 3.5.1 ASM cannot
+                     read Byte Buddy multi-release classes for JDK 24+. -->
+                <filter>
+                  <artifact>net.bytebuddy:byte-buddy</artifact>
+                  <excludes>
+                    <exclude>META-INF/versions/24/**</exclude>
+                    <exclude>META-INF/versions/25/**</exclude>
+                  </excludes>
+                </filter>
+                <filter>
+                  <artifact>net.bytebuddy:byte-buddy-agent</artifact>
+                  <excludes>
+                    <exclude>META-INF/versions/24/**</exclude>
+                    <exclude>META-INF/versions/25/**</exclude>
                   </excludes>
                 </filter>
               </filters>
@@ -565,6 +590,46 @@
                   </arguments>
                 </configuration>
               </execution>
+              <execution>
+                <id>assert-uber-jar-slf4j-relocated</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-no-entry-prefix-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/slf4j/</argument>
+                    <argument>shaded uber jar hides org.slf4j</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-slf4j-shaded-factory</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-entry-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/slf4j/LoggerFactory.class</argument>
+                    <argument>shaded uber jar slf4j-api</argument>
+                  </arguments>
+                </configuration>
+              </execution>
             </executions>
           </plugin>
         </plugins>
@@ -634,6 +699,40 @@
                   </arguments>
                 </configuration>
               </execution>
+              <execution>
+                <id>assert-uber-jar-slf4j-relocated</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-no-entry-prefix-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/slf4j/</argument>
+                    <argument>shaded uber jar hides org.slf4j</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-slf4j-shaded-factory</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-entry-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/slf4j/LoggerFactory.class</argument>
+                    <argument>shaded uber jar slf4j-api</argument>
+                  </arguments>
+                </configuration>
+              </execution>
             </executions>
           </plugin>
         </plugins>
@@ -700,6 +799,40 @@
                     <argument>${uberjar.file}</argument>
                     <argument>org/sqlite/JDBC.class</argument>
                     <argument>shaded uber jar sqlite-jdbc</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-slf4j-relocated</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-no-entry-prefix-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/slf4j/</argument>
+                    <argument>shaded uber jar hides org.slf4j</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-slf4j-shaded-factory</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-entry-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/slf4j/LoggerFactory.class</argument>
+                    <argument>shaded uber jar slf4j-api</argument>
                   </arguments>
                 </configuration>
               </execution>

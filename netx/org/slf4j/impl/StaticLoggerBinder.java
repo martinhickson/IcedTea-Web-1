@@ -10,6 +10,7 @@ import org.slf4j.spi.LoggerFactoryBinder;
 /**
  * SLF4J 1.7 binder. Must live in {@code org.slf4j.impl} so LoggerFactory finds
  * it instead of printing the NOP / StaticLoggerBinder warning to stderr.
+ * The uber jar relocates {@code org.slf4j} so JNLP apps do not see this binder.
  */
 public final class StaticLoggerBinder implements LoggerFactoryBinder {
 
