@@ -1,11 +1,10 @@
-# Bootstrap io.pack200:pack200 into ~/.m2 when Maven cannot download from securemvn/GitHub Packages
-# (e.g. TLS handshake failures from Java on some Windows hosts).
-# TODO(later): diagnose securemvn.com HTTPS/TLS handshake failures (Java curl and PowerShell both fail on some Windows hosts).
+# Bootstrap io.github.martinhickson:pack200 into ~/.m2 from Maven Central
+# (fallback: GitHub release jar) when the host cannot resolve Central.
 
 function Get-Pack200MavenArtifactPaths {
     param([Parameter(Mandatory = $true)][string]$Version)
 
-    $repoRoot = Join-Path $env:USERPROFILE ".m2\repository\io\pack200\pack200\$Version"
+    $repoRoot = Join-Path $env:USERPROFILE ".m2\repository\io\github\martinhickson\pack200\$Version"
     return @{
         Directory = $repoRoot
         Jar       = Join-Path $repoRoot "pack200-$Version.jar"
@@ -93,7 +92,7 @@ function Invoke-Pack200Download {
 }
 
 function Ensure-Pack200MavenDependency {
-    param([string]$Version = '11.0.2')
+    param([string]$Version = '11.0.4')
 
     if (Test-Pack200MavenArtifactInstalled -Version $Version) {
         Write-Detail "pack200 $Version already in local Maven repository with intrinsic.properties; skipping bootstrap."
@@ -102,7 +101,7 @@ function Ensure-Pack200MavenDependency {
 
     $paths = Get-Pack200MavenArtifactPaths -Version $Version
     if (Test-Path -LiteralPath $paths.Jar) {
-        Write-Detail "pack200 $Version jar present but missing intrinsic.properties; re-bootstrapping from GitHub release."
+        Write-Detail "pack200 $Version jar present but missing intrinsic.properties; re-bootstrapping from Maven Central."
         Remove-Item -LiteralPath $paths.Jar -Force
     }
 
@@ -113,8 +112,8 @@ function Ensure-Pack200MavenDependency {
     $tempJar = Join-Path $tempDir "pack200-$Version.jar"
 
     $jarUrls = @(
-        "https://github.com/martinhickson/pack200/releases/download/pack200-$Version/pack200-$Version.jar",
-        "https://securemvn.com/releases/io/pack200/pack200/$Version/pack200-$Version.jar"
+        "https://repo1.maven.org/maven2/io/github/martinhickson/pack200/$Version/pack200-$Version.jar",
+        "https://github.com/martinhickson/pack200/releases/download/pack200-$Version/pack200-$Version.jar"
     )
 
     $downloaded = $false
@@ -134,16 +133,16 @@ function Ensure-Pack200MavenDependency {
 
     if (-not $downloaded) {
         throw @(
-            "Could not bootstrap io.pack200:pack200:$Version into the local Maven repository."
-            'Tried securemvn.com and GitHub release URLs.'
-            'Check network/proxy or copy the jar into ~/.m2/repository/io/pack200/pack200 manually.'
+            "Could not bootstrap io.github.martinhickson:pack200:$Version into the local Maven repository."
+            'Tried Maven Central and the GitHub release URL.'
+            'Check network/proxy or copy the jar into ~/.m2/repository/io/github/martinhickson/pack200 manually.'
         ) -join ' '
     }
 
     Write-Detail "Installing pack200 $Version into local Maven repository via mvn install:install-file..."
     & mvn -q install:install-file `
         "-Dfile=$tempJar" `
-        '-DgroupId=io.pack200' `
+        '-DgroupId=io.github.martinhickson' `
         '-DartifactId=pack200' `
         "-Dversion=$Version" `
         '-Dpackaging=jar'

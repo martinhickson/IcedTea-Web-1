@@ -22,7 +22,7 @@
     <uberjar.classifier>uber</uberjar.classifier>
     <itw.generated.resources.dir>${project.build.directory}/generated-resources/net/sourceforge/jnlp/resources</itw.generated.resources.dir>
     <itw.html.gen.changesets>140</itw.html.gen.changesets>
-    <pack200.version>11.0.2</pack200.version>
+    <pack200.version>11.0.4</pack200.version>
     <pack200.verify.dir>${project.build.directory}/pack200-verify</pack200.verify.dir>
     <uberjar.file>${project.build.directory}/${project.build.finalName}-${uberjar.classifier}.jar</uberjar.file>
     <jacocoArgLine></jacocoArgLine>
@@ -46,7 +46,7 @@
       <version>1.7R3</version>
     </dependency>
     <dependency>
-      <groupId>io.pack200</groupId>
+      <groupId>io.github.martinhickson</groupId>
       <artifactId>pack200</artifactId>
       <version>${pack200.version}</version>
     </dependency>
@@ -123,13 +123,7 @@
     </dependency>
   </dependencies>
 
-  <repositories>
-    <repository>
-      <id>github</id>
-      <name>GitHub Packages</name>
-      <url>https://maven.pkg.github.com/martinhickson/pack200</url>
-    </repository>
-  </repositories>
+  <!-- pack200 11.0.4+ is on Maven Central (io.github.martinhickson:pack200). -->
 
   <build>
     <testSourceDirectory>${project.basedir}/../tests-disabled</testSourceDirectory>
@@ -158,11 +152,9 @@
         </executions>
       </plugin>
 
-      <!-- Fail fast when the resolved io.pack200 jar cannot unpack .pack.gz: the
-           gh-packages 11.0.2 artifact is missing io/pack200/pack/intrinsic.properties
-           (UnpackerImpl throws at runtime), so a silently-resolved broken jar would
-           ship a distribution whose pack.gz downloads never work. Run
-           scripts/ensure-pack200-maven.sh to bootstrap the working release jar. -->
+      <!-- Fail fast when the resolved pack200 jar cannot unpack .pack.gz: some
+           older GitHub Packages jars omitted io/pack200/pack/intrinsic.properties.
+           Maven Central 11.0.4+ includes it. -->
       <plugin>
         <groupId>org.apache.maven.plugins</groupId>
         <artifactId>maven-antrun-plugin</artifactId>
@@ -176,7 +168,7 @@
             </goals>
             <configuration>
               <target>
-                <property name="pack200.jar" value="${settings.localRepository}/io/pack200/pack200/${pack200.version}/pack200-${pack200.version}.jar"/>
+                <property name="pack200.jar" value="${settings.localRepository}/io/github/martinhickson/pack200/${pack200.version}/pack200-${pack200.version}.jar"/>
                 <condition property="pack200.intrinsic.ok">
                   <and>
                     <available file="${pack200.jar}"/>
@@ -189,7 +181,7 @@
                     </resourcecount>
                   </and>
                 </condition>
-                <fail message="pack200 ${pack200.version} at ${pack200.jar} is missing io/pack200/pack/intrinsic.properties — pack.gz downloads would fail at runtime. Run scripts/ensure-pack200-maven.sh to bootstrap the working artifact (the GitHub Packages 11.0.2 jar is known-broken).">
+                <fail message="pack200 ${pack200.version} at ${pack200.jar} is missing io/pack200/pack/intrinsic.properties — pack.gz downloads would fail at runtime. Resolve io.github.martinhickson:pack200 from Maven Central (11.0.4+).">
                   <condition>
                     <not>
                       <isset property="pack200.intrinsic.ok"/>
@@ -378,7 +370,7 @@
             <configuration>
               <artifactItems>
                 <artifactItem>
-                  <groupId>io.pack200</groupId>
+                  <groupId>io.github.martinhickson</groupId>
                   <artifactId>pack200</artifactId>
                   <version>${pack200.version}</version>
                   <outputDirectory>${pack200.verify.dir}</outputDirectory>

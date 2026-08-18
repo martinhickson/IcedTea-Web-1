@@ -2,8 +2,7 @@
 <settings xmlns="http://maven.apache.org/SETTINGS/1.2.0"
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.2.0 https://maven.apache.org/xsd/settings-1.2.0.xsd">
-  <!-- Resolve io.pack200:pack200 from securemvn.com (public) instead of GitHub Packages (auth required). -->
-  <!-- sign.ps1 also bootstraps pack200 via ensure-pack200.ps1 when Java TLS to securemvn fails. -->
+  <!-- pack200 is io.github.martinhickson:pack200 on Maven Central. -->
   <!-- Route central through the GCS mirror — Sonatype rate-limits shared GitHub Actions egress (HTTP 429). -->
   <mirrors>
     <mirror>
@@ -11,11 +10,6 @@
       <name>GCS Maven Central mirror</name>
       <url>https://maven-central.storage-download.googleapis.com/maven2/</url>
       <mirrorOf>central</mirrorOf>
-    </mirror>
-    <mirror>
-      <id>securemvn-pack200</id>
-      <mirrorOf>github</mirrorOf>
-      <url>https://securemvn.com/releases</url>
     </mirror>
   </mirrors>
 </settings>

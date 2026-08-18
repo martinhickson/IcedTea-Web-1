@@ -19,7 +19,7 @@ Oracle removed Java Web Start after JDK 8, and most upstream IcedTea-Web branche
 | **Match strategies** | Choose **exact** or **minimum** JDK version matching when a JNLP declares `<j2se version="…"/>`. |
 | **Missing-JDK autodetect** | When a JNLP needs a JDK that is not configured, the launcher can drive an **Autodetect** flow (Windows integration tests cover this path). |
 | **Running Apps** | See live JNLP processes, their JVM, heap/RSS usage, **Stop** / **Force Stop**, **Trim Heap**, and **Tune** (max heap, GC) with optional relaunch. |
-| **Modern runtime** | Pack200 unpack via the maintained [`io.pack200`](https://github.com/martinhickson/pack200) fork on JDK 14+; build and test matrix covers JDK 11–21+. |
+| **Modern runtime** | Pack200 unpack via [`io.github.martinhickson:pack200`](https://repo1.maven.org/maven2/io/github/martinhickson/pack200/) (Java package `io.pack200`) on JDK 14+; build and test matrix covers JDK 11–21+. |
 | **Native launchers** | `javaws` / `javawsc` .NET executables (self-contained or system runtime) — no browser or NPAPI dependency. |
 | **Shippable packages** | MSI, DMG/ZIP, deb/rpm from maintained workflows; sample Angular catalog for local smoke testing. |
 

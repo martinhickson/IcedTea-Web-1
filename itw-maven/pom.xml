@@ -41,9 +41,9 @@
       <version>1.7R3</version>
     </dependency>
     <dependency>
-      <groupId>io.pack200</groupId>
+      <groupId>io.github.martinhickson</groupId>
       <artifactId>pack200</artifactId>
-      <version>11.0.2</version>
+      <version>11.0.4</version>
     </dependency>
 
     <!-- JUnit 5 for testing -->
@@ -97,13 +97,7 @@
     </dependency>
   </dependencies>
 
-  <repositories>
-    <repository>
-      <id>github</id>
-      <name>GitHub Packages</name>
-      <url>https://maven.pkg.github.com/martinhickson/pack200</url>
-    </repository>
-  </repositories>
+  <!-- pack200 11.0.4+ is on Maven Central (io.github.martinhickson:pack200). -->
 
   <build>
 
