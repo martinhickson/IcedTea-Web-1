@@ -78,4 +78,30 @@ public class JnlpRunningProcessSupportIdentityTest {
                 "java -jar icedtea-web-uber.jar -jnlp http://127.0.0.1:4350/jnlp/c401/app.jnlp",
                 "c401", "http://127.0.0.1:4350/jnlp/c401/app.jnlp"));
     }
+
+    @Test
+    public void settingsLaunchersAreInfrastructure() {
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "C:\\Program Files\\IcedTeaWeb\\WebStart\\bin\\itweb-settings.exe",
+                null, null));
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "icedtea-web-settings.exe", null, null));
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -Dicedtea-web.bin.name=itweb-settings -jar icedtea-web-uber.jar "
+                        + "net.sourceforge.jnlp.controlpanel.CommandLine",
+                null, null));
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -Dicedtea-web.bin.name=icedtea-web-settings -cp icedtea-web-uber.jar "
+                        + "net.sourceforge.jnlp.controlpanel.CommandLine",
+                "IcedTea-Web Control Panel", null));
+        // A leftover JNLP path must not promote the Control Panel into the cache-clear list.
+        assertTrue(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -Dicedtea-web.bin.name=itweb-settings -jar icedtea-web-uber.jar "
+                        + "net.sourceforge.jnlp.controlpanel.CommandLine",
+                null, "https://example.com/app.jnlp"));
+        assertFalse(JnlpRunningProcessSupport.isInfrastructureProcess(
+                "java -Dicedtea-web.bin.name=javaws -jar icedtea-web-uber.jar "
+                        + "-jnlp https://example.com/app.jnlp",
+                "App", "https://example.com/app.jnlp"));
+    }
 }
