@@ -1013,8 +1013,12 @@ public class ResourceDownloader implements Runnable {
             writeCountedStreamToFile(packed, new BufferedInputStream(packGzStream));
             long wire = packed.isFile() ? packed.length() : 0L;
             long sizeHint = resource.getSize();
+            if (jarFile.isFile() && jarFile.length() > wire) {
+                sizeHint = Math.max(sizeHint, jarFile.length());
+            }
+            String packName = SizeFirstDownloadQueue.resourceName(resource);
             long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
-                    .estimateReserveBytes(wire, sizeHint);
+                    .estimateReserveBytes(wire, sizeHint, packName);
             net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
                 ensurePackedSidecarPresent(packed);
                 DownloadProgress.beginUnpack(SizeFirstDownloadQueue.resourceName(resource), wire);
@@ -1285,10 +1289,10 @@ public class ResourceDownloader implements Runnable {
 
         File packed = CacheUtil.getCacheFile(compressedLocation, version);
         File unpacked = CacheUtil.getCacheFile(uncompressedLocation, version);
-        long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
-                .estimateReserveBytes(packed.isFile() ? packed.length() : 0L, 0L);
         String unpackName = uncompressedLocation != null && uncompressedLocation.getPath() != null
                 ? new File(uncompressedLocation.getPath()).getName() : "pack.gz";
+        long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
+                .estimateReserveBytes(packed.isFile() ? packed.length() : 0L, 0L, unpackName);
         long wire = packed.isFile() ? packed.length() : 0L;
         net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
             DownloadProgress.beginUnpack(unpackName, wire);

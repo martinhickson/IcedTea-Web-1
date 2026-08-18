@@ -1,6 +1,7 @@
 package net.sourceforge.jnlp.cache.download;
 
 import java.io.IOException;
+import java.util.Locale;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -17,10 +18,10 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  * one unpack is always admitted (even if a single jar exceeds the budget) so the
  * pipeline never stalls with zero unpackers.
  * <p>
- * Class-heavy packs use {@link #WIRE_TO_HEAP_MULTIPLIER}×. Packs at or above
- * {@link #LARGE_WIRE_MIB} (native-heavy, ~1× expand) use
- * {@link #LARGE_WIRE_MULTIPLIER}× so an ~81 MiB unpack shares the heap with
- * the two large class packs. Default
+ * Class-heavy packs use {@link #WIRE_TO_HEAP_MULTIPLIER}×. A known
+ * native-heavy pack ({@code jxbrowser-win64}) uses
+ * {@link #NATIVE_HEAVY_WIRE_MULTIPLIER}× — measured from an OOM leftover,
+ * not 1×. Wire size alone must not drop the factor to 1. Default
  * {@code deployment.http.pack200.admission.budgetMiB} is 1500 so three
  * medium 30× reserves cannot fit.
  */
@@ -43,9 +44,18 @@ public final class PackUnpackAdmission {
      * 30× lets the two largest class packs share an 1800 MiB heap; 40× did not.
      */
     static final int WIRE_TO_HEAP_MULTIPLIER = 30;
-    /** Wire at or above this uses {@link #LARGE_WIRE_MULTIPLIER} (native-heavy). */
+    /**
+     * Native-heavy pack (jxbrowser-win64) wire→heap. 2026-08-18 Temurin 11
+     * {@code maxMemory≈1800 MiB}: unpack OOMed while two 30× class packs
+     * held ~1348 MiB reserved, so peak exceeded the ~450 MiB leftover
+     * ({@code 87 MiB} pack.gz → {@code >5.2×}). 6× is that floor plus slack.
+     * Never default this to 1 — 1× is on-disk jar size, not Pack200 working set.
+     */
+    static final int NATIVE_HEAVY_WIRE_MULTIPLIER = 6;
+    /** @deprecated size cutoff only; 1× must not apply from wire size alone. */
     static final int LARGE_WIRE_MIB = 40;
-    static final int LARGE_WIRE_MULTIPLIER = 1;
+    /** @deprecated honor only when {@code > 1}; {@code 1} is coerced to {@link #NATIVE_HEAVY_WIRE_MULTIPLIER}. */
+    static final int LARGE_WIRE_MULTIPLIER = NATIVE_HEAVY_WIRE_MULTIPLIER;
     /** Fallback unknown-size reserve when heap math is unavailable. */
     static final long DEFAULT_RESERVE_BYTES = 256L << 20; // 256 MiB
     /** Same strings as {@code DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_*}. */
@@ -98,15 +108,23 @@ public final class PackUnpackAdmission {
     }
 
     int largeWireMultiplier() {
-        return clamp(readInt(KEY_LARGE_WIRE_MULTIPLIER, LARGE_WIRE_MULTIPLIER), 1, 200);
+        int configured = readInt(KEY_LARGE_WIRE_MULTIPLIER, NATIVE_HEAVY_WIRE_MULTIPLIER);
+        // Legacy default was 1 (on-disk ≈ pack). That under-reserved and OOMed.
+        if (configured <= 1) {
+            return NATIVE_HEAVY_WIRE_MULTIPLIER;
+        }
+        return clamp(configured, 2, 200);
     }
 
     int multiplierForWire(long basisBytes) {
-        long threshold = (long) largeWireMiB() << 20;
-        if (basisBytes >= threshold) {
-            return largeWireMultiplier();
-        }
         return wireMultiplier();
+    }
+
+    static boolean isNativeHeavyPack(String resourceName) {
+        if (resourceName == null || resourceName.isEmpty()) {
+            return false;
+        }
+        return resourceName.toLowerCase(Locale.ROOT).contains("jxbrowser-win64");
     }
 
     long budgetBytes() {
@@ -154,9 +172,15 @@ public final class PackUnpackAdmission {
 
     /**
      * Pack200 heap reserve from wire size and/or a size hint (jar or Content-Length).
-     * Uses {@link #wireMultiplier()} on the best available packed-size signal.
+     * Class / unknown names use {@link #wireMultiplier()} (30×). Native-heavy
+     * names use {@link #NATIVE_HEAVY_WIRE_MULTIPLIER} (measured 6×).
      */
     public static long estimateReserveBytes(long packedWireBytes, long sizeHintBytes) {
+        return estimateReserveBytes(packedWireBytes, sizeHintBytes, null);
+    }
+
+    public static long estimateReserveBytes(long packedWireBytes, long sizeHintBytes,
+            String resourceName) {
         PackUnpackAdmission admission = getInstance();
         admission.logSettingsOnce();
         long packed = Math.max(0L, packedWireBytes);
@@ -165,12 +189,29 @@ public final class PackUnpackAdmission {
         if (basis <= 0L) {
             return admission.defaultReserveBytes();
         }
-        long scaled = basis * (long) admission.multiplierForWire(basis);
+        int factor = admission.wireMultiplier();
+        if (isNativeHeavyPack(resourceName)) {
+            factor = admission.largeWireMultiplier();
+            long scaled = scaleReserve(basis, factor);
+            admission.logNativeHeavyReserve(resourceName, packed, hint, factor, scaled);
+            return scaled;
+        }
+        return scaleReserve(basis, factor);
+    }
+
+    private static long scaleReserve(long basis, int factor) {
+        long scaled = basis * (long) factor;
         if (scaled < basis) {
-            // overflow → treat as exclusive / oversized
             return Long.MAX_VALUE / 4;
         }
         return Math.max(MIN_RESERVE_BYTES, scaled);
+    }
+
+    private void logNativeHeavyReserve(String name, long wire, long hint, int factor, long reserve) {
+        logAll("PackUnpackAdmission native-heavy reserve name=" + name
+                + " wire=" + wire + " unpackedHint=" + hint
+                + " factor=" + factor + "x reserve=" + reserve
+                + " (measured native approx, not 1x)");
     }
 
     /**
@@ -254,9 +295,17 @@ public final class PackUnpackAdmission {
         }
         logDebug("PackUnpackAdmission budget=" + budgetBytes()
                 + " wireMultiplier=" + wireMultiplier()
-                + " largeWire=" + largeWireMiB() + "MiB@" + largeWireMultiplier() + "x"
+                + " nativeHeavy=" + largeWireMultiplier() + "x"
                 + " defaultReserve=" + defaultReserveBytes()
                 + " maxMemory=" + Runtime.getRuntime().maxMemory());
+    }
+
+    private static void logAll(String msg) {
+        try {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL, msg);
+        } catch (Throwable ignored) {
+            // early init / tests
+        }
     }
 
     private static int readInt(String key, int fallback) {
