@@ -1602,27 +1602,15 @@ public class JNLPClassLoader extends URLClassLoader {
             } catch (ClassNotFoundException cnfe) {
                 // Not found in external loader either
 
-                // Look in 'Class-Path' as specified in the manifest file
-                try {
-                    // This field synchronized before iterating over it since it may
-                    // be shared data between threads
-                    synchronized (classpaths) {
-                        for (String classpath : classpaths) {
-                            JARDesc desc;
-                            try {
-                                URL jarUrl = new URL(file.getCodeBase(), classpath);
-                                desc = new JARDesc(jarUrl, null, null, false, true, false, true);
-                            } catch (MalformedURLException mfe) {
-                                throw new ClassNotFoundException(name, mfe);
-                            }
-                            addNewJar(desc);
-                        }
-                    }
-
-                    result = loadClassExt(name);
-                    return result;
-                } catch (ClassNotFoundException cnfe1) {
-                    //OutputController.getLogger().log(cnfe1);
+                // Manifest Class-Path is not a JNLP resource list. Classic
+                // javaws does not download those tokens. Opening each as
+                // HTTPS (ConnectionFactory / ResourceTracker) stalls launch
+                // on VPN (~10s TLS per name). Already-listed JNLP jars stay
+                // on this loader; a miss is just CNFE.
+                if (!classpaths.isEmpty()) {
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                            "Skipping Manifest Class-Path download (" + classpaths.size()
+                                    + " token(s)); JNLP <resources> is the classpath");
                 }
 
                 // As a last resort, look in any available indexes
@@ -2105,15 +2093,24 @@ public class JNLPClassLoader extends URLClassLoader {
         synchronized (alreadyTried) {
             if (sec == null && !alreadyTried.contains(sourceKey)) {
                 alreadyTried.add(sourceKey);
-                //try to load the jar which is requesting the permissions, but was NOT downloaded by standard way
-                OutputController.getLogger().log("Application is trying to get permissions for " + source.toString() + ", which was not added by standard way. Trying to download and verify!");
-                try {
-                    JARDesc des = new JARDesc(source, null, null, false, false, false, false);
-                    addNewJar(des);
-                    sec = jarLocationSecurityMap.get(sourceKey);
-                } catch (Throwable t) {
-                    OutputController.getLogger().log(t);
-                    sec = null;
+                // Unknown code source. Do not download over HTTP(S) — that is
+                // the Manifest Class-Path / URLClassLoader path (phantom
+                // versioned names). JNLP <resources> already activated jars
+                // are in jarLocationSecurityMap. Local file: still allowed.
+                if (CachedJarFileCallback.isRemoteHttpUrl(source)) {
+                    OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                            "No security mapping for " + source
+                                    + " — not downloading (not a JNLP resource)");
+                } else {
+                    OutputController.getLogger().log("Application is trying to get permissions for " + source.toString() + ", which was not added by standard way. Trying to download and verify!");
+                    try {
+                        JARDesc des = new JARDesc(source, null, null, false, false, false, false);
+                        addNewJar(des);
+                        sec = jarLocationSecurityMap.get(sourceKey);
+                    } catch (Throwable t) {
+                        OutputController.getLogger().log(t);
+                        sec = null;
+                    }
                 }
             }
         }
