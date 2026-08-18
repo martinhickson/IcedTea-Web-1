@@ -21,6 +21,34 @@ public final class SqliteCatalogProcessWorker {
                 fail("usage");
             }
             File parent = new File(args[0]).getAbsoluteFile();
+            if ("hold-initlock".equals(args[1])) {
+                long holdMs = args.length > 2 ? Long.parseLong(args[2]) : 15_000L;
+                File dbDir = CacheLRUWrapper.sqliteCacheRoot(parent);
+                if (!dbDir.isDirectory() && !dbDir.mkdirs()) {
+                    fail("mkdir");
+                }
+                File dbFile = new File(dbDir, SqliteCacheCatalog.DB_FILE_NAME);
+                if (!dbFile.isFile() && !dbFile.createNewFile()) {
+                    fail("create empty catalog");
+                }
+                File lockDir = SqliteCacheCatalog.initLockDir(dbFile);
+                if (lockDir.isDirectory()) {
+                    fail("initlock dir already held");
+                }
+                if (!lockDir.mkdir()) {
+                    fail("initlock dir");
+                }
+                try {
+                    System.out.println("READY holding");
+                    System.out.flush();
+                    Thread.sleep(holdMs);
+                    System.out.println("OK held");
+                } finally {
+                    lockDir.delete();
+                }
+                Runtime.getRuntime().halt(0);
+                return;
+            }
             CacheLRUWrapper w = CacheLRUWrapper.createForTests(true, parent);
             try {
                 if ("insert".equals(args[1])) {
