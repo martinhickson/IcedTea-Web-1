@@ -1,20 +1,14 @@
 #!/usr/bin/env bash
-# Ensure a WORKING io.pack200:pack200 artifact is in ~/.m2 (the GitHub Packages
-# 11.0.2 jar is known-broken: it lacks io/pack200/pack/intrinsic.properties, so
-# UnpackerImpl throws at runtime and pack.gz downloads never work).
-#
-# Preferred source: GitHub Packages (maven.pkg.github.com/martinhickson/pack200)
-# via the configured Maven settings (MAVEN_SETTINGS). Fallback: the GitHub
-# release jar (martinhickson/pack200 releases), which is the jar that works in
-# production. Either way the artifact is verified to contain the intrinsic
-# resource before it is installed.
+# Ensure io.github.martinhickson:pack200 is in ~/.m2 with intrinsic.properties.
+# Preferred source: Maven Central. Fallback: GitHub release jar.
 set -euo pipefail
 
-VERSION="${PACK200_VERSION:-11.0.2}"
+VERSION="${PACK200_VERSION:-11.0.4}"
+GROUP_PATH="io/github/martinhickson/pack200"
 RESOURCE_PATH="io/pack200/pack/intrinsic.properties"
 MIN_BYTES=100000
 
-repo_root="${HOME}/.m2/repository/io/pack200/pack200/${VERSION}"
+repo_root="${HOME}/.m2/repository/${GROUP_PATH}/${VERSION}"
 jar="${repo_root}/pack200-${VERSION}.jar"
 
 pack200_jar_has_intrinsic() {
@@ -36,25 +30,12 @@ temp_dir="$(mktemp -d)"
 trap 'rm -rf "$temp_dir"' EXIT
 temp_jar="${temp_dir}/pack200-${VERSION}.jar"
 
-fetch_from_github_packages() {
-  local settings="${MAVEN_SETTINGS:-}"
-  if [[ -z "$settings" || ! -f "$settings" ]]; then
-    echo "no MAVEN_SETTINGS — skipping GitHub Packages source"
-    return 1
-  fi
-  if ! command -v mvn >/dev/null 2>&1; then
-    echo "mvn not available — skipping GitHub Packages source"
-    return 1
-  fi
-  echo "Fetching pack200 ${VERSION} from GitHub Packages (maven.pkg.github.com)"
-  mvn -s "$settings" -q dependency:get \
-    -Dartifact="io.pack200:pack200:${VERSION}" \
-    -Dtransitive=false || return 1
-  local repo_jar="${HOME}/.m2/repository/io/pack200/pack200/${VERSION}/pack200-${VERSION}.jar"
-  [[ -f "$repo_jar" ]] || return 1
-  cp -f "$repo_jar" "$temp_jar"
+fetch_from_central() {
+  local url="https://repo1.maven.org/maven2/${GROUP_PATH}/${VERSION}/pack200-${VERSION}.jar"
+  echo "Downloading pack200 ${VERSION} from Maven Central"
+  curl -fsSL "$url" -o "$temp_jar" || return 1
   if ! pack200_jar_has_intrinsic "$temp_jar"; then
-    echo "GitHub Packages pack200 ${VERSION} is broken (missing ${RESOURCE_PATH}); falling back to release"
+    echo "Maven Central pack200 ${VERSION} is missing ${RESOURCE_PATH}; falling back to release"
     return 1
   fi
   return 0
@@ -70,7 +51,7 @@ fetch_from_release() {
   fi
 }
 
-if ! fetch_from_github_packages && ! fetch_from_release; then
+if ! fetch_from_central && ! fetch_from_release; then
   echo "ERROR: unable to bootstrap pack200 ${VERSION}" >&2
   exit 1
 fi
@@ -84,7 +65,7 @@ fi
 mkdir -p "$repo_root"
 mvn -q install:install-file \
   "-Dfile=${temp_jar}" \
-  -DgroupId=io.pack200 \
+  -DgroupId=io.github.martinhickson \
   -DartifactId=pack200 \
   "-Dversion=${VERSION}" \
   -Dpackaging=jar

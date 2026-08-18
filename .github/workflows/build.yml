@@ -14,7 +14,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
   dotnet-distribution:
@@ -78,34 +77,14 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Configure Maven for GitHub Packages
-        run: |
-          $settingsPath = Join-Path $HOME ".m2/settings.xml"
-          $settingsDir = Split-Path -Parent $settingsPath
-          if (-not (Test-Path $settingsDir)) {
-            New-Item -ItemType Directory -Path $settingsDir -Force | Out-Null
-          }
-          @"
-          <settings>
-            <servers>
-              <server>
-                <id>github</id>
-                <username>${{ github.actor }}</username>
-                <password>${{ secrets.GITHUB_TOKEN }}</password>
-              </server>
-            </servers>
-          </settings>
-          "@ | Out-File -FilePath $settingsPath -Encoding UTF8
-        shell: pwsh
-
       - name: Cache Maven dependencies
         uses: actions/cache@v5
         with:
           path: ~/.m2
-          key: ${{ runner.os }}-m2-pack200-intrinsic-${{ hashFiles('**/pom.xml') }}
+          key: ${{ runner.os }}-m2-pack200-central-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-m2-
 
-      - name: Ensure pack200 Maven artifact (GitHub release)
+      - name: Ensure pack200 Maven artifact (Maven Central)
         run: |
           if ($env:OS -eq 'Windows_NT') {
             function Write-Detail { param([string]$Message) Write-Host $Message }
@@ -128,8 +107,11 @@ jobs:
         shell: pwsh
 
       - name: Build distribution
+        env:
+          MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml
         run: |
           $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
             "-P", "maven-distribution",
             "-pl", "icedtea-web-distribution",
             "-am",
@@ -163,8 +145,11 @@ jobs:
         shell: pwsh
 
       - name: Build signed headless JNLP app
+        env:
+          MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml
         run: |
           $mvnArgs = @(
+            "-s", $env:MAVEN_SETTINGS,
             "-pl", "icedtea-web-integration",
             "process-test-classes",
             "-DskipTests",

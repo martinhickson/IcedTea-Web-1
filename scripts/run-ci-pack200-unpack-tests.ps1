@@ -1,4 +1,4 @@
-# Run Pack200 unpack integration tests (JDK 17 + external io.pack200 fork), matching CI ci-pack200-unpack profile.
+# Run Pack200 unpack integration tests (JDK 17 + io.github.martinhickson:pack200), matching CI ci-pack200-unpack profile.
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root

@@ -419,7 +419,7 @@ function Get-MavenSettingsArgs {
 
     throw @(
         'maven-settings.xml not found.'
-        'It mirrors the github repository to https://securemvn.com/releases for io.pack200:pack200.'
+        'It mirrors Maven Central through the GCS mirror (io.github.martinhickson:pack200).'
         'Expected under .powershell\workflows\ or .jenkins\workflows\ in the checkout.'
     ) -join ' '
 }

@@ -23,7 +23,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 env:
   MAVEN_SETTINGS: ${{ github.workspace }}/.powershell/workflows/maven-settings.xml
@@ -70,7 +69,7 @@ jobs:
           key: ubuntu-assertj-it-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ubuntu-assertj-it-m2-
 
-      - name: Ensure pack200 Maven artifact
+      - name: Ensure pack200 Maven artifact (Maven Central)
         run: |
           chmod +x scripts/ensure-pack200-maven.sh
           ./scripts/ensure-pack200-maven.sh
@@ -132,7 +131,7 @@ jobs:
           key: ubuntu-process-launch-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ubuntu-process-launch-m2-
 
-      - name: Ensure pack200 Maven artifact
+      - name: Ensure pack200 Maven artifact (Maven Central)
         run: |
           chmod +x scripts/ensure-pack200-maven.sh
           ./scripts/ensure-pack200-maven.sh
@@ -184,7 +183,7 @@ jobs:
           key: ubuntu-multijar-it-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ubuntu-multijar-it-m2-
 
-      - name: Ensure pack200 Maven artifact
+      - name: Ensure pack200 Maven artifact (Maven Central)
         run: |
           chmod +x scripts/ensure-pack200-maven.sh
           ./scripts/ensure-pack200-maven.sh
@@ -227,7 +226,7 @@ jobs:
           key: ubuntu-sqlite-catalog-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ubuntu-sqlite-catalog-m2-
 
-      - name: Ensure pack200 Maven artifact
+      - name: Ensure pack200 Maven artifact (Maven Central)
         run: |
           chmod +x scripts/ensure-pack200-maven.sh
           ./scripts/ensure-pack200-maven.sh
@@ -272,7 +271,7 @@ jobs:
           key: windows-sqlite-catalog-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: windows-sqlite-catalog-m2-
 
-      - name: Ensure pack200 Maven artifact
+      - name: Ensure pack200 Maven artifact (Maven Central)
         run: |
           function Write-Detail { param([string]$Message) Write-Host $Message }
           . ./.powershell/workflows/ensure-pack200.ps1
@@ -380,7 +379,7 @@ jobs:
           key: windows-autodetect-it-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: windows-autodetect-it-m2-
 
-      - name: Ensure pack200 Maven artifact
+      - name: Ensure pack200 Maven artifact (Maven Central)
         run: |
           function Write-Detail { param([string]$Message) Write-Host $Message }
           . ./.powershell/workflows/ensure-pack200.ps1

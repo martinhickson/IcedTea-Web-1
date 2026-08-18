@@ -10,7 +10,6 @@ on:
 
 permissions:
   contents: read
-  packages: read
 
 jobs:
   test:
@@ -63,7 +62,7 @@ jobs:
           key: ${{ runner.os }}-jdk${{ matrix.java-version }}-m2-${{ hashFiles('**/pom.xml') }}
           restore-keys: ${{ runner.os }}-jdk${{ matrix.java-version }}-m2-
 
-      - name: Ensure pack200 Maven artifact
+      - name: Ensure pack200 Maven artifact (Maven Central)
         if: matrix.pack200-bootstrap
         run: |
           if ($env:OS -eq 'Windows_NT') {
