@@ -1,13 +1,20 @@
 package net.sourceforge.jnlp.runtime;
 
+import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.fail;
+
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.List;
+import java.util.jar.Attributes;
 import java.util.jar.JarFile;
+import java.util.jar.Manifest;
 
 import org.junit.After;
 import org.junit.Before;
@@ -58,5 +65,40 @@ public class CachedJarFileCallbackTest {
 			// Note: Do NOT close fromCacheJarFile here - it may come from JDK's global cache
 			// and should not be closed by application code
 		}
+	}
+
+	@Test
+	public void retrieveClearsManifestClassPathForRemoteMapping() throws Exception {
+		Manifest mf = new Manifest();
+		mf.getMainAttributes().putValue(Attributes.Name.CLASS_PATH.toString(),
+				"batik-ext-1.7.jar other.jar");
+		File jarFile = new File(tempDirectory, "with-classpath.jar");
+		FileTestUtils.createJarWithContents(jarFile, mf);
+
+		URL localUrl = jarFile.toURI().toURL();
+		URL remoteUrl = new URL("https://example.test/downloads/with-classpath.jar");
+		CachedJarFileCallback cb = CachedJarFileCallback.getInstance();
+		cb.addMapping(remoteUrl, localUrl);
+		JarFile fromCache = cb.retrieve(remoteUrl);
+		String cp = fromCache.getManifest().getMainAttributes()
+				.getValue(Attributes.Name.CLASS_PATH);
+		assertTrue("Class-Path must be blanked for remote-mapped jars",
+				cp == null || cp.trim().isEmpty());
+	}
+
+	@Test
+	public void retrieveDoesNotConnectForUnmappedRemoteClassPathToken() throws Exception {
+		URL phantom = new URL("https://192.0.2.10/downloads/batik-ext-1.7.jar");
+		long t0 = System.nanoTime();
+		try {
+			CachedJarFileCallback.getInstance().retrieve(phantom);
+			fail("unmapped remote jar must not download");
+		} catch (FileNotFoundException expected) {
+			assertTrue(expected.getMessage().contains("not a JNLP-cached jar"));
+			assertEquals("Class-Path miss must not carry a stack", 0,
+					expected.getStackTrace().length);
+		}
+		long ms = (System.nanoTime() - t0) / 1_000_000L;
+		assertTrue("must fail without TLS (was " + ms + "ms)", ms < 2000);
 	}
 }

@@ -39,6 +39,7 @@ exception statement from your version.
 package net.sourceforge.jnlp.runtime;
 
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -50,11 +51,14 @@ import java.security.PrivilegedActionException;
 import java.security.PrivilegedExceptionAction;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.jar.Attributes;
 import java.util.jar.JarFile;
+import java.util.jar.Manifest;
 
 import net.sourceforge.jnlp.security.ConnectionFactory;
 import net.sourceforge.jnlp.util.JarFileTempManager;
 import net.sourceforge.jnlp.util.UrlUtils;
+import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
  * Resolves {@code jar:} URLs to locally cached JAR files.
@@ -91,18 +95,89 @@ final class CachedJarFileCallback {
         }
 
         if (localUrl == null) {
+            if (isRemoteHttpUrl(url)) {
+                // JDK URLClassLoader follows Manifest Class-Path against the
+                // remote jar: URL. Those names are not JNLP <resources> (often
+                // Maven-versioned siblings). Opening them is a new TLS probe
+                // per token on the application thread. Web Start does not
+                // download Class-Path; skip without connecting.
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                        "CachedJarFileCallback: skip unmapped remote jar (not a JNLP resource): " + url);
+                throw quietUnmappedRemote(url);
+            }
             return cacheJarFile(url);
         }
 
         if (UrlUtils.isLocalFile(localUrl)) {
             String path = UrlUtils.decodeUrlQuietly(localUrl).getPath();
-            return JarFileCache.getInstance().getJarFile(path);
+            JarFile cached = JarFileCache.getInstance().getJarFile(path);
+            if (isRemoteHttpUrl(url)) {
+                clearManifestClassPath(cached);
+            }
+            return cached;
         }
 
         return null;
     }
 
+    static boolean isRemoteHttpUrl(URL url) {
+        if (url == null) {
+            return false;
+        }
+        String p = url.getProtocol();
+        return "http".equalsIgnoreCase(p) || "https".equalsIgnoreCase(p);
+    }
+
+    /**
+     * Web Start does not honour Manifest Class-Path. Clearing the in-memory
+     * attribute stops {@code URLClassLoader} from opening each token as a new
+     * remote {@code jar:} URL (plugin already did this; javaws did not).
+     */
+    static void clearManifestClassPath(JarFile jarFile) {
+        if (jarFile == null) {
+            return;
+        }
+        try {
+            Manifest mf = jarFile.getManifest();
+            if (mf == null) {
+                return;
+            }
+            Attributes attrs = mf.getMainAttributes();
+            if (attrs == null) {
+                return;
+            }
+            String existing = attrs.getValue(Attributes.Name.CLASS_PATH);
+            if (existing == null || existing.isEmpty()) {
+                return;
+            }
+            attrs.putValue(Attributes.Name.CLASS_PATH.toString(), "");
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
+                    "CachedJarFileCallback: cleared Manifest Class-Path on " + jarFile.getName());
+        } catch (Exception ignored) {
+            // no manifest / attributes
+        }
+    }
+
+    /**
+     * {@link java.io.FileNotFoundException} with no stack. URLClassLoader
+     * treats this as a missing optional Class-Path jar; a filled stack would
+     * flood the ITW log (~one per token).
+     */
+    private static FileNotFoundException quietUnmappedRemote(URL url) {
+        FileNotFoundException e = new FileNotFoundException("not a JNLP-cached jar: " + url) {
+            @Override
+            public synchronized Throwable fillInStackTrace() {
+                return this;
+            }
+        };
+        e.setStackTrace(new StackTraceElement[0]);
+        return e;
+    }
+
     private JarFile cacheJarFile(URL url) throws IOException {
+        if (isRemoteHttpUrl(url)) {
+            throw quietUnmappedRemote(url);
+        }
         final int bufSize = 2048;
         URLConnection conn = ConnectionFactory.getConnectionFactory().openConnection(url);
         final InputStream in = conn.getInputStream();
