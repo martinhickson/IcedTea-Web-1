@@ -85,6 +85,44 @@ public class SqliteCacheCatalogIT {
         }
     }
 
+    @Test(timeout = 60000)
+    public void initLockTimeoutDoesNotCreateCatalog() throws Exception {
+        File parentCache = tmp.newFolder("hold-initlock");
+        Process holder = startWorker(parentCache, "hold-initlock", "60000");
+        File dbDir = CacheLRUWrapper.sqliteCacheRoot(parentCache);
+        File catalog = new File(dbDir, SqliteCacheCatalog.DB_FILE_NAME);
+        File lockDir = SqliteCacheCatalog.initLockDir(catalog);
+        long readyDeadline = System.currentTimeMillis() + 5000L;
+        boolean ready = false;
+        while (System.currentTimeMillis() < readyDeadline) {
+            if (snapshotOutput(holder).contains("READY holding")
+                    && lockDir.isDirectory()
+                    && catalog.isFile()) {
+                ready = true;
+                break;
+            }
+            Thread.sleep(50);
+        }
+        assertTrue("holder should take the initlock dir", ready);
+        assertFalse("holder must not publish a live catalog",
+                SqliteCacheCatalog.looksLikeSqliteHeader(catalog));
+        Process inserter = startWorker(parentCache, "insert", "1", "1");
+        String out = waitDone(inserter, 30);
+        assertTrue("inserter must finish: " + out, out.contains("ERR ") || out.contains("OK "));
+        assertFalse("timeout while initlock dir is held must not publish\n" + out,
+                SqliteCacheCatalog.looksLikeSqliteHeader(catalog));
+        assertTrue("holder must still own the initlock after inserter exits",
+                lockDir.isDirectory());
+        File[] bad = dbDir.isDirectory()
+                ? dbDir.listFiles((d, n) -> n.contains(".corrupt-")
+                        || n.equals(SqliteCacheCatalog.FAILED_MARKER))
+                : null;
+        assertTrue("must not quarantine: " + java.util.Arrays.toString(bad),
+                bad == null || bad.length == 0);
+        holder.destroyForcibly();
+        holder.waitFor(5, TimeUnit.SECONDS);
+    }
+
     @Test(timeout = 90000)
     public void killWorkerMidInsertCatalogStillOpens() throws Exception {
         File parentCache = tmp.newFolder("kill-cache");
@@ -340,6 +378,23 @@ public class SqliteCacheCatalogIT {
         String text = snapshotOutput(process);
         assertTrue("worker output=" + text, text.contains("OK "));
         return text;
+    }
+
+    private String waitDone(Process process, int timeoutSec) throws Exception {
+        long deadline = System.currentTimeMillis() + TimeUnit.SECONDS.toMillis(timeoutSec);
+        while (System.currentTimeMillis() < deadline && process.isAlive()) {
+            String snap = snapshotOutput(process);
+            if (snap.contains("OK ") || snap.contains("ERR ")) {
+                process.waitFor(5, TimeUnit.SECONDS);
+                break;
+            }
+            Thread.sleep(50);
+        }
+        if (process.isAlive()) {
+            process.destroyForcibly();
+            process.waitFor(5, TimeUnit.SECONDS);
+        }
+        return snapshotOutput(process);
     }
 
     private String snapshotOutput(Process process) {

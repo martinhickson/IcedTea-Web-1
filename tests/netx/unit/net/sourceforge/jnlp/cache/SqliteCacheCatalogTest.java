@@ -9,9 +9,6 @@ import static org.junit.Assert.assertTrue;
 
 import java.io.File;
 import java.io.IOException;
-import java.io.RandomAccessFile;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.ResultSet;
@@ -323,6 +320,12 @@ public class SqliteCacheCatalogTest {
                 SqliteCacheCatalog.shouldQuarantine(notAdb, empty));
         assertTrue(SqliteCacheCatalog.isBusy(busy));
         assertFalse(SqliteCacheCatalog.isBusy(new SQLException("UNIQUE constraint failed", "HY000", 19)));
+        SQLException initHeld = new SQLException(
+                "catalog init mutex held; leaving peer catalog in place: x");
+        assertFalse("init mutex wait is not SQLITE_BUSY",
+                SqliteCacheCatalog.isBusy(initHeld));
+        assertFalse("init mutex wait must not quarantine",
+                SqliteCacheCatalog.shouldQuarantine(initHeld, empty));
         File staleGarbage = new File(tmp.newFolder("stale-with-lock"), SqliteCacheCatalog.DB_FILE_NAME);
         java.nio.file.Files.write(staleGarbage.toPath(),
                 "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -330,6 +333,11 @@ public class SqliteCacheCatalogTest {
         File recentLock = SqliteCacheCatalog.initLockFile(staleGarbage);
         assertTrue(recentLock.createNewFile());
         assertFalse("recent initlock means a peer is still creating",
+                SqliteCacheCatalog.shouldQuarantine(notAdb, staleGarbage));
+        assertTrue(recentLock.delete());
+        File recentLockDir = SqliteCacheCatalog.initLockDir(staleGarbage);
+        assertTrue(recentLockDir.mkdir());
+        assertFalse("recent initlock dir means a peer is still creating",
                 SqliteCacheCatalog.shouldQuarantine(notAdb, staleGarbage));
     }
 
@@ -397,15 +405,14 @@ public class SqliteCacheCatalogTest {
         File dbDir = CacheLRUWrapper.sqliteCacheRoot(parent);
         assertTrue(dbDir.mkdirs() || dbDir.isDirectory());
         File dbFile = new File(dbDir, SqliteCacheCatalog.DB_FILE_NAME);
-        File lockFile = SqliteCacheCatalog.initLockFile(dbFile);
+        File lockDir = SqliteCacheCatalog.initLockDir(dbFile);
         CountDownLatch locked = new CountDownLatch(1);
         AtomicReference<Throwable> holderErr = new AtomicReference<Throwable>();
         Thread holder = new Thread(new Runnable() {
             @Override
             public void run() {
-                try (RandomAccessFile raf = new RandomAccessFile(lockFile, "rw");
-                     FileChannel ch = raf.getChannel();
-                     FileLock lock = ch.lock()) {
+                try {
+                    assertTrue(lockDir.mkdir());
                     locked.countDown();
                     Thread.sleep(150);
                     Class.forName("org.sqlite.JDBC");
@@ -417,6 +424,8 @@ public class SqliteCacheCatalogTest {
                     Thread.sleep(400);
                 } catch (Throwable t) {
                     holderErr.compareAndSet(null, t);
+                } finally {
+                    lockDir.delete();
                 }
             }
         }, "hold-initlock");
@@ -445,6 +454,38 @@ public class SqliteCacheCatalogTest {
         assertTrue("must not quarantine while peer holds initlock: " + java.util.Arrays.toString(bad),
                 bad == null || bad.length == 0);
         assertTrue(SqliteCacheCatalog.looksLikeSqliteHeader(dbFile));
+    }
+
+    @Test
+    public void heldInitLockDirDoesNotPublishLiveCatalog() throws Exception {
+        File parent = tmp.newFolder("block-initlock");
+        File dbDir = CacheLRUWrapper.sqliteCacheRoot(parent);
+        assertTrue(dbDir.mkdirs() || dbDir.isDirectory());
+        File dbFile = new File(dbDir, SqliteCacheCatalog.DB_FILE_NAME);
+        assertTrue(dbFile.createNewFile());
+        File lockDir = SqliteCacheCatalog.initLockDir(dbFile);
+        assertTrue(lockDir.mkdir());
+        try {
+            CacheLRUWrapper w = CacheLRUWrapper.createForTests(true, parent);
+            try {
+                w.lock();
+                try {
+                    w.load();
+                } finally {
+                    w.unlock();
+                }
+            } finally {
+                w.close();
+            }
+        } finally {
+            lockDir.delete();
+        }
+        assertFalse("blocked waiter must not publish a live catalog",
+                SqliteCacheCatalog.looksLikeSqliteHeader(dbFile));
+        File[] bad = dbDir.listFiles((d, n) -> n.contains(".corrupt-")
+                || n.equals(SqliteCacheCatalog.FAILED_MARKER));
+        assertTrue("must not quarantine while initlock dir is held: " + java.util.Arrays.toString(bad),
+                bad == null || bad.length == 0);
     }
 
     @Test
