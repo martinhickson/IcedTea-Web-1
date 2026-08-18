@@ -41,8 +41,7 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 final class SqliteCacheCatalog implements CacheCatalog {
 
     static final String DB_FILE_NAME = "cache_catalog.sqlite";
-    static final String INIT_LOCK_SUFFIX = ".initlock";
-    /** Directory mutex: {@code Files.createDirectory} is exclusive when FileLock is not. */
+    /** Exclusive first-create mutex ({@code Files.createDirectory}). */
     static final String INIT_LOCK_DIR_SUFFIX = ".initlock.d";
     /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
     static final String FAILED_MARKER = ".sqlite_catalog_failed";
@@ -143,9 +142,8 @@ final class SqliteCacheCatalog implements CacheCatalog {
      * First create is serialized across processes so a 0-byte file is not
      * mistaken for garbage while a peer writes the SQLite header.
      * A live catalog (valid header or {@code -wal}) skips the lock. If the
-     * lock is held, do not create; only open a catalog the peer already made.
-     * {@code mkdir} is the mutex: Java {@code FileLock} is not exclusive on
-     * some local/overlay/NFS mounts.
+     * lock dir is held, do not create; only open a catalog the peer already made.
+     * {@code mkdir} is the only mutex.
      */
     private Connection openAndInitGuarded(String path) throws SQLException {
         if (peerCatalogLooksLive(dbFile)) {
@@ -310,7 +308,6 @@ final class SqliteCacheCatalog implements CacheCatalog {
     /** Recent dest or lock means a peer still owns {@code cache_catalog.sqlite}. */
     private boolean peerMayStillOwnCatalogName() {
         return isRecentlyModified(dbFile, PEER_GRACE_MS)
-                || isRecentlyModified(initLockFile(dbFile), PEER_GRACE_MS)
                 || isRecentlyModified(initLockDir(dbFile), PEER_GRACE_MS);
     }
 
@@ -340,10 +337,6 @@ final class SqliteCacheCatalog implements CacheCatalog {
             }
             sleepQuietly(50);
         }
-    }
-
-    static File initLockFile(File dbFile) {
-        return new File(dbFile.getPath() + INIT_LOCK_SUFFIX);
     }
 
     static File initLockDir(File dbFile) {
@@ -483,8 +476,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
         if (m.contains("busy") || m.contains("locked") || m.contains("leaving peer catalog")) {
             return false;
         }
-        if (isRecentlyModified(initLockFile(dbFile), PEER_GRACE_MS)
-                || isRecentlyModified(initLockDir(dbFile), PEER_GRACE_MS)) {
+        if (isRecentlyModified(initLockDir(dbFile), PEER_GRACE_MS)) {
             return false;
         }
         return dbFile.isFile() && !isRecentlyModified(dbFile, PEER_GRACE_MS);

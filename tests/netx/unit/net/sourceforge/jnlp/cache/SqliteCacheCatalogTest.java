@@ -247,9 +247,9 @@ public class SqliteCacheCatalogTest {
                 "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-wal").delete();
         new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-shm").delete();
-        File leftoverLock = SqliteCacheCatalog.initLockFile(dbFile);
-        if (leftoverLock.isFile()) {
-            assertTrue(leftoverLock.setLastModified(System.currentTimeMillis() - 60_000L));
+        File leftoverLockDir = SqliteCacheCatalog.initLockDir(dbFile);
+        if (leftoverLockDir.isDirectory()) {
+            assertTrue(leftoverLockDir.setLastModified(System.currentTimeMillis() - 60_000L));
         }
         // Stable garbage only: a just-written file may be a peer still heading the DB.
         assertTrue(dbFile.setLastModified(System.currentTimeMillis() - 60_000L));
@@ -330,11 +330,6 @@ public class SqliteCacheCatalogTest {
         java.nio.file.Files.write(staleGarbage.toPath(),
                 "this is not a sqlite database".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         assertTrue(staleGarbage.setLastModified(System.currentTimeMillis() - 60_000L));
-        File recentLock = SqliteCacheCatalog.initLockFile(staleGarbage);
-        assertTrue(recentLock.createNewFile());
-        assertFalse("recent initlock means a peer is still creating",
-                SqliteCacheCatalog.shouldQuarantine(notAdb, staleGarbage));
-        assertTrue(recentLock.delete());
         File recentLockDir = SqliteCacheCatalog.initLockDir(staleGarbage);
         assertTrue(recentLockDir.mkdir());
         assertFalse("recent initlock dir means a peer is still creating",
