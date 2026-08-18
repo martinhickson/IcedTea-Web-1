@@ -10,6 +10,8 @@ import org.slf4j.Logger;
 /**
  * Cached SLF4J factory so Apache HttpClient 5 does not fall back to the NOP
  * binder (which prints to stderr and ITW then records as {@code ERROR_ALL}).
+ * The uber jar relocates {@code org.slf4j} so this factory is not visible to
+ * JNLP applications.
  */
 public final class ItwSlf4jLoggerFactory implements ILoggerFactory {
 
