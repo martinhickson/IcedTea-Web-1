@@ -16,9 +16,12 @@ assert packA == 27_742_491L * 30L : "packA reserve ${packA}"
 assert packB == 24_062_954L * 30L : "packB reserve ${packB}"
 assert packA + packB < admit.budgetBytes() : "two largest must fit ${packA + packB} vs ${admit.budgetBytes()}"
 assert packA + packB + packC >= admit.budgetBytes() : "third must wait ${packA + packB + packC} vs ${admit.budgetBytes()}"
-long blob = PackUnpackAdmission.estimateReserveBytes(85_000_000L, 0L)
-assert blob == 85_000_000L : "large-wire 1× reserve ${blob}"
-assert packA + packB + blob < admit.budgetBytes() : "large unpack must fit with two class packs"
+long unnamedLarge = PackUnpackAdmission.estimateReserveBytes(85_000_000L, 0L)
+assert unnamedLarge == 85_000_000L * 30L : "wire size alone stays 30× ${unnamedLarge}"
+long blob = PackUnpackAdmission.estimateReserveBytes(85_000_000L, 0L, "jxbrowser-win64.jar")
+assert blob == 85_000_000L * 6L : "jxbrowser-win64 measured 6× ${blob}"
+assert packA + blob < admit.budgetBytes() : "native + one class pack ${packA + blob}"
+assert packA + packB + blob >= admit.budgetBytes() : "native must not sit with both class packs ${packA + packB + blob}"
 
 admit.setDefaultReserveOverrideBytes(null)
 long unknown = admit.defaultReserveBytes()

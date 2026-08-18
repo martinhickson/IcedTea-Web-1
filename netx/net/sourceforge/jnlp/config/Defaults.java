@@ -630,7 +630,7 @@ public class Defaults {
                 {
                         DeploymentConfiguration.KEY_HTTP_PACK200_ADMISSION_LARGE_WIRE_MULTIPLIER,
                         BasicValueValidators.getRangedIntegerValidator(1, 200),
-                        String.valueOf(1)
+                        String.valueOf(6)
                 },
                 //**************
                 //* Native (rust) only - beggin

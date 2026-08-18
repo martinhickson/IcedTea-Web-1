@@ -9,6 +9,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class PackUnpackAdmissionTest {
@@ -197,6 +198,16 @@ class PackUnpackAdmissionTest {
     }
 
     @Test
+    void jxbrowserWin64UsesMeasuredNativeFactorNotOneTimes() {
+        assertTrue(PackUnpackAdmission.isNativeHeavyPack("jxbrowser-win64.jar"));
+        assertTrue(PackUnpackAdmission.isNativeHeavyPack("jxbrowser-win64__V7.35.1.jar.pack.gz"));
+        assertFalse(PackUnpackAdmission.isNativeHeavyPack("sonata-dao.jar"));
+        long wire = 91_292_073L;
+        assertEquals(wire * 30L, PackUnpackAdmission.estimateReserveBytes(wire, 0L));
+        assertEquals(wire * 6L, PackUnpackAdmission.estimateReserveBytes(wire, 0L, "jxbrowser-win64.jar"));
+    }
+
+    @Test
     void estimateReserveUsesMeasuredWireMultiplier() {
         admission.setWireMultiplierOverride(PackUnpackAdmission.WIRE_TO_HEAP_MULTIPLIER);
         long wireA = 17_193_474L;
@@ -230,10 +241,14 @@ class PackUnpackAdmissionTest {
                 "two largest must fit: " + (packA + packB) + " vs " + admission.budgetBytes());
         assertTrue(packA + packB + packC >= admission.budgetBytes(),
                 "third class pack must not fit: " + (packA + packB + packC) + " vs " + admission.budgetBytes());
-        long blob = PackUnpackAdmission.estimateReserveBytes(85_000_000L, 0L);
-        assertEquals(85_000_000L, blob, "large-wire pack uses 1× (native-heavy)");
-        assertTrue(packA + packB + blob < admission.budgetBytes(),
-                "81MiB-class unpack must share the heap: " + (packA + packB + blob));
+        long unnamedLarge = PackUnpackAdmission.estimateReserveBytes(85_000_000L, 0L);
+        assertEquals(85_000_000L * 30L, unnamedLarge, "wire size alone stays 30×");
+        long blob = PackUnpackAdmission.estimateReserveBytes(85_000_000L, 0L, "jxbrowser-win64.jar");
+        assertEquals(85_000_000L * 6L, blob, "jxbrowser-win64 uses measured 6×");
+        assertTrue(packA + blob < admission.budgetBytes(),
+                "native pack may share with one class pack: " + (packA + blob));
+        assertTrue(packA + packB + blob >= admission.budgetBytes(),
+                "native pack must not share with both class packs: " + (packA + packB + blob));
 
         CountDownLatch twoInside = new CountDownLatch(2);
         CountDownLatch release = new CountDownLatch(1);
