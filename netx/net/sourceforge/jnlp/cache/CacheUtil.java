@@ -19,6 +19,7 @@ package net.sourceforge.jnlp.cache;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilePermission;
 import java.io.IOException;
@@ -32,6 +33,7 @@ import java.nio.channels.FileLock;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
@@ -1282,23 +1284,25 @@ public class CacheUtil {
 
     /**
      * Removes cache entries marked for deletion always; LRU size enforcement only when allowed.
-     * Catalog queries return the file list; only those paths are unlinked.
+     * Each path is its own catalog transaction: commit the row delete only after
+     * unlink succeeds (already-gone counts as success). A failed unlink rolls
+     * back that file only.
      */
     private static void processCacheCleanup(boolean enforceLruLimit) {
         CacheLRUWrapper lruHandler = CacheLRUWrapper.getInstance();
-        HashSet<String> remove = new HashSet<>();
         synchronized (lruHandler) {
         try {
             lruHandler.lock();
             lruHandler.load();
 
             for (CacheCleanupRow row : lruHandler.listMarkedForDelete()) {
-                if (row.path != null) {
-                    lruHandler.removeByPath(row.path);
-                    remove.add(row.path);
-                } else if (row.lruKey != null) {
-                    lruHandler.removeEntry(row.lruKey);
+                if (row.path == null) {
+                    if (row.lruKey != null) {
+                        lruHandler.removeEntry(row.lruKey);
+                    }
+                    continue;
                 }
+                lruHandler.transactRemoveIfUnlinked(row.path, () -> unlinkCachePath(row.path));
             }
 
             if (enforceLruLimit) {
@@ -1332,10 +1336,7 @@ public class CacheUtil {
                         continue;
                     }
                     if (!file.isFile() || overMax) {
-                        lruHandler.removeByPath(path);
-                        if (file.isFile()) {
-                            remove.add(path);
-                        }
+                        lruHandler.transactRemoveIfUnlinked(path, () -> unlinkCachePath(path));
                         continue;
                     }
                     curSize += len;
@@ -1347,29 +1348,46 @@ public class CacheUtil {
             lruHandler.unlock();
         }
         }
-        deleteCachePathsIfPresent(remove);
     }
 
     /**
-     * Unlink catalog files only. Already-gone paths are ignored. Directories
-     * are skipped so a row pointing at {@code {cache}/db} cannot wipe the catalog.
+     * Unlink one catalog file. {@link FileNotFoundException} /
+     * {@link NoSuchFileException} (or a file that is already gone) is
+     * success. Other I/O failures are logged and return false so the
+     * per-file transaction can roll back. Directories are not wiped.
+     */
+    static boolean unlinkCachePath(String path) {
+        if (path == null || path.isEmpty()) {
+            return true;
+        }
+        File f = new File(path);
+        if (f.isDirectory()) {
+            return true;
+        }
+        try {
+            Files.deleteIfExists(f.toPath());
+            return true;
+        } catch (NoSuchFileException | FileNotFoundException e) {
+            return true;
+        } catch (IOException e) {
+            if (!f.exists()) {
+                return true;
+            }
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    /**
+     * Unlink catalog files only. Each path is independent; already-gone is
+     * ignored. Other I/O failures are logged. Directories are skipped.
      */
     static void deleteCachePathsIfPresent(Set<String> paths) {
         if (paths == null) {
             return;
         }
         for (String s : paths) {
-            if (s == null || s.isEmpty()) {
-                continue;
-            }
-            File f = new File(s);
-            if (f.isDirectory()) {
-                continue;
-            }
-            try {
-                Files.deleteIfExists(f.toPath());
-            } catch (IOException e) {
-            }
+            unlinkCachePath(s);
         }
     }
 

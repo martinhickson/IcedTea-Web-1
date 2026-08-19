@@ -76,8 +76,8 @@ class SqliteCacheCatalogDualJvmIT {
         openWrappers.clear();
     }
 
-    private CacheLRUWrapper openWrapper(boolean sqlite) {
-        CacheLRUWrapper w = CacheLRUWrapper.createForTests(sqlite, cacheParent.toFile());
+    private CacheLRUWrapper openWrapper() {
+        CacheLRUWrapper w = CacheLRUWrapper.createForTests(true, cacheParent.toFile());
         openWrappers.add(w);
         return w;
     }
@@ -123,34 +123,8 @@ class SqliteCacheCatalogDualJvmIT {
 
     @Test
     @Timeout(60)
-    void killSwitchFalseUsesLegacyRootNotDb() throws Exception {
-        CacheLRUWrapper legacy = openWrapper(false);
-        assertThat(legacy.isSqliteMode()).isFalse();
-        assertThat(legacy.getCacheDir().getFile()).isEqualTo(cacheParent.toFile());
-        assertThat(legacy.getSqliteCatalogFile()).isNull();
-
-        File jar = cacheParent.resolve("9/http/legacy.mode/app.jar").toFile();
-        assertThat(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory()).isTrue();
-        assertThat(jar.createNewFile()).isTrue();
-
-        legacy.lock();
-        try {
-            legacy.load();
-            String key = legacy.generateKey(jar.getAbsolutePath());
-            assertThat(legacy.addEntry(key, jar.getAbsolutePath())).isTrue();
-            assertThat(legacy.store()).isTrue();
-        } finally {
-            legacy.unlock();
-        }
-
-        assertThat(cacheParent.resolve("db/cache_catalog.sqlite")).doesNotExist();
-        assertThat(legacy.getRecentlyUsedFile().getFile()).isFile();
-    }
-
-    @Test
-    @Timeout(60)
     void inProcessMultiGenerationNewestFirst() throws Exception {
-        CacheLRUWrapper w = openWrapper(true);
+        CacheLRUWrapper w = openWrapper();
         File db = w.getCacheDir().getFile();
         File older = new File(db, "10/http/gen.example/app.jar");
         File newer = new File(db, "11/http/gen.example/app.jar");

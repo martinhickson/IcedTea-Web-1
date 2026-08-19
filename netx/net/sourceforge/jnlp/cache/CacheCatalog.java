@@ -47,6 +47,13 @@ interface CacheCatalog {
     /** Delete every catalog row whose stored path is {@code path}. */
     boolean removeByPath(String path);
 
+    /**
+     * One transaction per path: apply the catalog delete, run {@code unlink},
+     * commit only if unlink returns true. Rollback leaves the row so a later
+     * sweep can retry. Already-gone (FNF) must be reported as true.
+     */
+    boolean transactRemoveIfUnlinked(String path, java.util.concurrent.Callable<Boolean> unlink);
+
     boolean updateEntry(String oldKey, String cacheDirPath);
 
     List<Entry<String, String>> getLRUSortedEntries();

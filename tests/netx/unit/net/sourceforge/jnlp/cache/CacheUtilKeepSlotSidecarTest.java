@@ -4,6 +4,9 @@ import java.io.File;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.Set;
 import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
 import org.junit.After;
@@ -137,6 +140,22 @@ public class CacheUtilKeepSlotSidecarTest extends NoStdOutErrTest {
 
         Assert.assertTrue("catalog dir must survive a row named db", cacheDir.isDirectory());
         Assert.assertNull(lru.getMetaByPath(path));
+    }
+
+    @Test
+    public void deleteCachePathsIfPresentIgnoresFileNotFound() throws Exception {
+        File present = writeCachedJar();
+        File missing = new File(present.getParentFile(), "already-gone.jar");
+        File missingParent = new File(new File(present.getParentFile(), "no-such-dir"), "gone.jar");
+        Set<String> paths = new HashSet<String>();
+        paths.add(present.getPath());
+        paths.add(missing.getPath());
+        paths.add(missingParent.getPath());
+        paths.add(null);
+        CacheUtil.deleteCachePathsIfPresent(paths);
+        CacheUtil.deleteCachePathsIfPresent(Collections.singleton(missing.getPath()));
+        Assert.assertFalse(present.exists());
+        Assert.assertFalse(missing.exists());
     }
 
     private static void markForDelete(String path) {

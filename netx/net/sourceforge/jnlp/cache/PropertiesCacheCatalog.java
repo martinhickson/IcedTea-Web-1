@@ -174,6 +174,22 @@ final class PropertiesCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public boolean transactRemoveIfUnlinked(String path, java.util.concurrent.Callable<Boolean> unlink) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        try {
+            if (unlink == null || !Boolean.TRUE.equals(unlink.call())) {
+                return false;
+            }
+        } catch (Exception e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+        return removeByPath(path);
+    }
+
+    @Override
     public boolean updateEntry(String oldKey, String cacheDirPath) {
         PropertiesFile p = props();
         if (!p.containsKey(oldKey)) {

@@ -100,9 +100,7 @@ public class CacheLRUWrapperTest {
         
     }
     
-    private static final CacheLRUWrapper clw = new CacheLRUWrapper(
-            new DummyInfrastructureFileDescriptor(tmpIndexFile),
-            new DummyInfrastructureFileDescriptor(tmpCache));
+    private static final CacheLRUWrapper clw = CacheLRUWrapper.createForTests(true, tmpCache);
 
     private final int noEntriesCacheFile = 1000;
 
@@ -234,21 +232,21 @@ public class CacheLRUWrapperTest {
 
     @Test
     public void testAddEntry() {
-        String key = "key";
-        String value = "value";
-
-        clw.addEntry(key, value);
-        assertTrue(clw.containsKey(key) && clw.containsValue(value));
+        File jar = new File(clw.getCacheDir().getFile(), "0/http/t.example/a.jar");
+        String path = jar.getPath();
+        String key = clw.generateKey(path);
+        clw.addEntry(key, path);
+        assertTrue(clw.containsKey(key) && clw.containsValue(path));
     }
 
     @Test
     public void testRemoveEntry() {
-        String key = "key";
-        String value = "value";
-
-        clw.addEntry(key, value);
+        File jar = new File(clw.getCacheDir().getFile(), "0/http/t.example/b.jar");
+        String path = jar.getPath();
+        String key = clw.generateKey(path);
+        clw.addEntry(key, path);
         clw.removeEntry(key);
-        assertFalse(clw.containsKey(key) && clw.containsValue(value));
+        assertFalse(clw.containsKey(key) && clw.containsValue(path));
     }
 
     @Test(timeout = 2000l)

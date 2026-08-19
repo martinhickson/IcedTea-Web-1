@@ -309,17 +309,20 @@ public class SqliteCacheCatalogTest {
         assertFalse(SqliteCacheCatalog.isBusy(new SQLException("UNIQUE constraint failed", "HY000", 19)));
     }
 
+    @Test(expected = IllegalArgumentException.class)
+    public void createForTestsRejectsPropertiesBackend() {
+        CacheLRUWrapper.createForTests(false, parentCache);
+    }
+
     @Test
-    public void stickyFailMarkerUsesPropertiesUnderDbNotParentLegacy() throws Exception {
+    public void leftoverStickyFailMarkerDoesNotSwitchToProperties() throws Exception {
         File marker = new File(dbRoot, SqliteCacheCatalog.FAILED_MARKER);
         assertTrue(marker.createNewFile());
-        File parentLegacy = new File(parentCache, "recently_used");
-        byte[] before = java.nio.file.Files.readAllBytes(parentLegacy.toPath());
 
         CacheLRUWrapper fallen = CacheLRUWrapper.createForTests(true, parentCache);
         try {
-            assertFalse("sticky marker should disable sqlite backend", fallen.isSqliteMode());
-            assertEquals(dbRoot.getAbsolutePath(), fallen.getCacheDir().getFullPath());
+            assertTrue("product path stays sqlite even if an old marker is on disk",
+                    fallen.isSqliteMode());
             File jar = new File(dbRoot, "2/http/sticky.example/app.jar");
             assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
             assertTrue(jar.createNewFile());
@@ -327,18 +330,13 @@ public class SqliteCacheCatalogTest {
             try {
                 fallen.load();
                 assertTrue(fallen.addEntry(fallen.generateKey(jar.getAbsolutePath()), jar.getAbsolutePath()));
-                assertTrue(fallen.store());
             } finally {
                 fallen.unlock();
             }
-            File dbRecentlyUsed = new File(dbRoot, "recently_used");
-            assertTrue("fallback properties live under db/", dbRecentlyUsed.isFile());
+            assertFalse(new File(dbRoot, "recently_used").isFile());
         } finally {
             fallen.close();
         }
-        byte[] after = java.nio.file.Files.readAllBytes(parentLegacy.toPath());
-        assertEquals(new String(before, java.nio.charset.StandardCharsets.UTF_8),
-                new String(after, java.nio.charset.StandardCharsets.UTF_8));
     }
 
     @Test
@@ -582,30 +580,6 @@ public class SqliteCacheCatalogTest {
             }
         } finally {
             reopened.close();
-        }
-    }
-
-    @Test
-    public void killSwitchFalseUsesLegacyRoot() throws Exception {
-        CacheLRUWrapper legacy = CacheLRUWrapper.createForTests(false, parentCache);
-        try {
-            assertFalse(legacy.isSqliteMode());
-            assertEquals(parentCache.getAbsolutePath(), legacy.getCacheDir().getFullPath());
-            File jar = new File(parentCache, "4/http/legacy.example/app.jar");
-            assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
-            assertTrue(jar.createNewFile());
-            legacy.lock();
-            try {
-                legacy.load();
-                assertTrue(legacy.addEntry(legacy.generateKey(jar.getAbsolutePath()), jar.getAbsolutePath()));
-                assertTrue(legacy.store());
-            } finally {
-                legacy.unlock();
-            }
-            assertTrue(new File(parentCache, "recently_used").isFile()
-                    || legacy.getRecentlyUsedFile().getFile().isFile());
-        } finally {
-            legacy.close();
         }
     }
 
@@ -897,6 +871,52 @@ public class SqliteCacheCatalogTest {
             assertEquals(1, live.size());
             assertEquals(keep.getAbsolutePath(), live.get(0).path);
             assertEquals(Long.valueOf(4L), live.get(0).contentLength);
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test
+    public void transactRemoveIfUnlinkedRollsBackOnlyTheFailedFile() throws Exception {
+        File keep = new File(dbRoot, "11/http/tx.example/keep.jar");
+        File drop = new File(dbRoot, "12/http/tx.example/drop.jar");
+        assertTrue(keep.getParentFile().mkdirs() || keep.getParentFile().isDirectory());
+        assertTrue(drop.getParentFile().mkdirs() || drop.getParentFile().isDirectory());
+        assertTrue(keep.createNewFile());
+        assertTrue(drop.createNewFile());
+
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(wrapper.addEntry(wrapper.generateKey(keep.getAbsolutePath()), keep.getAbsolutePath()));
+            assertTrue(wrapper.addEntry(wrapper.generateKey(drop.getAbsolutePath()), drop.getAbsolutePath()));
+
+            assertFalse(wrapper.transactRemoveIfUnlinked(keep.getAbsolutePath(), () -> Boolean.FALSE));
+            assertTrue("failed unlink must leave the row", wrapper.containsValue(keep.getAbsolutePath()));
+            assertTrue(keep.isFile());
+
+            assertTrue(wrapper.transactRemoveIfUnlinked(drop.getAbsolutePath(),
+                    () -> CacheUtil.unlinkCachePath(drop.getAbsolutePath())));
+            assertFalse(wrapper.containsValue(drop.getAbsolutePath()));
+            assertFalse(drop.exists());
+            assertTrue("other file's rollback must be independent", wrapper.containsValue(keep.getAbsolutePath()));
+            assertTrue(keep.isFile());
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test
+    public void transactRemoveIfUnlinkedTreatsFileNotFoundAsCommit() throws Exception {
+        File gone = new File(dbRoot, "13/http/tx.example/gone.jar");
+        assertTrue(gone.getParentFile().mkdirs() || gone.getParentFile().isDirectory());
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(wrapper.addEntry(wrapper.generateKey(gone.getAbsolutePath()), gone.getAbsolutePath()));
+            assertTrue(wrapper.transactRemoveIfUnlinked(gone.getAbsolutePath(),
+                    () -> CacheUtil.unlinkCachePath(gone.getAbsolutePath())));
+            assertFalse(wrapper.containsValue(gone.getAbsolutePath()));
         } finally {
             wrapper.unlock();
         }

@@ -42,7 +42,7 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 final class SqliteCacheCatalog implements CacheCatalog {
 
     static final String DB_FILE_NAME = "cache_catalog.sqlite";
-    /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
+    /** Leftover name from a removed sticky-fail fallback. Not written anymore. */
     static final String FAILED_MARKER = ".sqlite_catalog_failed";
     /** One-fifth of a minute. Busy wait, first-create lock, and close all cap here. */
     private static final int TIME_BOX_MS = 12_000;
@@ -79,7 +79,6 @@ final class SqliteCacheCatalog implements CacheCatalog {
         try {
             Class.forName("org.sqlite.JDBC");
         } catch (ClassNotFoundException e) {
-            markFailed();
             throw new SQLException("sqlite-jdbc driver missing", e);
         }
         SQLException last = null;
@@ -105,7 +104,6 @@ final class SqliteCacheCatalog implements CacheCatalog {
                 return openAndInitGuarded(path);
             } catch (SQLException second) {
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL, second);
-                markFailed();
                 throw second;
             }
         }
@@ -415,22 +413,6 @@ final class SqliteCacheCatalog implements CacheCatalog {
         }
     }
 
-    private void markFailed() {
-        File parent = dbFile.getParentFile();
-        if (parent == null) {
-            return;
-        }
-        File marker = new File(parent, FAILED_MARKER);
-        try {
-            if (!marker.exists() && !marker.createNewFile()) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
-                        "unable to write sqlite sticky-fail marker: " + marker);
-            }
-        } catch (IOException e) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
-        }
-    }
-
     boolean isUsable() {
         try {
             return connection != null && !connection.isClosed();
@@ -598,20 +580,66 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return false;
         }
         try {
+            return runBusy(c -> deletePathRows(c, path));
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean transactRemoveIfUnlinked(String path, java.util.concurrent.Callable<Boolean> unlink) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        try {
             return runBusy(c -> {
-                try (PreparedStatement natives = c.prepareStatement(
-                        "DELETE FROM native_lib WHERE jar_path = ?")) {
-                    natives.setString(1, path);
-                    natives.executeUpdate();
-                }
-                try (PreparedStatement ps = c.prepareStatement("DELETE FROM cache_entry WHERE path = ?")) {
-                    ps.setString(1, path);
-                    return ps.executeUpdate() > 0;
+                boolean prev = c.getAutoCommit();
+                c.setAutoCommit(false);
+                try {
+                    deletePathRows(c, path);
+                    boolean ok;
+                    try {
+                        ok = unlink != null && Boolean.TRUE.equals(unlink.call());
+                    } catch (Exception e) {
+                        c.rollback();
+                        OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+                        return false;
+                    }
+                    if (ok) {
+                        c.commit();
+                        return true;
+                    }
+                    c.rollback();
+                    return false;
+                } catch (SQLException e) {
+                    try {
+                        c.rollback();
+                    } catch (SQLException ignored) {
+                    }
+                    throw e;
+                } finally {
+                    try {
+                        c.setAutoCommit(prev);
+                    } catch (SQLException ignored) {
+                    }
                 }
             });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
             return false;
+        }
+    }
+
+    private static boolean deletePathRows(Connection c, String path) throws SQLException {
+        try (PreparedStatement natives = c.prepareStatement(
+                "DELETE FROM native_lib WHERE jar_path = ?")) {
+            natives.setString(1, path);
+            natives.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement("DELETE FROM cache_entry WHERE path = ?")) {
+            ps.setString(1, path);
+            return ps.executeUpdate() > 0;
         }
     }
 
