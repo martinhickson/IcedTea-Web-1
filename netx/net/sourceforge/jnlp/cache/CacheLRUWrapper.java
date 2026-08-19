@@ -429,6 +429,14 @@ public class CacheLRUWrapper {
         return catalog.listAllMeta();
     }
 
+    List<CacheCleanupRow> listMarkedForDelete() {
+        return catalog.listMarkedForDelete();
+    }
+
+    List<CacheCleanupRow> listUnmarkedLruNewestFirst() {
+        return catalog.listUnmarkedLruNewestFirst();
+    }
+
     public void registerRunningApp(int pid, String jnlpPath, String processStart) {
         catalog.registerRunningApp(pid, jnlpPath, processStart);
     }

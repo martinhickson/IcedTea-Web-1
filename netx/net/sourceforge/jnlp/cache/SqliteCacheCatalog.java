@@ -238,6 +238,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
         addColumnIfMissing(st, "last_updated", "INTEGER");
         addColumnIfMissing(st, "marked_delete", "INTEGER NOT NULL DEFAULT 0");
         st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_jnlp ON cache_entry (jnlp_path)");
+        st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_marked ON cache_entry (marked_delete)");
         try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
             if (rs.next() && rs.getInt(1) < 2) {
                 st.executeUpdate("UPDATE schema_version SET version = 2");
@@ -898,6 +899,48 @@ final class SqliteCacheCatalog implements CacheCatalog {
         } catch (SQLException e) {
             OutputController.getLogger().log(e);
             throw new IllegalStateException("Could not list running_app", e);
+        }
+    }
+
+    @Override
+    public List<CacheCleanupRow> listMarkedForDelete() {
+        try {
+            return runBusy(c -> {
+                List<CacheCleanupRow> rows = new ArrayList<>();
+                try (Statement st = c.createStatement();
+                     ResultSet rs = st.executeQuery(
+                             "SELECT lru_key, path FROM cache_entry WHERE marked_delete = 1")) {
+                    while (rs.next()) {
+                        rows.add(new CacheCleanupRow(rs.getString(1), rs.getString(2)));
+                    }
+                }
+                return rows;
+            });
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return new ArrayList<>();
+        }
+    }
+
+    @Override
+    public List<CacheCleanupRow> listUnmarkedLruNewestFirst() {
+        try {
+            return runBusy(c -> {
+                List<CacheCleanupRow> rows = new ArrayList<>();
+                try (Statement st = c.createStatement();
+                     ResultSet rs = st.executeQuery(
+                             "SELECT lru_key, path, content_length FROM cache_entry "
+                                     + "WHERE marked_delete = 0 ORDER BY last_access DESC")) {
+                    while (rs.next()) {
+                        rows.add(new CacheCleanupRow(rs.getString(1), rs.getString(2),
+                                getNullableLong(rs, 3)));
+                    }
+                }
+                return rows;
+            });
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return new ArrayList<>();
         }
     }
 

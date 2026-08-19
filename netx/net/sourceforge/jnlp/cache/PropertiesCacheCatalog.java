@@ -416,6 +416,31 @@ final class PropertiesCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public List<CacheCleanupRow> listMarkedForDelete() {
+        List<CacheCleanupRow> rows = new ArrayList<>();
+        for (Entry<String, String> e : getLRUSortedEntries()) {
+            CacheEntryMeta meta = getMetaByPath(e.getValue());
+            if (meta != null && meta.markedDelete) {
+                rows.add(new CacheCleanupRow(e.getKey(), e.getValue(), meta.contentLength));
+            }
+        }
+        return rows;
+    }
+
+    @Override
+    public List<CacheCleanupRow> listUnmarkedLruNewestFirst() {
+        List<CacheCleanupRow> rows = new ArrayList<>();
+        for (Entry<String, String> e : getLRUSortedEntries()) {
+            CacheEntryMeta meta = getMetaByPath(e.getValue());
+            if (meta == null || !meta.markedDelete) {
+                Long len = meta == null ? null : meta.contentLength;
+                rows.add(new CacheCleanupRow(e.getKey(), e.getValue(), len));
+            }
+        }
+        return rows;
+    }
+
+    @Override
     public List<CacheEntryMeta> listAllMeta() {
         List<CacheEntryMeta> rows = new ArrayList<>();
         for (Entry<String, String> e : getLRUSortedEntries()) {

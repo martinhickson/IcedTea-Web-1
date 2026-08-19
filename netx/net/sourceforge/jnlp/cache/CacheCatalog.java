@@ -110,6 +110,18 @@ interface CacheCatalog {
     /** All catalog rows with metadata (for {@code -Xclearcache} / list-ids). */
     java.util.List<CacheEntryMeta> listAllMeta();
 
+    /**
+     * Rows with {@code marked_delete = 1}. Sqlite is one indexed
+     * {@code SELECT}; properties filters the in-memory map.
+     */
+    java.util.List<CacheCleanupRow> listMarkedForDelete();
+
+    /**
+     * Unmarked rows, newest {@code last_access} first, for LRU size
+     * enforcement. Sqlite is one {@code SELECT}.
+     */
+    java.util.List<CacheCleanupRow> listUnmarkedLruNewestFirst();
+
     /** Record a live JNLP JVM so another process can refuse to clear its files. */
     void registerRunningApp(int pid, String jnlpPath, String processStart);
 

@@ -544,6 +544,10 @@ public final class FileUtils {
     public static void recursiveDelete(File file, File base) throws IOException {
         OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Deleting: " + file);
 
+        if (file == null || !file.exists()) {
+            return;
+        }
+
         if (!(file.getCanonicalPath().startsWith(base.getCanonicalPath()))) {
             throw new IOException("Trying to delete a file outside Netx's basedir: "
                     + file.getCanonicalPath());
@@ -551,11 +555,16 @@ public final class FileUtils {
 
         if (file.isDirectory()) {
             File[] children = file.listFiles();
-            for (File children1 : children) {
-                recursiveDelete(children1, base);
+            if (children != null) {
+                for (File children1 : children) {
+                    recursiveDelete(children1, base);
+                }
             }
         }
         if (!file.delete()) {
+            if (!file.exists()) {
+                return;
+            }
             throw new IOException("Unable to delete file: " + file);
         }
 

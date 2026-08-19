@@ -864,6 +864,45 @@ public class SqliteCacheCatalogTest {
     }
 
     @Test
+    public void listMarkedForDeleteIsIndexedQueryNotFullScan() throws Exception {
+        File keep = new File(dbRoot, "8/http/keep.example/keep.jar");
+        File trash = new File(dbRoot, "9/http/trash.example/trash.jar");
+        assertTrue(keep.getParentFile().mkdirs() || keep.getParentFile().isDirectory());
+        assertTrue(trash.getParentFile().mkdirs() || trash.getParentFile().isDirectory());
+        assertTrue(keep.createNewFile());
+        assertTrue(trash.createNewFile());
+
+        wrapper.lock();
+        try {
+            wrapper.load();
+            String keyKeep = wrapper.generateKey(keep.getAbsolutePath());
+            String keyTrash = wrapper.generateKey(trash.getAbsolutePath());
+            assertTrue(wrapper.addEntry(keyKeep, keep.getAbsolutePath()));
+            assertTrue(wrapper.addEntry(keyTrash, trash.getAbsolutePath()));
+            CacheEntryMeta keepMeta = new CacheEntryMeta();
+            keepMeta.path = keep.getAbsolutePath();
+            keepMeta.markedDelete = false;
+            keepMeta.contentLength = 4L;
+            wrapper.putMeta(keepMeta);
+            CacheEntryMeta trashMeta = new CacheEntryMeta();
+            trashMeta.path = trash.getAbsolutePath();
+            trashMeta.markedDelete = true;
+            wrapper.putMeta(trashMeta);
+
+            List<CacheCleanupRow> marked = wrapper.listMarkedForDelete();
+            assertEquals(1, marked.size());
+            assertEquals(trash.getAbsolutePath(), marked.get(0).path);
+
+            List<CacheCleanupRow> live = wrapper.listUnmarkedLruNewestFirst();
+            assertEquals(1, live.size());
+            assertEquals(keep.getAbsolutePath(), live.get(0).path);
+            assertEquals(Long.valueOf(4L), live.get(0).contentLength);
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test
     public void closeThenDeleteDbDirRecreatesCatalogWithoutTouchingLegacy() throws Exception {
         File legacy = new File(parentCache, "recently_used");
         byte[] before = java.nio.file.Files.readAllBytes(legacy.toPath());

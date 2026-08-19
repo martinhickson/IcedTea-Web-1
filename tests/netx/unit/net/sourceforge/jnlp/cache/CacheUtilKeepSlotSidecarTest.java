@@ -87,22 +87,77 @@ public class CacheUtilKeepSlotSidecarTest extends NoStdOutErrTest {
     }
 
     @Test
-    public void markedDeleteStillRemovesSlotIncludingSidecar() throws Exception {
+    public void markedDeleteRemovesOnlyCatalogPathNotUnmarkedSidecar() throws Exception {
         File jar = writeCachedJar();
         File sidecar = writeSidecar(jar, "pack-bytes");
-        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
-        CacheEntryMeta meta = lru.getMetaByPath(jar.getPath());
-        if (meta == null) {
-            meta = new CacheEntryMeta();
-            meta.path = jar.getPath();
-        }
-        meta.markedDelete = true;
-        lru.putMeta(meta);
+        markForDelete(jar.getPath());
 
         CacheUtil.cleanCacheOnShutdown();
 
         Assert.assertFalse("marked jar should be removed", jar.exists());
-        Assert.assertFalse("sidecar goes with the marked slot", sidecar.exists());
+        Assert.assertTrue("unmarked sidecar must stay", sidecar.isFile());
+    }
+
+    @Test
+    public void markedDeleteAlreadyGoneDoesNotThrow() throws Exception {
+        File jar = writeCachedJar();
+        String path = jar.getPath();
+        markForDelete(path);
+        Assert.assertTrue(jar.delete());
+
+        CacheUtil.cleanCacheOnShutdown();
+
+        Assert.assertFalse(jar.exists());
+        Assert.assertNull("marked row must be dropped even if file was already gone",
+                CacheLRUWrapper.getInstance().getMetaByPath(path));
+    }
+
+    @Test
+    public void shutdownSweepDoesNotThrowOnCacheDbPath() throws Exception {
+        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+        File cacheDir = lru.getCacheDir().getFile();
+        Assert.assertTrue(cacheDir.mkdirs() || cacheDir.isDirectory());
+        File dbPath = new File(cacheDir, "db");
+        String path = dbPath.getPath();
+        lru.lock();
+        try {
+            lru.load();
+            // Key is explicit: generateKey requires a numbered slot path.
+            Assert.assertTrue(lru.addEntry("1700000000000,0,1", path));
+            CacheEntryMeta meta = new CacheEntryMeta();
+            meta.path = path;
+            meta.markedDelete = true;
+            lru.putMeta(meta);
+            lru.store();
+        } finally {
+            lru.unlock();
+        }
+
+        CacheUtil.cleanCacheOnShutdown();
+
+        Assert.assertTrue("catalog dir must survive a row named db", cacheDir.isDirectory());
+        Assert.assertNull(lru.getMetaByPath(path));
+    }
+
+    private static void markForDelete(String path) {
+        CacheLRUWrapper lru = CacheLRUWrapper.getInstance();
+        lru.lock();
+        try {
+            lru.load();
+            if (lru.getMetaByPath(path) == null) {
+                Assert.assertTrue(lru.addEntry(lru.generateKey(path), path));
+            }
+            CacheEntryMeta meta = lru.getMetaByPath(path);
+            if (meta == null) {
+                meta = new CacheEntryMeta();
+                meta.path = path;
+            }
+            meta.markedDelete = true;
+            lru.putMeta(meta);
+            lru.store();
+        } finally {
+            lru.unlock();
+        }
     }
 
     private static File writeCachedJar() throws Exception {
