@@ -516,7 +516,7 @@ internal static class Program
             command.Add("-Djava.security.manager=allow");
         }
 
-        // deployment.jvm.ip.type wins over any user -Djava.net.preferIPv* (default ipv4).
+        // deployment.jvm.ip.type wins over any user -Djava.net.preferIPv* (default auto).
         command.AddRange(ApplyConfiguredIpStack(forwardedJvmArgs));
 
         if (javaMajorVersion <= 8)
@@ -1411,7 +1411,7 @@ internal static class Program
 
     /// <summary>
     /// Apply deployment.jvm.ip.type to JVM args. Removes any user prefer-IP -D flags,
-    /// then injects ipv4 (default) or ipv6 settings. auto leaves prefer-IP unset.
+    /// then injects ipv4 or ipv6 settings. auto (default) leaves prefer-IP unset.
     /// </summary>
     private static List<string> ApplyConfiguredIpStack(IEnumerable<string> forwardedJvmArgs)
     {
@@ -1442,7 +1442,7 @@ internal static class Program
         var raw = ReadDeploymentProperty(JvmIpTypeProperty);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return "ipv4";
+            return "auto";
         }
 
         return raw.Trim().ToLowerInvariant() switch
@@ -1450,7 +1450,7 @@ internal static class Program
             "ipv6" => "ipv6",
             "auto" => "auto",
             "ipv4" => "ipv4",
-            _ => "ipv4",
+            _ => "auto",
         };
     }
 

@@ -160,20 +160,20 @@ public final class JvmArgumentPolicy {
             raw = JNLPRuntime.getConfiguration()
                     .getProperty(DeploymentConfiguration.KEY_JVM_IP_TYPE);
         } catch (RuntimeException ex) {
-            return IP_TYPE_IPV4;
+            return IP_TYPE_AUTO;
         }
         return normalizeIpType(raw);
     }
 
     public static String normalizeIpType(String raw) {
         if (raw == null || raw.isBlank()) {
-            return IP_TYPE_IPV4;
+            return IP_TYPE_AUTO;
         }
         String v = raw.trim().toLowerCase(Locale.ENGLISH);
         if (IP_TYPE_IPV6.equals(v) || IP_TYPE_AUTO.equals(v) || IP_TYPE_IPV4.equals(v)) {
             return v;
         }
-        return IP_TYPE_IPV4;
+        return IP_TYPE_AUTO;
     }
 
     /**
@@ -198,7 +198,7 @@ public final class JvmArgumentPolicy {
             args.add(D_PREFER_IPV4 + "=false");
             args.add(D_PREFER_IPV6 + "=true");
         } else {
-            // ipv4 (default)
+            // ipv4 (explicit deployment.jvm.ip.type=ipv4)
             args.add(D_PREFER_IPV4 + "=true");
         }
         return args;
