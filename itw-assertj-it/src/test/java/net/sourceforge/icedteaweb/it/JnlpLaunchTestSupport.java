@@ -304,7 +304,7 @@ final class JnlpLaunchTestSupport {
     static void stopTrackedRunningApps() {
         for (RunningProcess running : JnlpRunningProcessSupport.listRunningJnlpProcesses()) {
             try {
-                JnlpRunningProcessSupport.stopProcess(running.getPid(), true);
+                JnlpRunningProcessSupport.stopProcess(running.getPid(), running.getProcessStart(), true);
             } catch (RuntimeException ignored) {
                 // ignore cleanup races on Windows
             }

@@ -289,8 +289,7 @@ public final class JnlpRunningProcessSupport {
             if (lease == null || lease.pid <= 0 || lease.pid == selfPid) {
                 continue;
             }
-            if (!isProcessAlive(lease.pid)
-                    || (lease.processStart != null && !isSameProcess(lease.pid, lease.processStart))) {
+            if (!isProcessAlive(lease.pid) || !isSameProcess(lease.pid, lease.processStart)) {
                 if (unregisterStale) {
                     try {
                         net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance().unregisterRunningApp(lease.pid);
@@ -356,7 +355,7 @@ public final class JnlpRunningProcessSupport {
         if (pid <= 0) {
             return false;
         }
-        if (recordedStart != null && !isSameProcess(pid, recordedStart)) {
+        if (!isSameProcess(pid, recordedStart)) {
             return false;
         }
         List<String> command = new ArrayList<>();
@@ -423,6 +422,12 @@ public final class JnlpRunningProcessSupport {
         return JnlpLockMetadata.normalizeConcreteVersion(jarVersion);
     }
 
+    /**
+     * Command line of a known catalog PID. {@code ProcessHandle} first (cheap);
+     * if that Optional is empty, {@code wmic} on Windows or {@code ps} on Unix.
+     * Either non-empty result is enough — this is display / infrastructure
+     * filter, not process identity.
+     */
     private static String resolveCommandLine(int pid) {
         Optional<ProcessHandle> handle = ProcessHandle.of(pid);
         if (handle.isPresent()) {

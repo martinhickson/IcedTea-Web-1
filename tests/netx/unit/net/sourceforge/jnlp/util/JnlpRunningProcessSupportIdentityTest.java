@@ -147,4 +147,27 @@ public class JnlpRunningProcessSupportIdentityTest {
             assertFalse(process.getPid() == selfPid);
         }
     }
+
+    @Test
+    public void leaseWithoutStartInstantIsNotListed() {
+        java.util.Optional<ProcessHandle> parent = ProcessHandle.current().parent();
+        if (!parent.isPresent()) {
+            return;
+        }
+        int parentPid = (int) parent.get().pid();
+        List<CacheRunningApp> leases = Arrays.asList(
+                new CacheRunningApp(parentPid, "https://example.com/orphan.jnlp", null));
+        List<JnlpRunningProcessSupport.RunningProcess> listed =
+                JnlpRunningProcessSupport.runningProcessesFromCatalogLeases(leases);
+        for (JnlpRunningProcessSupport.RunningProcess process : listed) {
+            assertFalse(process.getPid() == parentPid);
+        }
+    }
+
+    @Test
+    public void stopRefusesUnverifiedStart() {
+        int pid = JnlpRunningProcessSupport.currentPid();
+        assertFalse(JnlpRunningProcessSupport.stopProcess(pid, null, false));
+        assertFalse(JnlpRunningProcessSupport.stopProcess(pid, "  ", false));
+    }
 }

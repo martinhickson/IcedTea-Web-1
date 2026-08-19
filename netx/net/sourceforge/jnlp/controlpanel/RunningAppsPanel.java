@@ -200,13 +200,15 @@ public class RunningAppsPanel extends NamedBorderPanel {
         if (config.isRunningAppsStopEnabled()) {
             JButton stop = new JButton(Translator.R("CPRunningAppsStop"));
             stop.setName("runningAppStop-" + process.getPid());
-            stop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), false));
+            stop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(
+                    process.getPid(), process.getProcessStart(), false));
             actions.add(stop);
         }
         if (config.isRunningAppsForceStopEnabled()) {
             JButton forceStop = new JButton(Translator.R("CPRunningAppsForceStop"));
             forceStop.setName("runningAppForceStop-" + process.getPid());
-            forceStop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(process.getPid(), true));
+            forceStop.addActionListener(e -> JnlpRunningProcessSupport.stopProcess(
+                    process.getPid(), process.getProcessStart(), true));
             actions.add(forceStop);
         }
         row.add(actions, BorderLayout.EAST);
