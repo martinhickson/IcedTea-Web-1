@@ -377,6 +377,7 @@ final class PropertiesCacheCatalog implements CacheCatalog {
             }
         } catch (IOException e) {
             OutputController.getLogger().log(e);
+            throw new IllegalStateException("Could not list running_app", e);
         }
         return rows;
     }

@@ -897,7 +897,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
             });
         } catch (SQLException e) {
             OutputController.getLogger().log(e);
-            return new ArrayList<CacheRunningApp>();
+            throw new IllegalStateException("Could not list running_app", e);
         }
     }
 

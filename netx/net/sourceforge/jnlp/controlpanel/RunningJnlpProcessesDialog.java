@@ -27,7 +27,7 @@ import net.sourceforge.jnlp.util.JnlpRunningProcessSupport;
 import net.sourceforge.jnlp.util.JnlpRunningProcessSupport.RunningProcess;
 
 /**
- * Lists running JNLP JVMs discovered via lock files and lets the user stop them
+ * Lists running JNLP JVMs from the cache catalog and lets the user stop them
  * before clearing cache.
  */
 public final class RunningJnlpProcessesDialog extends JDialog {
@@ -194,9 +194,10 @@ public final class RunningJnlpProcessesDialog extends JDialog {
                 statusLabel.setText(Translator.R("CacheRunningJnlpLockHeld"));
                 proceedButton.setEnabled(false);
             } else {
+                boolean canClear = canClearCacheNow(jnlpPathFilter);
                 processListPanel.add(new JLabel(Translator.R("CacheRunningJnlpNone")), c);
-                statusLabel.setText(Translator.R("CacheRunningJnlpReady"));
-                proceedButton.setEnabled(true);
+                statusLabel.setText(canClear ? Translator.R("CacheRunningJnlpReady") : "");
+                proceedButton.setEnabled(canClear);
             }
         } else {
             int row = 0;

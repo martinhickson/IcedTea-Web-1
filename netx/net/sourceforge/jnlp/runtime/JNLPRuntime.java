@@ -997,19 +997,37 @@ public class JNLPRuntime {
         });
     }
 
+    /**
+     * Settings, policy editor, and {@code -Xclearcache} call
+     * {@link #markNetxRunning()} with no file. Those must not take a
+     * {@code running_app} lease — that table is JNLP apps that own cache files.
+     */
+    static boolean shouldRegisterCacheRunningApp(net.sourceforge.jnlp.JNLPFile jnlpFile) {
+        return jnlpFile != null;
+    }
+
+    /** Null if the OS did not expose a start instant — no unverifiable lease. */
+    private static String currentProcessStartInstant() {
+        try {
+            java.time.Instant instant = java.lang.ProcessHandle.current().info().startInstant().orElse(null);
+            return instant == null ? null : instant.toString();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private static void registerCacheRunningApp(net.sourceforge.jnlp.JNLPFile jnlpFile) {
+        if (!shouldRegisterCacheRunningApp(jnlpFile)) {
+            return;
+        }
         int pid = JnlpRunningProcessSupport.currentPid();
         if (pid <= 0) {
             return;
         }
         String jnlpPath = JnlpLockMetadata.extractJnlpPath(jnlpFile);
-        String start = null;
-        try {
-            java.time.Instant instant = java.lang.ProcessHandle.current().info().startInstant().orElse(null);
-            if (instant != null) {
-                start = instant.toString();
-            }
-        } catch (Exception ignored) {
+        String start = currentProcessStartInstant();
+        if (start == null) {
+            return;
         }
         try {
             CacheLRUWrapper.getInstance().registerRunningApp(pid, jnlpPath, start);

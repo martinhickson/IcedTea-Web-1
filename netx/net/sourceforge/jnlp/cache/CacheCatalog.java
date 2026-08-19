@@ -115,6 +115,10 @@ interface CacheCatalog {
 
     void unregisterRunningApp(int pid);
 
+    /**
+     * Live {@code running_app} leases. Throws if the catalog cannot be read;
+     * callers must not treat that as "no apps running".
+     */
     java.util.List<CacheRunningApp> listRunningApps();
 
     /**

@@ -104,7 +104,7 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
         Process holder = new ProcessBuilder("sleep", "60").start();
         try {
             CacheLRUWrapper.getInstance().registerRunningApp(
-                    (int) holder.pid(), jnlp.toString(), null);
+                    (int) holder.pid(), jnlp.toString(), processStartOf(holder));
             Assert.assertTrue("jar id uses catalog jnlp-path",
                     CacheUtil.catalogRowsForClearIdBlocked(jar.toString()));
             Assert.assertTrue("domain id uses catalog jnlp-path",
@@ -129,7 +129,7 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
         Process holder = new ProcessBuilder("sleep", "60").start();
         try {
             CacheLRUWrapper.getInstance().registerRunningApp(
-                    (int) holder.pid(), jnlp.toString(), null);
+                    (int) holder.pid(), jnlp.toString(), processStartOf(holder));
 
             Assert.assertFalse("jnlp id", CacheUtil.canClearApplicationCache(jnlp.toString()));
             Assert.assertFalse("jar id", CacheUtil.canClearApplicationCache(jar.toString()));
@@ -157,7 +157,7 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
         Process holder = new ProcessBuilder("sleep", "60").start();
         try {
             CacheLRUWrapper.getInstance().registerRunningApp(
-                    (int) holder.pid(), jnlp.toString(), null);
+                    (int) holder.pid(), jnlp.toString(), processStartOf(holder));
             Assert.assertFalse(CacheUtil.clearCache(
                     "http://127.0.0.1:4200/jnlp/no-such/app.jar", true, true));
             Assert.assertTrue(jnlpFile.isFile());
@@ -357,6 +357,13 @@ public class CacheUtilClearByUrlTest extends NoStdOutErrTest {
         Assert.assertFalse(CacheUtil.catalogRowExactMatch(row,
                 "http://127.0.0.1:4200/jnlp/no-such/app.jar", true, true));
         Assert.assertEquals("127.0.0.1", CacheUtil.hostFromCacheRelativePath(row.resourceUrl));
+    }
+
+    private static String processStartOf(Process process) {
+        return ProcessHandle.of(process.pid())
+                .flatMap(handle -> handle.info().startInstant())
+                .map(java.time.Instant::toString)
+                .orElseThrow(() -> new AssertionError("holder has no startInstant"));
     }
 
     private static File writeCachedResource(URL source, String contents) throws Exception {
