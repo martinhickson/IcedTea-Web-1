@@ -3,7 +3,14 @@ package net.sourceforge.jnlp.util;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Arrays;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
+
 import org.junit.jupiter.api.Test;
+
+import net.sourceforge.jnlp.cache.CacheRunningApp;
 
 public class JnlpRunningProcessSupportIdentityTest {
 
@@ -103,5 +110,41 @@ public class JnlpRunningProcessSupportIdentityTest {
                 "java -Dicedtea-web.bin.name=javaws -jar icedtea-web-uber.jar "
                         + "-jnlp https://example.com/app.jnlp",
                 "App", "https://example.com/app.jnlp"));
+    }
+
+    @Test
+    public void catalogUnavailableBlocksCacheClear() {
+        assertTrue(JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(
+                null, java.util.Collections.emptyList(), true));
+        assertTrue(JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(
+                "https://example.com/app.jnlp", java.util.Collections.emptyList(), true));
+        assertFalse(JnlpRunningProcessSupport.cacheClearBlockedByRunningApps(
+                null, java.util.Collections.emptyList(), false));
+    }
+
+    @Test
+    public void listedPidsAreSubsetOfCatalogLeases() {
+        int selfPid = JnlpRunningProcessSupport.currentPid();
+        String selfStart = java.lang.ProcessHandle.current().info().startInstant()
+                .map(java.time.Instant::toString).orElse("2000-01-01T00:00:00Z");
+        List<CacheRunningApp> leases = Arrays.asList(
+                new CacheRunningApp(9_999_999, "https://example.com/dead.jnlp", "2000-01-01T00:00:00Z"),
+                new CacheRunningApp(selfPid, "https://example.com/self.jnlp", selfStart),
+                new CacheRunningApp(-1, "https://example.com/bad.jnlp", null),
+                new CacheRunningApp(selfPid, "https://example.com/reused.jnlp", "2000-01-01T00:00:00Z"));
+        Set<Integer> catalogPids = new HashSet<Integer>();
+        for (CacheRunningApp lease : leases) {
+            catalogPids.add(lease.pid);
+        }
+        List<JnlpRunningProcessSupport.RunningProcess> listed =
+                JnlpRunningProcessSupport.runningProcessesFromCatalogLeases(leases);
+        for (JnlpRunningProcessSupport.RunningProcess process : listed) {
+            assertTrue(catalogPids.contains(process.getPid()),
+                    "list must not invent a PID outside running_app");
+        }
+        for (JnlpRunningProcessSupport.RunningProcess process : listed) {
+            assertFalse(process.getPid() == 9_999_999);
+            assertFalse(process.getPid() == selfPid);
+        }
     }
 }

@@ -997,7 +997,19 @@ public class JNLPRuntime {
         });
     }
 
+    /**
+     * Settings, policy editor, and {@code -Xclearcache} call
+     * {@link #markNetxRunning()} with no file. Those must not take a
+     * {@code running_app} lease — that table is JNLP apps that own cache files.
+     */
+    static boolean shouldRegisterCacheRunningApp(net.sourceforge.jnlp.JNLPFile jnlpFile) {
+        return jnlpFile != null;
+    }
+
     private static void registerCacheRunningApp(net.sourceforge.jnlp.JNLPFile jnlpFile) {
+        if (!shouldRegisterCacheRunningApp(jnlpFile)) {
+            return;
+        }
         int pid = JnlpRunningProcessSupport.currentPid();
         if (pid <= 0) {
             return;

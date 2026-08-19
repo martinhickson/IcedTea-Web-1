@@ -1,30 +1,24 @@
 package net.sourceforge.jnlp.util;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.InputStreamReader;
-import java.io.RandomAccessFile;
 import java.lang.management.ManagementFactory;
-import java.nio.channels.FileChannel;
-import java.nio.channels.FileLock;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Stream;
 
+import net.sourceforge.jnlp.cache.CacheRunningApp;
 import net.sourceforge.jnlp.cache.CacheUtil;
-import net.sourceforge.jnlp.config.PathsAndFiles;
 import net.sourceforge.jnlp.runtime.JNLPRuntime;
 
 /**
- * Detects running IcedTea-Web JNLP JVMs from lock files, then correlates with {@code ps}
- * or {@code tasklist} for command-line details.
+ * Running JNLP JVMs from the cache catalog {@code running_app} table only.
+ * Command lines are resolved for a known catalog PID; the OS process list is
+ * not scanned for extra PIDs.
  */
 public final class JnlpRunningProcessSupport {
 
@@ -194,7 +188,22 @@ public final class JnlpRunningProcessSupport {
      * line, so that filter used to skip the busy guard.
      */
     public static boolean cacheClearBlockedByRunningApps(String cacheId) {
-        List<RunningProcess> running = listRunningJnlpProcessesForCacheClear();
+        try {
+            return cacheClearBlockedByRunningApps(cacheId, listCatalogRunningApps(null), false);
+        } catch (CatalogUnavailableException e) {
+            return true;
+        }
+    }
+
+    /**
+     * {@code catalogUnavailable} means {@code running_app} could not be read.
+     * Cache clear must not proceed — an empty list is not "no apps running".
+     */
+    static boolean cacheClearBlockedByRunningApps(String cacheId, List<RunningProcess> running,
+            boolean catalogUnavailable) {
+        if (catalogUnavailable) {
+            return true;
+        }
         if (cacheId == null || cacheId.trim().isEmpty()) {
             return !running.isEmpty();
         }
@@ -207,99 +216,98 @@ public final class JnlpRunningProcessSupport {
     }
 
     /**
-     * Same as {@link #listRunningJnlpProcesses()} but does not treat ancestor
-     * PIDs as self. A JDK-relaunch child can otherwise hide the running app
-     * when {@code -Xclearcache} is started under the same launcher tree.
+     * Catalog {@code running_app} only — the JVMs this runtime registered.
+     * No {@code tasklist}/{@code ps} scrape (those are not a subset of what
+     * ITW started). Dead PIDs are dropped from the catalog.
      */
     public static List<RunningProcess> listRunningJnlpProcessesForCacheClear() {
-        Map<Integer, RunningProcess> byPid = new LinkedHashMap<>();
-        collectRunningJnlpProcesses(byPid, null, false);
-        mergeCatalogRunningApps(byPid);
-        return new ArrayList<>(byPid.values());
+        try {
+            return listCatalogRunningApps(null);
+        } catch (CatalogUnavailableException e) {
+            return new ArrayList<>();
+        }
     }
 
     public static List<RunningProcess> listRunningJnlpProcesses(String jnlpPathFilter) {
+        try {
+            return listCatalogRunningApps(jnlpPathFilter);
+        } catch (CatalogUnavailableException e) {
+            return new ArrayList<>();
+        }
+    }
+
+    /**
+     * Upper bound is {@link net.sourceforge.jnlp.cache.CacheLRUWrapper#listRunningApps()}.
+     * Throws {@link CatalogUnavailableException} when the catalog cannot be read.
+     */
+    private static List<RunningProcess> listCatalogRunningApps(String jnlpPathFilter) {
         Map<Integer, RunningProcess> byPid = new LinkedHashMap<>();
-        collectRunningJnlpProcesses(byPid, jnlpPathFilter, true);
+        collectFromCatalogRunningApps(byPid);
+        if (jnlpPathFilter != null && !jnlpPathFilter.trim().isEmpty()) {
+            List<Integer> drop = new ArrayList<>();
+            for (RunningProcess process : byPid.values()) {
+                if (!process.matchesJnlpPath(jnlpPathFilter)) {
+                    drop.add(process.getPid());
+                }
+            }
+            for (Integer pid : drop) {
+                byPid.remove(pid);
+            }
+        }
         return new ArrayList<>(byPid.values());
     }
 
-    private static void collectRunningJnlpProcesses(Map<Integer, RunningProcess> byPid,
-            String jnlpPathFilter, boolean includeAncestorsInSelfTree) {
-        int selfPid = currentPid();
-        Set<Long> selfTree = selfTreePids(includeAncestorsInSelfTree);
-
-        collectFromLockFiles(byPid, selfPid);
-        collectFromProcessListing(byPid, selfPid);
-
-        List<Integer> drop = new ArrayList<>();
-        for (RunningProcess process : byPid.values()) {
-            if (selfTree.contains((long) process.getPid())
-                    || isInfrastructureProcess(process)
-                    || (jnlpPathFilter != null && !jnlpPathFilter.trim().isEmpty()
-                    && !process.matchesJnlpPath(jnlpPathFilter))) {
-                drop.add(process.getPid());
-            }
-        }
-        for (Integer pid : drop) {
-            byPid.remove(pid);
-        }
-    }
-
-    private static void mergeCatalogRunningApps(Map<Integer, RunningProcess> byPid) {
-        int selfPid = currentPid();
-        List<net.sourceforge.jnlp.cache.CacheRunningApp> leases;
+    private static void collectFromCatalogRunningApps(Map<Integer, RunningProcess> byPid) {
+        List<CacheRunningApp> leases;
         try {
             leases = net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance().listRunningApps();
+        } catch (CatalogUnavailableException e) {
+            throw e;
         } catch (Exception e) {
+            throw new CatalogUnavailableException(e);
+        }
+        addLiveCatalogLeases(byPid, leases, true);
+    }
+
+    /**
+     * Keeps only catalog PIDs that are still the same live process. Listed
+     * PIDs are always a subset of {@code leases}.
+     */
+    static List<RunningProcess> runningProcessesFromCatalogLeases(List<CacheRunningApp> leases) {
+        Map<Integer, RunningProcess> byPid = new LinkedHashMap<>();
+        addLiveCatalogLeases(byPid, leases, false);
+        return new ArrayList<>(byPid.values());
+    }
+
+    private static void addLiveCatalogLeases(Map<Integer, RunningProcess> byPid,
+            List<CacheRunningApp> leases, boolean unregisterStale) {
+        if (leases == null) {
             return;
         }
-        for (net.sourceforge.jnlp.cache.CacheRunningApp lease : leases) {
-            // Catalog leases are explicit. Do not drop them as "self tree"
-            // descendants — a test (or a relaunch child) may be a child PID.
-            if (lease.pid <= 0 || lease.pid == selfPid) {
+        int selfPid = currentPid();
+        for (CacheRunningApp lease : leases) {
+            if (lease == null || lease.pid <= 0 || lease.pid == selfPid) {
                 continue;
             }
-            if (!isProcessAlive(lease.pid)) {
-                try {
-                    net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance().unregisterRunningApp(lease.pid);
-                } catch (Exception ignored) {
+            if (!isProcessAlive(lease.pid)
+                    || (lease.processStart != null && !isSameProcess(lease.pid, lease.processStart))) {
+                if (unregisterStale) {
+                    try {
+                        net.sourceforge.jnlp.cache.CacheLRUWrapper.getInstance().unregisterRunningApp(lease.pid);
+                    } catch (Exception ignored) {
+                    }
                 }
                 continue;
             }
-            RunningProcess existing = byPid.get(lease.pid);
-            if (existing != null && existing.getJnlpPath() != null && !existing.getJnlpPath().trim().isEmpty()) {
+            String commandLine = resolveCommandLine(lease.pid);
+            if (isInfrastructureProcess(commandLine, null, lease.jnlpPath)) {
                 continue;
             }
-            String commandLine = existing != null ? existing.getCommandLine() : resolveCommandLine(lease.pid);
-            String title = existing != null ? existing.getAppTitle() : null;
-            if (isInfrastructureProcess(commandLine, title, lease.jnlpPath)) {
-                continue;
-            }
-            byPid.put(lease.pid, new RunningProcess(lease.pid, title,
-                    existing != null ? existing.getAppVersion() : null, commandLine, lease.jnlpPath));
+            RunningProcess running = toRunningProcess(lease.pid, commandLine, lease.jnlpPath,
+                    null, null, null, null, null, null);
+            running.setProcessStart(lease.processStart);
+            byPid.put(lease.pid, running);
         }
-    }
-
-    static Set<Long> selfTreePids() {
-        return selfTreePids(true);
-    }
-
-    static Set<Long> selfTreePids(boolean includeAncestors) {
-        Set<Long> s = new HashSet<>();
-        try {
-            ProcessHandle current = ProcessHandle.current();
-            s.add(current.pid());
-            current.descendants().forEach(h -> s.add(h.pid()));
-            if (includeAncestors) {
-                ProcessHandle p = current.parent().orElse(null);
-                while (p != null) {
-                    s.add(p.pid());
-                    p = p.parent().orElse(null);
-                }
-            }
-        } catch (Exception ignored) {}
-        return s;
     }
 
     public static boolean isInfrastructureProcess(RunningProcess process) {
@@ -384,115 +392,6 @@ public final class JnlpRunningProcessSupport {
         }
     }
 
-    private static void collectFromLockFiles(Map<Integer, RunningProcess> byPid, int selfPid) {
-        File locksDir = PathsAndFiles.LOCKS_DIR.getFile();
-        if (locksDir.isDirectory()) {
-            File[] files = locksDir.listFiles();
-            if (files != null) {
-                File mainLock = PathsAndFiles.MAIN_LOCK.getFile();
-                File runningDetails = NetxRunningDetailsRegistry.getDetailsFile();
-                for (File lockFile : files) {
-                    if (!lockFile.isFile() || lockFile.equals(mainLock) || lockFile.equals(runningDetails)) {
-                        continue;
-                    }
-                    RunningProcess running = processFromLockFile(lockFile, selfPid);
-                    if (running != null && !isInfrastructureProcess(running)) {
-                        byPid.put(running.getPid(), running);
-                    }
-                }
-            }
-        }
-
-        collectFromRunningDetails(byPid, selfPid);
-    }
-
-    private static void collectFromRunningDetails(Map<Integer, RunningProcess> byPid, int selfPid) {
-        for (JnlpLockMetadata.ProcessEntry entry : NetxRunningDetailsRegistry.listRegisteredProcesses()) {
-            int pid = entry.getProcessId();
-            if (pid <= 0 || pid == selfPid || byPid.containsKey(pid)) {
-                continue;
-            }
-            if (!isProcessAlive(pid)) {
-                NetxRunningDetailsRegistry.unregisterProcess(pid);
-                continue;
-            }
-            if (entry.getProcessStart() != null && !isSameProcess(pid, entry.getProcessStart())) {
-                NetxRunningDetailsRegistry.unregisterProcess(pid);
-                continue;
-            }
-            String commandLine = resolveCommandLine(pid);
-            if (!isLikelyJnlpProcess(commandLine)) {
-                if (commandLine != null && !commandLine.trim().isEmpty()) {
-                    NetxRunningDetailsRegistry.unregisterProcess(pid);
-                    continue;
-                }
-                if (entry.getJnlpPath() == null || entry.getJnlpPath().trim().isEmpty()) {
-                    NetxRunningDetailsRegistry.unregisterProcess(pid);
-                    continue;
-                }
-            }
-            RunningProcess running = toRunningProcess(pid, commandLine, entry);
-            if (isInfrastructureProcess(running)) {
-                NetxRunningDetailsRegistry.unregisterProcess(pid);
-                continue;
-            }
-            byPid.put(pid, running);
-        }
-    }
-
-    private static RunningProcess processFromLockFile(File lockFile, int selfPid) {
-        JnlpLockMetadata metadata = JnlpLockMetadata.read(lockFile);
-        int pid = metadata.getProcessId();
-
-        if (pid <= 0 && metadata.getPort() != JnlpLockMetadata.INVALID_PORT) {
-            pid = resolvePidFromPort(metadata.getPort());
-        }
-        if (pid <= 0 || pid == selfPid) {
-            return null;
-        }
-
-        if (!isProcessAlive(pid)) {
-            cleanupStaleLockFile(lockFile);
-            return null;
-        }
-
-        if (metadata.getProcessStart() != null && !isSameProcess(pid, metadata.getProcessStart())) {
-            cleanupStaleLockFile(lockFile);
-            return null;
-        }
-
-        if (metadata.getPort() != JnlpLockMetadata.INVALID_PORT && isPortFree(metadata.getPort())) {
-            cleanupStaleLockFile(lockFile);
-            return null;
-        }
-
-        String commandLine = resolveCommandLine(pid);
-        if (!isLikelyJnlpProcess(commandLine) && metadata.getJnlpPath() == null) {
-            return null;
-        }
-
-        RunningProcess running = toRunningProcess(pid, commandLine, metadata);
-        if (isInfrastructureProcess(running)) {
-            return null;
-        }
-        return running;
-    }
-
-    private static RunningProcess toRunningProcess(int pid, String commandLine, JnlpLockMetadata metadata) {
-        RunningProcess rp = toRunningProcess(pid, commandLine, metadata.getJnlpPath(), metadata.getAppTitle(),
-                metadata.getAppVersion(), metadata.getJarVersion(),
-                metadata.getJvmHome(), metadata.getJvmVendor(), metadata.getJvmVersion());
-        rp.setProcessStart(metadata.getProcessStart());
-        return rp;
-    }
-
-    private static RunningProcess toRunningProcess(int pid, String commandLine, JnlpLockMetadata.ProcessEntry entry) {
-        RunningProcess rp = toRunningProcess(pid, commandLine, entry.getJnlpPath(), entry.getAppTitle(), entry.getAppVersion(),
-                entry.getJarVersion(), entry.getJvmHome(), entry.getJvmVendor(), entry.getJvmVersion());
-        rp.setProcessStart(entry.getProcessStart());
-        return rp;
-    }
-
     private static RunningProcess toRunningProcess(int pid, String commandLine, String jnlpPath,
             String appTitle, String appVersion, String jarVersion,
             String jvmHome, String jvmVendor, String jvmVersion) {
@@ -522,155 +421,6 @@ public final class JnlpRunningProcessSupport {
             return normalizedApp;
         }
         return JnlpLockMetadata.normalizeConcreteVersion(jarVersion);
-    }
-
-    private static void collectFromProcessListing(Map<Integer, RunningProcess> byPid, int selfPid) {
-        if (JNLPRuntime.isWindows()) {
-            collectFromTasklist(byPid, selfPid);
-        } else {
-            collectFromPs(byPid, selfPid);
-        }
-    }
-
-    private static void collectFromPs(Map<Integer, RunningProcess> byPid, int selfPid) {
-        Process process = null;
-        try {
-            process = new ProcessBuilder("ps", "-eo", "pid,args").redirectErrorStream(true).start();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    RunningProcess running = parsePsLine(line, selfPid);
-                    if (running != null) {
-                        putIfRicher(byPid, running);
-                    }
-                }
-            }
-            process.waitFor();
-        } catch (Exception ex) {
-            // Ignore.
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
-        }
-    }
-
-    private static void collectFromTasklist(Map<Integer, RunningProcess> byPid, int selfPid) {
-        Process process = null;
-        try {
-            process = new ProcessBuilder("tasklist", "/FO", "CSV", "/NH").redirectErrorStream(true).start();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    RunningProcess running = parseTasklistLine(line, selfPid);
-                    if (running != null) {
-                        putIfRicher(byPid, running);
-                    }
-                }
-            }
-            process.waitFor();
-        } catch (Exception ex) {
-            // Ignore.
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
-        }
-    }
-
-    private static RunningProcess parsePsLine(String line, int selfPid) {
-        if (line == null) {
-            return null;
-        }
-        String trimmed = line.trim();
-        if (trimmed.isEmpty() || trimmed.startsWith("PID")) {
-            return null;
-        }
-        int space = trimmed.indexOf(' ');
-        if (space <= 0) {
-            return null;
-        }
-        int pid;
-        try {
-            pid = Integer.parseInt(trimmed.substring(0, space).trim());
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-        if (pid == selfPid) {
-            return null;
-        }
-        String commandLine = trimmed.substring(space + 1).trim();
-        if (!isLikelyJnlpProcess(commandLine) || isInfrastructureProcess(commandLine, null, null)) {
-            return null;
-        }
-        return new RunningProcess(pid, JnlpLockMetadata.shortNameFromCommandLine(commandLine),
-                null, commandLine, JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine));
-    }
-
-    private static RunningProcess parseTasklistLine(String line, int selfPid) {
-        if (line == null || line.trim().isEmpty()) {
-            return null;
-        }
-        String[] fields = parseCsvLine(line);
-        if (fields.length < 2) {
-            return null;
-        }
-        int pid;
-        try {
-            pid = Integer.parseInt(fields[1].trim());
-        } catch (NumberFormatException ex) {
-            return null;
-        }
-        if (pid == selfPid) {
-            return null;
-        }
-        String imageName = fields[0].trim();
-        if (!isLikelyJnlpImage(imageName)) {
-            return null;
-        }
-        String commandLine = resolveCommandLine(pid);
-        if (commandLine.isEmpty()) {
-            commandLine = imageName;
-        }
-        if (isInfrastructureProcess(commandLine, null, JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine))) {
-            return null;
-        }
-        return toRunningProcess(pid, commandLine,
-                JnlpLockMetadata.extractJnlpPathFromCommandLine(commandLine), null, null, null, null, null, null);
-    }
-
-    private static void putIfRicher(Map<Integer, RunningProcess> byPid, RunningProcess running) {
-        RunningProcess existing = byPid.get(running.getPid());
-        if (existing == null) {
-            byPid.put(running.getPid(), running);
-            return;
-        }
-        boolean existingHasJnlp = existing.getJnlpPath() != null && !existing.getJnlpPath().trim().isEmpty();
-        boolean incomingHasJnlp = running.getJnlpPath() != null && !running.getJnlpPath().trim().isEmpty();
-        if (!existingHasJnlp && incomingHasJnlp) {
-            byPid.put(running.getPid(), running);
-        }
-    }
-
-    private static String[] parseCsvLine(String line) {
-        List<String> fields = new ArrayList<>();
-        StringBuilder current = new StringBuilder();
-        boolean inQuotes = false;
-        for (int i = 0; i < line.length(); i++) {
-            char ch = line.charAt(i);
-            if (ch == '"') {
-                inQuotes = !inQuotes;
-            } else if (ch == ',' && !inQuotes) {
-                fields.add(current.toString());
-                current.setLength(0);
-            } else {
-                current.append(ch);
-            }
-        }
-        fields.add(current.toString());
-        return fields.toArray(new String[fields.size()]);
     }
 
     private static String resolveCommandLine(int pid) {
@@ -726,84 +476,13 @@ public final class JnlpRunningProcessSupport {
             }
             process.waitFor();
         } catch (Exception ex) {
-            // Fall through to tasklist image name.
+            // Ignore — ProcessHandle already tried.
         } finally {
             if (process != null) {
                 process.destroy();
             }
         }
         return "";
-    }
-
-    private static int resolvePidFromPort(int port) {
-        if (port == JnlpLockMetadata.INVALID_PORT || port <= 0) {
-            return -1;
-        }
-        if (JNLPRuntime.isWindows()) {
-            return resolvePidFromPortWindows(port);
-        }
-        return resolvePidFromPortUnix(port);
-    }
-
-    private static int resolvePidFromPortUnix(int port) {
-        Process process = null;
-        try {
-            process = new ProcessBuilder("ss", "-ltnp").redirectErrorStream(true).start();
-            String portToken = ":" + port;
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (!line.contains(portToken) || !line.contains("pid=")) {
-                        continue;
-                    }
-                    int pidIndex = line.indexOf("pid=");
-                    int comma = line.indexOf(',', pidIndex);
-                    String pidText = comma > pidIndex
-                            ? line.substring(pidIndex + 4, comma)
-                            : line.substring(pidIndex + 4);
-                    return Integer.parseInt(pidText.trim());
-                }
-            }
-            process.waitFor();
-        } catch (Exception ex) {
-            // Ignore.
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
-        }
-        return -1;
-    }
-
-    private static int resolvePidFromPortWindows(int port) {
-        Process process = null;
-        try {
-            process = new ProcessBuilder("netstat", "-ano").redirectErrorStream(true).start();
-            String portToken = ":" + port;
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    if (!line.contains(portToken) || !line.toUpperCase(Locale.ROOT).contains("LISTENING")) {
-                        continue;
-                    }
-                    String[] parts = line.trim().split("\\s+");
-                    if (parts.length == 0) {
-                        continue;
-                    }
-                    return Integer.parseInt(parts[parts.length - 1]);
-                }
-            }
-            process.waitFor();
-        } catch (Exception ex) {
-            // Ignore.
-        } finally {
-            if (process != null) {
-                process.destroy();
-            }
-        }
-        return -1;
     }
 
     private static boolean isProcessAlive(int pid) {
@@ -820,62 +499,10 @@ public final class JnlpRunningProcessSupport {
         return currentStart.isPresent() && currentStart.get().toString().equals(recordedStart.trim());
     }
 
-    private static boolean isLockHeldByAnotherProcess(File lockFile) {
-        try (RandomAccessFile raf = new RandomAccessFile(lockFile, "rw")) {
-            FileChannel channel = raf.getChannel();
-            FileLock lock = channel.tryLock();
-            if (lock != null) {
-                lock.release();
-                return false;
-            }
-            return true;
-        } catch (Exception ex) {
-            return true;
+    static final class CatalogUnavailableException extends RuntimeException {
+        CatalogUnavailableException(Throwable cause) {
+            super("running_app catalog unavailable", cause);
         }
-    }
-
-    private static void cleanupStaleLockFile(File lockFile) {
-        if (!lockFile.isFile()) {
-            return;
-        }
-        if (isLockHeldByAnotherProcess(lockFile)) {
-            return;
-        }
-        lockFile.delete();
-    }
-
-    private static boolean isPortFree(int port) {
-        try {
-            java.net.ServerSocket socket = new java.net.ServerSocket(port);
-            socket.close();
-            return true;
-        } catch (java.net.BindException ex) {
-            return false;
-        } catch (Exception ex) {
-            return true;
-        }
-    }
-
-    private static boolean isLikelyJnlpImage(String imageName) {
-        if (imageName == null) {
-            return false;
-        }
-        String lower = imageName.toLowerCase(Locale.ROOT);
-        if (isSettingsProcess(lower)) {
-            return false;
-        }
-        return lower.contains("java") || lower.contains("javaws") || lower.contains("icedtea");
-    }
-
-    private static boolean isLikelyJnlpProcess(String commandLine) {
-        if (commandLine == null || commandLine.trim().isEmpty()) {
-            return false;
-        }
-        String lower = commandLine.toLowerCase(Locale.ROOT);
-        return lower.contains("icedtea-web-uber")
-                || lower.contains("net.sourceforge.jnlp.runtime.")
-                || lower.contains("net.sourceforge.jnlp.launcher")
-                || lower.contains(".jnlp");
     }
 
     private static boolean isSettingsProcess(String commandLine) {
