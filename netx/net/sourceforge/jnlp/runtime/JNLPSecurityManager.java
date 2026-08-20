@@ -20,6 +20,7 @@ import static net.sourceforge.jnlp.runtime.Translator.R;
 
 import java.awt.AWTPermission;
 import java.awt.Window;
+import java.net.InetAddress;
 import java.net.SocketPermission;
 import java.security.AccessControlException;
 import java.security.Permission;
@@ -301,6 +302,10 @@ class JNLPSecurityManager extends SecurityManager {
             return;
         }
 
+        if (perm instanceof SocketPermission && JNLPClassLoader.isTrustedElevatedLaunch()) {
+            return;
+        }
+
         // JDK dynamic proxies / instrumentation often use static ProtectionDomains
         // that never consult JNLPPolicy. AccessController then denies getClassLoader
         // even for trusted <all-permissions/> apps (seen in GTT/TestComplete stacks).
@@ -327,6 +332,55 @@ class JNLPSecurityManager extends SecurityManager {
                     "Denying permission: " + perm);
             throw ex;
         }
+    }
+
+    @Override
+    public void checkConnect(String host, int port) {
+        if (JNLPClassLoader.isTrustedElevatedLaunch()) {
+            return;
+        }
+        super.checkConnect(host, port);
+    }
+
+    @Override
+    public void checkConnect(String host, int port, Object context) {
+        if (JNLPClassLoader.isTrustedElevatedLaunch()) {
+            return;
+        }
+        super.checkConnect(host, port, context);
+    }
+
+    @Override
+    public void checkAccept(String host, int port) {
+        if (JNLPClassLoader.isTrustedElevatedLaunch()) {
+            return;
+        }
+        super.checkAccept(host, port);
+    }
+
+    @Override
+    public void checkListen(int port) {
+        if (JNLPClassLoader.isTrustedElevatedLaunch()) {
+            return;
+        }
+        super.checkListen(port);
+    }
+
+    @Override
+    public void checkMulticast(InetAddress maddr) {
+        if (JNLPClassLoader.isTrustedElevatedLaunch()) {
+            return;
+        }
+        super.checkMulticast(maddr);
+    }
+
+    @Override
+    @Deprecated
+    public void checkMulticast(InetAddress maddr, byte ttl) {
+        if (JNLPClassLoader.isTrustedElevatedLaunch()) {
+            return;
+        }
+        super.checkMulticast(maddr, ttl);
     }
 
     /**

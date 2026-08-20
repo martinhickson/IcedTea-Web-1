@@ -85,6 +85,7 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.Vector;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
@@ -133,6 +134,13 @@ public class JNLPClassLoader extends URLClassLoader {
      * map from JNLPFile unique key to shared classloader
      */
     private static Map<String, JNLPClassLoader> uniqueKeyToLoader = new ConcurrentHashMap<>();
+
+    /**
+     * First mapped JNLP loader for this VM. One app per VM; null until
+     * {@link #getInstance} registers a loader.
+     */
+    private static final AtomicReference<JNLPClassLoader> launchedLoaderRef =
+            new AtomicReference<>();
 
     /**
      * map from JNLPFile unique key to lock, the lock is needed to enforce
@@ -455,12 +463,51 @@ public class JNLPClassLoader extends URLClassLoader {
     }
 
     /**
+     * The JNLP class loader for this VM once {@link #getInstance} has
+     * registered it. One app per VM. Does not wait for
+     * {@link #setApplication}; trust is already on the loader
+     * ({@link #shouldBypassSecurityManagerForTrustedApp()}).
+     */
+    static JNLPClassLoader launchedLoader() {
+        JNLPClassLoader cached = launchedLoaderRef.get();
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (launchedLoaderRef) {
+            cached = launchedLoaderRef.get();
+            if (cached != null) {
+                return cached;
+            }
+            JNLPClassLoader any = null;
+            for (JNLPClassLoader cl : uniqueKeyToLoader.values()) {
+                if (cl.getApplication() != null) {
+                    launchedLoaderRef.set(cl);
+                    return cl;
+                }
+                if (any == null) {
+                    any = cl;
+                }
+            }
+            if (any != null) {
+                launchedLoaderRef.set(any);
+            }
+            return any;
+        }
+    }
+
+    /** One JNLP app per VM: verified signed ALL/J2EE, not forced sandbox. */
+    static boolean isTrustedElevatedLaunch() {
+        JNLPClassLoader cl = launchedLoader();
+        return cl != null && cl.shouldBypassSecurityManagerForTrustedApp();
+    }
+
+    /**
      * Returns a JNLP classloader for the specified JNLP file.
      *
      * @param file the file to load classes for
      * @param policy the update policy to use when downloading resources
      * @param enableCodeBase true if codebase can be searched (ok for
-     * applets,false for apps)
+     * applets, false for apps)
      * @return existing classloader. creates new if none reliable exists
      * @throws net.sourceforge.jnlp.LaunchException when launch is doomed
      */
@@ -2344,6 +2391,7 @@ public class JNLPClassLoader extends URLClassLoader {
 
             if (useCount <= 0) {
                 uniqueKeyToLoader.remove(uniqueKey);
+                launchedLoaderRef.compareAndSet(this, null);
             }
         }
     }
