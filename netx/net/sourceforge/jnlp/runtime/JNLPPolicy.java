@@ -17,6 +17,7 @@
 package net.sourceforge.jnlp.runtime;
 
 import java.io.File;
+import java.net.SocketPermission;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.security.*;
@@ -311,6 +312,9 @@ public class JNLPPolicy extends Policy {
     }
 
     public boolean implies(ProtectionDomain domain, Permission permission) {
+        if (permission instanceof SocketPermission && JNLPClassLoader.isTrustedElevatedLaunch()) {
+            return true;
+        }
         //Include the permissions that may be added during runtime.
         PermissionCollection pc = getPermissions(domain.getCodeSource());
         return super.implies(domain, permission) || pc.implies(permission);
