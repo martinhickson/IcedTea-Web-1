@@ -1,6 +1,7 @@
 package net.sourceforge.jnlp.config;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
@@ -89,5 +90,91 @@ public class KnownJvmStoreBundledTest {
                 System.setProperty("icedtea-web.bin.location", old);
             }
         }
+    }
+
+    @Test
+    public void applyBundledJvmsAppendsMissingHomesAndKeepsJdk1First() throws Exception {
+        Path install = tmp.resolve("seed-order");
+        Path preferred = install.resolve("preferred-21");
+        Files.createDirectories(preferred.resolve("bin"));
+        Files.createFile(preferred.resolve("bin/java"));
+        Files.createDirectories(install.resolve("bin"));
+        Files.createDirectories(install.resolve("runtime/temurin-21/jdk21/bin"));
+        Files.createDirectories(install.resolve("runtime/temurin-17/jdk17/bin"));
+        Files.createFile(install.resolve("bin/javaws"));
+        Files.createFile(install.resolve("runtime/temurin-21/jdk21/bin/java"));
+        Files.createFile(install.resolve("runtime/temurin-17/jdk17/bin/java"));
+
+        File userFile = tmp.resolve("deployment.properties").toFile();
+        Files.write(userFile.toPath(), (
+                "deployment.jdk.1=" + escapeProp(preferred.toFile().getAbsolutePath()) + "\n"
+                + "deployment.jre.dir=" + escapeProp(preferred.toFile().getAbsolutePath()) + "\n"
+                ).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        String old = System.getProperty("icedtea-web.bin.location");
+        System.setProperty("icedtea-web.bin.location", install.resolve("bin/javaws").toString());
+        try {
+            DeploymentConfiguration config = new DeploymentConfiguration();
+            config.load((java.net.URL) null, userFile, false);
+
+            List<String> homes = KnownJvmStore.getKnownJvmHomes(config);
+            assertEquals(preferred.toFile().getAbsolutePath(), homes.get(0));
+            assertTrue(homes.size() >= 3, "missing bundled homes should be appended: " + homes);
+            assertTrue(homes.get(1).replace('\\', '/').contains("temurin-21/jdk21"));
+            assertTrue(homes.get(2).replace('\\', '/').contains("temurin-17/jdk17"));
+
+            assertFalse(KnownJvmStore.applyBundledJvms(config), "second apply must not reorder");
+            assertEquals(homes, KnownJvmStore.getKnownJvmHomes(config));
+        } finally {
+            if (old == null) {
+                System.clearProperty("icedtea-web.bin.location");
+            } else {
+                System.setProperty("icedtea-web.bin.location", old);
+            }
+        }
+    }
+
+    @Test
+    public void applyBundledJvmsDoesNotPrependWhenBundledAlreadyListed() throws Exception {
+        Path install = tmp.resolve("already-listed");
+        Path preferred = install.resolve("openjdk-21");
+        Files.createDirectories(preferred.resolve("bin"));
+        Files.createFile(preferred.resolve("bin/java"));
+        Files.createDirectories(install.resolve("bin"));
+        Files.createDirectories(install.resolve("runtime/temurin-21/jdk21/bin"));
+        Files.createFile(install.resolve("bin/javaws"));
+        Files.createFile(install.resolve("runtime/temurin-21/jdk21/bin/java"));
+
+        String preferredHome = preferred.toFile().getAbsolutePath();
+        String bundledHome = install.resolve("runtime/temurin-21/jdk21").toFile().getAbsolutePath();
+        File userFile = tmp.resolve("already.properties").toFile();
+        Files.write(userFile.toPath(), (
+                "deployment.jdk.1=" + escapeProp(preferredHome) + "\n"
+                + "deployment.jdk.2=" + escapeProp(bundledHome) + "\n"
+                + "deployment.jre.dir=" + escapeProp(preferredHome) + "\n"
+                ).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        String old = System.getProperty("icedtea-web.bin.location");
+        System.setProperty("icedtea-web.bin.location", install.resolve("bin/javaws").toString());
+        try {
+            DeploymentConfiguration config = new DeploymentConfiguration();
+            config.load((java.net.URL) null, userFile, false);
+
+            assertEquals(java.util.Arrays.asList(preferredHome, bundledHome),
+                    KnownJvmStore.getKnownJvmHomes(config));
+            assertFalse(KnownJvmStore.applyBundledJvms(config));
+            assertEquals(preferredHome, config.getProperty("deployment.jdk.1"));
+            assertEquals(bundledHome, config.getProperty("deployment.jdk.2"));
+        } finally {
+            if (old == null) {
+                System.clearProperty("icedtea-web.bin.location");
+            } else {
+                System.setProperty("icedtea-web.bin.location", old);
+            }
+        }
+    }
+
+    private static String escapeProp(String value) {
+        return value.replace("\\", "\\\\");
     }
 }
