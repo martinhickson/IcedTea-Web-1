@@ -302,7 +302,8 @@ class JNLPSecurityManager extends SecurityManager {
             return;
         }
 
-        // Resolve of a private/link-local literal IP (VPN / RFC1918 / loopback).
+        // Resolve of a private/link-local literal IP (VPN / RFC1918 / 127.0.0.1).
+        // Hostname "localhost" is not a literal and must be allowed to resolve.
         // Must run before the trusted-app bypass: allowing resolve lets
         // InetAddress.getHostName() call getHostByAddr. Policy implies() also
         // PTRs via SocketPermission.getCanonName before it denies. Throw here
@@ -437,8 +438,9 @@ class JNLPSecurityManager extends SecurityManager {
 
     /**
      * {@code port == -1} is {@code resolve} ({@link java.net.InetAddress#getHostName()}).
-     * Private literals are denied here so the JDK never builds a
+     * Private literal IPs are denied here so the JDK never builds a
      * {@link SocketPermission} that would PTR in {@code implies}.
+     * The hostname {@code localhost} is not a literal and is not denied.
      */
     @Override
     public void checkConnect(String host, int port) {

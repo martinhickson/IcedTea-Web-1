@@ -465,13 +465,21 @@ public class UrlUtilsTest {
         Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("169.254.1.1"));
         Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("100.64.0.1"));
         Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("127.0.0.1"));
+        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("::1"));
         Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("fe80::1"));
         Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("fd00::1"));
+        Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("localhost"));
+        Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("LOCALHOST"));
+        Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("localhost."));
         Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("192.0.2.10"));
         Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("8.8.8.8"));
         Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("example.test"));
         Assert.assertTrue(UrlUtils.isResolveOfPrivateLiteralIp(
                 new java.net.SocketPermission("192.168.0.1", "resolve")));
+        Assert.assertTrue(UrlUtils.isResolveOfPrivateLiteralIp(
+                new java.net.SocketPermission("127.0.0.1", "resolve")));
+        Assert.assertFalse(UrlUtils.isResolveOfPrivateLiteralIp(
+                new java.net.SocketPermission("localhost", "resolve")));
         Assert.assertFalse(UrlUtils.isResolveOfPrivateLiteralIp(
                 new java.net.SocketPermission("192.168.0.1:443", "connect,resolve")));
         Assert.assertFalse(UrlUtils.isResolveOfPrivateLiteralIp(

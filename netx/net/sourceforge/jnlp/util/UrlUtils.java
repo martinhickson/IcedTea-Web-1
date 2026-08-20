@@ -380,7 +380,8 @@ public class UrlUtils {
 
     /**
      * Literal loopback, RFC1918, link-local, ULA, or CGNAT. Used to skip
-     * reverse-DNS {@code resolve} checks. Does not call {@link java.net.InetAddress}.
+     * reverse-DNS {@code resolve} checks. The hostname {@code localhost} is
+     * not a literal IP. Does not call {@link java.net.InetAddress}.
      */
     public static boolean isPrivateOrLinkLocalLiteralIp(String host) {
         if (host == null || host.isEmpty()) {
@@ -394,7 +395,10 @@ public class UrlUtils {
         if (zone > 0) {
             h = h.substring(0, zone);
         }
-        if (isLoopbackHost(h)) {
+        // Literal IPs only. The hostname "localhost" is loopback for proxy
+        // bypass (isLoopbackHost) but must still be resolvable so connect
+        // and getByName can proceed. PTR skip applies to 127.0.0.1 / ::1.
+        if (h.equals("::1") || h.equalsIgnoreCase("0:0:0:0:0:0:0:1")) {
             return true;
         }
         int[] v4 = parseIpv4Octets(h);
