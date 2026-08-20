@@ -589,6 +589,19 @@ jobs:
 
       - name: Generate checksums
         run: |
+          # hdiutil create returns before diskimages-helper drops the .dmg handle.
+          # A single sleep is a race; retry until the exclusive open succeeds.
+          function Get-FileHashWhenUnlocked {
+            param([string]$Path, [int]$Retries = 20, [int]$DelayMs = 500)
+            for ($i = 0; $i -lt $Retries; $i++) {
+              try {
+                return Get-FileHash -Algorithm SHA256 $Path
+              } catch {
+                if ($i -eq ($Retries - 1)) { throw }
+                Start-Sleep -Milliseconds $DelayMs
+              }
+            }
+          }
           $patterns = @(
             "icedtea-web-distribution/target/*.zip",
             "icedtea-web-distribution/target/native-packages/*.deb",
@@ -598,7 +611,7 @@ jobs:
           )
           foreach ($pattern in $patterns) {
             Get-ChildItem $pattern -ErrorAction SilentlyContinue | ForEach-Object {
-              $hash = Get-FileHash -Algorithm SHA256 $_.FullName
+              $hash = Get-FileHashWhenUnlocked $_.FullName
               "$($hash.Hash.ToLowerInvariant())  $($_.Name)" | Out-File -FilePath "$($_.FullName).sha256.txt" -Encoding ASCII
             }
           }
