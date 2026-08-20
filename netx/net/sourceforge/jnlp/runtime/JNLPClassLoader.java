@@ -143,6 +143,13 @@ public class JNLPClassLoader extends URLClassLoader {
             new AtomicReference<>();
 
     /**
+     * Cached {@link #isTrustedElevatedLaunch()} once a loader exists.
+     * Null means not yet resolved (do not treat as false).
+     */
+    private static final AtomicReference<Boolean> trustedElevatedLaunchRef =
+            new AtomicReference<>();
+
+    /**
      * map from JNLPFile unique key to lock, the lock is needed to enforce
      * correct initialization of applets that share a unique key
      */
@@ -497,8 +504,23 @@ public class JNLPClassLoader extends URLClassLoader {
 
     /** One JNLP app per VM: verified signed ALL/J2EE, not forced sandbox. */
     static boolean isTrustedElevatedLaunch() {
-        JNLPClassLoader cl = launchedLoader();
-        return cl != null && cl.shouldBypassSecurityManagerForTrustedApp();
+        Boolean cached = trustedElevatedLaunchRef.get();
+        if (cached != null) {
+            return cached;
+        }
+        synchronized (trustedElevatedLaunchRef) {
+            cached = trustedElevatedLaunchRef.get();
+            if (cached != null) {
+                return cached;
+            }
+            JNLPClassLoader cl = launchedLoader();
+            if (cl == null) {
+                return false;
+            }
+            boolean trusted = cl.shouldBypassSecurityManagerForTrustedApp();
+            trustedElevatedLaunchRef.set(trusted);
+            return trusted;
+        }
     }
 
     /**
@@ -2391,7 +2413,9 @@ public class JNLPClassLoader extends URLClassLoader {
 
             if (useCount <= 0) {
                 uniqueKeyToLoader.remove(uniqueKey);
-                launchedLoaderRef.compareAndSet(this, null);
+                if (launchedLoaderRef.compareAndSet(this, null)) {
+                    trustedElevatedLaunchRef.set(null);
+                }
             }
         }
     }
