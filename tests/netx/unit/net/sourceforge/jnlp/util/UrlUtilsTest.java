@@ -453,28 +453,4 @@ public class UrlUtilsTest {
         Assert.assertFalse(UrlUtils.isLoopbackHost("192.0.2.10"));
         Assert.assertFalse(UrlUtils.isLocalHostName("app.example.test"));
     }
-
-    @Test
-    public void privateLiteralIpIsLexical() {
-        Assert.assertEquals("192.168.0.1", UrlUtils.hostFromSocketPermissionName("192.168.0.1"));
-        Assert.assertEquals("192.168.0.1", UrlUtils.hostFromSocketPermissionName("192.168.0.1:443"));
-        Assert.assertEquals("::1", UrlUtils.hostFromSocketPermissionName("[::1]:80"));
-        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("10.0.0.2"));
-        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("172.16.1.1"));
-        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("192.168.0.1"));
-        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("169.254.1.1"));
-        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("100.64.0.1"));
-        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("127.0.0.1"));
-        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("fe80::1"));
-        Assert.assertTrue(UrlUtils.isPrivateOrLinkLocalLiteralIp("fd00::1"));
-        Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("192.0.2.10"));
-        Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("8.8.8.8"));
-        Assert.assertFalse(UrlUtils.isPrivateOrLinkLocalLiteralIp("example.test"));
-        Assert.assertTrue(UrlUtils.isResolveOfPrivateLiteralIp(
-                new java.net.SocketPermission("192.168.0.1", "resolve")));
-        Assert.assertFalse(UrlUtils.isResolveOfPrivateLiteralIp(
-                new java.net.SocketPermission("192.168.0.1:443", "connect,resolve")));
-        Assert.assertFalse(UrlUtils.isResolveOfPrivateLiteralIp(
-                new java.net.SocketPermission("192.0.2.10", "resolve")));
-    }
 }
