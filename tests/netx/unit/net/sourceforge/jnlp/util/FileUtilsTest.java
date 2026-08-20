@@ -156,4 +156,14 @@ public class FileUtilsTest {
         assertTrue("No owner entry", hasOwner);
     }
 
+    @Test
+    public void recursiveDeleteIgnoresAlreadyGone() throws Exception {
+        File tmp = Files.createTempDirectory("itw-recursive-gone-").toFile();
+        File child = new File(tmp, "missing.txt");
+        FileUtils.recursiveDelete(child, tmp);
+        FileUtils.recursiveDelete(new File(tmp, "also-missing"), tmp);
+        assertTrue(tmp.isDirectory());
+        assertTrue(tmp.delete());
+    }
+
 }

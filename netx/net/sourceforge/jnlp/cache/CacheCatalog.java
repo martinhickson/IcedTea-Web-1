@@ -47,6 +47,13 @@ interface CacheCatalog {
     /** Delete every catalog row whose stored path is {@code path}. */
     boolean removeByPath(String path);
 
+    /**
+     * One transaction per path: apply the catalog delete, run {@code unlink},
+     * commit only if unlink returns true. Rollback leaves the row so a later
+     * sweep can retry. Already-gone (FNF) must be reported as true.
+     */
+    boolean transactRemoveIfUnlinked(String path, java.util.concurrent.Callable<Boolean> unlink);
+
     boolean updateEntry(String oldKey, String cacheDirPath);
 
     List<Entry<String, String>> getLRUSortedEntries();
@@ -109,6 +116,18 @@ interface CacheCatalog {
 
     /** All catalog rows with metadata (for {@code -Xclearcache} / list-ids). */
     java.util.List<CacheEntryMeta> listAllMeta();
+
+    /**
+     * Rows with {@code marked_delete = 1}. Sqlite is one indexed
+     * {@code SELECT}; properties filters the in-memory map.
+     */
+    java.util.List<CacheCleanupRow> listMarkedForDelete();
+
+    /**
+     * Unmarked rows, newest {@code last_access} first, for LRU size
+     * enforcement. Sqlite is one {@code SELECT}.
+     */
+    java.util.List<CacheCleanupRow> listUnmarkedLruNewestFirst();
 
     /** Record a live JNLP JVM so another process can refuse to clear its files. */
     void registerRunningApp(int pid, String jnlpPath, String processStart);

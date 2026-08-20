@@ -69,7 +69,7 @@ public class CacheLRUWrapper {
     private final File windowsShortcutList;
 
     public CacheLRUWrapper() {
-        this(isSqliteCatalogEnabled(), null, null);
+        this(true, null, null);
     }
 
     /**
@@ -91,18 +91,9 @@ public class CacheLRUWrapper {
             InfrastructureFileDescriptor parent = cacheDir != null ? cacheDir : PathsAndFiles.CACHE_DIR;
             this.cacheDir = dbDirDescriptor(parent);
             ensureDir(this.cacheDir.getFile());
-            File marker = new File(this.cacheDir.getFile(), SqliteCacheCatalog.FAILED_MARKER);
-            if (marker.isFile()) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
-                        "sqlite catalog sticky-fail marker present; using properties under cache/db/");
-                this.sqliteMode = false;
-                this.recentlyUsedPropertiesFile = recentlyUsedUnder(this.cacheDir);
-                this.catalog = new PropertiesCacheCatalog(this.recentlyUsedPropertiesFile);
-            } else {
-                this.sqliteMode = true;
-                this.recentlyUsedPropertiesFile = recentlyUsed; // unused in sqlite mode
-                this.catalog = new SqliteCacheCatalog(this.cacheDir.getFile());
-            }
+            this.sqliteMode = true;
+            this.recentlyUsedPropertiesFile = recentlyUsed;
+            this.catalog = new SqliteCacheCatalog(this.cacheDir.getFile());
         } else {
             this.sqliteMode = false;
             this.cacheDir = cacheDir != null ? cacheDir : PathsAndFiles.CACHE_DIR;
@@ -118,8 +109,8 @@ public class CacheLRUWrapper {
 
     /**
      * Integration-test factory: sqlite catalog roots at {@code parentCache/cache/db}
-     * (or {@code parentCache/db} when {@code parentCache} is named {@code cache});
-     * legacy uses {@code parentCache/recently_used} under the same parent.
+     * (or {@code parentCache/db} when {@code parentCache} is named {@code cache}).
+     * {@code useSqlite} must be true.
      */
     public static CacheLRUWrapper createForTests(boolean useSqlite, File parentCache) {
         InfrastructureFileDescriptor parent = new InfrastructureFileDescriptor() {
@@ -133,21 +124,11 @@ public class CacheLRUWrapper {
                 return parentCache.getAbsolutePath();
             }
         };
-        if (useSqlite) {
-            return new CacheLRUWrapper(true, null, parent);
+        if (!useSqlite) {
+            throw new IllegalArgumentException(
+                    "sqlite catalog is required; properties is not a test path");
         }
-        InfrastructureFileDescriptor recentlyUsed = new InfrastructureFileDescriptor() {
-            @Override
-            public File getFile() {
-                return new File(parentCache, PathsAndFiles.CACHE_INDEX_FILE_NAME);
-            }
-
-            @Override
-            public String getFullPath() {
-                return getFile().getAbsolutePath();
-            }
-        };
-        return new CacheLRUWrapper(false, recentlyUsed, parent);
+        return new CacheLRUWrapper(true, null, parent);
     }
 
     /**
@@ -174,16 +155,12 @@ public class CacheLRUWrapper {
         return ((SqliteCacheCatalog) catalog).explainFindEntriesPlan();
     }
 
+    /**
+     * Product path is always sqlite. The deployment key is not a runtime
+     * switch — a missing or broken catalog must fail, not fall back.
+     */
     static boolean isSqliteCatalogEnabled() {
-        try {
-            String v = JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_CACHE_CATALOG_SQLITE);
-            if (v == null || v.trim().isEmpty()) {
-                return true;
-            }
-            return Boolean.parseBoolean(v.trim());
-        } catch (Exception e) {
-            return true;
-        }
+        return true;
     }
 
     private static void ensureDir(File dir) {
@@ -345,6 +322,11 @@ public class CacheLRUWrapper {
         return catalog.removeByPath(path);
     }
 
+    synchronized boolean transactRemoveIfUnlinked(String path,
+            java.util.concurrent.Callable<Boolean> unlink) {
+        return catalog.transactRemoveIfUnlinked(path, unlink);
+    }
+
     public synchronized boolean updateEntry(String oldKey) {
         return catalog.updateEntry(oldKey, getCacheDir().getFullPath());
     }
@@ -427,6 +409,14 @@ public class CacheLRUWrapper {
 
     public List<CacheEntryMeta> listAllMeta() {
         return catalog.listAllMeta();
+    }
+
+    List<CacheCleanupRow> listMarkedForDelete() {
+        return catalog.listMarkedForDelete();
+    }
+
+    List<CacheCleanupRow> listUnmarkedLruNewestFirst() {
+        return catalog.listUnmarkedLruNewestFirst();
     }
 
     public void registerRunningApp(int pid, String jnlpPath, String processStart) {

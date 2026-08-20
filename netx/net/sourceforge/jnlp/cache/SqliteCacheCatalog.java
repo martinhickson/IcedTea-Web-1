@@ -41,6 +41,7 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 final class SqliteCacheCatalog implements CacheCatalog {
 
     static final String DB_FILE_NAME = "cache_catalog.sqlite";
+    /** Leftover name from a removed sticky-fail fallback. Not written anymore. */
     /** Exclusive first-create mutex ({@code Files.createDirectory}). */
     static final String INIT_LOCK_DIR_SUFFIX = ".initlock.d";
     /** Written when sqlite cannot be opened even after quarantining a corrupt file. */
@@ -84,7 +85,6 @@ final class SqliteCacheCatalog implements CacheCatalog {
         try {
             Class.forName("org.sqlite.JDBC");
         } catch (ClassNotFoundException e) {
-            markFailed();
             throw new SQLException("sqlite-jdbc driver missing", e);
         }
         SQLException last = null;
@@ -110,7 +110,6 @@ final class SqliteCacheCatalog implements CacheCatalog {
                 return openAndInitGuarded(path);
             } catch (SQLException second) {
                 OutputController.getLogger().log(OutputController.Level.ERROR_ALL, second);
-                markFailed();
                 throw second;
             }
         }
@@ -402,6 +401,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
         addColumnIfMissing(st, "last_updated", "INTEGER");
         addColumnIfMissing(st, "marked_delete", "INTEGER NOT NULL DEFAULT 0");
         st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_jnlp ON cache_entry (jnlp_path)");
+        st.execute("CREATE INDEX IF NOT EXISTS idx_cache_entry_marked ON cache_entry (marked_delete)");
         try (ResultSet rs = st.executeQuery("SELECT version FROM schema_version")) {
             if (rs.next() && rs.getInt(1) < 2) {
                 st.executeUpdate("UPDATE schema_version SET version = 2");
@@ -589,22 +589,6 @@ final class SqliteCacheCatalog implements CacheCatalog {
         }
     }
 
-    private void markFailed() {
-        File parent = dbFile.getParentFile();
-        if (parent == null) {
-            return;
-        }
-        File marker = new File(parent, FAILED_MARKER);
-        try {
-            if (!marker.exists() && !marker.createNewFile()) {
-                OutputController.getLogger().log(OutputController.Level.ERROR_ALL,
-                        "unable to write sqlite sticky-fail marker: " + marker);
-            }
-        } catch (IOException e) {
-            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
-        }
-    }
-
     boolean isUsable() {
         try {
             return connection != null && !connection.isClosed();
@@ -772,20 +756,66 @@ final class SqliteCacheCatalog implements CacheCatalog {
             return false;
         }
         try {
+            return runBusy(c -> deletePathRows(c, path));
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    @Override
+    public boolean transactRemoveIfUnlinked(String path, java.util.concurrent.Callable<Boolean> unlink) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        try {
             return runBusy(c -> {
-                try (PreparedStatement natives = c.prepareStatement(
-                        "DELETE FROM native_lib WHERE jar_path = ?")) {
-                    natives.setString(1, path);
-                    natives.executeUpdate();
-                }
-                try (PreparedStatement ps = c.prepareStatement("DELETE FROM cache_entry WHERE path = ?")) {
-                    ps.setString(1, path);
-                    return ps.executeUpdate() > 0;
+                boolean prev = c.getAutoCommit();
+                c.setAutoCommit(false);
+                try {
+                    deletePathRows(c, path);
+                    boolean ok;
+                    try {
+                        ok = unlink != null && Boolean.TRUE.equals(unlink.call());
+                    } catch (Exception e) {
+                        c.rollback();
+                        OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+                        return false;
+                    }
+                    if (ok) {
+                        c.commit();
+                        return true;
+                    }
+                    c.rollback();
+                    return false;
+                } catch (SQLException e) {
+                    try {
+                        c.rollback();
+                    } catch (SQLException ignored) {
+                    }
+                    throw e;
+                } finally {
+                    try {
+                        c.setAutoCommit(prev);
+                    } catch (SQLException ignored) {
+                    }
                 }
             });
         } catch (SQLException e) {
             OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
             return false;
+        }
+    }
+
+    private static boolean deletePathRows(Connection c, String path) throws SQLException {
+        try (PreparedStatement natives = c.prepareStatement(
+                "DELETE FROM native_lib WHERE jar_path = ?")) {
+            natives.setString(1, path);
+            natives.executeUpdate();
+        }
+        try (PreparedStatement ps = c.prepareStatement("DELETE FROM cache_entry WHERE path = ?")) {
+            ps.setString(1, path);
+            return ps.executeUpdate() > 0;
         }
     }
 
@@ -1073,6 +1103,48 @@ final class SqliteCacheCatalog implements CacheCatalog {
         } catch (SQLException e) {
             OutputController.getLogger().log(e);
             throw new IllegalStateException("Could not list running_app", e);
+        }
+    }
+
+    @Override
+    public List<CacheCleanupRow> listMarkedForDelete() {
+        try {
+            return runBusy(c -> {
+                List<CacheCleanupRow> rows = new ArrayList<>();
+                try (Statement st = c.createStatement();
+                     ResultSet rs = st.executeQuery(
+                             "SELECT lru_key, path FROM cache_entry WHERE marked_delete = 1")) {
+                    while (rs.next()) {
+                        rows.add(new CacheCleanupRow(rs.getString(1), rs.getString(2)));
+                    }
+                }
+                return rows;
+            });
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return new ArrayList<>();
+        }
+    }
+
+    @Override
+    public List<CacheCleanupRow> listUnmarkedLruNewestFirst() {
+        try {
+            return runBusy(c -> {
+                List<CacheCleanupRow> rows = new ArrayList<>();
+                try (Statement st = c.createStatement();
+                     ResultSet rs = st.executeQuery(
+                             "SELECT lru_key, path, content_length FROM cache_entry "
+                                     + "WHERE marked_delete = 0 ORDER BY last_access DESC")) {
+                    while (rs.next()) {
+                        rows.add(new CacheCleanupRow(rs.getString(1), rs.getString(2),
+                                getNullableLong(rs, 3)));
+                    }
+                }
+                return rows;
+            });
+        } catch (SQLException e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return new ArrayList<>();
         }
     }
 

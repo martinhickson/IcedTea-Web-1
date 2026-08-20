@@ -174,6 +174,22 @@ final class PropertiesCacheCatalog implements CacheCatalog {
     }
 
     @Override
+    public boolean transactRemoveIfUnlinked(String path, java.util.concurrent.Callable<Boolean> unlink) {
+        if (path == null || path.isEmpty()) {
+            return false;
+        }
+        try {
+            if (unlink == null || !Boolean.TRUE.equals(unlink.call())) {
+                return false;
+            }
+        } catch (Exception e) {
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+        return removeByPath(path);
+    }
+
+    @Override
     public boolean updateEntry(String oldKey, String cacheDirPath) {
         PropertiesFile p = props();
         if (!p.containsKey(oldKey)) {
@@ -413,6 +429,31 @@ final class PropertiesCacheCatalog implements CacheCatalog {
             return null;
         }
         return s.trim();
+    }
+
+    @Override
+    public List<CacheCleanupRow> listMarkedForDelete() {
+        List<CacheCleanupRow> rows = new ArrayList<>();
+        for (Entry<String, String> e : getLRUSortedEntries()) {
+            CacheEntryMeta meta = getMetaByPath(e.getValue());
+            if (meta != null && meta.markedDelete) {
+                rows.add(new CacheCleanupRow(e.getKey(), e.getValue(), meta.contentLength));
+            }
+        }
+        return rows;
+    }
+
+    @Override
+    public List<CacheCleanupRow> listUnmarkedLruNewestFirst() {
+        List<CacheCleanupRow> rows = new ArrayList<>();
+        for (Entry<String, String> e : getLRUSortedEntries()) {
+            CacheEntryMeta meta = getMetaByPath(e.getValue());
+            if (meta == null || !meta.markedDelete) {
+                Long len = meta == null ? null : meta.contentLength;
+                rows.add(new CacheCleanupRow(e.getKey(), e.getValue(), len));
+            }
+        }
+        return rows;
     }
 
     @Override

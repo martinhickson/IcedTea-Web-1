@@ -19,6 +19,7 @@ package net.sourceforge.jnlp.cache;
 import java.io.BufferedInputStream;
 import java.io.BufferedOutputStream;
 import java.io.File;
+import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
 import java.io.FilePermission;
 import java.io.IOException;
@@ -32,6 +33,7 @@ import java.nio.channels.FileLock;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
@@ -1247,7 +1249,7 @@ public class CacheUtil {
 
     /**
      * Shutdown sweep: apply {@code delete=true} marks only. Never LRU-evict,
-     * never treat a missing jar as a ghost slot, and never wipe unmarked
+     * never treat a missing jar as a ghost, and never delete unmarked
      * siblings (GitHub #16 — a relaunch parent must not delete the child's
      * Pack200 sidecars).
      */
@@ -1282,93 +1284,110 @@ public class CacheUtil {
 
     /**
      * Removes cache entries marked for deletion always; LRU size enforcement only when allowed.
+     * Each path is its own catalog transaction: commit the row delete only after
+     * unlink succeeds (already-gone counts as success). A failed unlink rolls
+     * back that file only.
      */
     private static void processCacheCleanup(boolean enforceLruLimit) {
         CacheLRUWrapper lruHandler = CacheLRUWrapper.getInstance();
-        HashSet<String> keep = new HashSet<>();
-        HashSet<String> remove = new HashSet<>();
         synchronized (lruHandler) {
         try {
             lruHandler.lock();
             lruHandler.load();
 
-            long maxSize = -1; // Default
-            try {
-                maxSize = Long.parseLong(JNLPRuntime.getConfiguration().getProperty(DeploymentConfiguration.KEY_CACHE_MAX_SIZE));
-            } catch (NumberFormatException nfe) {
+            for (CacheCleanupRow row : lruHandler.listMarkedForDelete()) {
+                if (row.path == null) {
+                    if (row.lruKey != null) {
+                        lruHandler.removeEntry(row.lruKey);
+                    }
+                    continue;
+                }
+                lruHandler.transactRemoveIfUnlinked(row.path, () -> unlinkCachePath(row.path));
             }
 
-            maxSize = maxSize << 20; // Convert from megabyte to byte (Negative values will be considered unlimited.)
-            long curSize = 0;
-
-            for (Entry<String, String> e : lruHandler.getLRUSortedEntries()) {
-                // Check if the item is contained in cacheOrder.
-                final String key = e.getKey();
-                final String path = e.getValue();
-
-                File file = new File(path);
-                CacheEntryMeta rowMeta = lruHandler.getMetaByPath(path);
-                boolean delete = rowMeta != null && rowMeta.markedDelete;
-
-            /*
-             * This will get me the root directory specific to this cache item.
-             * Example:
-             *  cacheDir = /home/user1/.icedtea/cache
-             *  file.getPath() = /home/user1/.icedtea/cache/0/http/www.example.com/subdir/a.jar
-             *  rStr first becomes: /0/http/www.example.com/subdir/a.jar
-             *  then rstr becomes: /home/user1/.icedtea/cache/0
-             */
-                String rStr = file.getPath().substring(lruHandler.getCacheDir().getFullPath().length());
-                rStr = lruHandler.getCacheDir().getFullPath()+ rStr.substring(0, rStr.indexOf(File.separatorChar, 1));
-                long len = file.length();
-
-                if (keep.contains(path)) {
-                    lruHandler.removeEntry(key);
-                    continue;
+            if (enforceLruLimit) {
+                long maxSize = -1;
+                try {
+                    maxSize = Long.parseLong(JNLPRuntime.getConfiguration()
+                            .getProperty(DeploymentConfiguration.KEY_CACHE_MAX_SIZE));
+                } catch (NumberFormatException nfe) {
                 }
-
-            /*
-             * Remove only when marked delete, or (last-instance LRU) a true ghost /
-             * over-max slot. A missing jar during an in-flight Pack200 GET is not
-             * a ghost — the sidecar is the live download (GitHub #16 follow-up).
-             */
-                boolean inFlight = hasInFlightPack200Sidecar(file);
-                boolean overMax = enforceLruLimit && maxSize >= 0 && curSize + len > maxSize;
-                if (delete) {
-                    lruHandler.removeEntry(key);
-                    remove.add(rStr);
-                    continue;
-                }
-                if (inFlight) {
-                    keep.add(path);
-                    continue;
-                }
-                if (enforceLruLimit && (!file.isFile() || overMax)) {
-                    lruHandler.removeEntry(key);
-                    remove.add(rStr);
-                    continue;
-                }
-
-                if (file.isFile()) {
+                maxSize = maxSize << 20;
+                long curSize = 0;
+                HashSet<String> keep = new HashSet<>();
+                for (CacheCleanupRow row : lruHandler.listUnmarkedLruNewestFirst()) {
+                    final String path = row.path;
+                    if (path == null) {
+                        if (row.lruKey != null) {
+                            lruHandler.removeEntry(row.lruKey);
+                        }
+                        continue;
+                    }
+                    File file = new File(path);
+                    if (keep.contains(path)) {
+                        lruHandler.removeEntry(row.lruKey);
+                        continue;
+                    }
+                    boolean inFlight = hasInFlightPack200Sidecar(file);
+                    long len = file.length();
+                    boolean overMax = maxSize >= 0 && curSize + len > maxSize;
+                    if (inFlight) {
+                        keep.add(path);
+                        continue;
+                    }
+                    if (!file.isFile() || overMax) {
+                        lruHandler.transactRemoveIfUnlinked(path, () -> unlinkCachePath(path));
+                        continue;
+                    }
                     curSize += len;
+                    keep.add(path);
                 }
-                keep.add(path);
             }
             lruHandler.store();
         } finally {
             lruHandler.unlock();
         }
         }
-        removeSetOfDirectories(remove);
     }
 
-    private static void removeSetOfDirectories(Set<String> remove) {
-        for (String s : remove) {
-            File f = new File(s);
-            try {
-                FileUtils.recursiveDelete(f, f);
-            } catch (IOException e) {
+    /**
+     * Unlink one catalog file. {@link FileNotFoundException} /
+     * {@link NoSuchFileException} (or a file that is already gone) is
+     * success. Other I/O failures are logged and return false so the
+     * per-file transaction can roll back. Directories are not wiped.
+     */
+    static boolean unlinkCachePath(String path) {
+        if (path == null || path.isEmpty()) {
+            return true;
+        }
+        File f = new File(path);
+        if (f.isDirectory()) {
+            return true;
+        }
+        try {
+            Files.deleteIfExists(f.toPath());
+            return true;
+        } catch (NoSuchFileException | FileNotFoundException e) {
+            return true;
+        } catch (IOException e) {
+            if (!f.exists()) {
+                return true;
             }
+            OutputController.getLogger().log(OutputController.Level.ERROR_ALL, e);
+            return false;
+        }
+    }
+
+    /**
+     * Unlink catalog files only. Each path is independent; already-gone is
+     * ignored. Other I/O failures are logged. Directories are skipped.
+     */
+    static void deleteCachePathsIfPresent(Set<String> paths) {
+        if (paths == null) {
+            return;
+        }
+        for (String s : paths) {
+            unlinkCachePath(s);
         }
     }
 
