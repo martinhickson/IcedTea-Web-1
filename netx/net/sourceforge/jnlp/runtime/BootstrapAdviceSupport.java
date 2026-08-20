@@ -7,6 +7,7 @@ import net.bytebuddy.ByteBuddy;
 import net.bytebuddy.asm.Advice;
 import net.bytebuddy.description.type.TypeDescription;
 import net.bytebuddy.dynamic.ClassFileLocator;
+import net.bytebuddy.dynamic.DynamicType;
 import net.bytebuddy.dynamic.loading.ClassInjector;
 import net.bytebuddy.dynamic.loading.ClassReloadingStrategy;
 import net.bytebuddy.matcher.ElementMatchers;
@@ -54,11 +55,20 @@ final class BootstrapAdviceSupport {
 
     static void adviseBootstrapMethod(Class<?> targetClass, Class<?> adviceClass, String methodName)
             throws Exception {
+        adviseBootstrapMethods(targetClass, adviceClass, methodName);
+    }
+
+    /**
+     * One redefine applying the same advice to every method of each name
+     * (all overloads). Uses the already-installed ByteBuddy javaagent.
+     */
+    static void adviseBootstrapMethods(Class<?> targetClass, Class<?> adviceClass,
+            String... methodNames) throws Exception {
         injectIntoBootstrap(adviceClass);
-        new ByteBuddy()
-                .redefine(targetClass)
-                .visit(Advice.to(adviceClass).on(ElementMatchers.named(methodName)))
-                .make()
-                .load(targetClass.getClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
+        DynamicType.Builder<?> builder = new ByteBuddy().redefine(targetClass);
+        for (String methodName : methodNames) {
+            builder = builder.visit(Advice.to(adviceClass).on(ElementMatchers.named(methodName)));
+        }
+        builder.make().load(targetClass.getClassLoader(), ClassReloadingStrategy.fromInstalledAgent());
     }
 }
