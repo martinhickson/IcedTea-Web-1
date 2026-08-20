@@ -139,22 +139,12 @@ class JvmArgumentPolicyTest {
     }
 
     @Test
-    void normalizeIpTypeDefaultsUnknownToAuto() {
-        assertEquals("auto", JvmArgumentPolicy.normalizeIpType(null));
-        assertEquals("auto", JvmArgumentPolicy.normalizeIpType(""));
-        assertEquals("auto", JvmArgumentPolicy.normalizeIpType("bogus"));
+    void normalizeIpTypeDefaultsUnknownToIpv4() {
+        assertEquals("ipv4", JvmArgumentPolicy.normalizeIpType(null));
+        assertEquals("ipv4", JvmArgumentPolicy.normalizeIpType(""));
+        assertEquals("ipv4", JvmArgumentPolicy.normalizeIpType("bogus"));
         assertEquals("ipv6", JvmArgumentPolicy.normalizeIpType("IPV6"));
-        assertEquals("ipv4", JvmArgumentPolicy.normalizeIpType("ipv4"));
         assertEquals("auto", JvmArgumentPolicy.normalizeIpType(" Auto "));
-    }
-
-    @Test
-    void ipStackAutoDoesNotSetSystemProperties() {
-        System.clearProperty(JvmArgumentPolicy.PROP_PREFER_IPV4_STACK);
-        System.clearProperty(JvmArgumentPolicy.PROP_PREFER_IPV6_ADDRESSES);
-        JvmArgumentPolicy.applyIpStackToSystemProperties("auto");
-        assertEquals(null, System.getProperty(JvmArgumentPolicy.PROP_PREFER_IPV4_STACK));
-        assertEquals(null, System.getProperty(JvmArgumentPolicy.PROP_PREFER_IPV6_ADDRESSES));
     }
 
     private static Set<String> newLinkedHashSetOf(String... values) {

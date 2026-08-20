@@ -490,13 +490,13 @@ public class Defaults {
                         null,
                         null
                 },
-                // IP stack for launched JVMs (auto = JDK dual-stack; ipv4/ipv6 override)
+                // Preferred IP stack for launched JVMs (ipv4 default)
                 {
                         DeploymentConfiguration.KEY_JVM_IP_TYPE,
                         BasicValueValidators.getStringValidator(new String[] {
                                 "ipv4", "ipv6", "auto"
                         }),
-                        "auto"
+                        "ipv4"
                 },
                //unsigned applet security level
                 {

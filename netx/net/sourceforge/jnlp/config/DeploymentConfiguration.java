@@ -330,8 +330,7 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_JVM_ARGS_WHITELIST = "deployment.jvm.arguments.whitelist";
     /**
-     * IP stack for launched JVMs: {@code auto} (default, JDK dual-stack),
-     * {@code ipv4} ({@code preferIPv4Stack=true}), or {@code ipv6}.
+     * Preferred IP stack for launched JVMs: {@code ipv4} (default), {@code ipv6}, or {@code auto}.
      * Takes precedence over user {@code -Djava.net.preferIPv*} in {@code java-vm-args}.
      */
     public static final String KEY_JVM_IP_TYPE = "deployment.jvm.ip.type";
