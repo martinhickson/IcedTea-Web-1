@@ -5,9 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
+import java.io.FileInputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Properties;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -105,11 +109,12 @@ public class KnownJvmStoreBundledTest {
         Files.createFile(install.resolve("runtime/temurin-21/jdk21/bin/java"));
         Files.createFile(install.resolve("runtime/temurin-17/jdk17/bin/java"));
 
+        String preferredHome = preferred.toFile().getAbsolutePath();
         File userFile = tmp.resolve("deployment.properties").toFile();
         Files.write(userFile.toPath(), (
-                "deployment.jdk.1=" + escapeProp(preferred.toFile().getAbsolutePath()) + "\n"
-                + "deployment.jre.dir=" + escapeProp(preferred.toFile().getAbsolutePath()) + "\n"
-                ).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                "deployment.jdk.1=" + escapeProp(preferredHome) + "\n"
+                + "deployment.jre.dir=" + escapeProp(preferredHome) + "\n"
+                ).getBytes(StandardCharsets.UTF_8));
 
         String old = System.getProperty("icedtea-web.bin.location");
         System.setProperty("icedtea-web.bin.location", install.resolve("bin/javaws").toString());
@@ -118,13 +123,32 @@ public class KnownJvmStoreBundledTest {
             config.load((java.net.URL) null, userFile, false);
 
             List<String> homes = KnownJvmStore.getKnownJvmHomes(config);
-            assertEquals(preferred.toFile().getAbsolutePath(), homes.get(0));
+            assertEquals(preferredHome, homes.get(0));
             assertTrue(homes.size() >= 3, "missing bundled homes should be appended: " + homes);
             assertTrue(homes.get(1).replace('\\', '/').contains("temurin-21/jdk21"));
             assertTrue(homes.get(2).replace('\\', '/').contains("temurin-17/jdk17"));
 
+            Properties savedAfterFirstLoad = loadSaved(userFile);
+            assertEquals(preferredHome, savedAfterFirstLoad.getProperty("deployment.jdk.1"));
+            assertEquals(preferredHome, savedAfterFirstLoad.getProperty("deployment.jre.dir"));
+            assertTrue(savedAfterFirstLoad.getProperty("deployment.jdk.2")
+                    .replace('\\', '/').contains("temurin-21/jdk21"));
+            assertTrue(savedAfterFirstLoad.getProperty("deployment.jdk.3")
+                    .replace('\\', '/').contains("temurin-17/jdk17"));
+
             assertFalse(KnownJvmStore.applyBundledJvms(config), "second apply must not reorder");
             assertEquals(homes, KnownJvmStore.getKnownJvmHomes(config));
+
+            DeploymentConfiguration reload = new DeploymentConfiguration();
+            reload.load((java.net.URL) null, userFile, false);
+            assertEquals(homes, KnownJvmStore.getKnownJvmHomes(reload));
+
+            Properties savedAfterReload = loadSaved(userFile);
+            assertEquals(preferredHome, savedAfterReload.getProperty("deployment.jdk.1"));
+            assertEquals(savedAfterFirstLoad.getProperty("deployment.jdk.2"),
+                    savedAfterReload.getProperty("deployment.jdk.2"));
+            assertEquals(savedAfterFirstLoad.getProperty("deployment.jdk.3"),
+                    savedAfterReload.getProperty("deployment.jdk.3"));
         } finally {
             if (old == null) {
                 System.clearProperty("icedtea-web.bin.location");
@@ -152,7 +176,7 @@ public class KnownJvmStoreBundledTest {
                 "deployment.jdk.1=" + escapeProp(preferredHome) + "\n"
                 + "deployment.jdk.2=" + escapeProp(bundledHome) + "\n"
                 + "deployment.jre.dir=" + escapeProp(preferredHome) + "\n"
-                ).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                ).getBytes(StandardCharsets.UTF_8));
 
         String old = System.getProperty("icedtea-web.bin.location");
         System.setProperty("icedtea-web.bin.location", install.resolve("bin/javaws").toString());
@@ -160,11 +184,24 @@ public class KnownJvmStoreBundledTest {
             DeploymentConfiguration config = new DeploymentConfiguration();
             config.load((java.net.URL) null, userFile, false);
 
-            assertEquals(java.util.Arrays.asList(preferredHome, bundledHome),
+            assertEquals(Arrays.asList(preferredHome, bundledHome),
                     KnownJvmStore.getKnownJvmHomes(config));
             assertFalse(KnownJvmStore.applyBundledJvms(config));
             assertEquals(preferredHome, config.getProperty("deployment.jdk.1"));
             assertEquals(bundledHome, config.getProperty("deployment.jdk.2"));
+
+            Properties saved = loadSaved(userFile);
+            assertEquals(preferredHome, saved.getProperty("deployment.jdk.1"));
+            assertEquals(bundledHome, saved.getProperty("deployment.jdk.2"));
+            assertEquals(preferredHome, saved.getProperty("deployment.jre.dir"));
+
+            DeploymentConfiguration reload = new DeploymentConfiguration();
+            reload.load((java.net.URL) null, userFile, false);
+            Properties savedAfterReload = loadSaved(userFile);
+            assertEquals(preferredHome, savedAfterReload.getProperty("deployment.jdk.1"));
+            assertEquals(bundledHome, savedAfterReload.getProperty("deployment.jdk.2"));
+            assertEquals(Arrays.asList(preferredHome, bundledHome),
+                    KnownJvmStore.getKnownJvmHomes(reload));
         } finally {
             if (old == null) {
                 System.clearProperty("icedtea-web.bin.location");
@@ -172,6 +209,14 @@ public class KnownJvmStoreBundledTest {
                 System.setProperty("icedtea-web.bin.location", old);
             }
         }
+    }
+
+    private static Properties loadSaved(File file) throws Exception {
+        Properties props = new Properties();
+        try (FileInputStream in = new FileInputStream(file)) {
+            props.load(in);
+        }
+        return props;
     }
 
     private static String escapeProp(String value) {
