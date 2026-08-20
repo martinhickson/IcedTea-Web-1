@@ -24,10 +24,8 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /**
  * A trusted JNLP app must be able to connect using the hostname
- * {@code localhost} (not only {@code 127.0.0.1}).
- *
- * <p>Resolve deny applies to private <em>literal IPs</em> only
- * ({@code 127.0.0.1}, RFC1918). The name {@code localhost} must resolve.
+ * {@code localhost}. {@code JNLPSecurityManager} must not deny
+ * {@code SocketPermission} resolve (the old PTR skip did).
  */
 public class LocalhostConnectIT {
 

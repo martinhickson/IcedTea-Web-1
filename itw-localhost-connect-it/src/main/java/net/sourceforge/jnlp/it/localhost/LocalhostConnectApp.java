@@ -1,6 +1,7 @@
 package net.sourceforge.jnlp.it.localhost;
 
 import java.net.HttpURLConnection;
+import java.net.InetAddress;
 import java.net.URL;
 
 /**
@@ -16,6 +17,8 @@ public final class LocalhostConnectApp {
             return;
         }
         try {
+            InetAddress.getByName("localhost");
+            InetAddress.getByName("127.0.0.1");
             HttpURLConnection connection = (HttpURLConnection) new URL(url.trim()).openConnection();
             connection.setConnectTimeout(5000);
             connection.setReadTimeout(5000);
