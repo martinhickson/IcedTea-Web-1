@@ -634,8 +634,9 @@ public final class DeploymentConfiguration {
         // unchangeableConfiguration — that must stay defaults+system for save().
         persistedConfiguration = copySettingsMap(currentConfiguration);
         maybeAutodetectJdksOnLoad();
-        // Seed the bundled Temurin JREs into the known-JVM list at first
-        // run — unconditional (no autodetect flag), no-op when no bundle is present.
+        // Append bundled Temurin homes that are not already listed.
+        // Unconditional (no autodetect flag); no-op when no bundle is present
+        // or when the persisted deployment.jdk.N order already contains them.
         try {
             if (KnownJvmStore.applyBundledJvms(this)) {
                 save();

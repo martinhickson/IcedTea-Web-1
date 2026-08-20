@@ -280,17 +280,16 @@ public final class KnownJvmStore {
     }
 
     /**
-     * Seeds the bundled Temurin JREs into the known-JVM list at
-     * first run. The MSI ships four JREs under {@code [installDir]/runtime/temurin-*}
+     * Seeds bundled Temurin JREs that are not already in the known-JVM list.
+     * The MSI/deb ships JREs under {@code [installDir]/runtime/temurin-*}
      * (linux/windows: {@code temurin-<ver>/<jdk>/bin/java}; macOS:
-     * {@code temurin-<ver>/<jdk>/Contents/Home/bin/java}). They are registered as
-     * pinned top-priority homes (preferred order 21 → 17 → 11 → 25) so the JVM
-     * manager selects the app JVM. Temurin 25 is deliberately ranked last: ITW's
-     * JarFileCloseProtection depends on jdk.internal.util.jar which JDK 25
-     * removed, so apps fail to load there — it stays seeded only for JNLP files
-     * that explicitly require a 25+ runtime. No-op when no bundle is present
-     * (e.g. a source/IDE run). The launcher separately resolves the download JVM
-     * (temurin-21); this only feeds the app-JVM selection list.
+     * {@code temurin-<ver>/<jdk>/Contents/Home/bin/java}). Missing homes
+     * are appended so a persisted {@code deployment.jdk.1} order is kept.
+     * On an empty list they are added in preferred order 21 → 17 → 11 → 25.
+     * Temurin 25 is last: ITW's JarFileCloseProtection depends on
+     * jdk.internal.util.jar which JDK 25 removed. No-op when no bundle is
+     * present (e.g. a source/IDE run). The launcher separately resolves the
+     * download JVM (temurin-21); this only feeds the app-JVM selection list.
      *
      * @return true if any bundled home was added (caller should persist)
      */
@@ -299,17 +298,20 @@ public final class KnownJvmStore {
         if (bundled.isEmpty()) {
             return false;
         }
-        List<String> before = new ArrayList<>(getKnownJvmHomes(config));
         LinkedHashSet<String> merged = new LinkedHashSet<>();
-        for (String home : bundled) {            // bundled first = top priority
+        for (String home : getKnownJvmHomes(config)) {
             merged.add(home);
         }
-        for (String home : before) {
-            merged.add(home);
+        boolean changed = false;
+        for (String home : bundled) {
+            if (merged.add(home)) {
+                changed = true;
+            }
         }
-        List<String> current = new ArrayList<>(merged);
-        setKnownJvmHomes(config, current);
-        return !before.equals(current);
+        if (changed) {
+            setKnownJvmHomes(config, new ArrayList<>(merged));
+        }
+        return changed;
     }
 
     /**
