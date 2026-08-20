@@ -498,6 +498,11 @@ public class Defaults {
                         }),
                         "ipv4"
                 },
+                {
+                        DeploymentConfiguration.KEY_INETADDRESS_SKIP_REVERSE_DNS,
+                        BasicValueValidators.getBooleanValidator(),
+                        String.valueOf(false)
+                },
                //unsigned applet security level
                 {
                 DeploymentConfiguration.KEY_SECURITY_LEVEL,

@@ -285,6 +285,9 @@ public class JNLPRuntime {
         // Prefer deployment.jvm.ip.type over any user -Djava.net.preferIPv* for in-process launches.
         JvmArgumentPolicy.applyConfiguredIpStackToSystemProperties();
 
+        // Opt-in only. Uses the already-installed ByteBuddy agent (JarFile close).
+        InetAddressNameLookupSkip.installFromConfiguration(getConfiguration());
+
         if (!isHeadless() && indicator == null)
             indicator = new DefaultDownloadIndicator();
 
