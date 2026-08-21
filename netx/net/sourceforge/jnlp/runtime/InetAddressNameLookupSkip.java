@@ -11,11 +11,12 @@ import net.sourceforge.jnlp.util.logging.OutputController;
 import java.net.InetAddress;
 
 /**
- * Opt-in weave of {@link InetAddress} so private literals skip reverse-DNS.
+ * Weave of {@link InetAddress} so private literals skip reverse-DNS.
  * <p>
  * Uses the same ByteBuddy javaagent as {@link JarFileCloseProtection}. Does
- * not add a second {@code -javaagent} and does not call attach. Off by
+ * not add a second {@code -javaagent} and does not call attach. On by
  * default ({@link DeploymentConfiguration#KEY_INETADDRESS_SKIP_REVERSE_DNS}).
+ * Set that property to {@code false} to leave InetAddress unwoven.
  * <p>
  * Weaves every {@code getHostName} overload, including package-private
  * {@code getHostName(boolean)} used by {@code SocketPermission.getCanonName()},
@@ -35,9 +36,9 @@ public final class InetAddressNameLookupSkip {
                 : config.getProperty(DeploymentConfiguration.KEY_INETADDRESS_SKIP_REVERSE_DNS);
         if (!parseEnabled(value)) {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG,
-                    "[ITW] InetAddress reverse-DNS skip off (set "
+                    "[ITW] InetAddress reverse-DNS skip off ("
                             + DeploymentConfiguration.KEY_INETADDRESS_SKIP_REVERSE_DNS
-                            + "=true to weave)");
+                            + "=false)");
             return;
         }
         install();
