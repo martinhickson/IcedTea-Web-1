@@ -2,7 +2,11 @@ package net.sourceforge.jnlp.runtime;
 
 import java.lang.reflect.Method;
 import java.net.InetAddress;
+import java.util.List;
 
+import net.bytebuddy.agent.ByteBuddyAgent;
+import net.sourceforge.jnlp.util.IpClassification;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -36,5 +40,26 @@ class InetAddressNameLookupSkipTest {
     void inetAddressHasHostNameBooleanOverload() throws Exception {
         Method method = InetAddress.class.getDeclaredMethod("getHostName", boolean.class);
         assertEquals(String.class, method.getReturnType());
+    }
+
+    @Test
+    void bootstrapInjectIncludesIpClassificationKind() {
+        List<Class<?>> types = BootstrapAdviceSupport.expandWithNestedClasses(IpClassification.class);
+        assertTrue(types.contains(IpClassification.class));
+        assertTrue(types.contains(IpClassification.Kind.class),
+                "Kind must be bootstrap-injected or InetAddress.getHostName NCDFE");
+    }
+
+    @Test
+    void kindIsVisibleFromBootstrapAfterInject() throws Exception {
+        try {
+            ByteBuddyAgent.install();
+        } catch (Throwable t) {
+            Assumptions.assumeTrue(false, "ByteBuddy agent attach unavailable: " + t);
+        }
+        BootstrapAdviceSupport.injectIntoBootstrap(IpClassification.class);
+        Class<?> fromBootstrap = Class.forName(
+                "net.sourceforge.jnlp.util.IpClassification$Kind", false, null);
+        assertEquals("Kind", fromBootstrap.getSimpleName());
     }
 }

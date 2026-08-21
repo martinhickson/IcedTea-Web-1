@@ -13,8 +13,12 @@ import net.bytebuddy.dynamic.loading.ClassReloadingStrategy;
 import net.bytebuddy.matcher.ElementMatchers;
 
 import java.io.File;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Injects advice helper classes into the bootstrap class loader before instrumenting
@@ -30,11 +34,34 @@ final class BootstrapAdviceSupport {
     private BootstrapAdviceSupport() {
     }
 
+    /**
+     * Outer class plus member classes / enums (e.g. {@code IpClassification$Kind}).
+     * Bootstrap {@code InetAddress} advice cannot see application-loader nested types.
+     */
+    static List<Class<?>> expandWithNestedClasses(Class<?>... classes) {
+        LinkedHashSet<Class<?>> expanded = new LinkedHashSet<>();
+        if (classes != null) {
+            for (Class<?> type : classes) {
+                addWithNested(type, expanded);
+            }
+        }
+        return new ArrayList<>(expanded);
+    }
+
+    private static void addWithNested(Class<?> type, Set<Class<?>> out) {
+        if (type == null || !out.add(type)) {
+            return;
+        }
+        for (Class<?> nested : type.getDeclaredClasses()) {
+            addWithNested(nested, out);
+        }
+    }
+
     static void injectIntoBootstrap(Class<?>... classes) throws Exception {
         ClassFileLocator locator = ClassFileLocator.ForClassLoader.of(
                 BootstrapAdviceSupport.class.getClassLoader());
         Map<TypeDescription, byte[]> types = new HashMap<>();
-        for (Class<?> type : classes) {
+        for (Class<?> type : expandWithNestedClasses(classes)) {
             types.put(new TypeDescription.ForLoadedType(type),
                     locator.locate(type.getName()).resolve());
         }

@@ -67,7 +67,10 @@ public final class InetAddressNameLookupSkip {
             Class.forName("net.bytebuddy.ByteBuddy");
             Class.forName("net.bytebuddy.agent.ByteBuddyAgent");
             ByteBuddyAgent.install();
-            BootstrapAdviceSupport.injectIntoBootstrap(IpClassification.class);
+            // Kind is a nested enum; bootstrap InetAddress cannot load it
+            // from the application class loader (NoClassDefFoundError).
+            BootstrapAdviceSupport.injectIntoBootstrap(
+                    IpClassification.class, IpClassification.Kind.class);
             BootstrapAdviceSupport.adviseBootstrapMethods(
                     InetAddress.class,
                     BootstrapInetAddressNameAdvice.class,
