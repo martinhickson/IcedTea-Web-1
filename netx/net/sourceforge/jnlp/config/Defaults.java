@@ -501,7 +501,7 @@ public class Defaults {
                 {
                         DeploymentConfiguration.KEY_INETADDRESS_SKIP_REVERSE_DNS,
                         BasicValueValidators.getBooleanValidator(),
-                        String.valueOf(false)
+                        String.valueOf(true)
                 },
                //unsigned applet security level
                 {

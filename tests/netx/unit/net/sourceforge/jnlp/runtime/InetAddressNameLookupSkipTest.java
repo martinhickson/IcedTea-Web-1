@@ -5,6 +5,8 @@ import java.net.InetAddress;
 import java.util.List;
 
 import net.bytebuddy.agent.ByteBuddyAgent;
+import net.sourceforge.jnlp.config.Defaults;
+import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.util.IpClassification;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
@@ -16,7 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class InetAddressNameLookupSkipTest {
 
     @Test
-    void parseEnabledIsOptIn() {
+    void reverseDnsSkipDefaultsOn() {
+        assertEquals("true", Defaults.getDefaults()
+                .get(DeploymentConfiguration.KEY_INETADDRESS_SKIP_REVERSE_DNS)
+                .getDefaultValue());
+    }
+
+    @Test
+    void parseEnabledRecognizesTruthyValues() {
         assertFalse(InetAddressNameLookupSkip.parseEnabled(null));
         assertFalse(InetAddressNameLookupSkip.parseEnabled(""));
         assertFalse(InetAddressNameLookupSkip.parseEnabled("  "));

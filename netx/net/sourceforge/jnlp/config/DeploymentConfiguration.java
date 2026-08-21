@@ -335,9 +335,10 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_JVM_IP_TYPE = "deployment.jvm.ip.type";
     /**
-     * Opt-in. When {@code true}, the existing ByteBuddy agent weaves
-     * {@link java.net.InetAddress} so private/loopback/link-local/CGNAT/ULA
-     * literals skip reverse-DNS. Default {@code false}: no InetAddress weave.
+     * Performance setting (on by default). When {@code true}, the existing
+     * ByteBuddy agent weaves {@link java.net.InetAddress} so
+     * private/loopback/link-local/CGNAT/ULA literals skip reverse-DNS.
+     * Set {@code false} to leave InetAddress unwoven.
      */
     public static final String KEY_INETADDRESS_SKIP_REVERSE_DNS =
             "deployment.inetaddress.skip.reverse.dns";
