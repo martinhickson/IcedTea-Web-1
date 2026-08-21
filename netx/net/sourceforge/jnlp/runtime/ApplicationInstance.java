@@ -158,6 +158,9 @@ public class ApplicationInstance {
      */
 
     private void addMenuAndDesktopEntries() {
+        if (isDesktopIntegrationDisabled(JNLPRuntime.getConfiguration())) {
+            return;
+        }
         ShortcutDesc sd = file.getInformation().getShortcut();
         if (JNLPRuntime.isWindows()) {
             OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, "Generating windows desktop shorcut");
@@ -301,6 +304,18 @@ public class ApplicationInstance {
         }
 
         return new AccessWarningPaneComplexReturn(false);
+    }
+
+    /**
+     * {@code deployment.javaws.shortcut=NEVER} skips desktop/menu icons and
+     * must not construct a Windows desktop entry (that constructor probes favicon).
+     */
+    static boolean isDesktopIntegrationDisabled(DeploymentConfiguration config) {
+        if (config == null) {
+            return false;
+        }
+        return ShortcutDesc.CREATE_NEVER.equals(
+                config.getProperty(DeploymentConfiguration.KEY_CREATE_DESKTOP_SHORTCUT));
     }
     
      /**

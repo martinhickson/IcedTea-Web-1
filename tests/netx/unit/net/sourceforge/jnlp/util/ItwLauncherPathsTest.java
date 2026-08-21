@@ -22,11 +22,13 @@ public class ItwLauncherPathsTest {
 
     private String previousLocation;
     private String previousNativeProp;
+    private String previousBinName;
 
     @Before
     public void saveProperties() {
         previousLocation = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
         previousNativeProp = System.getProperty(ItwLauncherPaths.PROP_NATIVE_LAUNCHER);
+        previousBinName = System.getProperty(ItwLauncherPaths.KEY_BIN_NAME);
     }
 
     @After
@@ -40,6 +42,11 @@ public class ItwLauncherPathsTest {
             System.clearProperty(ItwLauncherPaths.PROP_NATIVE_LAUNCHER);
         } else {
             System.setProperty(ItwLauncherPaths.PROP_NATIVE_LAUNCHER, previousNativeProp);
+        }
+        if (previousBinName == null) {
+            System.clearProperty(ItwLauncherPaths.KEY_BIN_NAME);
+        } else {
+            System.setProperty(ItwLauncherPaths.KEY_BIN_NAME, previousBinName);
         }
     }
 
@@ -161,6 +168,44 @@ public class ItwLauncherPathsTest {
         assertTrue(ItwLauncherPaths.isJavawsLauncherName("javaws"));
         assertTrue(ItwLauncherPaths.isJavawsLauncherName("javaws.exe"));
         assertTrue(ItwLauncherPaths.isJavawsLauncherName("javawsc"));
+        assertTrue(ItwLauncherPaths.isConsoleWrapperName("javawsc.exe"));
+        assertFalse(ItwLauncherPaths.isConsoleWrapperName("javaws.exe"));
+    }
+
+    @Test
+    public void wrapperBaseNameKeepsJavawscWhenBinNameOrLocationIsConsole() {
+        assertEquals("javawsc", ItwLauncherPaths.wrapperBaseNameForRelaunch(
+                "javawsc", "C:\\Program Files\\IcedTeaWeb\\WebStart\\bin\\javaws.exe"));
+        assertEquals("javawsc", ItwLauncherPaths.wrapperBaseNameForRelaunch(
+                null, "/opt/icedtea-web/bin/javawsc"));
+        assertEquals("javawsc", ItwLauncherPaths.wrapperBaseNameForRelaunch(
+                "JAVAWSC", "C:\\ITW\\bin\\javawsc.exe"));
+        assertEquals("javaws", ItwLauncherPaths.wrapperBaseNameForRelaunch(
+                "itweb-settings", "C:\\ITW\\bin\\itweb-settings.exe"));
+        assertEquals("javaws", ItwLauncherPaths.wrapperBaseNameForRelaunch(null, null));
+    }
+
+    @Test
+    public void nativeModeKeepsJavawscWhenSiblingJavawsExists() throws IOException {
+        System.setProperty(ItwLauncherPaths.PROP_NATIVE_LAUNCHER, "true");
+        System.setProperty(ItwLauncherPaths.KEY_BIN_NAME, "javawsc");
+        File bin = Files.createTempDirectory("itw-bin-javawsc").toFile();
+        File javaws = new File(bin, "javaws");
+        File javawsc = new File(bin, "javawsc");
+        writeExecutable(javaws, "#!/bin/sh\necho javaws\n");
+        writeExecutable(javawsc, "#!/bin/sh\necho javawsc\n");
+        System.setProperty(Launcher.KEY_JAVAWS_LOCATION, javawsc.getAbsolutePath());
+
+        assertEquals("javawsc", ItwLauncherPaths.currentJavawsWrapperBaseName());
+        assertTrue(ItwLauncherPaths.isConsoleWrapperProcess());
+        assertEquals(javawsc.getAbsolutePath(), ItwLauncherPaths.resolveJavawsBin());
+        List<String> command = ItwLauncherPaths.buildExternalLaunchCommand(
+                Arrays.asList("-Xmx256m"),
+                Collections.singletonList("app.jnlp"),
+                null);
+        assertEquals(javawsc.getAbsolutePath(), command.get(0));
+        assertTrue(command.contains("-J-Xmx256m"));
+        assertTrue(command.contains("app.jnlp"));
     }
 
     private static void writeExecutable(File file, String contents) throws IOException {
