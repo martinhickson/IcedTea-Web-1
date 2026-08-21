@@ -781,12 +781,16 @@ public class XDesktopEntry implements GenericDesktopEntry {
         return normalizeDirectoryPath(path.substring(0, last));
     }
     
-    private static URL favUrl(String delimiter, String path, JNLPFile file) throws MalformedURLException {
+    /**
+     * HTTP/HTTPS favicon path always uses {@code /}, never {@link File#separator}.
+     */
+    static URL favUrl(String path, URL codebase) throws MalformedURLException {
+        String directory = path == null ? "" : path;
         return new URL(
-                file.getNotNullProbalbeCodeBase().getProtocol(),
-                file.getNotNullProbalbeCodeBase().getHost(),
-                file.getNotNullProbalbeCodeBase().getPort(),
-                path + delimiter + FAVICON);
+                codebase.getProtocol(),
+                codebase.getHost(),
+                codebase.getPort(),
+                directory + "/" + FAVICON);
     }
 
     private static URL getFavIconUrl(JNLPFile file) {
@@ -797,23 +801,13 @@ public class XDesktopEntry implements GenericDesktopEntry {
                     ? fileFavIconLocations(file)
                     : possibleFavIconLocations(codebase.getPath());
             for (String path : locations) {
-                URL favico = favUrl("/", path, file);
+                URL favico = favUrl(path, codebase);
                 //JNLPFile.openURL(favico, null, UpdatePolicy.ALWAYS);
                 //this MAY throw npe, if url (specified in jnlp) points to 404
                 //the below works just fine
                 URL urlLocation = CacheUtil.getCachedResourceURL(favico, null, UpdatePolicy.SESSION);
                 if (urlLocation != null) {
                     return urlLocation;
-                }
-            }
-            // Backslash form is only useful for some remote Windows-style URLs.
-            if (!fileCodebase) {
-                for (String path : locations) {
-                    URL favico = favUrl("\\", path, file);
-                    URL urlLocation = CacheUtil.getCachedResourceURL(favico, null, UpdatePolicy.SESSION);
-                    if (urlLocation != null) {
-                        return urlLocation;
-                    }
                 }
             }
         } catch (Exception ex) {

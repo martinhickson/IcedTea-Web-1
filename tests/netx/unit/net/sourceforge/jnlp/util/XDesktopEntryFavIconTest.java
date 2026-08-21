@@ -56,4 +56,14 @@ public class XDesktopEntryFavIconTest {
                 "/C:/work/samples/gui-app",
                 XDesktopEntry.directoryPathOfUrl(new URL("file:/C:/work/samples/gui-app/")));
     }
+
+    @Test
+    public void remoteFavIconUrlUsesForwardSlashNotBackslash() throws Exception {
+        URL codebase = new URL("http://127.0.0.1:4200/jnlp/app/");
+        URL probe = XDesktopEntry.favUrl("/jnlp/app", codebase);
+        assertEquals("http://127.0.0.1:4200/jnlp/app/favicon.ico", probe.toExternalForm());
+        assertFalse(probe.toExternalForm().contains("\\"));
+        URL root = XDesktopEntry.favUrl("", codebase);
+        assertEquals("http://127.0.0.1:4200/favicon.ico", root.toExternalForm());
+    }
 }
