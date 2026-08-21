@@ -16,12 +16,17 @@ import net.sourceforge.jnlp.util.logging.FileLog;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
- * JDK-version relaunch handoff: spawn the selected-JVM {@code javaws} child with
+ * JDK-version relaunch handoff: spawn the selected-JVM wrapper child with
  * file/NUL stdio (never pipes that can freeze Windows when the parent exits),
  * write an audit record, then exit the parent without waiting.
  * <p>
- * Opt out with {@code deployment.keepJavawsRelaunchProcess=true} to restore the
- * legacy inherit-IO + wait path.
+ * The console wrapper ({@code javawsc}) never takes this path: scripts wait on
+ * that binary, so the parent inherits IO and waits. {@code javaws} still
+ * detaches by default.
+ * <p>
+ * Opt out for {@code javaws} with {@code deployment.keepJavawsProcess=true} or
+ * {@code deployment.keepJavawsRelaunchProcess=true} to restore the legacy
+ * inherit-IO + wait path. One keep-process knob is enough.
  */
 public final class JavawsRelaunchHandoff {
 
@@ -32,10 +37,18 @@ public final class JavawsRelaunchHandoff {
     }
 
     /**
-     * @return {@code true} when the parent should detach and exit (default);
-     *         {@code false} when {@code deployment.keepJavawsRelaunchProcess=true}
+     * @return {@code true} when the {@code javaws} parent should detach and exit
+     *         (default); {@code false} for {@code javawsc}, or when
+     *         {@code deployment.keepJavawsProcess} /
+     *         {@code deployment.keepJavawsRelaunchProcess} is {@code true}
      */
     public static boolean shouldHandoff(DeploymentConfiguration config) {
+        if (ItwLauncherPaths.isConsoleWrapperProcess()) {
+            return false;
+        }
+        if (readBoolean(config, DeploymentConfiguration.KEY_KEEP_JAVAWS_PROCESS, false)) {
+            return false;
+        }
         return !readBoolean(config, DeploymentConfiguration.KEY_KEEP_JAVAWS_RELAUNCH_PROCESS, false);
     }
 

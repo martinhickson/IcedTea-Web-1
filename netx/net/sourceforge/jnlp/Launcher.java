@@ -479,13 +479,14 @@ public class Launcher {
             propagateRelaunchEnvironment(pb);
 
             if (JavawsRelaunchHandoff.shouldHandoff(JNLPRuntime.getConfiguration())) {
-                // Default: detach like .NET javaws handoff — file/NUL stdio, audit log, exit.
+                // Default for javaws: detach like .NET GUI handoff — file/NUL stdio, audit log, exit.
+                // javawsc and keepJavawsProcess / keepJavawsRelaunchProcess skip this.
                 // Does not return on success.
                 JavawsRelaunchHandoff.handoffAndExit(commands, pb);
                 return;
             }
 
-            // Legacy path (deployment.keepJavawsRelaunchProcess=true): inherit IO and wait.
+            // Wait path: javawsc, or keepJavawsProcess / keepJavawsRelaunchProcess.
             pb.inheritIO();
             Process p = pb.start();
             StreamUtils.waitForSafely(p);

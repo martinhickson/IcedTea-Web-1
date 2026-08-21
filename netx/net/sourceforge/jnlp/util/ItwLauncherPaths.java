@@ -16,7 +16,8 @@ import net.sourceforge.jnlp.runtime.JavawsUberLauncher;
  * <p>
  * Native/shell wrappers ({@code javaws}, {@code javawsc}, {@code itweb-settings})
  * set {@link #ENV_NATIVE_LAUNCHER}{@code =1}. When that is present, external
- * launches use the {@code javaws} sibling in the same {@code bin/} directory.
+ * launches use the same wrapper family in the same {@code bin/} directory
+ * ({@code javawsc} stays {@code javawsc}; {@code javaws} stays {@code javaws}).
  * When it is absent, this process was started with bare {@code java -cp} (or
  * equivalent) and external launches must use the same uber-JAR entry point.
  */
@@ -144,7 +145,8 @@ public final class ItwLauncherPaths {
             return null;
         }
         if (isJavawsLauncherFile(launcher)) {
-            File windowsNative = preferWindowsNativeLauncher(launcher.getParentFile());
+            String base = wrapperBaseNameForRelaunch(null, launcher.getPath());
+            File windowsNative = preferWindowsNativeNamed(launcher.getParentFile(), base);
             return windowsNative != null ? windowsNative : launcher;
         }
         File parent = launcher.getParentFile();
@@ -160,6 +162,52 @@ public final class ItwLauncherPaths {
         }
         String base = stripExtension(name.trim().toLowerCase(Locale.ROOT));
         return JAVAWS_NAME.equals(base) || JAVAWSC_NAME.equals(base);
+    }
+
+    /**
+     * {@code true} when this process is the console wrapper ({@code javawsc}).
+     * JDK relaunch must keep that name and wait; scripts block on this binary.
+     */
+    public static boolean isConsoleWrapperProcess() {
+        if (isConsoleWrapperName(System.getProperty(KEY_BIN_NAME))) {
+            return true;
+        }
+        String location = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
+        if (location == null || location.trim().isEmpty()) {
+            return false;
+        }
+        return isConsoleWrapperName(new File(location.trim()).getName());
+    }
+
+    static boolean isConsoleWrapperName(String name) {
+        if (name == null) {
+            return false;
+        }
+        return JAVAWSC_NAME.equals(stripExtension(name.trim().toLowerCase(Locale.ROOT)));
+    }
+
+    /**
+     * Wrapper base name ({@code javaws} or {@code javawsc}) for an external
+     * relaunch. {@code icedtea-web.bin.name} wins when it is a javaws-family
+     * name; otherwise the location file name; otherwise {@code javaws}.
+     */
+    static String currentJavawsWrapperBaseName() {
+        return wrapperBaseNameForRelaunch(
+                System.getProperty(KEY_BIN_NAME),
+                System.getProperty(Launcher.KEY_JAVAWS_LOCATION));
+    }
+
+    static String wrapperBaseNameForRelaunch(String binName, String locationPath) {
+        if (isJavawsLauncherName(binName)) {
+            return stripExtension(binName.trim().toLowerCase(Locale.ROOT));
+        }
+        if (locationPath != null && !locationPath.trim().isEmpty()) {
+            String fileName = new File(locationPath.trim()).getName();
+            if (isJavawsLauncherName(fileName)) {
+                return stripExtension(fileName.trim().toLowerCase(Locale.ROOT));
+            }
+        }
+        return JAVAWS_NAME;
     }
 
     static File resolveUberJar() {
@@ -408,37 +456,19 @@ public final class ItwLauncherPaths {
         return false;
     }
 
-    /**
-     * On Windows, prefer {@code javaws.exe} / {@code javaws.cmd} over a bash script named
-     * {@code javaws} — CreateProcess cannot run shell scripts (error 193).
-     */
-    private static File preferWindowsNativeLauncher(File binDirectory) {
-        if (!JNLPRuntime.isWindows() || binDirectory == null) {
-            return null;
-        }
-        File exe = new File(binDirectory, JAVAWS_NAME + ".exe");
-        if (asExecutableFile(exe.getPath()) != null) {
-            return exe;
-        }
-        File cmd = new File(binDirectory, JAVAWS_NAME + ".cmd");
-        if (cmd.isFile()) {
-            return cmd;
-        }
-        return null;
-    }
-
     private static boolean isJavawsLauncherFile(File file) {
         return isJavawsLauncherName(file.getName());
     }
 
     private static File findSiblingJavaws(File binDirectory) {
-        File windowsNative = preferWindowsNativeLauncher(binDirectory);
+        String base = currentJavawsWrapperBaseName();
+        File windowsNative = preferWindowsNativeNamed(binDirectory, base);
         if (windowsNative != null) {
             return windowsNative;
         }
         File[] candidates = JNLPRuntime.isWindows()
-                ? new File[] {new File(binDirectory, JAVAWS_NAME)}
-                : new File[] {new File(binDirectory, JAVAWS_NAME), new File(binDirectory, JAVAWS_NAME + ".exe")};
+                ? new File[] {new File(binDirectory, base)}
+                : new File[] {new File(binDirectory, base), new File(binDirectory, base + ".exe")};
         for (File candidate : candidates) {
             if (asExecutableFile(candidate.getPath()) != null) {
                 return candidate;
@@ -455,9 +485,10 @@ public final class ItwLauncherPaths {
         if (path == null || path.trim().isEmpty()) {
             return null;
         }
+        String base = currentJavawsWrapperBaseName();
         String[] names = JNLPRuntime.isWindows()
-                ? new String[] {JAVAWS_NAME + ".exe", JAVAWS_NAME + ".cmd", JAVAWS_NAME}
-                : new String[] {JAVAWS_NAME, JAVAWS_NAME + ".exe"};
+                ? new String[] {base + ".exe", base + ".cmd", base}
+                : new String[] {base, base + ".exe"};
         for (String dir : path.split(File.pathSeparator)) {
             if (dir == null || dir.trim().isEmpty()) {
                 continue;

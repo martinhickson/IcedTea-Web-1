@@ -354,11 +354,18 @@ public final class DeploymentConfiguration {
      */
     public static final String KEY_JRE_DIRS_MIGRATE = "deployment.jre.dirs.migrate";
     public static final String KEY_AUTODETECT_JDKS = "deployment.autodetectJDKs";
+    /**
+     * When {@code true}, the native wrapper and a JDK-version relaunch keep the
+     * inherit-IO + wait parent. Default {@code false}: GUI {@code javaws} detaches.
+     * {@code javawsc} always waits (console contract), so this key is not required there.
+     */
     public static final String KEY_KEEP_JAVAWS_PROCESS = "deployment.keepJavawsProcess";
     public static final String KEY_KEEP_JAVA_PRELAUNCH_PROCESS = "deployment.keepjavaPrelaunchProcess";
     /**
      * When {@code true}, JDK-version relaunch keeps the legacy inherit-IO + wait parent.
-     * Default {@code false}: parent hands off to the selected JVM and exits (file/NUL stdio).
+     * Default {@code false}: GUI {@code javaws} hands off to the selected JVM and exits
+     * (file/NUL stdio). {@code deployment.keepJavawsProcess=true} has the same effect;
+     * {@code javawsc} never hands off.
      */
     public static final String KEY_KEEP_JAVAWS_RELAUNCH_PROCESS = "deployment.keepJavawsRelaunchProcess";
     /**

@@ -9,11 +9,39 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.Arrays;
 import java.util.List;
+import net.sourceforge.jnlp.Launcher;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
 import net.sourceforge.jnlp.util.logging.NoStdOutErrTest;
+import org.junit.After;
+import org.junit.Before;
 import org.junit.Test;
 
 public class JavawsRelaunchHandoffTest extends NoStdOutErrTest {
+
+    private String previousBinName;
+    private String previousLocation;
+
+    @Before
+    public void saveWrapperIdentity() {
+        previousBinName = System.getProperty(ItwLauncherPaths.KEY_BIN_NAME);
+        previousLocation = System.getProperty(Launcher.KEY_JAVAWS_LOCATION);
+        System.clearProperty(ItwLauncherPaths.KEY_BIN_NAME);
+        System.clearProperty(Launcher.KEY_JAVAWS_LOCATION);
+    }
+
+    @After
+    public void restoreWrapperIdentity() {
+        if (previousBinName == null) {
+            System.clearProperty(ItwLauncherPaths.KEY_BIN_NAME);
+        } else {
+            System.setProperty(ItwLauncherPaths.KEY_BIN_NAME, previousBinName);
+        }
+        if (previousLocation == null) {
+            System.clearProperty(Launcher.KEY_JAVAWS_LOCATION);
+        } else {
+            System.setProperty(Launcher.KEY_JAVAWS_LOCATION, previousLocation);
+        }
+    }
 
     @Test
     public void shouldHandoffByDefault() throws Exception {
@@ -26,6 +54,22 @@ public class JavawsRelaunchHandoffTest extends NoStdOutErrTest {
     public void shouldNotHandoffWhenKeepRelaunchProcessEnabled() throws Exception {
         assertFalse(JavawsRelaunchHandoff.shouldHandoff(configWith("true")));
         assertFalse(JavawsRelaunchHandoff.shouldHandoff(configWith("YES")));
+    }
+
+    @Test
+    public void shouldNotHandoffWhenKeepJavawsProcessEnabled() throws Exception {
+        DeploymentConfiguration config = new DeploymentConfiguration();
+        config.load();
+        config.setProperty(DeploymentConfiguration.KEY_KEEP_JAVAWS_RELAUNCH_PROCESS, "false");
+        config.setProperty(DeploymentConfiguration.KEY_KEEP_JAVAWS_PROCESS, "true");
+        assertFalse(JavawsRelaunchHandoff.shouldHandoff(config));
+    }
+
+    @Test
+    public void shouldNotHandoffWhenParentIsJavawsc() throws Exception {
+        System.setProperty(ItwLauncherPaths.KEY_BIN_NAME, "javawsc");
+        assertFalse(JavawsRelaunchHandoff.shouldHandoff(null));
+        assertFalse(JavawsRelaunchHandoff.shouldHandoff(configWith("false")));
     }
 
     @Test
@@ -75,6 +119,7 @@ public class JavawsRelaunchHandoffTest extends NoStdOutErrTest {
     private static DeploymentConfiguration configWith(String keepValue) throws Exception {
         DeploymentConfiguration config = new DeploymentConfiguration();
         config.load();
+        config.setProperty(DeploymentConfiguration.KEY_KEEP_JAVAWS_PROCESS, "false");
         if (keepValue == null) {
             config.setProperty(DeploymentConfiguration.KEY_KEEP_JAVAWS_RELAUNCH_PROCESS, "false");
         } else {
