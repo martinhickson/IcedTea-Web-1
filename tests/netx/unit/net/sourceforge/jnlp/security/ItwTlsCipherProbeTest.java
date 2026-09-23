@@ -4,12 +4,14 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
 import javax.net.ssl.SNIHostName;
+import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLHandshakeException;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLPeerUnverifiedException;
@@ -53,6 +55,21 @@ public class ItwTlsCipherProbeTest {
                     .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, savedFastest);
         }
         ItwTls.resetHostOfferForTest();
+    }
+
+    @Test
+    public void contextIsJvmDefaultForProbeAndFull() throws Exception {
+        assertSame(SSLContext.getDefault(), ItwTls.context());
+        SSLParameters probe = ItwTls.parametersFor("probe.example");
+        assertArrayEquals(ItwTls.tls13Ciphers(), probe.getCipherSuites());
+        assertArrayEquals(new String[] { "TLSv1.3" }, probe.getProtocols());
+
+        JNLPRuntime.getConfiguration()
+                .setProperty(DeploymentConfiguration.KEY_USE_FASTEST_CIPHER, "false");
+        SSLParameters off = ItwTls.parametersFor("full.example");
+        assertArrayEquals(ItwTls.fullCiphers(), off.getCipherSuites());
+        assertArrayEquals(new String[] { "TLSv1.3", "TLSv1.2" }, off.getProtocols());
+        assertSame(SSLContext.getDefault(), ItwTls.context());
     }
 
     @Test
