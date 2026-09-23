@@ -64,7 +64,6 @@ import java.util.Properties;
 import java.util.Set;
 import javax.swing.JButton;
 import javax.swing.JComponent;
-import javax.swing.JDialog;
 import javax.swing.JFormattedTextField;
 import javax.swing.JFrame;
 import javax.swing.JLabel;
@@ -173,7 +172,7 @@ public class JavaConsole implements ObservableMessagesProvider {
     private static JavaConsole console;
 
     private Dimension lastSize;
-    private JDialog consoleWindow;
+    private JFrame consoleWindow;
     private JPanel contentPanel;
     private JPanel outputsPanel;
     private ClassLoaderInfoProvider classLoaderInfoProvider;
@@ -226,7 +225,7 @@ public class JavaConsole implements ObservableMessagesProvider {
     }
 
     private void initializeWindow(Dimension size, JPanel content) {
-        consoleWindow = new JDialog((JFrame) null, R("DPJavaConsole"));
+        consoleWindow = new JFrame(R("DPJavaConsole"));
         consoleWindow.setName("JavaConsole");
         SwingUtils.info(consoleWindow);
 
@@ -428,7 +427,9 @@ public class JavaConsole implements ObservableMessagesProvider {
         if (!JNLPRuntime.isHeadless()) {
             if (consoleWindow == null || !consoleWindow.isVisible()) {
                 initializeWindow();
-                consoleWindow.setModal(modal);
+                //the modal flag is intentionally ignored; the console was never
+                //kept on top or truly modal in practice, and a JFrame is used
+                //so the window gets native minimize/maximize controls
                 consoleWindow.setVisible(true);
             }
         }
@@ -438,7 +439,6 @@ public class JavaConsole implements ObservableMessagesProvider {
         //no need to update when hidden
         outputsPanel.removeAll();//??
         getObservable().deleteObservers();
-        consoleWindow.setModal(false);
         consoleWindow.setVisible(false);
         consoleWindow.dispose();
     }
