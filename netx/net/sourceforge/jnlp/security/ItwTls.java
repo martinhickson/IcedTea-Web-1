@@ -163,13 +163,19 @@ public final class ItwTls {
         return suitesFor(null);
     }
 
+    /**
+     * JVM default context. {@code JNLPRuntime} initializes it before the
+     * security manager. A fresh {@code init(null, null, null)} is the JDK's
+     * one-shot default trust-store load and can install the dummy trust
+     * manager for every later {@code SSLContext.getDefault()} caller.
+     * Probe and full cipher modes only read supported suites and a parameter
+     * copy from this context. Sockets use {@code JNLPRuntime.getSslContext()}.
+     */
     private static SSLContext build() {
         try {
-            SSLContext c = SSLContext.getInstance("TLS");
-            c.init(null, null, null);
-            return c;
+            return SSLContext.getDefault();
         } catch (Exception e) {
-            throw new RuntimeException("Failed to create ITW SSLContext", e);
+            throw new RuntimeException("Failed to obtain ITW SSLContext", e);
         }
     }
 
