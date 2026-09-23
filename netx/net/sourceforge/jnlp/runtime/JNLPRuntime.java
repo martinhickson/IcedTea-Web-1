@@ -247,8 +247,22 @@ public class JNLPRuntime {
      * initialized
      * @throws IllegalStateException if the runtime was previously initialized
      */
+    /**
+     * First JSSE use in the process. {@code DefaultManagersHolder} keeps the
+     * first failure for the life of the JVM, so this must run before
+     * {@code setSecurityManager} and before {@code ItwTls} is loaded.
+     */
+    private static void warmJvmSslContext() {
+        try {
+            SSLContext.getDefault();
+        } catch (java.security.NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Unable to obtain a default SSL context", e);
+        }
+    }
+
     public static void initialize(boolean isApplication) throws IllegalStateException {
         checkInitialized();
+        warmJvmSslContext();
 
         // Install JarFile.close protection as early as possible.
         // This is critical to prevent "zip file closed" errors during classloading.
