@@ -839,7 +839,7 @@ public class ResourceDownloader implements Runnable {
                         response, downloadFrom, multipartTotal, slotSize, resource, dest);
                 response = null; // ownership transferred (closed inside download())
                 resource.setLocalFile(reassembled);
-                storeEntryFields(entry, reassembled.length(), lastModified);
+                storeEntryFields(entry, reassembled.length(), lastModified, multipartTotal);
             } else {
                 // Not splitting this time: discard any parts left by an earlier abandoned split.
                 MultipartRangeDownloader.cleanupStaleParts(
@@ -1080,7 +1080,7 @@ public class ResourceDownloader implements Runnable {
         }
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion(), true);
 downloadFile(response, downloadFrom, true, entry, false, 0L);
-        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified());
+        storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified(), response.getContentLength());
     }
 
     private void downloadGZipFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom, URL downloadTo) throws IOException {
@@ -1559,11 +1559,6 @@ downloadFile(response, downloadFrom, true, entry, false, 0L);
             net.sourceforge.jnlp.cache.download.JarSlot slot, long expected, boolean append, long resumeOffset) throws IOException {
         byte buf[] = new byte[COPY_BUFFER_SIZE_64KB];
         int rlen;
-<<<<<<< HEAD
-        long written = 0L;
-        DownloadProgress.noteWireStart();
-        try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest))) {
-=======
         long written = append && resumeOffset > 0 ? resumeOffset : 0L;
         if (append && resumeOffset > 0) {
             if (resource != null) {
@@ -1573,8 +1568,8 @@ downloadFile(response, downloadFrom, true, entry, false, 0L);
                 slot.addTransferred(resumeOffset);
             }
         }
+        DownloadProgress.noteWireStart();
         try (OutputStream out = new BufferedOutputStream(new FileOutputStream(dest, append))) {
->>>>>>> a95256693 (feat: resume JAR downloads with HTTP Range (RFC 7233))
             while (-1 != (rlen = in.read(buf))) {
                 written += rlen;
                 if (expected > 0 && written > expected) {
