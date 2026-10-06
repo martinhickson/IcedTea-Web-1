@@ -71,6 +71,8 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
     private ServerNaming serverNaming = ServerNaming.LOCALHOST;
     private boolean supportRangeRequests = false;
     private boolean gzipRangeBodies = false;
+    private int holdProbeBodyUntilRangeCount = 0;
+    private java.util.concurrent.atomic.AtomicBoolean probeBodyOverlapped = null;
     private java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink = null;
     private java.util.concurrent.atomic.AtomicInteger rangeRequestCounter = null;
 
@@ -104,6 +106,18 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
     /** Shared counter of Range-header requests, propagated to every per-connection handler. */
     public void setRangeRequestCounter(java.util.concurrent.atomic.AtomicInteger rangeRequestCounter) {
         this.rangeRequestCounter = rangeRequestCounter;
+    }
+
+    /**
+     * Withhold the probe ({@code bytes=0-}) 206 body until this many Range requests are in
+     * flight. Propagated to every per-connection handler. 0 disables the hold.
+     */
+    public void setHoldProbeBodyUntilRangeCount(int holdProbeBodyUntilRangeCount) {
+        this.holdProbeBodyUntilRangeCount = holdProbeBodyUntilRangeCount;
+    }
+
+    public void setProbeBodyOverlapped(java.util.concurrent.atomic.AtomicBoolean probeBodyOverlapped) {
+        this.probeBodyOverlapped = probeBodyOverlapped;
     }
 
     public void setServerNaming(ServerNaming naming) {
@@ -202,6 +216,8 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
                 server.setGzipRangeBodies(gzipRangeBodies);
                 server.setRangeHeaderSink(rangeHeaderSink);
                 server.setRangeRequestCounter(rangeRequestCounter);
+                server.setHoldProbeBodyUntilRangeCount(holdProbeBodyUntilRangeCount);
+                server.setProbeBodyOverlapped(probeBodyOverlapped);
                 if (isNeedsAuthentication511()) {
                     server.setAuthenticator(this);
                 }

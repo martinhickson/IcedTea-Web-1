@@ -25,12 +25,12 @@ import net.sourceforge.jnlp.security.HttpResponse;
 import net.sourceforge.jnlp.util.logging.OutputController;
 
 /**
- * Multipart parallel-range download of a single large resource (RFC 7233). The first chunk
- * (the probe response, already fetched by {@link ResourceDownloader}) is consumed here; the
- * remaining chunks are fetched concurrently and every chunk is drained to its own temp part
- * file, then concatenated in order into the destination cache file. A server that does not
- * return a satisfiable 206 for a chunk aborts the whole transfer (the caller retries / falls
- * back to a full GET).
+ * Multipart parallel-range download of a single large resource (RFC 7233). The caller has
+ * already seen a probe {@code 206} whose {@code Content-Range} total is larger than one slot.
+ * The remaining chunks are scheduled immediately, while the probe body is still drained as
+ * chunk 0. Every chunk is written to its own temp part file, then concatenated in order into
+ * the destination cache file. A server that does not return a satisfiable 206 for a chunk
+ * aborts the whole transfer (the caller retries / falls back to a full GET).
  * <p>
  * A chunk whose Content-Encoding is gzip is gzip of that uncompressed slice and is
  * inflated before it is written. pack200-gzip stays on the single-stream path.
@@ -80,9 +80,10 @@ final class MultipartRangeDownloader {
     }
 
     /**
-     * Consume {@code firstResponse} as chunk 0, fetch the remaining chunks in parallel, and
-     * reassemble into {@code dest}. Returns {@code dest} (the fully-written file). The caller
-     * must NOT close {@code firstResponse} afterwards (it is closed here).
+     * Schedule every chunk after the probe, then drain {@code firstResponse} as chunk 0 in
+     * parallel with those requests, and reassemble into {@code dest}. Returns {@code dest}
+     * (the fully-written file). The caller must NOT close {@code firstResponse} afterwards
+     * (it is closed here).
      */
     static File download(HttpResponse firstResponse, URL url, long totalLength, long slotSize,
             Resource resource, File dest) throws IOException {
@@ -104,15 +105,38 @@ final class MultipartRangeDownloader {
         net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
         File[] parts = new File[n];
         long[] written = new long[n];
+        // Declared outside the try so a failure while draining chunk 0 can cancel slices
+        // that were already scheduled from the probe 206.
+        List<Future<Long>> futures = new ArrayList<>();
 
         boolean success = false;
         try {
-            // Chunk 0: drain the already-fetched probe response — unless a prior attempt already
-            // left a complete part-0 on disk, in which case the probe body is discarded.
             parts[0] = new File(tmpDir, "part-0");
             if (slot != null) {
                 slot.onFirstByte(System.currentTimeMillis());
             }
+
+            // The probe 206 is already assured by the caller. Schedule the other slices
+            // before reading the probe body so they overlap that transfer.
+            List<Integer> submitted = new ArrayList<>();
+            long alreadyOnDisk = 0L;
+            if (n > 1) {
+                for (int i = 1; i < n; i++) {
+                    final int idx = i;
+                    final File part = new File(tmpDir, "part-" + idx);
+                    parts[idx] = part;
+                    // Resume: skip chunks a prior attempt already wrote completely.
+                    if (part.isFile() && part.length() == expectedChunkLength(idx)) {
+                        written[idx] = part.length();
+                        alreadyOnDisk += written[idx];
+                        continue;
+                    }
+                    submitted.add(idx);
+                    futures.add(CHUNK_POOL.submit(() -> fetchChunk(idx, part)));
+                }
+            }
+
+            // Chunk 0: drain the probe body unless a prior attempt already left it on disk.
             if (parts[0].isFile() && parts[0].length() == expectedChunkLength(0)) {
                 firstResponse.close();
                 written[0] = parts[0].length();
@@ -124,42 +148,21 @@ final class MultipartRangeDownloader {
                 verifyChunk(0, written[0]);
             }
 
-            long running = written[0];
+            long running = written[0] + alreadyOnDisk;
             resource.setTransferred(running);
             if (slot != null) {
                 slot.addTransferred(running);
             }
 
-            if (n > 1) {
-                List<Future<Long>> futures = new ArrayList<>();
-                List<Integer> submitted = new ArrayList<>();
-                for (int i = 1; i < n; i++) {
-                    final int idx = i;
-                    final File part = new File(tmpDir, "part-" + idx);
-                    parts[idx] = part;
-                    // Resume: skip chunks a prior attempt already wrote completely.
-                    if (part.isFile() && part.length() == expectedChunkLength(idx)) {
-                        written[idx] = part.length();
-                        running += written[idx];
-                        resource.setTransferred(running);
-                        if (slot != null) {
-                            slot.addTransferred(written[idx]);
-                        }
-                        continue;
-                    }
-                    submitted.add(idx);
-                    futures.add(CHUNK_POOL.submit(() -> fetchChunk(idx, part)));
-                }
-                for (int j = 0; j < futures.size(); j++) {
-                    int idx = submitted.get(j);
-                    // Blocking get re-throws the worker's IOException wrapped in ExecutionException.
-                    written[idx] = futures.get(j).get();
-                    verifyChunk(idx, written[idx]);
-                    running += written[idx];
-                    resource.setTransferred(running); // single-threaded, progressive progress
-                    if (slot != null) {
-                        slot.addTransferred(written[idx]);
-                    }
+            for (int j = 0; j < futures.size(); j++) {
+                int idx = submitted.get(j);
+                // Blocking get re-throws the worker's IOException wrapped in ExecutionException.
+                written[idx] = futures.get(j).get();
+                verifyChunk(idx, written[idx]);
+                running += written[idx];
+                resource.setTransferred(running); // single-threaded, progressive progress
+                if (slot != null) {
+                    slot.addTransferred(written[idx]);
                 }
             }
 
@@ -177,6 +180,9 @@ final class MultipartRangeDownloader {
             success = true;
             return dest;
         } catch (Exception e) {
+            for (Future<Long> future : futures) {
+                future.cancel(true);
+            }
             deleteCorruptLocal(dest);
             throw (e instanceof IOException) ? (IOException) e : new IOException("Multipart download failed", e);
         } finally {

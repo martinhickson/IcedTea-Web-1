@@ -81,6 +81,13 @@ public class TinyHttpdImpl extends Thread {
     private boolean gzipRangeBodies = false;
     private java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink = null;
     private java.util.concurrent.atomic.AtomicInteger rangeRequestCounter = null;
+    /**
+     * When greater than 1, the body of a {@code bytes=0-} 206 is withheld until this many
+     * Range requests have been seen, so a test can prove later slices start before the
+     * probe body finishes. 0 disables the hold.
+     */
+    private int holdProbeBodyUntilRangeCount = 0;
+    private java.util.concurrent.atomic.AtomicBoolean probeBodyOverlapped = null;
     private Authentication511Requester authenticationRequester;
 
     public TinyHttpdImpl(Socket socket, File dir) {
@@ -151,6 +158,14 @@ public class TinyHttpdImpl extends Thread {
      */
     public void setRangeRequestCounter(java.util.concurrent.atomic.AtomicInteger rangeRequestCounter) {
         this.rangeRequestCounter = rangeRequestCounter;
+    }
+
+    public void setHoldProbeBodyUntilRangeCount(int holdProbeBodyUntilRangeCount) {
+        this.holdProbeBodyUntilRangeCount = holdProbeBodyUntilRangeCount;
+    }
+
+    public void setProbeBodyOverlapped(java.util.concurrent.atomic.AtomicBoolean probeBodyOverlapped) {
+        this.probeBodyOverlapped = probeBodyOverlapped;
     }
 
     public int getPort() {
@@ -334,6 +349,24 @@ public class TinyHttpdImpl extends Thread {
                             writer.writeBytes("Content-Range: bytes " + slice.start + "-" + slice.end
                                     + "/" + resourceLength + CRLF);
                             writer.writeBytes("Accept-Ranges: bytes" + CRLF + lastModified + contentType + CRLF + CRLF);
+                            writer.flush();
+                            if (isGetRequest && slice.start == 0 && holdProbeBodyUntilRangeCount > 1
+                                    && rangeRequestCounter != null) {
+                                long deadline = System.nanoTime() + 8_000_000_000L;
+                                while (rangeRequestCounter.get() < holdProbeBodyUntilRangeCount
+                                        && System.nanoTime() < deadline) {
+                                    try {
+                                        Thread.sleep(20);
+                                    } catch (InterruptedException ie) {
+                                        Thread.currentThread().interrupt();
+                                        break;
+                                    }
+                                }
+                                if (probeBodyOverlapped != null) {
+                                    probeBodyOverlapped.set(
+                                            rangeRequestCounter.get() >= holdProbeBodyUntilRangeCount);
+                                }
+                            }
                             if (isGetRequest) {
                                 writer.write(payload, 0, payload.length);
                             }

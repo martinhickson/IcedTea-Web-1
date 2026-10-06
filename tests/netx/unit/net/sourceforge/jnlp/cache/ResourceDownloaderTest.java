@@ -836,6 +836,44 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void testRemainingSlicesStartBeforeProbeBodyFinishes() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.4p");
+        File remote = new File(rangeServer.getDir(), "multipart-overlap.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = rangeServer.getUrl("multipart-overlap.jar");
+        java.util.concurrent.atomic.AtomicInteger seen = new java.util.concurrent.atomic.AtomicInteger();
+        java.util.concurrent.atomic.AtomicBoolean overlapped = new java.util.concurrent.atomic.AtomicBoolean(false);
+        String prevSlot = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES);
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES, "16");
+        rangeServer.setRangeRequestCounter(seen);
+        rangeServer.setHoldProbeBodyUntilRangeCount(2);
+        rangeServer.setProbeBodyOverlapped(overlapped);
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            ResourceDownloader downloader = new ResourceDownloader(resource, new Object());
+            resource.setDownloadOptions(new DownloadOptions(false, false));
+            downloader.run();
+
+            Assert.assertTrue("later slices must be requested before the probe body is released",
+                    overlapped.get());
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull(downloaded);
+            Assert.assertArrayEquals(full, Files.readAllBytes(downloaded.toPath()));
+        } finally {
+            rangeServer.setHoldProbeBodyUntilRangeCount(0);
+            rangeServer.setProbeBodyOverlapped(null);
+            rangeServer.setRangeRequestCounter(rangeRequestCount);
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                    prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
+        }
+    }
+
+    @Test
     public void testGzippedRangeChunksAreInflated() throws Exception {
         byte[] full = makeMinimalJarBytes("1.4g");
         File remote = new File(rangeServer.getDir(), "multipart-gzip.jar");
