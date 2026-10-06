@@ -797,13 +797,19 @@ public class ResourceDownloader implements Runnable {
             // treating a pack200 file as a jar file.
             boolean packgz = "pack200-gzip".equals(contentEncoding)
                     || downloadFrom.getPath().endsWith(".pack.gz");
-            boolean gzip = "gzip".equals(contentEncoding);
+            boolean gzip = isGzipContentEncoding(contentEncoding);
+            // A 206 with Content-Encoding: gzip is gzip of that Content-Range slice.
+            // The range coordinates stay uncompressed; rangeBody() inflates before
+            // the bytes are written. A gzip 200 is the whole resource and still goes
+            // through downloadGZipFile. pack200-gzip is never a slice to stitch.
+            boolean gzippedRange = gzip && status == HttpURLConnection.HTTP_PARTIAL;
 
-            // Only an identity (uncompressed) 206 whose Content-Range lined up with the
-            // on-disk prefix is byte-resumable. pack200-gzip / gzip bodies are not.
+            // A 206 whose Content-Range lined up with the on-disk prefix is byte-resumable,
+            // including a gzip-encoded slice (inflated before the append). pack200-gzip is not.
             boolean rangeHonored = status == HttpURLConnection.HTTP_PARTIAL && effectiveResume > 0
-                    && !packgz && !gzip;
-            // On a 206 the Content-Length is only the slice; report the full size for progress.
+                    && !packgz;
+            // On a 206 the Content-Length is only the slice (and may be the compressed
+            // size); report the full uncompressed size for progress.
             if (status == HttpURLConnection.HTTP_PARTIAL) {
                 long total = parseContentRangeTotal(response.getHeader("Content-Range"));
                 if (total > 0) {
@@ -812,12 +818,13 @@ public class ResourceDownloader implements Runnable {
             }
 
             // Multipart split: a probe Range (bytes=0-(slotSize-1)) was sent on a fresh
-            // identity download and the server answered 206. Only split when the resource is
-            // larger than one slot; otherwise the 206 already carried the whole body.
+            // download and the server answered 206. A gzip body is inflated per chunk.
+            // Only split when the resource is larger than one slot; otherwise the 206
+            // already carried the whole body. pack200-gzip stays on the single-stream path.
             long multipartTotal = -1L;
             boolean multipart = multipartEligible
                     && status == HttpURLConnection.HTTP_PARTIAL
-                    && !packgz && !gzip
+                    && !packgz
                     && (multipartTotal = parseContentRangeTotal(response.getHeader("Content-Range"))) > slotSize;
 
             logResourceDebug(downloadTo, "Downloading " + downloadTo + " using "
@@ -828,7 +835,7 @@ public class ResourceDownloader implements Runnable {
             if (packgz) {
                 CachedDaemonThreadPoolProvider.notePackGzDetected();
                 downloadPackGzFileDirectly(response, downloadFrom, downloadTo);
-            } else if (gzip) {
+            } else if (gzip && !gzippedRange) {
                 downloadGZipFile(response, downloadFrom, downloadTo);
             } else if (multipart) {
                 long lastModified = response.getLastModified();
@@ -961,6 +968,40 @@ public class ResourceDownloader implements Runnable {
     /** Build a bounded Range header for the multipart probe / first chunk: {@code bytes=0-(slotSize-1)}. */
     private static String multipartProbeHeader(long slotSize) {
         return "bytes=0-" + (slotSize - 1);
+    }
+
+    /**
+     * Content-Encoding is exactly {@code gzip}. {@code pack200-gzip} does not match.
+     */
+    static boolean isGzipContentEncoding(String encoding) {
+        return encoding != null && "gzip".equalsIgnoreCase(encoding.trim());
+    }
+
+    /**
+     * Response body, inflated when {@link #isGzipContentEncoding} is true.
+     * On a 206 the gzip payload is the Content-Range slice and the range
+     * coordinates stay uncompressed. The caller closes the returned stream.
+     */
+    static InputStream rangeBody(net.sourceforge.jnlp.security.HttpResponse response) throws IOException {
+        InputStream in = response.getBody();
+        if (isGzipContentEncoding(response.getContentEncoding())) {
+            return new GZIPInputStream(in);
+        }
+        return in;
+    }
+
+    /**
+     * Bytes to persist. A gzip 206 is inflated here so resume and single-slice
+     * writes see the raw range. Whole-resource gzip is saved compressed and
+     * inflated by {@link #downloadGZipFile}; pack200-gzip is left for its unpacker.
+     */
+    private InputStream streamForWrite(net.sourceforge.jnlp.security.HttpResponse response, boolean packGZ)
+            throws IOException {
+        if (!packGZ && response.getStatusCode() == HttpURLConnection.HTTP_PARTIAL
+                && isGzipContentEncoding(response.getContentEncoding())) {
+            return rangeBody(response);
+        }
+        return response.getBody();
     }
 
     /** Package-visible for Groovy probes / unit tests. */
@@ -1115,7 +1156,7 @@ downloadFile(response, downloadFrom, true, entry, false, 0L);
             // Pack200 admission wait can resolve a different LRU slot (issue #15).
             final File pinnedJar = downloadEntry.getCacheFile();
             try {
-                writtenFile = writeDownloadStream(cacheLocation, response.getBody(), packGZ,
+                writtenFile = writeDownloadStream(cacheLocation, streamForWrite(response, packGZ), packGZ,
                         response.getContentLength(), pinnedJar, append, resumeOffset);
                 wrote = true;
             } catch (IOException ex) {

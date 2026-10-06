@@ -32,8 +32,9 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  * return a satisfiable 206 for a chunk aborts the whole transfer (the caller retries / falls
  * back to a full GET).
  * <p>
- * Only identity (uncompressed) resources are eligible; pack200-gzip / gzip are handled by the
- * single-stream path. Integrity (jar signature/digest) is verified afterwards by the caller's
+ * A chunk whose Content-Encoding is gzip is gzip of that uncompressed slice and is
+ * inflated before it is written. pack200-gzip stays on the single-stream path.
+ * Integrity (jar signature/digest) is verified afterwards by the caller's
  * settle-good gate on the reassembled file.
  */
 final class MultipartRangeDownloader {
@@ -116,7 +117,9 @@ final class MultipartRangeDownloader {
                 firstResponse.close();
                 written[0] = parts[0].length();
             } else {
-                written[0] = drainToPart(firstResponse.getBody(), parts[0]);
+                try (InputStream body = ResourceDownloader.rangeBody(firstResponse)) {
+                    written[0] = drainToPart(body, parts[0]);
+                }
                 firstResponse.close();
                 verifyChunk(0, written[0]);
             }
@@ -249,7 +252,11 @@ final class MultipartRangeDownloader {
                 throw new IOException("Multipart chunk " + idx + " Content-Range mismatch: "
                         + r.getHeader("Content-Range"));
             }
-            return drainToPart(r.getBody(), part);
+            // Identity is requested; a server that still gzips the slice is inflated
+            // so the part length matches the uncompressed Content-Range.
+            try (InputStream body = ResourceDownloader.rangeBody(r)) {
+                return drainToPart(body, part);
+            }
         }
     }
 

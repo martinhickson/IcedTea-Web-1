@@ -836,6 +836,75 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     @Test
+    public void testGzippedRangeChunksAreInflated() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.4g");
+        File remote = new File(rangeServer.getDir(), "multipart-gzip.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = rangeServer.getUrl("multipart-gzip.jar");
+        String prevSlot = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES);
+        String prevGzip = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_USE_GZIP);
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES, "16");
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_USE_GZIP, "true");
+        rangeServer.setGzipRangeBodies(true);
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            ResourceDownloader downloader = new ResourceDownloader(resource, new Object());
+            resource.setDownloadOptions(new DownloadOptions(false, false));
+            downloader.run();
+
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull("gzipped multipart download must produce a cache file", downloaded);
+            byte[] result = Files.readAllBytes(downloaded.toPath());
+            Assert.assertEquals("inflated chunks must reassemble to the full jar length",
+                    full.length, result.length);
+            Assert.assertArrayEquals("gzipped range slices must inflate back to the original jar",
+                    full, result);
+        } finally {
+            rangeServer.setGzipRangeBodies(false);
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_USE_GZIP,
+                    prevGzip != null ? prevGzip : "true");
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                    prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
+        }
+    }
+
+    @Test
+    public void testGzippedResumeSuffixIsInflated() throws Exception {
+        byte[] full = makeMinimalJarBytes("1.2g");
+        File remote = new File(rangeServer.getDir(), "resume-gzip.jar");
+        remote.deleteOnExit();
+        Files.write(remote.toPath(), full);
+
+        URL url = rangeServer.getUrl("resume-gzip.jar");
+        int cut = Math.max(4, full.length / 2);
+        seedPartialCache(url, full, cut);
+        rangeServer.setGzipRangeBodies(true);
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            ResourceDownloader downloader = new ResourceDownloader(resource, new Object());
+            resource.setDownloadOptions(new DownloadOptions(false, false));
+            downloader.run();
+
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull("gzipped resume must produce a cache file", downloaded);
+            byte[] result = Files.readAllBytes(downloaded.toPath());
+            Assert.assertEquals("resumed file must be the full resource length", full.length, result.length);
+            Assert.assertArrayEquals("gzipped suffix must inflate and append to the original jar",
+                    full, result);
+        } finally {
+            rangeServer.setGzipRangeBodies(false);
+        }
+    }
+
+    @Test
     public void testMultipartDisabledByZeroSlotSize() throws Exception {
         byte[] full = makeMinimalJarBytes("1.5");
         File remote = new File(rangeServer.getDir(), "multipart-off.jar");

@@ -70,6 +70,7 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
     private boolean supportingHeadRequest = true;
     private ServerNaming serverNaming = ServerNaming.LOCALHOST;
     private boolean supportRangeRequests = false;
+    private boolean gzipRangeBodies = false;
     private java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink = null;
     private java.util.concurrent.atomic.AtomicInteger rangeRequestCounter = null;
 
@@ -88,6 +89,11 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
 
     public boolean isSupportingRangeRequests() {
         return supportRangeRequests;
+    }
+
+    /** Gzip 206 bodies (uncompressed Content-Range). Read when each connection is accepted. */
+    public void setGzipRangeBodies(boolean gzipRangeBodies) {
+        this.gzipRangeBodies = gzipRangeBodies;
     }
 
     /** Shared holder recording the last Range header seen by any handler. */
@@ -193,6 +199,7 @@ public class ServerLauncher implements Runnable, Authentication511Requester {
                 server.setRequestsCounter(requestsCounter);
                 server.setSupportingHeadRequest(isSupportingHeadRequest());
                 server.setSupportRangeRequests(supportRangeRequests);
+                server.setGzipRangeBodies(gzipRangeBodies);
                 server.setRangeHeaderSink(rangeHeaderSink);
                 server.setRangeRequestCounter(rangeRequestCounter);
                 if (isNeedsAuthentication511()) {

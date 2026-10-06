@@ -37,10 +37,12 @@
 package net.sourceforge.jnlp;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.DataOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.InputStreamReader;
+import java.util.zip.GZIPOutputStream;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.Socket;
@@ -75,6 +77,8 @@ public class TinyHttpdImpl extends Thread {
     private boolean supportingHeadRequest = true;
     private boolean supportLastModified = false;
     private boolean supportRangeRequests = false;
+    /** When set, a 206 body is gzip of the uncompressed slice (Content-Range stays uncompressed). */
+    private boolean gzipRangeBodies = false;
     private java.util.concurrent.atomic.AtomicReference<String> rangeHeaderSink = null;
     private java.util.concurrent.atomic.AtomicInteger rangeRequestCounter = null;
     private Authentication511Requester authenticationRequester;
@@ -122,6 +126,14 @@ public class TinyHttpdImpl extends Thread {
 
     public boolean isSupportingRangeRequests() {
         return this.supportRangeRequests;
+    }
+
+    /**
+     * Gzip each 206 body. Content-Range and the slice coordinates stay uncompressed;
+     * Content-Encoding is {@code gzip} and Content-Length is the compressed size.
+     */
+    public void setGzipRangeBodies(boolean gzipRangeBodies) {
+        this.gzipRangeBodies = gzipRangeBodies;
     }
 
     /**
@@ -305,13 +317,25 @@ public class TinyHttpdImpl extends Thread {
                             writer.writeBytes("Content-Range: bytes */" + resourceLength + CRLF);
                             writer.writeBytes("Accept-Ranges: bytes" + CRLF + CRLF);
                         } else if (slice != null) {
+                            byte[] payload = new byte[slice.length];
+                            System.arraycopy(buff, (int) slice.start, payload, 0, slice.length);
+                            if (gzipRangeBodies) {
+                                ByteArrayOutputStream compressed = new ByteArrayOutputStream();
+                                try (GZIPOutputStream gzip = new GZIPOutputStream(compressed)) {
+                                    gzip.write(payload);
+                                }
+                                payload = compressed.toByteArray();
+                            }
                             writer.writeBytes("HTTP/1.0 206 Partial Content" + CRLF);
-                            writer.writeBytes("Content-Length:" + slice.length + CRLF);
+                            writer.writeBytes("Content-Length:" + payload.length + CRLF);
+                            if (gzipRangeBodies) {
+                                writer.writeBytes("Content-Encoding: gzip" + CRLF);
+                            }
                             writer.writeBytes("Content-Range: bytes " + slice.start + "-" + slice.end
                                     + "/" + resourceLength + CRLF);
                             writer.writeBytes("Accept-Ranges: bytes" + CRLF + lastModified + contentType + CRLF + CRLF);
                             if (isGetRequest) {
-                                writer.write(buff, (int) slice.start, slice.length);
+                                writer.write(payload, 0, payload.length);
                             }
                         } else {
                             writer.writeBytes(HTTP_OK + "Content-Length:" + resourceLength + CRLF + lastModified + contentType + CRLF + CRLF);
