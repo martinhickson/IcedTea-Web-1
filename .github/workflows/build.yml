@@ -153,8 +153,8 @@ jobs:
             "-pl", "icedtea-web-integration",
             "process-test-classes",
             "-DskipTests",
-            "-Djdk8.home=$env:JDK8_HOME",
-            "-Ditw.jdk8.home=$env:JDK8_HOME"
+            "-Djdk11.home=$env:JDK11_HOME",
+            "-Ditw.jdk11.home=$env:JDK11_HOME"
           )
           & mvn @mvnArgs
         shell: pwsh

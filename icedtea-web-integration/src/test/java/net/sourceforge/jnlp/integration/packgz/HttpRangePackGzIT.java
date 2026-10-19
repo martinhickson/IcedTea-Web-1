@@ -53,8 +53,7 @@ public class HttpRangePackGzIT {
     private static final String JAVAWS_BIN = System.getProperty("itw.javaws.bin");
     private static final String JDK_HOME = firstNonBlank(
             System.getProperty("itw.jdk11.home"),
-            System.getProperty("itw.jdk17.home"),
-            System.getProperty("itw.jdk8.home"));
+            System.getProperty("itw.jdk17.home"));
     private static final int TIMEOUT_SECONDS = Integer.getInteger("itw.launch.timeout.seconds", 180);
     private static final String JAR_NAME = "headless-app.jar";
     private static final String CLASS_ENTRY = "net/sourceforge/jnlp/integration/HeadlessJnlpMain.class";
