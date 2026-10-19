@@ -437,4 +437,37 @@ public class JNLPFileTest extends NoStdOutErrTest{
         Assert.assertFalse(file.getResources().getJREs()[0].getVersion().satisfiesRunningJre());
         Assert.assertTrue(file.needsNewVM());
     }
+
+    @Test
+    public void updateIndicatorMarksOneJar() throws Exception {
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<jnlp spec=\"1.0+\" codebase=\"http://example.test/app/\">\n"
+                + "  <information><title>t</title><vendor>v</vendor></information>\n"
+                + "  <resources>\n"
+                + "    <jar href=\"app.jar\" main=\"true\"/>\n"
+                + "    <jar href=\"stamp.jar\" update-indicator=\"true\"/>\n"
+                + "  </resources>\n"
+                + "  <application-desc main-class=\"example.Main\"/>\n"
+                + "</jnlp>\n";
+        JNLPFile file = new JNLPFile(new ByteArrayInputStream(xml.getBytes("UTF-8")), new ParserSettings());
+        JARDesc[] jars = file.getResources().getJARs();
+        Assert.assertEquals(2, jars.length);
+        Assert.assertFalse(jars[0].isUpdateIndicator());
+        Assert.assertTrue(jars[1].isUpdateIndicator());
+        Assert.assertTrue(jars[1].getLocation().toString().endsWith("stamp.jar"));
+    }
+
+    @Test(expected = ParseException.class)
+    public void twoUpdateIndicatorsAreRejected() throws Exception {
+        String xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n"
+                + "<jnlp spec=\"1.0+\" codebase=\"http://example.test/app/\">\n"
+                + "  <information><title>t</title><vendor>v</vendor></information>\n"
+                + "  <resources>\n"
+                + "    <jar href=\"a.jar\" update-indicator=\"true\"/>\n"
+                + "    <jar href=\"b.jar\" update-indicator=\"true\"/>\n"
+                + "  </resources>\n"
+                + "  <application-desc main-class=\"example.Main\"/>\n"
+                + "</jnlp>\n";
+        new JNLPFile(new ByteArrayInputStream(xml.getBytes("UTF-8")), new ParserSettings());
+    }
 }

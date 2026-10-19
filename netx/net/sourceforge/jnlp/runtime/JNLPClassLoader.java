@@ -31,9 +31,11 @@ import net.sourceforge.jnlp.PluginBridge;
 import net.sourceforge.jnlp.ResourcesDesc;
 import net.sourceforge.jnlp.SecurityDesc;
 import net.sourceforge.jnlp.Version;
+import net.sourceforge.jnlp.cache.CacheEntry;
 import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.cache.IllegalResourceDescriptorException;
 import net.sourceforge.jnlp.cache.NativeLibraryStorage;
+import net.sourceforge.jnlp.cache.Resource;
 import net.sourceforge.jnlp.cache.ResourceTracker;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
@@ -760,6 +762,14 @@ public class JNLPClassLoader extends URLClassLoader {
         }
 
         List<JARDesc> initialJars = new ArrayList<>();
+        JARDesc updateIndicator = null;
+        for (JARDesc jar : jars) {
+            if (jar.isUpdateIndicator()) {
+                updateIndicator = jar;
+                break;
+            }
+        }
+        boolean othersNeedNoUpdate = updateIndicatorUnchanged(updateIndicator);
 
         for (JARDesc jar : jars) {
 
@@ -768,9 +778,17 @@ public class JNLPClassLoader extends URLClassLoader {
             if (jar.isEager()) {
                 initialJars.add(jar); // regardless of part
             }
+            UpdatePolicy policy;
+            if (!jar.isCacheable()) {
+                policy = UpdatePolicy.FORCE;
+            } else if (othersNeedNoUpdate && jar != updateIndicator) {
+                policy = UpdatePolicy.NEVER;
+            } else {
+                policy = JNLPRuntime.getDefaultUpdatePolicy();
+            }
             tracker.addResource(jar.getLocation(),
                     jar.getVersion(), file.getDownloadOptions(),
-                    jar.isCacheable() ? JNLPRuntime.getDefaultUpdatePolicy() : UpdatePolicy.FORCE);
+                    policy);
         }
 
         //If there are no eager jars, initialize the first jar
@@ -1565,6 +1583,58 @@ public class JNLPClassLoader extends URLClassLoader {
         }
 
         return null;
+    }
+
+    /**
+     * Check the JNLP update-indicator JAR against the server before the other
+     * JARs are registered. Returns true only when that JAR is already cached
+     * and the server check leaves the same cache file and Last-Modified in
+     * place, which means the rest of the file needs no update check. A missing
+     * cache entry, a changed JAR, or a failed check returns false so every JAR
+     * is checked the usual way.
+     *
+     * @param indicator the jar marked update-indicator, or null
+     * @return true when the other jars can skip their update check
+     */
+    private boolean updateIndicatorUnchanged(JARDesc indicator) {
+        if (indicator == null || !indicator.isCacheable()) {
+            return false;
+        }
+        CacheEntry before = new CacheEntry(indicator.getLocation(), indicator.getVersion());
+        if (!before.isCached()) {
+            return false;
+        }
+        long lastModified = before.getLastModified();
+        File localFile = before.getLocalFile();
+        String path = localFile == null ? null : localFile.getPath();
+
+        tracker.addResource(indicator.getLocation(),
+                indicator.getVersion(), file.getDownloadOptions(),
+                JNLPRuntime.getDefaultUpdatePolicy());
+        waitForJars(Collections.singletonList(indicator));
+
+        Resource checked = Resource.getResource(indicator.getLocation(),
+                indicator.getVersion(), JNLPRuntime.getDefaultUpdatePolicy());
+        if (checked.isSet(Resource.Status.ERROR)) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "update indicator check failed, checking every jar: " + indicator.getLocation());
+            return false;
+        }
+        CacheEntry after = new CacheEntry(indicator.getLocation(), indicator.getVersion());
+        File afterFile = after.getLocalFile();
+        String afterPath = afterFile == null ? null : afterFile.getPath();
+        boolean unchanged = after.isCached()
+                && path != null
+                && path.equals(afterPath)
+                && after.getLastModified() == lastModified;
+        if (unchanged) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "update indicator unchanged, no update required: " + indicator.getLocation());
+        } else {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "update indicator changed, checking every jar: " + indicator.getLocation());
+        }
+        return unchanged;
     }
 
     /**
