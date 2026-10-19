@@ -311,7 +311,10 @@ final class PropertiesCacheCatalog implements CacheCatalog {
         p.lock();
         try {
             p.setProperty(meta.path + "|path", meta.path);
-            setOrClear(p, meta.path + "|jnlp_path", meta.jnlpPath);
+            // A later store that did not load jnlp_path must not erase a launch record.
+            if (meta.jnlpPath != null && !meta.jnlpPath.trim().isEmpty()) {
+                p.setProperty(meta.path + "|jnlp_path", meta.jnlpPath);
+            }
             setOrClear(p, meta.path + "|resource_url", meta.resourceUrl);
             setOrClear(p, meta.path + "|content_length",
                     meta.contentLength == null ? null : Long.toString(meta.contentLength));

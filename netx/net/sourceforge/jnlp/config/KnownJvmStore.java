@@ -19,6 +19,10 @@ public final class KnownJvmStore {
 
     public static final String KEY_JDK_PREFIX = "deployment.jdk.";
     public static final String KEY_MATCH_STRATEGY = "deployment.jdk.matchStrategy";
+    /** Pipe-separated homes the user disabled. They stay in the JDK list. */
+    public static final String KEY_JDK_DISABLED = "deployment.jdk.disabled";
+    /** Pipe-separated homes the user removed. Autodetect must not put them back. */
+    public static final String KEY_JDK_REMOVED = "deployment.jdk.removed";
 
     private static final int MAX_JDK_ENTRIES = 64;
     /** Java 8 (1.8) and other pre-11 homes are not migrated; ITW requires JDK 11+. */
@@ -39,7 +43,10 @@ public final class KnownJvmStore {
         }
         return JDK_KEY.matcher(key).matches()
                 || JDK_ASSIGNMENT_KEY.matcher(key).matches()
-                || KEY_MATCH_STRATEGY.equals(key);
+                || KEY_MATCH_STRATEGY.equals(key)
+                || KEY_JDK_DISABLED.equals(key)
+                || KEY_JDK_REMOVED.equals(key)
+                || LaunchedJnlpStore.isLaunchedJnlpKey(key);
     }
 
     /**
@@ -206,6 +213,9 @@ public final class KnownJvmStore {
      * and {@code deployment.jdk.1}; remaining entries become {@code deployment.jdk.2+} .
      */
     public static void setKnownJvmHomes(DeploymentConfiguration config, List<String> homes) {
+        List<String> previous = getKnownJvmHomes(config);
+        List<KnownJvmAssignmentStore.JvmAssignment> previousAssignments =
+                KnownJvmAssignmentStore.getAssignments(config);
         LinkedHashSet<String> unique = new LinkedHashSet<>();
         if (homes != null) {
             for (String home : homes) {
@@ -227,6 +237,42 @@ public final class KnownJvmStore {
         } else {
             config.setProperty(DeploymentConfiguration.KEY_JRE_DIR, unique.iterator().next());
         }
+        remapAssignments(config, previous, new ArrayList<>(unique), previousAssignments);
+    }
+
+    /**
+     * Assignment keys are numbered with the JDK list. After a delete or reorder,
+     * point each surviving assignment at the JDK's new index and drop assignments
+     * whose JDK was removed.
+     */
+    private static void remapAssignments(DeploymentConfiguration config, List<String> previousHomes,
+            List<String> nextHomes, List<KnownJvmAssignmentStore.JvmAssignment> previousAssignments) {
+        if (previousAssignments == null || previousAssignments.isEmpty()) {
+            return;
+        }
+        List<KnownJvmAssignmentStore.JvmAssignment> next = new ArrayList<>();
+        for (KnownJvmAssignmentStore.JvmAssignment assignment : previousAssignments) {
+            int oldIndex = assignment.getJdkIndex() - 1;
+            if (oldIndex < 0 || oldIndex >= previousHomes.size()) {
+                continue;
+            }
+            String home = previousHomes.get(oldIndex);
+            int newIndex = indexOfHome(nextHomes, home);
+            if (newIndex < 0) {
+                continue;
+            }
+            next.add(new KnownJvmAssignmentStore.JvmAssignment(newIndex + 1, 0, assignment.getJnlpUrl()));
+        }
+        KnownJvmAssignmentStore.setAssignments(config, next);
+    }
+
+    private static int indexOfHome(List<String> homes, String home) {
+        for (int i = 0; i < homes.size(); i++) {
+            if (sameHome(homes.get(i), home)) {
+                return i;
+            }
+        }
+        return -1;
     }
 
     private static void clearNumberedJdkKeys(DeploymentConfiguration config) {
@@ -261,22 +307,144 @@ public final class KnownJvmStore {
      * @return true if any new JDK home was added
      */
     public static boolean applyAutodetectedJvms(DeploymentConfiguration config) {
+        List<String> discovered = new ArrayList<>(JvmAutodetector.discoverValidJvmHomes());
+        Collections.sort(discovered, autodetectionPreferenceComparator());
+        return mergeDiscoveredHomes(config, discovered);
+    }
+
+    /**
+     * Adds discovered homes that the user has not removed. Disabled homes stay
+     * disabled. A removed home is not put back.
+     *
+     * @return true if any new JDK home was added
+     */
+    public static boolean mergeDiscoveredHomes(DeploymentConfiguration config, List<String> discovered) {
+        if (config == null) {
+            return false;
+        }
         LinkedHashSet<String> merged = new LinkedHashSet<>();
         for (String home : getKnownJvmHomes(config)) {
             merged.add(home);
         }
-        List<String> discovered = new ArrayList<>(JvmAutodetector.discoverValidJvmHomes());
-        Collections.sort(discovered, autodetectionPreferenceComparator());
         boolean changed = false;
-        for (String home : discovered) {
-            if (merged.add(home)) {
-                changed = true;
+        if (discovered != null) {
+            for (String home : discovered) {
+                if (home == null || home.trim().isEmpty() || isJdkRemoved(config, home)) {
+                    continue;
+                }
+                if (merged.add(home.trim())) {
+                    changed = true;
+                }
             }
         }
         if (changed) {
             setKnownJvmHomes(config, new ArrayList<>(merged));
         }
         return changed;
+    }
+
+    public static List<String> getEnabledJvmHomes(DeploymentConfiguration config) {
+        List<String> enabled = new ArrayList<>();
+        for (String home : getKnownJvmHomes(config)) {
+            if (!isJdkDisabled(config, home)) {
+                enabled.add(home);
+            }
+        }
+        return enabled;
+    }
+
+    public static boolean isJdkDisabled(DeploymentConfiguration config, String home) {
+        return pathListContains(config, KEY_JDK_DISABLED, home);
+    }
+
+    public static void setJdkDisabled(DeploymentConfiguration config, String home, boolean disabled) {
+        if (disabled) {
+            addPath(config, KEY_JDK_DISABLED, home);
+        } else {
+            removePath(config, KEY_JDK_DISABLED, home);
+        }
+    }
+
+    public static boolean isJdkRemoved(DeploymentConfiguration config, String home) {
+        return pathListContains(config, KEY_JDK_REMOVED, home);
+    }
+
+    /** Remember a home the user deleted so launch and settings autodetect leave it out. */
+    public static void markJdkRemoved(DeploymentConfiguration config, String home) {
+        addPath(config, KEY_JDK_REMOVED, home);
+        removePath(config, KEY_JDK_DISABLED, home);
+    }
+
+    /** An explicit Add clears a previous delete. */
+    public static void unmarkJdkRemoved(DeploymentConfiguration config, String home) {
+        removePath(config, KEY_JDK_REMOVED, home);
+    }
+
+    private static boolean pathListContains(DeploymentConfiguration config, String key, String home) {
+        if (config == null || home == null) {
+            return false;
+        }
+        for (String existing : readPathList(config, key)) {
+            if (sameHome(existing, home)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void addPath(DeploymentConfiguration config, String key, String home) {
+        if (config == null || home == null || home.trim().isEmpty()) {
+            return;
+        }
+        LinkedHashSet<String> paths = new LinkedHashSet<>(readPathList(config, key));
+        boolean present = false;
+        for (String existing : paths) {
+            if (sameHome(existing, home)) {
+                present = true;
+                break;
+            }
+        }
+        if (!present) {
+            paths.add(home.trim());
+            writePathList(config, key, new ArrayList<>(paths));
+        }
+    }
+
+    private static void removePath(DeploymentConfiguration config, String key, String home) {
+        if (config == null || home == null) {
+            return;
+        }
+        List<String> kept = new ArrayList<>();
+        boolean changed = false;
+        for (String existing : readPathList(config, key)) {
+            if (sameHome(existing, home)) {
+                changed = true;
+            } else {
+                kept.add(existing);
+            }
+        }
+        if (changed) {
+            writePathList(config, key, kept);
+        }
+    }
+
+    private static List<String> readPathList(DeploymentConfiguration config, String key) {
+        return parseJreDirs(config.getProperty(key));
+    }
+
+    private static void writePathList(DeploymentConfiguration config, String key, List<String> paths) {
+        if (paths == null || paths.isEmpty()) {
+            config.setProperty(key, "");
+            return;
+        }
+        StringBuilder joined = new StringBuilder();
+        for (String path : paths) {
+            if (joined.length() > 0) {
+                joined.append('|');
+            }
+            joined.append(path);
+        }
+        config.setProperty(key, joined.toString());
     }
 
     /**
@@ -304,6 +472,9 @@ public final class KnownJvmStore {
         }
         boolean changed = false;
         for (String home : bundled) {
+            if (isJdkRemoved(config, home)) {
+                continue;
+            }
             if (merged.add(home)) {
                 changed = true;
             }
@@ -489,7 +660,7 @@ public final class KnownJvmStore {
             return false;
         }
         String normalized = normalizeHome(home);
-        if (normalized.isEmpty()) {
+        if (normalized.isEmpty() || isJdkRemoved(config, normalized)) {
             return false;
         }
         if (isStoredAsNumberedJdk(config, normalized)) {
