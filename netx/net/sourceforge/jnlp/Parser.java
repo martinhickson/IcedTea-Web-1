@@ -109,6 +109,9 @@ public final class Parser {
      */
     private final boolean strict; // if strict==true parses a file with no error then strict==false should also
 
+    /** jars marked update-indicator="true"; at most one is allowed */
+    private int updateIndicatorCount;
+
     /**
      * whether to allow extensions to the JNLP specification
      */
@@ -406,6 +409,9 @@ public final class Parser {
         String part = getAttribute(node, "part", null);
         boolean main = "true".equals(getAttribute(node, "main", "false"));
         boolean lazy = "lazy".equals(getAttribute(node, "download", "eager"));
+        // Extension of the jar element: update-indicator="true" names the one
+        // JAR whose server freshness stands in for the rest of the file.
+        boolean updateIndicator = "true".equals(getAttribute(node, "update-indicator", "false"));
 
         if (nativeJar && main) {
             if (strict) {
@@ -413,7 +419,21 @@ public final class Parser {
             }
         }
 
-        return new JARDesc(location, version, part, lazy, main, nativeJar, true);
+        if (updateIndicator) {
+            if (nativeJar) {
+                if (strict) {
+                    throw new ParseException(R("PUpdateIndicatorOnNative"));
+                }
+                updateIndicator = false;
+            } else {
+                updateIndicatorCount++;
+                if (updateIndicatorCount > 1) {
+                    throw new ParseException(R("PTwoUpdateIndicators"));
+                }
+            }
+        }
+
+        return new JARDesc(location, version, part, lazy, main, nativeJar, true, updateIndicator);
 
     }
 

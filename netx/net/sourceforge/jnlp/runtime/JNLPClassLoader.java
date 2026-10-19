@@ -30,10 +30,13 @@ import net.sourceforge.jnlp.ParserSettings;
 import net.sourceforge.jnlp.PluginBridge;
 import net.sourceforge.jnlp.ResourcesDesc;
 import net.sourceforge.jnlp.SecurityDesc;
+import net.sourceforge.jnlp.UpdateIndicator;
 import net.sourceforge.jnlp.Version;
+import net.sourceforge.jnlp.cache.CacheEntry;
 import net.sourceforge.jnlp.cache.CacheUtil;
 import net.sourceforge.jnlp.cache.IllegalResourceDescriptorException;
 import net.sourceforge.jnlp.cache.NativeLibraryStorage;
+import net.sourceforge.jnlp.cache.Resource;
 import net.sourceforge.jnlp.cache.ResourceTracker;
 import net.sourceforge.jnlp.cache.UpdatePolicy;
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
@@ -760,6 +763,18 @@ public class JNLPClassLoader extends URLClassLoader {
         }
 
         List<JARDesc> initialJars = new ArrayList<>();
+        JARDesc updateIndicator = null;
+        for (JARDesc jar : jars) {
+            if (jar.isUpdateIndicator()) {
+                updateIndicator = jar;
+                break;
+            }
+        }
+        int indicatorState = probeUpdateIndicator(updateIndicator);
+        boolean othersNeedNoUpdate = indicatorState == UpdateIndicator.UNCHANGED;
+        // A cached indicator is registered inside the probe. Adding it again
+        // would keep the first policy and hide that the probe already ran.
+        boolean indicatorAlreadyTracked = indicatorState != UpdateIndicator.NOT_CACHED;
 
         for (JARDesc jar : jars) {
 
@@ -768,9 +783,16 @@ public class JNLPClassLoader extends URLClassLoader {
             if (jar.isEager()) {
                 initialJars.add(jar); // regardless of part
             }
+            if (jar == updateIndicator && indicatorAlreadyTracked) {
+                continue;
+            }
+            UpdatePolicy policy = UpdateIndicator.policy(jar.isCacheable(), jar == updateIndicator, othersNeedNoUpdate);
+            if (policy == null) {
+                policy = JNLPRuntime.getDefaultUpdatePolicy();
+            }
             tracker.addResource(jar.getLocation(),
                     jar.getVersion(), file.getDownloadOptions(),
-                    jar.isCacheable() ? JNLPRuntime.getDefaultUpdatePolicy() : UpdatePolicy.FORCE);
+                    policy);
         }
 
         //If there are no eager jars, initialize the first jar
@@ -1565,6 +1587,49 @@ public class JNLPClassLoader extends URLClassLoader {
         }
 
         return null;
+    }
+
+    /**
+     * Check a cached update-indicator jar before the other jars are registered.
+     * {@link UpdateIndicator#NOT_CACHED} means nothing was tracked. The other
+     * two results mean this jar is already on the tracker.
+     *
+     * @param indicator the jar marked update-indicator, or null
+     * @return {@link UpdateIndicator#NOT_CACHED}, {@link UpdateIndicator#CHANGED},
+     *         or {@link UpdateIndicator#UNCHANGED}
+     */
+    private int probeUpdateIndicator(JARDesc indicator) {
+        if (indicator == null || !indicator.isCacheable()) {
+            return UpdateIndicator.NOT_CACHED;
+        }
+        CacheEntry beforeEntry = new CacheEntry(indicator.getLocation(), indicator.getVersion());
+        UpdateIndicator.Snapshot before = UpdateIndicator.snapshot(beforeEntry);
+        if (!before.cached) {
+            return UpdateIndicator.NOT_CACHED;
+        }
+
+        tracker.addResource(indicator.getLocation(),
+                indicator.getVersion(), file.getDownloadOptions(),
+                JNLPRuntime.getDefaultUpdatePolicy());
+        waitForJars(Collections.singletonList(indicator));
+
+        Resource checked = Resource.getResource(indicator.getLocation(),
+                indicator.getVersion(), JNLPRuntime.getDefaultUpdatePolicy());
+        if (checked.isSet(Resource.Status.ERROR)) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "update indicator check failed, checking every jar: " + indicator.getLocation());
+            return UpdateIndicator.CHANGED;
+        }
+        UpdateIndicator.Snapshot after = UpdateIndicator.snapshot(
+                new CacheEntry(indicator.getLocation(), indicator.getVersion()));
+        if (UpdateIndicator.unchanged(before, after)) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                    "update indicator unchanged, no update required: " + indicator.getLocation());
+            return UpdateIndicator.UNCHANGED;
+        }
+        OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                "update indicator changed, checking every jar: " + indicator.getLocation());
+        return UpdateIndicator.CHANGED;
     }
 
     /**
