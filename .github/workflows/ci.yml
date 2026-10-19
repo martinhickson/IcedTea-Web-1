@@ -104,6 +104,33 @@ jobs:
           & mvn @mvnArgs
         shell: pwsh
 
+      - name: Run pack.gz range IT (JDK 11 profile)
+        if: matrix.java-version == '11' && runner.os == 'Linux'
+        run: |
+          $settings = "${{ github.workspace }}/.powershell/workflows/maven-settings.xml"
+          $packageArgs = @(
+            "-s", $settings,
+            "-pl", "icedtea-web",
+            "-am",
+            "install",
+            "-DskipTests",
+            "-Djdk11.home=$env:JAVA_HOME",
+            "-Dbash.executable=${{ matrix.bash-executable }}"
+          )
+          & mvn @packageArgs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $itArgs = @(
+            "-s", $settings,
+            "-pl", "icedtea-web-integration",
+            "verify",
+            "-Ppackgz-range-it",
+            "-Djdk11.home=$env:JAVA_HOME",
+            "-Ditw.jdk11.home=$env:JAVA_HOME",
+            "-Dbash.executable=${{ matrix.bash-executable }}"
+          )
+          & mvn @itArgs
+        shell: pwsh
+
       - name: Upload JaCoCo unit test report
         if: matrix.profile == 'ci' && matrix.os == 'ubuntu-latest'
         uses: actions/upload-artifact@v4

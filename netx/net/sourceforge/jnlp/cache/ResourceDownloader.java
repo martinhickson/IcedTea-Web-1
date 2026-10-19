@@ -820,11 +820,15 @@ public class ResourceDownloader implements Runnable {
             // Multipart split: a probe Range (bytes=0-(slotSize-1)) was sent on a fresh
             // download and the server answered 206. A gzip body is inflated per chunk.
             // Only split when the resource is larger than one slot; otherwise the 206
-            // already carried the whole body. pack200-gzip stays on the single-stream path.
+            // already carried the whole body. A .pack.gz file is split on those same wire
+            // bytes and unpacked afterwards. Content-Encoding pack200-gzip without a
+            // .pack.gz URL stays on the single-stream path.
+            boolean packGzFile = downloadFrom.getPath() != null
+                    && downloadFrom.getPath().toLowerCase().endsWith(".pack.gz");
             long multipartTotal = -1L;
             boolean multipart = multipartEligible
                     && status == HttpURLConnection.HTTP_PARTIAL
-                    && !packgz
+                    && (!packgz || packGzFile)
                     && (multipartTotal = parseContentRangeTotal(response.getHeader("Content-Range"))) > slotSize;
 
             logResourceDebug(downloadTo, "Downloading " + downloadTo + " using "
@@ -832,7 +836,12 @@ public class ResourceDownloader implements Runnable {
                     + (rangeHonored ? ", range resume from " + effectiveResume : "")
                     + (multipart ? ", multipart " + multipartTotal + "B slot " + slotSize + "B" : "") + ") ");
 
-            if (packgz) {
+            if (packgz && multipart) {
+                CachedDaemonThreadPoolProvider.notePackGzDetected();
+                long lastModified = response.getLastModified();
+                downloadPackGzMultipart(response, downloadFrom, downloadTo, multipartTotal, slotSize, lastModified);
+                response = null; // ownership transferred (closed inside MultipartRangeDownloader)
+            } else if (packgz) {
                 CachedDaemonThreadPoolProvider.notePackGzDetected();
                 downloadPackGzFileDirectly(response, downloadFrom, downloadTo);
             } else if (gzip && !gzippedRange) {
@@ -1120,8 +1129,58 @@ public class ResourceDownloader implements Runnable {
             downloadFrom = new URL(downloadFrom + ".pack.gz");
         }
         CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion(), true);
-downloadFile(response, downloadFrom, true, entry, false, 0L);
+        // A previous split of this pack may have left part files beside the wire dest.
+        File cacheFile = entry.getCacheFile();
+        if (cacheFile != null) {
+            MultipartRangeDownloader.cleanupStaleParts(packGzMultipartWire(cacheFile));
+        }
+        downloadFile(response, downloadFrom, true, entry, false, 0L);
         storeEntryFields(entry, entry.getCacheFile().length(), response.getLastModified(), response.getContentLength());
+    }
+
+    /**
+     * Split a {@code .pack.gz} with the same multipart Range downloader used for a plain jar.
+     * Chunks are the pack.gz file bytes. They are concatenated into a stable wire file
+     * (so a retry can skip parts already on disk), then Pack200-unpacked into the cache jar.
+     */
+    private void downloadPackGzMultipart(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom,
+            URL downloadTo, long wireLength, long slotSize, long lastModified) throws IOException {
+        if (downloadFrom.equals(downloadTo)) {
+            downloadFrom = new URL(downloadFrom + ".pack.gz");
+        }
+        CacheEntry entry = new CacheEntry(downloadTo, resource.getDownloadVersion(), true);
+        File jarFile = entry.getCacheFile();
+        File wire = packGzMultipartWire(jarFile);
+        resource.setWireSize(wireLength);
+        File reassembled = MultipartRangeDownloader.download(
+                response, downloadFrom, wireLength, slotSize, resource, wire);
+        try {
+            unpackPackedIntoJar(reassembled, jarFile, wireLength);
+            try {
+                String integrity = CacheUtil.verifyJarIntegrity(jarFile);
+                OutputController.getLogger().log(OutputController.Level.MESSAGE_ALL,
+                        "Download integrity (post-write): " + integrity);
+            } catch (IOException badJar) {
+                String preview = CacheUtil.previewFileHead(jarFile, 80);
+                deleteCorruptLocal(jarFile);
+                throw new IOException("Download of " + downloadTo + " failed integrity/signature check"
+                        + (preview != null && !preview.isEmpty() ? " (" + preview + ")" : "")
+                        + ": " + badJar.getMessage(), badJar);
+            }
+            net.sourceforge.jnlp.cache.download.JarSlot slot = resource.getJarSlot();
+            if (slot != null) {
+                slot.onDecompressed(jarFile.length(), true);
+            }
+            resource.setLocalFile(jarFile);
+            storeEntryFields(entry, jarFile.length(), lastModified, wireLength);
+        } finally {
+            deleteCorruptLocal(reassembled);
+        }
+    }
+
+    /** Stable reassembly target for a pack.gz split. Parts resume beside this file. */
+    static File packGzMultipartWire(File jarFile) {
+        return new File(jarFile.getPath() + ".pack.gz.wire");
     }
 
     private void downloadGZipFile(net.sourceforge.jnlp.security.HttpResponse response, URL downloadFrom, URL downloadTo) throws IOException {
@@ -1300,26 +1359,7 @@ downloadFile(response, downloadFrom, true, entry, false, 0L);
             }
             writeCountedStreamToFile(packed, new BufferedInputStream(packGzStream));
             long wire = packed.isFile() ? packed.length() : 0L;
-            long sizeHint = resource.getSize();
-            if (jarFile.isFile() && jarFile.length() > wire) {
-                sizeHint = Math.max(sizeHint, jarFile.length());
-            }
-            String packName = SizeFirstDownloadQueue.resourceName(resource);
-            long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
-                    .estimateReserveBytes(wire, sizeHint, packName);
-            net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
-                ensurePackedSidecarPresent(packed);
-                DownloadProgress.beginUnpack(SizeFirstDownloadQueue.resourceName(resource), wire);
-                try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
-                     OutputStream fileOut = Files.newOutputStream(jarFile.toPath(),
-                             StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
-                     JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(
-                             DownloadProgress.countingOutput(fileOut)))) {
-                    Pack200.newUnpacker().unpack(in, jarOut);
-                } finally {
-                    DownloadProgress.endUnpack(jarFile.isFile() ? jarFile.length() : 0L);
-                }
-            });
+            unpackPackedIntoJar(packed, jarFile, wire);
             return jarFile;
         } finally {
             // Only this attempt's uniquely named sidecar — never a shared fixed suffix.
@@ -1334,6 +1374,30 @@ downloadFile(response, downloadFrom, true, entry, false, 0L);
      */
     static File newPackedSidecar(File jarFile) {
         return new File(jarFile.getPath() + ".pack.gz.download." + Long.toHexString(System.nanoTime()));
+    }
+
+    /** Pack200-unpack {@code packed} into {@code jarFile} under admission. */
+    private void unpackPackedIntoJar(File packed, File jarFile, long wire) throws IOException {
+        long sizeHint = resource.getSize();
+        if (jarFile.isFile() && jarFile.length() > wire) {
+            sizeHint = Math.max(sizeHint, jarFile.length());
+        }
+        String packName = SizeFirstDownloadQueue.resourceName(resource);
+        long estimate = net.sourceforge.jnlp.cache.download.PackUnpackAdmission
+                .estimateReserveBytes(wire, sizeHint, packName);
+        net.sourceforge.jnlp.cache.download.PackUnpackAdmission.getInstance().runUnpack(estimate, () -> {
+            ensurePackedSidecarPresent(packed);
+            DownloadProgress.beginUnpack(SizeFirstDownloadQueue.resourceName(resource), wire);
+            try (InputStream in = new GZIPInputStream(new BufferedInputStream(Files.newInputStream(packed.toPath())));
+                 OutputStream fileOut = Files.newOutputStream(jarFile.toPath(),
+                         StandardOpenOption.CREATE, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
+                 JarOutputStream jarOut = new JarOutputStream(new BufferedOutputStream(
+                         DownloadProgress.countingOutput(fileOut)))) {
+                Pack200.newUnpacker().unpack(in, jarOut);
+            } finally {
+                DownloadProgress.endUnpack(jarFile.isFile() ? jarFile.length() : 0L);
+            }
+        });
     }
 
     /** Fail with a retryable message when the sidecar vanished during admission wait. */

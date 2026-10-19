@@ -404,8 +404,8 @@ jobs:
             "-pl", "icedtea-web-integration",
             "process-test-classes",
             "-DskipTests",
-            "-Djdk8.home=$env:JDK8_HOME",
-            "-Ditw.jdk8.home=$env:JDK8_HOME"
+            "-Djdk11.home=$env:JDK11_HOME",
+            "-Ditw.jdk11.home=$env:JDK11_HOME"
           )
           & mvn @mvnArgs
         shell: pwsh
@@ -661,7 +661,11 @@ jobs:
   upload-release-assets:
     name: Upload release assets
     needs: [dotnet-distribution, critical-release-gates]
-    if: ${{ github.event_name == 'workflow_dispatch' && needs.dotnet-distribution.result == 'success' && (needs.critical-release-gates.result == 'success' || (needs.critical-release-gates.result == 'skipped' && inputs.skip_critical_release_gates == true)) }}
+    # !cancelled() is required. Without a status function GitHub implies success(),
+    # which is false when critical-release-gates is skipped, so this job never
+    # evaluates the skip_critical_release_gates escape hatch and the draft
+    # release is left with no assets.
+    if: ${{ !cancelled() && github.event_name == 'workflow_dispatch' && needs.dotnet-distribution.result == 'success' && (needs.critical-release-gates.result == 'success' || (needs.critical-release-gates.result == 'skipped' && inputs.skip_critical_release_gates == true)) }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code

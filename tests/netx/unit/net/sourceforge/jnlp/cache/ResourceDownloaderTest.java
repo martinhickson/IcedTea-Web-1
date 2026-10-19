@@ -537,7 +537,10 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
     }
 
     private void setupPackGzFile(String fileName, String version) throws IOException {
-        File downloadDir = downloadServer.getDir();
+        setupPackGzFile(downloadServer.getDir(), fileName, version);
+    }
+
+    private File setupPackGzFile(File downloadDir, String fileName, String version) throws IOException {
 
         File orig = new File(downloadDir, fileName + ".jar");
         orig.deleteOnExit();
@@ -567,6 +570,7 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
         gos.write(Files.readAllBytes(pack.toPath()));
         gos.finish();
         gos.close();
+        return packgz;
     }
 
     @Test
@@ -867,6 +871,53 @@ public class ResourceDownloaderTest extends NoStdOutErrTest {
             rangeServer.setHoldProbeBodyUntilRangeCount(0);
             rangeServer.setProbeBodyOverlapped(null);
             rangeServer.setRangeRequestCounter(rangeRequestCount);
+            JNLPRuntime.getConfiguration().setProperty(
+                    net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
+                    prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));
+        }
+    }
+
+    @Test
+    public void testMultipartPackGzSplitsAndReassembles() throws Exception {
+        String expected = "1.8";
+        File packGz = setupPackGzFile(rangeServer.getDir(), "mp-pack", expected);
+        // The plain jar must not be an alternate success path.
+        new File(rangeServer.getDir(), "mp-pack.jar").delete();
+        Assert.assertTrue("pack.gz fixture must be larger than one slot", packGz.length() > 16);
+
+        URL url = rangeServer.getUrl("mp-pack.jar");
+        int slot = 16;
+        int chunks = (int) ((packGz.length() + slot - 1) / slot);
+        rangeRequestCount.set(0);
+
+        String prevSlot = JNLPRuntime.getConfiguration().getProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES);
+        JNLPRuntime.getConfiguration().setProperty(
+                net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES, String.valueOf(slot));
+        try {
+            Resource resource = Resource.getResource(url, null, UpdatePolicy.FORCE);
+            resource.setDownloadOptions(new DownloadOptions(true, false));
+            new ResourceDownloader(resource, new Object()).run();
+
+            File downloaded = resource.getLocalFile();
+            Assert.assertNotNull("multipart pack.gz must unpack into a cache jar", downloaded);
+            Assert.assertTrue("unpacked cache file must be a jar", CacheUtil.isValidJarFile(downloaded));
+            Assert.assertFalse("cache file must not be the pack.gz wire",
+                    downloaded.getName().contains("pack.gz"));
+            JarFile jf = new JarFile(downloaded);
+            try {
+                Assert.assertEquals(expected,
+                        jf.getManifest().getMainAttributes().getValue(Attributes.Name.MANIFEST_VERSION));
+            } finally {
+                jf.close();
+            }
+            Assert.assertEquals("pack.gz must be fetched as one Range chunk per slot",
+                    (long) chunks, (long) rangeRequestCount.get());
+            File wire = ResourceDownloader.packGzMultipartWire(downloaded);
+            File parts = new File(wire.getParentFile(), wire.getName() + ".multipart");
+            Assert.assertFalse("reassembled wire file must be removed after unpack", wire.isFile());
+            Assert.assertFalse("completed reassembly must clean up its parts dir", parts.isDirectory());
+        } finally {
             JNLPRuntime.getConfiguration().setProperty(
                     net.sourceforge.jnlp.config.DeploymentConfiguration.KEY_HTTP_RANGE_MAX_SLOT_BYTES,
                     prevSlot != null ? prevSlot : String.valueOf(50 * 1024 * 1024));

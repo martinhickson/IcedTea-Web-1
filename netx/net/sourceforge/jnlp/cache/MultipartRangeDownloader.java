@@ -33,9 +33,10 @@ import net.sourceforge.jnlp.util.logging.OutputController;
  * aborts the whole transfer (the caller retries / falls back to a full GET).
  * <p>
  * A chunk whose Content-Encoding is gzip is gzip of that uncompressed slice and is
- * inflated before it is written. pack200-gzip stays on the single-stream path.
- * Integrity (jar signature/digest) is verified afterwards by the caller's
- * settle-good gate on the reassembled file.
+ * inflated before it is written. A {@code .pack.gz} file is split the same way as a jar;
+ * those bytes are the pack file and are not inflated, and the caller unpacks after
+ * reassembly. pack200-gzip content negotiation stays on the single-stream path.
+ * Integrity of a jar is verified afterwards by the caller.
  */
 final class MultipartRangeDownloader {
 
