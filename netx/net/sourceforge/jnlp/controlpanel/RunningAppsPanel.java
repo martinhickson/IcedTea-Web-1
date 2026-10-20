@@ -150,7 +150,11 @@ public class RunningAppsPanel extends NamedBorderPanel {
                 listPanel.add(widgets.panel, c);
                 widgets.loadMemory();
             }
-            statusLabel.setText(Translator.R("CPRunningAppsCount", processes.size()));
+            if (processes.size() == 1) {
+                statusLabel.setText(Translator.R("CPRunningAppsCountOne"));
+            } else {
+                statusLabel.setText(Translator.R("CPRunningAppsCount", processes.size()));
+            }
         }
         listPanel.revalidate();
         listPanel.repaint();
@@ -317,14 +321,19 @@ public class RunningAppsPanel extends NamedBorderPanel {
             if (info.getHeapMaxBytes() <= 0 && info.getHeapUsedBytes() <= 0) {
                 applyBar(heapBar, 0, Translator.R("CPRunningAppsMemoryUnavailable"));
             } else {
+                String used = ProcessMemorySupport.formatMegabytes(info.getHeapUsedBytes());
+                String max = ProcessMemorySupport.formatMegabytes(info.getHeapMaxBytes());
                 applyBar(heapBar, percent(info.getHeapUsedBytes(), info.getHeapMaxBytes()),
-                        formatBarCaption(info.getHeapUsedBytes(), info.getHeapMaxBytes()));
+                        used + " of " + max);
             }
-            if (info.getRssBytes() <= 0 || info.getSystemTotalBytes() <= 0) {
+            if (info.getRssBytes() <= 0) {
                 applyBar(rssBar, 0, Translator.R("CPRunningAppsMemoryUnavailable"));
             } else {
-                applyBar(rssBar, percent(info.getRssBytes(), info.getSystemTotalBytes()),
-                        formatBarCaption(info.getRssBytes(), info.getSystemTotalBytes()));
+                String used = ProcessMemorySupport.formatMegabytes(info.getRssBytes());
+                int rssPercent = info.getSystemTotalBytes() > 0
+                        ? percent(info.getRssBytes(), info.getSystemTotalBytes())
+                        : 0;
+                applyBar(rssBar, rssPercent, used);
             }
         }
 
@@ -333,11 +342,6 @@ public class RunningAppsPanel extends NamedBorderPanel {
                 return 0;
             }
             return (int) Math.min(100, Math.round((usedBytes * 100.0) / maxBytes));
-        }
-
-        private static String formatBarCaption(long usedBytes, long maxBytes) {
-            return ProcessMemorySupport.formatMegabytes(usedBytes) + " / "
-                    + ProcessMemorySupport.formatMegabytes(maxBytes);
         }
 
         private static void applyBar(JProgressBar bar, int percent, String caption) {
@@ -351,7 +355,7 @@ public class RunningAppsPanel extends NamedBorderPanel {
             bar.setPreferredSize(new Dimension(MEMORY_BAR_WIDTH, MEMORY_BAR_HEIGHT));
             bar.setMinimumSize(new Dimension(MEMORY_BAR_WIDTH, MEMORY_BAR_HEIGHT));
             bar.setValue(0);
-            bar.setString("");
+            bar.setString(Translator.R("CPRunningAppsMemoryLoading"));
             return bar;
         }
     }

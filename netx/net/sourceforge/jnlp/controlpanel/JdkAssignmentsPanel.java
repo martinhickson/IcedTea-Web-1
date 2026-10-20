@@ -28,6 +28,8 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellEditor;
@@ -412,11 +414,16 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
 
     private final class JdkComboBoxEditor extends AbstractCellEditor implements TableCellEditor {
         private JComboBox<JdkChoice> comboBox;
+        private boolean committing;
 
         @Override
         public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected,
                 int row, int column) {
             comboBox = new JComboBox<>();
+            // Stay an in-window dropdown. Without this, Swing promotes the list to
+            // its own window while the table is editing it.
+            comboBox.putClientProperty("JComboBox.isTableCellEditor", Boolean.TRUE);
+            comboBox.setLightWeightPopupEnabled(true);
             for (JdkChoice choice : jdkChoices) {
                 comboBox.addItem(choice);
             }
@@ -431,13 +438,33 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
             if (comboBox.getSelectedIndex() < 0 && comboBox.getItemCount() > 0) {
                 comboBox.setSelectedIndex(0);
             }
-            comboBox.addActionListener(new ActionListener() {
+            comboBox.addPopupMenuListener(new PopupMenuListener() {
                 @Override
-                public void actionPerformed(ActionEvent e) {
-                    fireEditingStopped();
+                public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+                }
+
+                @Override
+                public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+                    commitSelection();
+                }
+
+                @Override
+                public void popupMenuCanceled(PopupMenuEvent e) {
                 }
             });
             return comboBox;
+        }
+
+        private void commitSelection() {
+            if (committing) {
+                return;
+            }
+            committing = true;
+            try {
+                fireEditingStopped();
+            } finally {
+                committing = false;
+            }
         }
 
         @Override
