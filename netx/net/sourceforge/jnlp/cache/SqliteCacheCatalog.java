@@ -60,6 +60,8 @@ final class SqliteCacheCatalog implements CacheCatalog {
     private final ReentrantLock threadLock = new ReentrantLock();
     private Connection connection;
     private String openPath;
+    /** Identity of the file {@link #connection} opened. A replaced catalog has a new key. */
+    private Object openFileKey;
     /** After an init-lock wait fails, do not retry create for one time-box. */
     private volatile long skipInitCreateUntil;
 
@@ -77,7 +79,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
 
     private Connection conn() throws SQLException {
         String path = dbFile.getAbsolutePath();
-        if (connection != null && !connection.isClosed() && path.equals(openPath)) {
+        if (connection != null && !connection.isClosed() && path.equals(openPath) && sameOpenFile()) {
             return connection;
         }
         closeQuietly();
@@ -347,6 +349,7 @@ final class SqliteCacheCatalog implements CacheCatalog {
         config.setBusyTimeout(BUSY_TIMEOUT_MS);
         connection = DriverManager.getConnection("jdbc:sqlite:" + path, config.toProperties());
         openPath = path;
+        openFileKey = fileKey(dbFile);
         applySchema(connection, true);
         return connection;
     }
@@ -627,10 +630,38 @@ final class SqliteCacheCatalog implements CacheCatalog {
         }
     }
 
+    /**
+     * The path can stay the same after the file is deleted and created again.
+     * The open connection still reads the unlinked file, so a new catalog at
+     * that path stays invisible until the connection is dropped.
+     */
+    private boolean sameOpenFile() {
+        Object current = fileKey(dbFile);
+        if (openFileKey != null && current != null) {
+            return openFileKey.equals(current);
+        }
+        // Some JDKs report no file key. Keep the connection while the path
+        // still names a file; a missing file must be opened again.
+        return current == null && openFileKey == null && dbFile.isFile();
+    }
+
+    private static Object fileKey(File file) {
+        try {
+            if (file == null || !file.isFile()) {
+                return null;
+            }
+            return java.nio.file.Files.readAttributes(file.toPath(),
+                    java.nio.file.attribute.BasicFileAttributes.class).fileKey();
+        } catch (java.io.IOException ex) {
+            return null;
+        }
+    }
+
     private void closeQuietly() {
         final Connection toClose = connection;
         connection = null;
         openPath = null;
+        openFileKey = null;
         if (toClose == null) {
             return;
         }

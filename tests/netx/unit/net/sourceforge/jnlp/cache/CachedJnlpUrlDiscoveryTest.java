@@ -49,4 +49,42 @@ public class CachedJnlpUrlDiscoveryTest extends NoStdOutErrTest {
         Assert.assertTrue(urls.contains("https://example.test/apps/other.jnlp?token=1"));
         Assert.assertEquals(1, urls.size());
     }
+
+    @Test
+    public void storedJnlpPathHidesCacheRelativeResourceKey() {
+        CacheEntryMeta row = new CacheEntryMeta();
+        row.jnlpPath = "file:///tmp/java17-app/app.jnlp";
+        row.resourceUrl = "/http/itw-test/java17-app/app.jnlp";
+
+        Set<String> urls = new LinkedHashSet<>();
+        List<CacheEntryMeta> rows = new ArrayList<>();
+        rows.add(row);
+        CachedJnlpUrlDiscovery.collectAssignmentUrls(urls, rows);
+
+        Assert.assertEquals(1, urls.size());
+        Assert.assertFalse(urls.contains("/http/itw-test/java17-app/app.jnlp"));
+        Assert.assertTrue(urls.iterator().next().startsWith("file:"));
+    }
+
+    @Test
+    public void blankJnlpPathReconstructsCacheRelativeJnlpKey() {
+        CacheEntryMeta jnlp = new CacheEntryMeta();
+        jnlp.jnlpPath = null;
+        jnlp.resourceUrl = "/http/example.test/apps/console.jnlp";
+
+        CacheEntryMeta jar = new CacheEntryMeta();
+        jar.jnlpPath = "  ";
+        jar.resourceUrl = "/http/example.test/apps/console.jar";
+
+        Set<String> urls = new LinkedHashSet<>();
+        List<CacheEntryMeta> rows = new ArrayList<>();
+        rows.add(jnlp);
+        rows.add(jar);
+        CachedJnlpUrlDiscovery.collectAssignmentUrls(urls, rows);
+
+        Assert.assertTrue(urls.contains("http://example.test/apps/console.jnlp"));
+        Assert.assertFalse(urls.contains("/http/example.test/apps/console.jnlp"));
+        Assert.assertFalse(urls.contains("http://example.test/apps/console.jar"));
+        Assert.assertEquals(1, urls.size());
+    }
 }

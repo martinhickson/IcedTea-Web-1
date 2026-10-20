@@ -26,6 +26,7 @@ class ControlPanelJdkAssignmentGuiLaunchIT {
     @BeforeEach
     void setUp() throws Exception {
         ControlPanelTestSupport.resetDeploymentConfig();
+        ControlPanelTestSupport.resetCacheDir();
         ControlPanelTestSupport.seedBuiltSampleAssignment("gui-app", 17);
         robot = BasicRobot.robotWithCurrentAwtHierarchy();
         controlPanel = ControlPanelTestSupport.launchControlPanel();
@@ -50,7 +51,9 @@ class ControlPanelJdkAssignmentGuiLaunchIT {
     @EnabledIf("net.sourceforge.icedteaweb.it.ControlPanelJdkAssignmentGuiLaunchIT#guiLaunchAvailable")
     void launchSelectedShowsGuiSampleFrame() throws Exception {
         ControlPanelTestSupport.openJdkAssignments(controlPanelWindow);
-        controlPanelWindow.table("jdkAssignmentsTable").cell(row(0).column(0)).click();
+        int rowIndex = ControlPanelTestSupport.findAssignmentRowByJnlpFragment(controlPanelWindow, "gui-app");
+        assertThat(rowIndex).isGreaterThanOrEqualTo(0);
+        controlPanelWindow.table("jdkAssignmentsTable").cell(row(rowIndex).column(0)).click();
         robot.waitForIdle();
         controlPanelWindow.button("jdkAssignmentLaunchButton").click();
         controlPanelWindow.dialog("jdkAssignmentLaunchOutputDialog").requireVisible();

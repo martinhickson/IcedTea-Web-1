@@ -501,7 +501,29 @@ public final class JnlpRunningProcessSupport {
         }
         Optional<java.time.Instant> currentStart = ProcessHandle.of(pid)
                 .flatMap(h -> h.info().startInstant());
-        return currentStart.isPresent() && currentStart.get().toString().equals(recordedStart.trim());
+        return currentStart.isPresent() && sameStartInstant(recordedStart, currentStart.get());
+    }
+
+    /**
+     * The JVM that registered the lease and the JVM that lists it can format the
+     * same kernel start time to a different fraction of a second. String equality
+     * then treats a live app as a reused PID and the list drops it.
+     */
+    static boolean sameStartInstant(String recordedStart, java.time.Instant observed) {
+        if (recordedStart == null || observed == null) {
+            return false;
+        }
+        String trimmed = recordedStart.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        try {
+            java.time.Instant recorded = java.time.Instant.parse(trimmed);
+            long deltaNanos = Math.abs(java.time.Duration.between(recorded, observed).toNanos());
+            return deltaNanos <= 1_000_000L;
+        } catch (java.time.format.DateTimeParseException | ArithmeticException ex) {
+            return false;
+        }
     }
 
     static final class CatalogUnavailableException extends RuntimeException {

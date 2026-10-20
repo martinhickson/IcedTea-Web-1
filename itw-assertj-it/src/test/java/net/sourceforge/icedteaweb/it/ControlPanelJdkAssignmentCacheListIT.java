@@ -65,7 +65,11 @@ class ControlPanelJdkAssignmentCacheListIT {
         }
         assertThat(urls.toString()).contains("java17-app");
         assertThat(urls.toString()).contains("java21-app");
+        assertThat(urls.toString()).doesNotContain("/http/");
         assertThat(jdks.toString()).contains("Default");
+        for (int row = 0; row < table.getRowCount(); row++) {
+            assertThat(String.valueOf(table.getValueAt(row, 0))).startsWith("file:");
+        }
 
         Properties saved = ControlPanelTestSupport.loadDeploymentProperties();
         assertThat(saved.stringPropertyNames().stream()

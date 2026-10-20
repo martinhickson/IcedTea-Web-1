@@ -906,6 +906,34 @@ public class SqliteCacheCatalogTest {
     }
 
     @Test
+    public void clearRemovesCacheRowsAndLeavesCatalogDatabase() throws Exception {
+        File jar = new File(dbRoot, "6/http/example.test/app.jar");
+        assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+        assertTrue(jar.createNewFile());
+
+        File db = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
+        wrapper.lock();
+        try {
+            wrapper.load();
+            assertTrue(db.isFile());
+            String key = wrapper.generateKey(jar.getAbsolutePath());
+            assertTrue(wrapper.addEntry(key, jar.getAbsolutePath()));
+            assertTrue(wrapper.store());
+            assertEquals(1, wrapper.getLRUSortedEntries().size());
+
+            wrapper.clearLRUSortedEntries();
+
+            assertTrue(wrapper.getLRUSortedEntries().isEmpty());
+            assertFalse(wrapper.containsKey(key));
+            assertTrue(db.isFile());
+            assertTrue(db.length() > 0L);
+            assertTrue(jar.isFile());
+        } finally {
+            wrapper.unlock();
+        }
+    }
+
+    @Test
     public void parentCacheDirOfPrefersCacheFolderNotEarlierOrLaterDigitSegments() {
         // Earlier path segment "3" must not win; later URL path "/7/" must not truncate.
         String path = "C:/Users/3/work/cache/db/3/https/cdn.example.com/7/lib/app.jar";
