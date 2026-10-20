@@ -151,6 +151,10 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
                 return;
             }
         }
+        if (persist) {
+            KnownJvmStore.unmarkJdkRemoved(config, normalized);
+            KnownJvmStore.setJdkDisabled(config, normalized, false);
+        }
         JvmDescriptor descriptor = JvmDescriptor.describe(normalized);
         knownJvms.add(descriptor);
         knownJvmModel.addRow(new Object[] {
@@ -164,7 +168,10 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
         }
     }
 
-    private static String statusLabel(JvmDescriptor descriptor) {
+    private String statusLabel(JvmDescriptor descriptor) {
+        if (KnownJvmStore.isJdkDisabled(config, descriptor.getHomePath())) {
+            return Translator.R("CPJVMDisabledStatus");
+        }
         return descriptor.isValid() ? "\u2713" : "\u2717";
     }
 
@@ -222,9 +229,21 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
         if (selected < 0 || selected >= knownJvms.size()) {
             return;
         }
-        knownJvms.remove(selected);
+        JvmDescriptor removed = knownJvms.remove(selected);
         knownJvmModel.removeRow(selected);
+        KnownJvmStore.markJdkRemoved(config, removed.getHomePath());
         persistKnownJvms();
+    }
+
+    private void toggleSelectedJvmDisabled() {
+        int selected = knownJvmTable.getSelectedRow();
+        if (selected < 0 || selected >= knownJvms.size()) {
+            return;
+        }
+        JvmDescriptor descriptor = knownJvms.get(selected);
+        boolean disabled = !KnownJvmStore.isJdkDisabled(config, descriptor.getHomePath());
+        KnownJvmStore.setJdkDisabled(config, descriptor.getHomePath(), disabled);
+        updateJvmRow(selected, descriptor);
     }
 
     private void moveSelectedJvm(int delta) {
@@ -389,6 +408,31 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
             }
         });
 
+        final JButton disableJvm = new JButton(Translator.R("CPJVMDisable"));
+        disableJvm.setName("jvmDisableButton");
+        disableJvm.addActionListener(new ActionListener() {
+            @Override
+            public void actionPerformed(ActionEvent e) {
+                toggleSelectedJvmDisabled();
+                int selected = knownJvmTable.getSelectedRow();
+                if (selected >= 0 && selected < knownJvms.size()
+                        && KnownJvmStore.isJdkDisabled(config, knownJvms.get(selected).getHomePath())) {
+                    disableJvm.setText(Translator.R("CPJVMEnable"));
+                } else {
+                    disableJvm.setText(Translator.R("CPJVMDisable"));
+                }
+            }
+        });
+        knownJvmTable.getSelectionModel().addListSelectionListener(event -> {
+            if (event.getValueIsAdjusting()) {
+                return;
+            }
+            int selected = knownJvmTable.getSelectedRow();
+            boolean disabled = selected >= 0 && selected < knownJvms.size()
+                    && KnownJvmStore.isJdkDisabled(config, knownJvms.get(selected).getHomePath());
+            disableJvm.setText(disabled ? Translator.R("CPJVMEnable") : Translator.R("CPJVMDisable"));
+        });
+
         final JButton moveDownJvm = new JButton(Translator.R("CPJVMMoveDown"));
         moveDownJvm.setName("jvmMoveDownButton");
         moveDownJvm.addActionListener(new ActionListener() {
@@ -457,6 +501,9 @@ public class JVMPanel extends NamedBorderPanel implements SettingsPanelReloader 
         GridBagConstraints moveDownButton = (GridBagConstraints) orderRow.clone();
         moveDownButton.gridx = 2;
         this.add(moveDownJvm, moveDownButton);
+        GridBagConstraints disableButton = (GridBagConstraints) orderRow.clone();
+        disableButton.gridx = 3;
+        this.add(disableJvm, disableButton);
     }
 
     public static JvmValidationResult validateJvm(String cmd) {

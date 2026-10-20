@@ -80,7 +80,7 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
         }
 
         Set<String> seenUrls = new LinkedHashSet<>();
-        for (String cachedUrl : CachedJnlpUrlDiscovery.discoverCachedJnlpUrls()) {
+        for (String cachedUrl : CachedJnlpUrlDiscovery.discoverAssignmentJnlpUrls(config)) {
             seenUrls.add(cachedUrl);
             assignmentRows.add(new AssignmentRow(cachedUrl, assignedByUrl.getOrDefault(cachedUrl, 0)));
         }

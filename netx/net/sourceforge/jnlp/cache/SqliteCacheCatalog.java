@@ -1015,9 +1015,9 @@ final class SqliteCacheCatalog implements CacheCatalog {
         try {
             runBusy(c -> {
                 try (PreparedStatement ps = c.prepareStatement(
-                        "UPDATE cache_entry SET jnlp_path = ?, content_length = ?, last_modified = ?, "
+                        "UPDATE cache_entry SET jnlp_path = COALESCE(?, jnlp_path), content_length = ?, last_modified = ?, "
                                 + "last_updated = ?, marked_delete = ?, wire_length = ? WHERE path = ?")) {
-                    ps.setString(1, meta.jnlpPath);
+                    ps.setString(1, blankToNull(meta.jnlpPath));
                     setNullableLong(ps, 2, meta.contentLength);
                     setNullableLong(ps, 3, meta.lastModified);
                     setNullableLong(ps, 4, meta.lastUpdated);
@@ -1185,6 +1185,13 @@ final class SqliteCacheCatalog implements CacheCatalog {
     private static Long getNullableLong(ResultSet rs, int idx) throws SQLException {
         long v = rs.getLong(idx);
         return rs.wasNull() ? null : v;
+    }
+
+    private static String blankToNull(String value) {
+        if (value == null || value.trim().isEmpty()) {
+            return null;
+        }
+        return value;
     }
 
     private static void setNullableLong(PreparedStatement ps, int idx, Long value) throws SQLException {

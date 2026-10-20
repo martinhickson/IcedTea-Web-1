@@ -1004,6 +1004,12 @@ public class Launcher {
 
         while (true) {
             detected = findDetectedJvmForRequest(requestedVersion);
+            if (detected == null) {
+                String enabled = offerDisabledJdk(file, requestedVersion);
+                if (enabled != null) {
+                    return enabled;
+                }
+            }
             if (detected != null) {
                 int result = JOptionPane.showOptionDialog(
                         null,
@@ -1052,11 +1058,60 @@ public class Launcher {
         throw new MissingJreDialogDismissed();
     }
 
+    /**
+     * Ask before turning a disabled JDK back on. Only when no enabled JDK matches.
+     * Cancel leaves the JDK disabled and aborts the launch.
+     *
+     * @return the enabled home, or null when the user declined
+     */
+    private String offerDisabledJdk(JNLPFile file, String requestedVersion)
+            throws LaunchException, MissingJreDialogDismissed {
+        JvmDescriptor disabled = findDetectedJvmForRequest(requestedVersion, true);
+        if (disabled == null) {
+            return null;
+        }
+        int result = JOptionPane.showConfirmDialog(
+                null,
+                R("CPJDKReenableMessage",
+                        requestedVersion == null ? "" : requestedVersion,
+                        disabled.getDisplayName(),
+                        disabled.getHomePath()),
+                R("CPJDKReenableTitle"),
+                JOptionPane.OK_CANCEL_OPTION,
+                JOptionPane.WARNING_MESSAGE);
+        if (result != JOptionPane.OK_OPTION) {
+            handleMissingJreDialogDismissed(file, requestedVersion);
+            return null;
+        }
+        DeploymentConfiguration config = JNLPRuntime.getConfiguration();
+        KnownJvmStore.setJdkDisabled(config, disabled.getHomePath(), false);
+        try {
+            config.save();
+        } catch (IOException ex) {
+            throw new LaunchException(ex);
+        }
+        saveDetectedJvm(disabled);
+        return disabled.getHomePath();
+    }
+
     private JvmDescriptor findDetectedJvmForRequest(String requestedVersion) {
-        JdkMatchStrategy strategy = KnownJvmStore.getMatchStrategy(JNLPRuntime.getConfiguration());
+        return findDetectedJvmForRequest(requestedVersion, false);
+    }
+
+    private JvmDescriptor findDetectedJvmForRequest(String requestedVersion, boolean disabledOnly) {
+        DeploymentConfiguration config = JNLPRuntime.getConfiguration();
+        JdkMatchStrategy strategy = KnownJvmStore.getMatchStrategy(config);
         List<JvmDescriptor> detected = new ArrayList<>();
         // Light discovery only — do not validate/process-probe every install.
+        // Removed homes stay removed. Disabled homes are offered only by offerDisabledJdk.
         for (String home : JvmAutodetector.discoverValidJvmHomes()) {
+            if (KnownJvmStore.isJdkRemoved(config, home)) {
+                continue;
+            }
+            boolean disabled = KnownJvmStore.isJdkDisabled(config, home);
+            if (disabledOnly != disabled) {
+                continue;
+            }
             JvmDescriptor descriptor = JvmDescriptor.describeLight(home);
             if (descriptor.isValid()
                     && JvmSelector.matchesStrategy(descriptor, requestedVersion, strategy)) {

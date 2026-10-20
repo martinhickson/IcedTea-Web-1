@@ -20,7 +20,7 @@ public final class JvmSelector {
      */
     public static List<JvmDescriptor> describeKnownJvms(DeploymentConfiguration config) {
         List<JvmDescriptor> result = new ArrayList<>();
-        for (String home : KnownJvmStore.getKnownJvmHomes(config)) {
+        for (String home : KnownJvmStore.getEnabledJvmHomes(config)) {
             result.add(JvmDescriptor.describeLight(home));
         }
         return result;

@@ -328,7 +328,7 @@ public class ControlPanel extends JFrame {
                     return;
                 }
                 if (panel.getPanel() == jdkAssignmentsPanel) {
-                    jdkAssignmentsPanel.refreshJdkChoiceList();
+                    jdkAssignmentsPanel.reloadFromConfiguration();
                 }
                 CardLayout cl = (CardLayout) settingsPanel.getLayout();
                 cl.show(settingsPanel, panel.toString());

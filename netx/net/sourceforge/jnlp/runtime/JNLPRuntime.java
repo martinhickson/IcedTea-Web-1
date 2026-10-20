@@ -1037,6 +1037,7 @@ public class JNLPRuntime {
         if (!shouldRegisterCacheRunningApp(jnlpFile)) {
             return;
         }
+        rememberLaunchedJnlp(jnlpFile);
         int pid = JnlpRunningProcessSupport.currentPid();
         if (pid <= 0) {
             return;
@@ -1050,6 +1051,28 @@ public class JNLPRuntime {
             CacheLRUWrapper.getInstance().registerRunningApp(pid, jnlpPath, start);
         } catch (Exception e) {
             OutputController.getLogger().log(e);
+        }
+    }
+
+    /**
+     * Persist the launched JNLP URL for the JDK assignment tab. This does not
+     * depend on a cache download rewriting {@code jnlp_path}.
+     */
+    private static void rememberLaunchedJnlp(net.sourceforge.jnlp.JNLPFile jnlpFile) {
+        if (jnlpFile == null) {
+            return;
+        }
+        String url = JnlpLockMetadata.extractJnlpPath(jnlpFile);
+        if (url == null || url.trim().isEmpty()) {
+            return;
+        }
+        try {
+            net.sourceforge.jnlp.config.DeploymentConfiguration config = getConfiguration();
+            if (net.sourceforge.jnlp.config.LaunchedJnlpStore.record(config, url)) {
+                config.save();
+            }
+        } catch (Exception e) {
+            OutputController.getLogger().log(OutputController.Level.MESSAGE_DEBUG, e);
         }
     }
 
