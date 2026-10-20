@@ -71,11 +71,13 @@ class JdkAssignmentJavawsLaunchIT {
         process.waitFor(180, TimeUnit.SECONDS);
 
         String javantxLog = JnlpLaunchTestSupport.readJavantxLogSince(startedAt, 30_000);
+        // Preference order wins: jdk.1 is the starter, so Maximum stays on JDK 21
+        // and there is no relaunch onto the higher major.
         assertThat(javantxLog)
                 .containsPattern("(?i)Selected JVM for JNLP request \\[21\\+\\] using Maximum strategy")
-                .contains(jdk25.getAbsolutePath())
-                .containsPattern("(?i)Relaunching with configured JRE:")
-                .contains("Invoking main()");
+                .contains(jdk21.getAbsolutePath())
+                .contains("Invoking main()")
+                .doesNotContain("Relaunching with configured JRE:");
         if (!process.isAlive()) {
             assertThat(process.exitValue()).isZero();
         }

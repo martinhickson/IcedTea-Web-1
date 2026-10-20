@@ -24,6 +24,7 @@ class ControlPanelJdkAssignmentLaunchIT {
     @BeforeEach
     void setUp() throws Exception {
         ControlPanelTestSupport.resetDeploymentConfig();
+        ControlPanelTestSupport.resetCacheDir();
         ControlPanelTestSupport.seedBuiltSampleAssignment("java17-app", 17);
         robot = BasicRobot.robotWithCurrentAwtHierarchy();
         controlPanel = ControlPanelTestSupport.launchControlPanel();
@@ -48,8 +49,9 @@ class ControlPanelJdkAssignmentLaunchIT {
     @EnabledIf("net.sourceforge.icedteaweb.it.ControlPanelJdkAssignmentLaunchIT#launchSelectedAvailable")
     void launchSelectedStartsAssignedJava17Sample() throws Exception {
         ControlPanelTestSupport.openJdkAssignments(window);
-        assertThat(window.table("jdkAssignmentsTable").target().getRowCount()).isGreaterThan(0);
-        window.table("jdkAssignmentsTable").cell(row(0).column(0)).click();
+        int rowIndex = ControlPanelTestSupport.findAssignmentRowByJnlpFragment(window, "java17-app");
+        assertThat(rowIndex).isGreaterThanOrEqualTo(0);
+        window.table("jdkAssignmentsTable").cell(row(rowIndex).column(0)).click();
         robot.waitForIdle();
         window.button("jdkAssignmentLaunchButton").click();
         window.dialog("jdkAssignmentLaunchOutputDialog").requireVisible();

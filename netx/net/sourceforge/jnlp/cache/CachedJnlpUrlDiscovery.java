@@ -1,9 +1,11 @@
 package net.sourceforge.jnlp.cache;
 
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import net.sourceforge.jnlp.config.DeploymentConfiguration;
@@ -54,9 +56,11 @@ public final class CachedJnlpUrlDiscovery {
     }
 
     /**
-     * {@code jnlp_path} is the launch URL when a download recorded it.
-     * A cached {@code .jnlp} resource is the same application when that field
-     * was never written (cache hit, or a later store that left it blank).
+     * {@code jnlp_path} is the launch URL when a download recorded one.
+     * A catalog {@code resource_url} is a cache key such as
+     * {@code /http/host/app/app.jnlp}, not a URL javaws can open. Use it only
+     * when {@code jnlp_path} is blank, and only after turning that key back
+     * into an http, https, or file URL.
      */
     static void collectAssignmentUrls(Set<String> urls, List<CacheEntryMeta> rows) {
         if (urls == null || rows == null) {
@@ -66,8 +70,47 @@ public final class CachedJnlpUrlDiscovery {
             if (row == null) {
                 continue;
             }
-            addUrl(urls, row.jnlpPath, false);
-            addUrl(urls, row.resourceUrl, true);
+            if (isLaunchableUrl(row.jnlpPath)) {
+                addUrl(urls, row.jnlpPath, false);
+                continue;
+            }
+            addUrl(urls, launchUrlFromResource(row.resourceUrl), true);
+        }
+    }
+
+    /**
+     * A resource value that already has an http, https, or file scheme is used
+     * as-is. A cache-relative key is reconstructed; anything else is dropped.
+     */
+    private static String launchUrlFromResource(String resourceUrl) {
+        if (resourceUrl == null) {
+            return null;
+        }
+        String trimmed = resourceUrl.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (isLaunchableUrl(trimmed)) {
+            return trimmed;
+        }
+        return CacheUtil.hrefFromCacheRelativePath(trimmed);
+    }
+
+    static boolean isLaunchableUrl(String value) {
+        if (value == null) {
+            return false;
+        }
+        String trimmed = value.trim();
+        if (trimmed.isEmpty()) {
+            return false;
+        }
+        try {
+            String scheme = new URI(trimmed).getScheme();
+            return "http".equalsIgnoreCase(scheme)
+                    || "https".equalsIgnoreCase(scheme)
+                    || "file".equalsIgnoreCase(scheme);
+        } catch (Exception ex) {
+            return false;
         }
     }
 
@@ -95,6 +138,6 @@ public final class CachedJnlpUrlDiscovery {
         if (fragment >= 0) {
             path = path.substring(0, fragment);
         }
-        return path.toLowerCase(java.util.Locale.ROOT).endsWith(".jnlp");
+        return path.toLowerCase(Locale.ROOT).endsWith(".jnlp");
     }
 }
