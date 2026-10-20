@@ -3,6 +3,7 @@ package net.sourceforge.jnlp.util;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -20,6 +21,14 @@ public class JnlpRunningProcessSupportIdentityTest {
         String start = java.lang.ProcessHandle.current().info().startInstant()
                 .map(java.time.Instant::toString).orElse(null);
         assertTrue(JnlpRunningProcessSupport.isSameProcess((int) pid, start));
+    }
+
+    @Test
+    public void sameStartInstantAllowsSubMillisecondRounding() {
+        Instant observed = Instant.parse("2026-10-20T02:47:11.790000001Z");
+        assertTrue(JnlpRunningProcessSupport.sameStartInstant("2026-10-20T02:47:11.790Z", observed));
+        assertFalse(JnlpRunningProcessSupport.sameStartInstant("2026-10-20T02:47:12.790Z", observed));
+        assertFalse(JnlpRunningProcessSupport.sameStartInstant(null, observed));
     }
 
     @Test
