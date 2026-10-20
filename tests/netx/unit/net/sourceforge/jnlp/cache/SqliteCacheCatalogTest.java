@@ -906,6 +906,31 @@ public class SqliteCacheCatalogTest {
     }
 
     @Test
+    public void openCatalogRereadsDatabaseFileReplacedOnDisk() throws Exception {
+        wrapper.registerRunningApp(4242, "http://example.test/old.jnlp", "2026-01-01T00:00:00Z");
+        assertEquals(1, wrapper.listRunningApps().size());
+
+        File db = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
+        assertTrue(db.isFile());
+        assertTrue(db.delete());
+        new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-wal").delete();
+        new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-shm").delete();
+
+        CacheLRUWrapper replacement = CacheLRUWrapper.createForTests(true, parentCache);
+        try {
+            replacement.registerRunningApp(5151, "file:/samples/java17-app/app.jnlp", "2026-10-20T02:57:46Z");
+            assertEquals(5151, replacement.listRunningApps().get(0).pid);
+        } finally {
+            replacement.close();
+        }
+
+        List<CacheRunningApp> seen = wrapper.listRunningApps();
+        assertEquals(1, seen.size());
+        assertEquals(5151, seen.get(0).pid);
+        assertEquals("file:/samples/java17-app/app.jnlp", seen.get(0).jnlpPath);
+    }
+
+    @Test
     public void parentCacheDirOfPrefersCacheFolderNotEarlierOrLaterDigitSegments() {
         // Earlier path segment "3" must not win; later URL path "/7/" must not truncate.
         String path = "C:/Users/3/work/cache/db/3/https/cdn.example.com/7/lib/app.jar";
