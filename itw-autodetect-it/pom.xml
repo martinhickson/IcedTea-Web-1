@@ -23,7 +23,7 @@
     <assertj-swing.version>3.17.1</assertj-swing.version>
     <byte-buddy.version>1.18.8</byte-buddy.version>
     <junit.version>5.10.2</junit.version>
-    <version.undertow>2.3.10.Final</version.undertow>
+    <version.undertow>2.3.26.Final</version.undertow>
     <itw.test.home>${project.build.directory}/itw-test-home</itw.test.home>
     <!-- Space-free junctions (see C:\itw-jdks); discoverable copy under LOCALAPPDATA via ensure-discoverable-jdk17.ps1 -->
     <itw.jdk11.home>C:\itw-jdks\jdk-11</itw.jdk11.home>

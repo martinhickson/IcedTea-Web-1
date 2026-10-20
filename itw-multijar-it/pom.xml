@@ -23,9 +23,9 @@
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     <maven.compiler.release>11</maven.compiler.release>
     <junit.version>5.10.2</junit.version>
-    <assertj.version>3.25.3</assertj.version>
+    <assertj.version>3.27.7</assertj.version>
     <undertow.version>2.3.26.Final</undertow.version>
-    <commons-lang3.version>3.14.0</commons-lang3.version>
+    <commons-lang3.version>3.18.0</commons-lang3.version>
     <bytebuddy.version>1.18.8</bytebuddy.version>
     <itw.multijar.timeout.seconds>300</itw.multijar.timeout.seconds>
   </properties>
