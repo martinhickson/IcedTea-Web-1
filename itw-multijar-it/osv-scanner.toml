@@ -1,0 +1,4 @@
+[[IgnoredVulns]]
+id = "CVE-2026-3260"
+reason = "Rejected by NVD. Undertow drops oversized request bodies by default, and the advisory lists no patched release."
+
