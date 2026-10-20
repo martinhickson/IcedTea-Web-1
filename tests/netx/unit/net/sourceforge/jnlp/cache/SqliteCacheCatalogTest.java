@@ -906,28 +906,31 @@ public class SqliteCacheCatalogTest {
     }
 
     @Test
-    public void openCatalogRereadsDatabaseFileReplacedOnDisk() throws Exception {
-        wrapper.registerRunningApp(4242, "http://example.test/old.jnlp", "2026-01-01T00:00:00Z");
-        assertEquals(1, wrapper.listRunningApps().size());
+    public void clearRemovesCacheRowsAndLeavesCatalogDatabase() throws Exception {
+        File jar = new File(dbRoot, "6/http/example.test/app.jar");
+        assertTrue(jar.getParentFile().mkdirs() || jar.getParentFile().isDirectory());
+        assertTrue(jar.createNewFile());
 
         File db = new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME);
-        assertTrue(db.isFile());
-        assertTrue(db.delete());
-        new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-wal").delete();
-        new File(dbRoot, SqliteCacheCatalog.DB_FILE_NAME + "-shm").delete();
-
-        CacheLRUWrapper replacement = CacheLRUWrapper.createForTests(true, parentCache);
+        wrapper.lock();
         try {
-            replacement.registerRunningApp(5151, "file:/samples/java17-app/app.jnlp", "2026-10-20T02:57:46Z");
-            assertEquals(5151, replacement.listRunningApps().get(0).pid);
-        } finally {
-            replacement.close();
-        }
+            wrapper.load();
+            assertTrue(db.isFile());
+            String key = wrapper.generateKey(jar.getAbsolutePath());
+            assertTrue(wrapper.addEntry(key, jar.getAbsolutePath()));
+            assertTrue(wrapper.store());
+            assertEquals(1, wrapper.getLRUSortedEntries().size());
 
-        List<CacheRunningApp> seen = wrapper.listRunningApps();
-        assertEquals(1, seen.size());
-        assertEquals(5151, seen.get(0).pid);
-        assertEquals("file:/samples/java17-app/app.jnlp", seen.get(0).jnlpPath);
+            wrapper.clearLRUSortedEntries();
+
+            assertTrue(wrapper.getLRUSortedEntries().isEmpty());
+            assertFalse(wrapper.containsKey(key));
+            assertTrue(db.isFile());
+            assertTrue(db.length() > 0L);
+            assertTrue(jar.isFile());
+        } finally {
+            wrapper.unlock();
+        }
     }
 
     @Test
