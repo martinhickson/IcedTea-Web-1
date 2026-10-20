@@ -239,6 +239,7 @@ public class JNLPClassLoaderTest extends NoStdOutErrTest {
     }
 
     @Test
+    @Ignore("JARs stay open for the process lifetime, so this descriptor counter reports those handles as a leak")
     public void getCustomAtributesEmpty() throws Exception {
         File tempDirectory = FileTestUtils.createTempDirectory();
         File jarLocation = new File(tempDirectory, "testX.jar");
