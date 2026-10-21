@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -24,8 +25,6 @@ public final class ProcessMemorySupport {
             Pattern.CASE_INSENSITIVE);
     private static final Pattern MAX_HEAP_FLAG = Pattern.compile("MaxHeapSize\\s*=\\s*(\\d+)",
             Pattern.CASE_INSENSITIVE);
-    private static final Pattern JAVA_HOME_PROPERTY = Pattern.compile("^java\\.home=(.+)$",
-            Pattern.MULTILINE);
     private static final Pattern JAVA_EXECUTABLE = Pattern.compile(
             "([A-Za-z]:[^\\s\"']+|/[^\\s\"']+)[/\\\\]bin[/\\\\]java(?:\\.exe)?",
             Pattern.CASE_INSENSITIVE);
@@ -279,13 +278,89 @@ public final class ProcessMemorySupport {
             return resolved;
         }
         String javaHome = resolved.getJavaHome();
-        if (javaHome == null || javaHome.trim().isEmpty() || resolveJcmdPath(javaHome) == null) {
-            String fromProcess = queryJavaHomeFromProcess(pid, jcmd);
-            if (fromProcess != null && !fromProcess.trim().isEmpty()) {
-                javaHome = fromProcess.trim();
+        String vendor = resolved.getVendor();
+        String version = resolved.getJvmVersion();
+        boolean homeMissing = isBlank(javaHome) || resolveJcmdPath(javaHome) == null;
+        boolean genericName = isBlank(vendor) || "Java".equals(vendor);
+        if (homeMissing || genericName || isBlank(version)) {
+            ProcessJvmContext fromProcess = parseJcmdSystemProperties(
+                    runJcmdCapture(jcmd, pid, "VM.system_properties"));
+            if (homeMissing && !isBlank(fromProcess.getJavaHome())) {
+                javaHome = fromProcess.getJavaHome();
+            }
+            if (genericName && !isBlank(fromProcess.getVendor())) {
+                vendor = fromProcess.getVendor();
+            }
+            if ((isBlank(version) || genericName) && !isBlank(fromProcess.getJvmVersion())) {
+                version = fromProcess.getJvmVersion();
             }
         }
-        return new ProcessJvmContext(javaHome, jcmd, resolved.getVendor(), resolved.getJvmVersion());
+        return new ProcessJvmContext(javaHome, jcmd, vendor, version);
+    }
+
+    /**
+     * Identity carried by {@code jcmd VM.system_properties}. The heap read already
+     * attaches with jcmd; this is the same output, keeping vendor and version as
+     * well as {@code java.home}.
+     */
+    static ProcessJvmContext parseJcmdSystemProperties(String output) {
+        Map<String, String> properties = new HashMap<>();
+        if (output != null) {
+            for (String line : output.split("\n")) {
+                int separator = line.indexOf('=');
+                if (separator <= 0) {
+                    continue;
+                }
+                String key = line.substring(0, separator).trim();
+                String value = unescapeJcmdProperty(line.substring(separator + 1).trim());
+                if (!key.isEmpty() && value != null && !value.isEmpty()) {
+                    properties.put(key, value);
+                }
+            }
+        }
+        String home = properties.get("java.home");
+        String flavour = "";
+        if (properties.containsKey("java.runtime.name")
+                || properties.containsKey("java.vm.name")
+                || properties.containsKey("java.vendor")
+                || properties.containsKey("java.vm.vendor")) {
+            String combined = (blankToEmpty(properties.get("java.runtime.name")) + " "
+                    + blankToEmpty(properties.get("java.runtime.version")) + " "
+                    + blankToEmpty(properties.get("java.vm.name")) + " "
+                    + blankToEmpty(properties.get("java.vm.vendor")) + " "
+                    + blankToEmpty(properties.get("java.vendor")) + " "
+                    + blankToEmpty(properties.get("java.vendor.version"))).toLowerCase(Locale.ROOT);
+            flavour = JvmDescriptor.detectFlavour(combined);
+        }
+        String version = firstNonBlank(
+                properties.get("java.version"),
+                properties.get("java.vm.version"),
+                properties.get("java.specification.version"));
+        return new ProcessJvmContext(blankToNull(home), null, flavour, version);
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.trim().isEmpty();
+    }
+
+    private static String blankToEmpty(String value) {
+        return value == null ? "" : value;
+    }
+
+    private static String blankToNull(String value) {
+        return isBlank(value) ? null : value.trim();
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return "";
+        }
+        for (String value : values) {
+            if (!isBlank(value)) {
+                return value.trim();
+            }
+        }
+        return "";
     }
 
     private static String resolveEffectiveJcmd(int pid, ProcessJvmContext jvmContext) {
@@ -344,21 +419,6 @@ public final class ProcessMemorySupport {
             if (process != null) {
                 process.destroy();
             }
-        }
-        return null;
-    }
-
-    private static String queryJavaHomeFromProcess(int pid, String jcmd) {
-        if (pid <= 0 || jcmd == null || jcmd.isEmpty()) {
-            return null;
-        }
-        String output = runJcmdCapture(jcmd, pid, "VM.system_properties");
-        if (output == null || output.isEmpty()) {
-            return null;
-        }
-        Matcher matcher = JAVA_HOME_PROPERTY.matcher(output);
-        if (matcher.find()) {
-            return unescapeJcmdProperty(matcher.group(1).trim());
         }
         return null;
     }

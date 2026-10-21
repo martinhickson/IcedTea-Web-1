@@ -28,6 +28,8 @@ import javax.swing.JScrollPane;
 import javax.swing.JTable;
 import javax.swing.JTextArea;
 import javax.swing.SwingUtilities;
+import javax.swing.event.PopupMenuEvent;
+import javax.swing.event.PopupMenuListener;
 import javax.swing.table.AbstractTableModel;
 import javax.swing.table.DefaultTableCellRenderer;
 import javax.swing.table.TableCellEditor;
@@ -51,6 +53,7 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
     private final JTable assignmentTable;
     private final List<AssignmentRow> assignmentRows = new ArrayList<>();
     private List<JdkChoice> jdkChoices = new ArrayList<>();
+    private JLabel noJdksLabel;
 
     JdkAssignmentsPanel(DeploymentConfiguration config) {
         super(Translator.R("CPHeadJDKAssignments"), new GridBagLayout());
@@ -106,6 +109,7 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
             JvmDescriptor descriptor = JvmDescriptor.describe(homes.get(i));
             jdkChoices.add(new JdkChoice(i + 1, descriptor.getDisplayName(), homes.get(i)));
         }
+        updateNoJdksHint(homes.isEmpty());
     }
 
     private void addComponents() {
@@ -177,12 +181,22 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
         launch.gridx = 2;
         add(launchButton, launch);
 
-        if (jdkChoices.isEmpty()) {
-            c.gridx = 3;
-            c.weightx = 1;
-            c.fill = GridBagConstraints.HORIZONTAL;
-            add(new JLabel(Translator.R("CPJDKAssignmentsNoJdks")), c);
+        noJdksLabel = new JLabel(Translator.R("CPJDKAssignmentsNoJdks"));
+        noJdksLabel.setName("jdkAssignmentsNoJdksLabel");
+        GridBagConstraints hint = (GridBagConstraints) c.clone();
+        hint.gridx = 3;
+        hint.weightx = 1;
+        hint.fill = GridBagConstraints.HORIZONTAL;
+        add(noJdksLabel, hint);
+    }
+
+    private void updateNoJdksHint(boolean noJdks) {
+        if (noJdksLabel == null) {
+            return;
         }
+        noJdksLabel.setVisible(noJdks);
+        revalidate();
+        repaint();
     }
 
     private void persistAssignments() {
@@ -412,11 +426,16 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
 
     private final class JdkComboBoxEditor extends AbstractCellEditor implements TableCellEditor {
         private JComboBox<JdkChoice> comboBox;
+        private boolean committing;
 
         @Override
         public Component getTableCellEditorComponent(JTable table, Object value, boolean isSelected,
                 int row, int column) {
             comboBox = new JComboBox<>();
+            // Stay an in-window dropdown. Without this, Swing promotes the list to
+            // its own window while the table is editing it.
+            comboBox.putClientProperty("JComboBox.isTableCellEditor", Boolean.TRUE);
+            comboBox.setLightWeightPopupEnabled(true);
             for (JdkChoice choice : jdkChoices) {
                 comboBox.addItem(choice);
             }
@@ -431,13 +450,33 @@ public class JdkAssignmentsPanel extends NamedBorderPanel implements SettingsPan
             if (comboBox.getSelectedIndex() < 0 && comboBox.getItemCount() > 0) {
                 comboBox.setSelectedIndex(0);
             }
-            comboBox.addActionListener(new ActionListener() {
+            comboBox.addPopupMenuListener(new PopupMenuListener() {
                 @Override
-                public void actionPerformed(ActionEvent e) {
-                    fireEditingStopped();
+                public void popupMenuWillBecomeVisible(PopupMenuEvent e) {
+                }
+
+                @Override
+                public void popupMenuWillBecomeInvisible(PopupMenuEvent e) {
+                    commitSelection();
+                }
+
+                @Override
+                public void popupMenuCanceled(PopupMenuEvent e) {
                 }
             });
             return comboBox;
+        }
+
+        private void commitSelection() {
+            if (committing) {
+                return;
+            }
+            committing = true;
+            try {
+                fireEditingStopped();
+            } finally {
+                committing = false;
+            }
         }
 
         @Override

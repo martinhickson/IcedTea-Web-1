@@ -152,7 +152,7 @@ final class ControlPanelTestSupport {
     }
 
     static void openRunningApps(FrameFixture window) {
-        openSettingsTab(window, "Running Apps", "runningAppsRefreshButton");
+        openSettingsTab(window, "Running applications", "runningAppsRefreshButton");
     }
 
     static void openJdkAssignments(FrameFixture window) throws Exception {

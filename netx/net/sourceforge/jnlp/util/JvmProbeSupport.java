@@ -55,6 +55,34 @@ public final class JvmProbeSupport {
         return 0;
     }
 
+    /**
+     * Full {@code JAVA_VERSION} from {@code $JAVA_HOME/release}, such as {@code 17.0.20.1}.
+     *
+     * @return the version token, or {@code ""} if the file has none
+     */
+    public static String readJavaVersionFromReleaseFile(String jdkHome) {
+        if (jdkHome == null || jdkHome.trim().isEmpty()) {
+            return "";
+        }
+        File release = new File(jdkHome.trim(), "release");
+        if (!release.isFile()) {
+            return "";
+        }
+        try (BufferedReader reader = new BufferedReader(new FileReader(release))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                Matcher matcher = RELEASE_JAVA_VERSION.matcher(line.trim());
+                if (matcher.matches()) {
+                    String token = matcher.group(1);
+                    return token == null ? "" : token.trim();
+                }
+            }
+        } catch (IOException ignored) {
+            return "";
+        }
+        return "";
+    }
+
     private static int parseMajorToken(String versionToken) {
         if (versionToken == null || versionToken.isEmpty()) {
             return 0;

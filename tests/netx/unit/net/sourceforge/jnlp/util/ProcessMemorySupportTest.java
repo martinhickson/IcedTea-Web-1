@@ -38,4 +38,49 @@ public class ProcessMemorySupportTest {
         assertTrue(!info.isAvailable());
     }
 
+    @Test
+    public void jcmdSystemPropertiesNameAnOpenJdk() {
+        String output = "4123:\n"
+                + "java.home=/usr/lib/jvm/java-17-openjdk-amd64\n"
+                + "java.runtime.name=OpenJDK Runtime Environment\n"
+                + "java.runtime.version=17.0.20.1+1-1-24.04-Ubuntu\n"
+                + "java.vendor=Ubuntu\n"
+                + "java.version=17.0.20.1\n"
+                + "java.vm.name=OpenJDK 64-Bit Server VM\n"
+                + "java.vm.vendor=Ubuntu\n"
+                + "java.vm.version=17.0.20.1+1-1-24.04-Ubuntu\n";
+
+        ProcessMemorySupport.ProcessJvmContext identity = ProcessMemorySupport.parseJcmdSystemProperties(output);
+
+        assertEquals("/usr/lib/jvm/java-17-openjdk-amd64", identity.getJavaHome());
+        assertEquals("OpenJDK", identity.getVendor());
+        assertEquals("17.0.20.1", identity.getJvmVersion());
+    }
+
+    @Test
+    public void jcmdSystemPropertiesUnescapeWindowsHomeAndNameTemurin() {
+        String output = "99:\n"
+                + "java.home=C\\:\\\\Program Files\\\\Eclipse Adoptium\\\\jdk-17.0.12.7-hotspot\n"
+                + "java.runtime.name=OpenJDK Runtime Environment\n"
+                + "java.vendor=Eclipse Adoptium\n"
+                + "java.vendor.version=Temurin-17.0.12+7\n"
+                + "java.version=17.0.12\n"
+                + "java.vm.name=OpenJDK 64-Bit Server VM\n";
+
+        ProcessMemorySupport.ProcessJvmContext identity = ProcessMemorySupport.parseJcmdSystemProperties(output);
+
+        assertEquals("C:\\Program Files\\Eclipse Adoptium\\jdk-17.0.12.7-hotspot", identity.getJavaHome());
+        assertEquals("Eclipse Temurin", identity.getVendor());
+        assertEquals("17.0.12", identity.getJvmVersion());
+    }
+
+    @Test
+    public void jcmdSystemPropertiesWithoutIdentityStayUnnamed() {
+        ProcessMemorySupport.ProcessJvmContext identity = ProcessMemorySupport.parseJcmdSystemProperties("4123:\n");
+
+        assertEquals(null, identity.getJavaHome());
+        assertEquals("", identity.getVendor());
+        assertEquals("", identity.getJvmVersion());
+    }
+
 }
