@@ -3,6 +3,7 @@ package net.sourceforge.jnlp.util;
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.InputStreamReader;
+import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -556,31 +557,36 @@ public final class ProcessMemorySupport {
     }
 
     private static long readRssBytesWindows(int pid) {
+        long fromWmic = readWmicLongProperty(
+                new String[] {
+                        "wmic", "process", "where", "ProcessId=" + pid, "get", "WorkingSetSize", "/VALUE" },
+                "WorkingSetSize");
+        if (fromWmic > 0) {
+            return fromWmic;
+        }
+        return readWorkingSetFromPowerShell(pid);
+    }
+
+    private static long readWorkingSetFromPowerShell(int pid) {
         Process process = null;
         try {
             process = new ProcessBuilder(
-                    "wmic", "process", "where", "ProcessId=" + pid, "get", "WorkingSetSize", "/VALUE")
+                    "powershell.exe",
+                    "-NoProfile",
+                    "-NonInteractive",
+                    "-Command",
+                    "(Get-Process -Id " + pid + " -ErrorAction SilentlyContinue).WorkingSet64")
                     .redirectErrorStream(true).start();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    line = line.trim();
-                    if (line.startsWith("WorkingSetSize=")) {
-                        process.waitFor();
-                        return Long.parseLong(line.substring("WorkingSetSize=".length()).trim());
-                    }
-                }
-            }
+            byte[] output = process.getInputStream().readAllBytes();
             process.waitFor();
+            return parsePowerShellLong(output);
         } catch (Exception ex) {
-            // Ignore.
+            return 0;
         } finally {
             if (process != null) {
                 process.destroy();
             }
         }
-        return 0;
     }
 
     private static long readSystemMemoryBytes() {
@@ -617,40 +623,122 @@ public final class ProcessMemorySupport {
     }
 
     private static long readSystemMemoryBytesWindows() {
-        long physical = readWmicValue("OS", "TotalVisibleMemorySize");
-        long virtual = readWmicValue("OS", "TotalVirtualMemorySize");
-        if (physical <= 0 && virtual <= 0) {
-            return 0;
+        long physical = readPhysicalMemoryFromRuntime();
+        if (physical > 0) {
+            return physical;
         }
-        return (physical + virtual) * 1024L;
+        long kilobytes = readWmicLongProperty(
+                new String[] { "wmic", "OS", "get", "TotalVisibleMemorySize", "/VALUE" },
+                "TotalVisibleMemorySize");
+        return kilobytes > 0 ? kilobytes * 1024L : 0;
     }
 
-    private static long readWmicValue(String alias, String property) {
+    static long readPhysicalMemoryFromRuntime() {
+        try {
+            Class<?> type = Class.forName("com.sun.management.OperatingSystemMXBean");
+            Object bean = ManagementFactory.getOperatingSystemMXBean();
+            if (!type.isInstance(bean)) {
+                return 0;
+            }
+            Object value = type.getMethod("getTotalPhysicalMemorySize").invoke(bean);
+            if (value instanceof Number) {
+                return Math.max(0L, ((Number) value).longValue());
+            }
+        } catch (ReflectiveOperationException ex) {
+            return 0;
+        }
+        return 0;
+    }
+
+    private static long readWmicLongProperty(String[] command, String property) {
         Process process = null;
         try {
-            process = new ProcessBuilder("wmic", alias, "get", property, "/VALUE")
-                    .redirectErrorStream(true).start();
-            try (BufferedReader reader = new BufferedReader(
-                    new InputStreamReader(process.getInputStream(), StandardCharsets.UTF_8))) {
-                String prefix = property + "=";
-                String line;
-                while ((line = reader.readLine()) != null) {
-                    line = line.trim();
-                    if (line.startsWith(prefix)) {
-                        process.waitFor();
-                        return Long.parseLong(line.substring(prefix.length()).trim());
-                    }
-                }
-            }
+            process = new ProcessBuilder(command).redirectErrorStream(true).start();
+            byte[] output = process.getInputStream().readAllBytes();
             process.waitFor();
+            return parseWmicLongProperty(output, property);
         } catch (Exception ex) {
-            // Ignore.
+            return 0;
         } finally {
             if (process != null) {
                 process.destroy();
             }
         }
+    }
+
+    static long parseWmicLongProperty(byte[] output, String property) {
+        if (output == null || output.length == 0 || property == null || property.isEmpty()) {
+            return 0;
+        }
+        String prefix = property + "=";
+        for (String line : decodeWindowsToolOutput(output).split("\\R")) {
+            String trimmed = line.trim();
+            if (!trimmed.startsWith(prefix)) {
+                continue;
+            }
+            try {
+                return Long.parseLong(trimmed.substring(prefix.length()).trim());
+            } catch (NumberFormatException ex) {
+                return 0;
+            }
+        }
         return 0;
+    }
+
+    static long parsePowerShellLong(byte[] output) {
+        String text = decodeWindowsToolOutput(output).trim();
+        if (text.isEmpty()) {
+            return 0;
+        }
+        String[] lines = text.split("\\R");
+        for (int i = lines.length - 1; i >= 0; i--) {
+            String line = lines[i].trim();
+            if (line.isEmpty()) {
+                continue;
+            }
+            try {
+                return Long.parseLong(line);
+            } catch (NumberFormatException ex) {
+                return 0;
+            }
+        }
+        return 0;
+    }
+
+    /**
+     * {@code wmic} and Windows PowerShell 5 write UTF-16LE when stdout is a pipe.
+     * Those bytes read as UTF-8 never contain {@code WorkingSetSize=}, so the
+     * Memory bar reports the working set as unavailable.
+     */
+    static String decodeWindowsToolOutput(byte[] output) {
+        if (output == null || output.length == 0) {
+            return "";
+        }
+        int offset = 0;
+        if (output.length >= 2 && (output[0] & 0xFF) == 0xFF && (output[1] & 0xFF) == 0xFE) {
+            offset = 2;
+        }
+        int length = output.length - offset;
+        if (length <= 0) {
+            return "";
+        }
+        if (offset == 2 || looksLikeUtf16Le(output, offset, length)) {
+            return new String(output, offset, length, StandardCharsets.UTF_16LE);
+        }
+        return new String(output, offset, length, StandardCharsets.UTF_8);
+    }
+
+    private static boolean looksLikeUtf16Le(byte[] output, int offset, int length) {
+        int zeros = 0;
+        int samples = 0;
+        int end = offset + Math.min(length, 64);
+        for (int i = offset + 1; i < end; i += 2) {
+            samples++;
+            if (output[i] == 0) {
+                zeros++;
+            }
+        }
+        return samples >= 4 && zeros * 4 >= samples * 3;
     }
 
     public static String formatMegabytes(long bytes) {
