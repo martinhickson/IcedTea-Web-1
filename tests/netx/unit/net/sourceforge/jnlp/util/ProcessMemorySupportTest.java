@@ -3,6 +3,8 @@ package net.sourceforge.jnlp.util;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.nio.charset.StandardCharsets;
+
 import org.junit.Test;
 
 public class ProcessMemorySupportTest {
@@ -30,6 +32,38 @@ public class ProcessMemorySupportTest {
     public void formatMegabytesShowsOneDecimal() {
         assertEquals("28.2 MB", ProcessMemorySupport.formatMegabytes(28849L * 1024L));
         assertEquals("0 MB", ProcessMemorySupport.formatMegabytes(0));
+    }
+
+    @Test
+    public void wmicWorkingSetIsReadFromUtf16LePipeOutput() {
+        String text = "\r\nWorkingSetSize=161800192\r\n\r\n";
+        byte[] encoded = text.getBytes(StandardCharsets.UTF_16LE);
+        byte[] withBom = new byte[encoded.length + 2];
+        withBom[0] = (byte) 0xFF;
+        withBom[1] = (byte) 0xFE;
+        System.arraycopy(encoded, 0, withBom, 2, encoded.length);
+
+        assertEquals(161800192L, ProcessMemorySupport.parseWmicLongProperty(withBom, "WorkingSetSize"));
+        assertEquals(161800192L, ProcessMemorySupport.parseWmicLongProperty(encoded, "WorkingSetSize"));
+    }
+
+    @Test
+    public void wmicWorkingSetIsReadFromUtf8Output() {
+        byte[] encoded = "WorkingSetSize=42\r\n".getBytes(StandardCharsets.UTF_8);
+
+        assertEquals(42L, ProcessMemorySupport.parseWmicLongProperty(encoded, "WorkingSetSize"));
+    }
+
+    @Test
+    public void powerShellWorkingSetIsReadFromUtf16LePipeOutput() {
+        byte[] encoded = "161800192\r\n".getBytes(StandardCharsets.UTF_16LE);
+
+        assertEquals(161800192L, ProcessMemorySupport.parsePowerShellLong(encoded));
+    }
+
+    @Test
+    public void physicalMemoryFromTheRuntimeIsPositive() {
+        assertTrue(ProcessMemorySupport.readPhysicalMemoryFromRuntime() > 0);
     }
 
     @Test
