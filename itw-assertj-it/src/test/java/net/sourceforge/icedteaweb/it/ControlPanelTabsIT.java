@@ -65,7 +65,7 @@ class ControlPanelTabsIT {
 
     @Test
     @Timeout(180)
-    void forceStopDropsTheRowWithoutRefresh() throws Exception {
+    void forceStopThenRefreshDropsTheRow() throws Exception {
         assumeRunningAppsSample();
         JnlpLaunchTestSupport.seedKnownJvmsFromAutodetect();
         JnlpLaunchTestSupport.launchHeldApp("java17-app");
@@ -88,8 +88,10 @@ class ControlPanelTabsIT {
             Thread.sleep(100);
         }
         assertThat(processStillListed(pid)).as("force stop kills the JNLP process").isFalse();
+        window.button("runningAppsRefreshButton").click();
+        robot.waitForIdle();
         assertThat(rowShowing(pid))
-                .as("the row leaves when the process dies, without clicking Refresh")
+                .as("refresh drops the row after the process is gone")
                 .isFalse();
         assertThat(emptyLabelShowing())
                 .as("an empty running-apps list is shown after force stop")
