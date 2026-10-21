@@ -322,12 +322,34 @@
               <shadedClassifierName>${uberjar.classifier}</shadedClassifierName>
               <createDependencyReducedPom>false</createDependencyReducedPom>
               <relocations>
-                <!-- Keep org.slf4j off the JNLP parent loader. HttpClient 5 and
-                     the ITW binder stay wired after rewrite; apps that ship
-                     SLF4J/Logback bind their own factory. -->
+                <!-- Keep these packages off the JNLP parent loader so an app
+                     jar can load its own copy. Byte Buddy stays unshaded:
+                     the separate -javaagent jar is loaded by name. -->
                 <relocation>
                   <pattern>org.slf4j</pattern>
                   <shadedPattern>net.sourceforge.jnlp.shaded.slf4j</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.mozilla</pattern>
+                  <shadedPattern>net.sourceforge.jnlp.shaded.mozilla</shadedPattern>
+                </relocation>
+                <relocation>
+                  <pattern>org.sqlite</pattern>
+                  <shadedPattern>net.sourceforge.jnlp.shaded.sqlite</shadedPattern>
+                  <!-- libsqlitejdbc.so binds Java_org_sqlite_core_NativeDB_* and
+                       FindClass of the callback types. NativeDB's package-private
+                       methods only override DB while both stay in org.sqlite.core. -->
+                  <excludes>
+                    <exclude>org.sqlite.core.**</exclude>
+                    <exclude>org.sqlite.Function*</exclude>
+                    <exclude>org.sqlite.BusyHandler*</exclude>
+                    <exclude>org.sqlite.Collation*</exclude>
+                    <exclude>org.sqlite.ProgressHandler*</exclude>
+                  </excludes>
+                </relocation>
+                <relocation>
+                  <pattern>org.apache.hc</pattern>
+                  <shadedPattern>net.sourceforge.jnlp.shaded.hc</shadedPattern>
                 </relocation>
               </relocations>
               <transformers>
@@ -561,7 +583,7 @@
                     <argument>-File</argument>
                     <argument>${project.basedir}/../scripts/assert-entry-in-jar.ps1</argument>
                     <argument>${uberjar.file}</argument>
-                    <argument>org/sqlite/JDBC.class</argument>
+                    <argument>net/sourceforge/jnlp/shaded/sqlite/JDBC.class</argument>
                     <argument>shaded uber jar sqlite-jdbc</argument>
                   </arguments>
                 </configuration>
@@ -583,6 +605,106 @@
                     <argument>${uberjar.file}</argument>
                     <argument>org/slf4j/</argument>
                     <argument>shaded uber jar hides org.slf4j</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-mozilla</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-no-entry-prefix-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/mozilla/</argument>
+                    <argument>shaded uber jar hides org.mozilla</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-sqlite</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-no-entry-prefix-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/sqlite/SQLiteConfig</argument>
+                    <argument>shaded uber jar hides org.sqlite.SQLiteConfig</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-hc</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-no-entry-prefix-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/apache/hc/</argument>
+                    <argument>shaded uber jar hides org.apache.hc</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-rhino-shaded</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-entry-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/mozilla/javascript/Context.class</argument>
+                    <argument>shaded uber jar rhino</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-httpclient-shaded</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <executable>powershell</executable>
+                  <arguments>
+                    <argument>-NoProfile</argument>
+                    <argument>-ExecutionPolicy</argument>
+                    <argument>Bypass</argument>
+                    <argument>-File</argument>
+                    <argument>${project.basedir}/../scripts/assert-entry-in-jar.ps1</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/hc/client5/http/impl/classic/HttpClientBuilder.class</argument>
+                    <argument>shaded uber jar httpclient</argument>
                   </arguments>
                 </configuration>
               </execution>
@@ -670,7 +792,7 @@
                   <arguments>
                     <argument>../scripts/assert-entry-in-jar.sh</argument>
                     <argument>${uberjar.file}</argument>
-                    <argument>org/sqlite/JDBC.class</argument>
+                    <argument>net/sourceforge/jnlp/shaded/sqlite/JDBC.class</argument>
                     <argument>shaded uber jar sqlite-jdbc</argument>
                   </arguments>
                 </configuration>
@@ -689,6 +811,91 @@
                     <argument>${uberjar.file}</argument>
                     <argument>org/slf4j/</argument>
                     <argument>shaded uber jar hides org.slf4j</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-mozilla</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-no-entry-prefix-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/mozilla/</argument>
+                    <argument>shaded uber jar hides org.mozilla</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-sqlite</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-no-entry-prefix-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/sqlite/SQLiteConfig</argument>
+                    <argument>shaded uber jar hides org.sqlite.SQLiteConfig</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-hc</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-no-entry-prefix-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/apache/hc/</argument>
+                    <argument>shaded uber jar hides org.apache.hc</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-rhino-shaded</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-entry-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/mozilla/javascript/Context.class</argument>
+                    <argument>shaded uber jar rhino</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-httpclient-shaded</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-entry-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/hc/client5/http/impl/classic/HttpClientBuilder.class</argument>
+                    <argument>shaded uber jar httpclient</argument>
                   </arguments>
                 </configuration>
               </execution>
@@ -773,7 +980,7 @@
                   <arguments>
                     <argument>../scripts/assert-entry-in-jar.sh</argument>
                     <argument>${uberjar.file}</argument>
-                    <argument>org/sqlite/JDBC.class</argument>
+                    <argument>net/sourceforge/jnlp/shaded/sqlite/JDBC.class</argument>
                     <argument>shaded uber jar sqlite-jdbc</argument>
                   </arguments>
                 </configuration>
@@ -792,6 +999,91 @@
                     <argument>${uberjar.file}</argument>
                     <argument>org/slf4j/</argument>
                     <argument>shaded uber jar hides org.slf4j</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-mozilla</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-no-entry-prefix-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/mozilla/</argument>
+                    <argument>shaded uber jar hides org.mozilla</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-sqlite</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-no-entry-prefix-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/sqlite/SQLiteConfig</argument>
+                    <argument>shaded uber jar hides org.sqlite.SQLiteConfig</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-hides-hc</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-no-entry-prefix-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>org/apache/hc/</argument>
+                    <argument>shaded uber jar hides org.apache.hc</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-rhino-shaded</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-entry-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/mozilla/javascript/Context.class</argument>
+                    <argument>shaded uber jar rhino</argument>
+                  </arguments>
+                </configuration>
+              </execution>
+              <execution>
+                <id>assert-uber-jar-httpclient-shaded</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>exec</goal>
+                </goals>
+                <configuration>
+                  <workingDirectory>${project.basedir}</workingDirectory>
+                  <executable>bash</executable>
+                  <arguments>
+                    <argument>../scripts/assert-entry-in-jar.sh</argument>
+                    <argument>${uberjar.file}</argument>
+                    <argument>net/sourceforge/jnlp/shaded/hc/client5/http/impl/classic/HttpClientBuilder.class</argument>
+                    <argument>shaded uber jar httpclient</argument>
                   </arguments>
                 </configuration>
               </execution>

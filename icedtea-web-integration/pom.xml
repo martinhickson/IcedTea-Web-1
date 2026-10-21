@@ -147,6 +147,33 @@
             </configuration>
           </execution>
           <execution>
+            <id>package-library-samples</id>
+            <phase>pre-integration-test</phase>
+            <goals>
+              <goal>run</goal>
+            </goals>
+            <configuration>
+              <target>
+                <exec executable="mvn" dir="${project.basedir}/src/it/byte-buddy-1.18.15" failonerror="true">
+                  <arg value="package"/>
+                  <arg value="-DskipTests"/>
+                </exec>
+                <exec executable="mvn" dir="${project.basedir}/src/it/rhino-1.8.0" failonerror="true">
+                  <arg value="package"/>
+                  <arg value="-DskipTests"/>
+                </exec>
+                <exec executable="mvn" dir="${project.basedir}/src/it/sqlite-jdbc-3.53.0.0" failonerror="true">
+                  <arg value="package"/>
+                  <arg value="-DskipTests"/>
+                </exec>
+                <exec executable="mvn" dir="${project.basedir}/src/it/httpclient-5.5.2" failonerror="true">
+                  <arg value="package"/>
+                  <arg value="-DskipTests"/>
+                </exec>
+              </target>
+            </configuration>
+          </execution>
+          <execution>
             <id>compile-headless-app</id>
             <phase>process-test-classes</phase>
             <goals>
