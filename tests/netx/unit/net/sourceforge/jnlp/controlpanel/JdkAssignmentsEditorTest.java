@@ -50,7 +50,25 @@ public class JdkAssignmentsEditorTest {
             }
             assertFalse(table.isEditing());
             assertEquals(Translator.R("CPJDKAssignmentsDefault"), String.valueOf(table.getValueAt(0, 1)));
+            javax.swing.JLabel hint = findLabel(panel, "jdkAssignmentsNoJdksLabel");
+            assertNotNull(hint);
+            assertFalse(hint.isVisible());
         });
+    }
+
+    private static javax.swing.JLabel findLabel(Component component, String name) {
+        if (component instanceof javax.swing.JLabel && name.equals(component.getName())) {
+            return (javax.swing.JLabel) component;
+        }
+        if (component instanceof Container) {
+            for (Component child : ((Container) component).getComponents()) {
+                javax.swing.JLabel found = findLabel(child, name);
+                if (found != null) {
+                    return found;
+                }
+            }
+        }
+        return null;
     }
 
     private static JTable findAssignmentsTable(Component component) {

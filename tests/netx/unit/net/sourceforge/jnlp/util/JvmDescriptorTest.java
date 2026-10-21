@@ -52,6 +52,22 @@ public class JvmDescriptorTest {
         assertEquals("Eclipse Temurin",
                 JvmDescriptor.detectFlavourFromPath("/usr/lib/jvm/temurin-17-jdk-amd64"));
         assertEquals("", JvmDescriptor.detectFlavourFromPath("C:\\Program Files\\Java\\jdk-17"));
+        assertEquals("OpenJDK",
+                JvmDescriptor.detectFlavourFromPath("/usr/lib/jvm/java-17-openjdk-amd64"));
+    }
+
+    @Test
+    public void describeUsesReleaseFileVersionAndOpenJdkPath() throws IOException {
+        File home = createTempDir("java-17-openjdk-amd64");
+        try (java.io.FileWriter writer = new java.io.FileWriter(new File(home, "release"))) {
+            writer.write("JAVA_VERSION=\"17.0.20.1\"\n");
+        }
+
+        JvmDescriptor descriptor = JvmDescriptor.describe(home.getAbsolutePath());
+
+        assertEquals("OpenJDK", descriptor.getFlavour());
+        assertEquals("17.0.20.1", descriptor.getVersion());
+        assertEquals("OpenJDK 17.0.20.1", descriptor.getDisplayName());
     }
 
     @Test

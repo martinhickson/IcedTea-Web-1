@@ -170,6 +170,10 @@ public final class JvmDescriptor {
         if (version.isEmpty()) {
             version = detectVersionFromPath(normalized);
         }
+        String releaseVersion = JvmProbeSupport.readJavaVersionFromReleaseFile(normalized);
+        if (releaseVersionIsMorePrecise(version, releaseVersion)) {
+            version = releaseVersion;
+        }
         return new JvmDescriptor(normalized, flavour, version, valid, validation.id);
     }
 
@@ -225,7 +229,26 @@ public final class JvmDescriptor {
         if (lower.contains("\\microsoft\\") && lower.contains("jdk")) {
             return "Microsoft OpenJDK";
         }
+        if (lower.contains("openjdk")) {
+            return "OpenJDK";
+        }
         return "";
+    }
+
+    /**
+     * A release-file version such as {@code 17.0.20.1} replaces a major-only probe such as {@code 17}.
+     */
+    static boolean releaseVersionIsMorePrecise(String probed, String release) {
+        if (release == null || release.isEmpty()) {
+            return false;
+        }
+        if (probed == null || probed.isEmpty()) {
+            return true;
+        }
+        if (release.length() <= probed.length() || !release.startsWith(probed)) {
+            return false;
+        }
+        return !Character.isDigit(release.charAt(probed.length()));
     }
 
     static String detectFlavour(String versionOutput) {

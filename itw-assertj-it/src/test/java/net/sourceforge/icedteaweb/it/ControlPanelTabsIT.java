@@ -341,6 +341,30 @@ class ControlPanelTabsIT {
     }
 
     @Test
+    @Timeout(120)
+    void configuredJdksHideTheAddHintAndUseTheReleaseVersion() throws Exception {
+        File jdkHome = requireJdk(17);
+        ControlPanelTestSupport.openJdkSettings(window);
+        ControlPanelTestSupport.addJdkViaChooser(robot, window, jdkHome);
+        ControlPanelTestSupport.clickApply(window, robot);
+
+        ControlPanelTestSupport.openJdkAssignments(window);
+        ControlPanelTestSupport.addJdkAssignment(window, robot, 0, "https://example.com/apps/editor.jnlp");
+        robot.waitForIdle();
+        SwingUtilities.invokeAndWait(() -> window.table("jdkAssignmentsTable").target().repaint());
+        robot.waitForIdle();
+
+        JLabel hint = (JLabel) window.robot().finder().find(new org.assertj.swing.core.NameMatcher(
+                "jdkAssignmentsNoJdksLabel", JLabel.class, false));
+        assertThat(hint.isVisible()).isFalse();
+        String jdkCell = String.valueOf(window.table("jdkAssignmentsTable").target().getValueAt(0, 1));
+        if (jdkHome.getName().toLowerCase(java.util.Locale.ROOT).contains("openjdk")) {
+            assertThat(jdkCell).contains("OpenJDK");
+        }
+        assertThat(jdkCell).contains(".");
+    }
+
+    @Test
     @Timeout(60)
     void launchWithoutASelectedAssignmentWarns() throws Exception {
         ControlPanelTestSupport.openJdkAssignments(window);
