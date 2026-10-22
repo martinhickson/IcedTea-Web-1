@@ -107,28 +107,47 @@ public class PropertiesFileTest {
     }
 
     @Test
-    public void testReloadAfterStore() {
+    public void testReloadAfterStore() throws InterruptedException {
         try {
-            boolean reloaded;
             propertiesFile.lock();
 
             // 1. clear entries + store
             clearPropertiesFile();
 
-            // 2. load from file
-            reloaded = propertiesFile.load();
-            assertTrue("File was not reloaded!", reloaded);
+            // 2. load from file. load() re-reads while the mtime is still in
+            //    the current second (some filesystems stamp only once per second).
+            storeEarlyInSecond();
+            assertTrue("File was not reloaded!", propertiesFile.load());
 
             // 3. add some entries and store
             fillProperties(10);
-
-            propertiesFile.store();
-            reloaded = propertiesFile.load();
-
-            assertTrue("File was not reloaded!", reloaded);
+            storeEarlyInSecond();
+            assertTrue("File was not reloaded!", propertiesFile.load());
         } finally {
             propertiesFile.unlock();
         }
+    }
+
+    /**
+     * Store with room left in the timestamp second so a following {@code load()}
+     * still sees {@code mtime / 1000 == now / 1000}.
+     */
+    private void storeEarlyInSecond() throws InterruptedException {
+        for (int attempt = 0; attempt < 3; attempt++) {
+            long now = System.currentTimeMillis();
+            long intoSecond = now % 1000;
+            if (intoSecond > 400) {
+                Thread.sleep(1000 - intoSecond + 30);
+            }
+            long second = System.currentTimeMillis() / 1000;
+            propertiesFile.store();
+            long after = System.currentTimeMillis();
+            long mtimeSecond = propertiesFile.getStoreFile().lastModified() / 1000;
+            if (mtimeSecond == second && after / 1000 == second && after % 1000 < 700) {
+                return;
+            }
+        }
+        fail("store did not finish inside the current timestamp second");
     }
 
     private void fillProperties(int noEntries) {
