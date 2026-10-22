@@ -102,15 +102,23 @@ final class JnlpLaunchTestSupport {
     static final String JAVANTX_LOG_PREFIX = "itw-javantx-";
 
     static Process launchJnlpViaJavaws(String sampleName, int holdSeconds, File starterJavaHome) throws Exception {
-        return startJavawsProcess(sampleName, holdSeconds, starterJavaHome, false);
+        return startJavawsProcess(sampleName, holdSeconds, starterJavaHome, false, List.of());
     }
 
     static Process launchHeldAppWithJavaHome(String sampleName, int holdSeconds, File javaHome) throws Exception {
-        return startJavawsProcess(sampleName, holdSeconds, javaHome, true);
+        return startJavawsProcess(sampleName, holdSeconds, javaHome, true, List.of());
     }
 
-    private static Process startJavawsProcess(String sampleName, int holdSeconds, File javaHome, boolean nofork)
-            throws Exception {
+    static Process launchHeldAppWithVmArgs(String sampleName, String... extraVmArgs) throws Exception {
+        return startJavawsProcess(sampleName, 120, javaHomeForSample(sampleName), true, Arrays.asList(extraVmArgs));
+    }
+
+    static String javawsBin() {
+        return JAVAWS_BIN;
+    }
+
+    private static Process startJavawsProcess(String sampleName, int holdSeconds, File javaHome, boolean nofork,
+            List<String> extraVmArgs) throws Exception {
         if (!javawsAvailable()) {
             throw new IllegalStateException("javaws launcher missing: " + JAVAWS_BIN);
         }
@@ -130,6 +138,9 @@ final class JnlpLaunchTestSupport {
         List<String> vmArgs = new ArrayList<>();
         vmArgs.add("-Ditw.test.hold.seconds=" + holdSeconds);
         vmArgs.add("-Djava.awt.headless=true");
+        if (extraVmArgs != null) {
+            vmArgs.addAll(extraVmArgs);
+        }
         JavaVersionUtils.addSecurityManagerCompatibilityArgs(vmArgs,
                 javaHome != null ? javaHome.getAbsolutePath() : null);
         for (String vmArg : vmArgs) {

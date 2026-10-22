@@ -1,7 +1,9 @@
 package net.sourceforge.jnlp.util;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.lang.management.ManagementFactory;
 import java.nio.charset.StandardCharsets;
@@ -23,6 +25,9 @@ public final class ProcessMemorySupport {
     private static final Pattern HEAP_REGION = Pattern.compile("total\\s+(\\d+)K,\\s+used\\s+(\\d+)K",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern HEAP_REGION_USED_FIRST = Pattern.compile("used\\s+(\\d+)K,\\s+total\\s+(\\d+)K",
+            Pattern.CASE_INSENSITIVE);
+    private static final Pattern ZHEAP = Pattern.compile(
+            "ZHeap\\s+used\\s+(\\d+)([KMG])(?:\\s*,\\s*capacity\\s+(\\d+)([KMG]))?(?:\\s*,\\s*max\\s+capacity\\s+(\\d+)([KMG]))?",
             Pattern.CASE_INSENSITIVE);
     private static final Pattern MAX_HEAP_FLAG = Pattern.compile("MaxHeapSize\\s*=\\s*(\\d+)",
             Pattern.CASE_INSENSITIVE);
@@ -146,13 +151,17 @@ public final class ProcessMemorySupport {
     }
 
     public static boolean trimHeap(int pid, ProcessJvmContext jvmContext) {
-        String jcmd = resolveEffectiveJcmd(pid, jvmContext);
-        if (pid <= 0 || jcmd == null) {
+        if (pid <= 0) {
             return false;
         }
+        String jcmd = resolveEffectiveJcmd(pid, jvmContext);
         boolean ok = true;
         for (int i = 0; i < 4; i++) {
-            if (!runJcmd(jcmd, pid, "GC.run")) {
+            boolean ran = jcmd != null && runJcmd(jcmd, pid, "GC.run");
+            if (!ran) {
+                ran = captureViaAttach(pid, "GC.run") != null;
+            }
+            if (!ran) {
                 ok = false;
             }
         }
@@ -164,17 +173,16 @@ public final class ProcessMemorySupport {
         long systemTotal = readSystemMemoryBytes();
         long heapUsed = 0;
         long heapMax = 0;
-        String jcmd = resolveEffectiveJcmd(pid, jvmContext);
-        if (pid > 0 && jcmd != null) {
-            String heapInfo = runJcmdCapture(jcmd, pid, "GC.heap_info");
-            if (heapInfo != null && !heapInfo.isEmpty()) {
+        if (pid > 0) {
+            String jcmd = resolveEffectiveJcmd(pid, jvmContext);
+            String heapInfo = captureDiagnostic(pid, "GC.heap_info", jcmd);
+            if (!heapInfo.isEmpty()) {
                 long[] heap = parseHeapFromHeapInfo(heapInfo);
                 heapUsed = heap[0];
                 heapMax = heap[1];
             }
             if (heapMax <= 0) {
-                String flags = runJcmdCapture(jcmd, pid, "VM.flags");
-                heapMax = parseMaxHeapFromFlags(flags);
+                heapMax = parseMaxHeapFromFlags(captureDiagnostic(pid, "VM.flags", jcmd));
             }
             if (heapMax <= 0 && heapUsed > 0) {
                 heapMax = heapUsed;
@@ -275,9 +283,6 @@ public final class ProcessMemorySupport {
     private static ProcessJvmContext enrichJvmContext(int pid, ProcessJvmContext context) {
         ProcessJvmContext resolved = context == null ? ProcessJvmContext.unknown() : context;
         String jcmd = resolveEffectiveJcmd(pid, resolved);
-        if (jcmd == null) {
-            return resolved;
-        }
         String javaHome = resolved.getJavaHome();
         String vendor = resolved.getVendor();
         String version = resolved.getJvmVersion();
@@ -285,7 +290,7 @@ public final class ProcessMemorySupport {
         boolean genericName = isBlank(vendor) || "Java".equals(vendor);
         if (homeMissing || genericName || isBlank(version)) {
             ProcessJvmContext fromProcess = parseJcmdSystemProperties(
-                    runJcmdCapture(jcmd, pid, "VM.system_properties"));
+                    captureDiagnostic(pid, "VM.system_properties", jcmd));
             if (homeMissing && !isBlank(fromProcess.getJavaHome())) {
                 javaHome = fromProcess.getJavaHome();
             }
@@ -476,6 +481,9 @@ public final class ProcessMemorySupport {
                 }
             }
             process.waitFor();
+            if (process.exitValue() != 0) {
+                return "";
+            }
             return output.toString();
         } catch (Exception ex) {
             return "";
@@ -486,7 +494,72 @@ public final class ProcessMemorySupport {
         }
     }
 
+    /**
+     * Read a diagnostic command. {@code jcmd} is used when that binary exists.
+     * A JRE image has no {@code jcmd}; the control panel JDK then attaches to the
+     * target and runs the same command inside that process.
+     */
+    static String captureDiagnostic(int pid, String command, String jcmd) {
+        if (pid <= 0 || command == null || command.isEmpty()) {
+            return "";
+        }
+        if (jcmd != null && !jcmd.isEmpty()) {
+            String fromTool = runJcmdCapture(jcmd, pid, command);
+            if (!fromTool.isEmpty()) {
+                return fromTool;
+            }
+        }
+        String attached = captureViaAttach(pid, command);
+        return attached == null ? "" : attached;
+    }
+
+    /**
+     * @return command output, empty when the command succeeded with no text, or
+     *         {@code null} when attach could not run
+     */
+    private static String captureViaAttach(int pid, String command) {
+        Object vm = null;
+        try {
+            Class<?> vmClass = Class.forName("com.sun.tools.attach.VirtualMachine");
+            vm = vmClass.getMethod("attach", String.class).invoke(null, Integer.toString(pid));
+            java.lang.reflect.Method execute = vm.getClass().getMethod("executeJCmd", String.class);
+            try (InputStream in = (InputStream) execute.invoke(vm, command)) {
+                ByteArrayOutputStream raw = new ByteArrayOutputStream();
+                byte[] buf = new byte[4096];
+                int n;
+                while ((n = in.read(buf)) >= 0) {
+                    raw.write(buf, 0, n);
+                }
+                return new String(raw.toByteArray(), StandardCharsets.UTF_8);
+            }
+        } catch (Throwable ex) {
+            return null;
+        } finally {
+            if (vm != null) {
+                try {
+                    vm.getClass().getMethod("detach").invoke(vm);
+                } catch (Throwable ignored) {
+                    // The target keeps running if detach fails.
+                }
+            }
+        }
+    }
+
     static long[] parseHeapFromHeapInfo(String heapInfo) {
+        if (heapInfo == null || heapInfo.isEmpty()) {
+            return new long[] { 0L, 0L };
+        }
+        Matcher zheap = ZHEAP.matcher(heapInfo);
+        if (zheap.find()) {
+            long used = scaledHeapUnit(zheap.group(1), zheap.group(2));
+            long max = 0L;
+            if (zheap.group(5) != null) {
+                max = scaledHeapUnit(zheap.group(5), zheap.group(6));
+            } else if (zheap.group(3) != null) {
+                max = scaledHeapUnit(zheap.group(3), zheap.group(4));
+            }
+            return new long[] { used, max };
+        }
         long bestTotal = 0;
         long bestUsed = 0;
         Matcher matcher = HEAP_REGION.matcher(heapInfo);
@@ -510,6 +583,23 @@ public final class ProcessMemorySupport {
             }
         }
         return new long[] { bestUsed, bestTotal };
+    }
+
+    private static long scaledHeapUnit(String amount, String unit) {
+        long value = Long.parseLong(amount);
+        if (unit == null) {
+            return value;
+        }
+        switch (unit.toUpperCase(Locale.ROOT)) {
+            case "G":
+                return value * 1024L * 1024L * 1024L;
+            case "M":
+                return value * 1024L * 1024L;
+            case "K":
+                return value * 1024L;
+            default:
+                return value;
+        }
     }
 
     static long parseMaxHeapFromFlags(String flags) {

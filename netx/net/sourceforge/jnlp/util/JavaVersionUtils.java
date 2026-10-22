@@ -128,6 +128,8 @@ public final class JavaVersionUtils {
         addExport(args, "java.desktop/sun.swing=ALL-UNNAMED");
         addExport(args, "java.desktop/sun.swing.plaf=ALL-UNNAMED");
         addExport(args, "java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED");
+        addExport(args, "jdk.attach/com.sun.tools.attach=ALL-UNNAMED");
+        addExport(args, "jdk.attach/sun.tools.attach=ALL-UNNAMED");
         addOpen(args, "java.base/java.lang=ALL-UNNAMED");
         String os = System.getProperty("os.name", "").toLowerCase(Locale.ROOT);
         if (os.contains("win")) {

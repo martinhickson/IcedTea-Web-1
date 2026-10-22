@@ -540,6 +540,8 @@ class MultiJarDownloadIT {
                 {"--add-exports", "java.desktop/sun.swing=ALL-UNNAMED"},
                 {"--add-exports", "java.desktop/sun.swing.plaf=ALL-UNNAMED"},
                 {"--add-exports", "java.naming/com.sun.jndi.toolkit.url=ALL-UNNAMED"},
+                {"--add-exports", "jdk.attach/com.sun.tools.attach=ALL-UNNAMED"},
+                {"--add-exports", "jdk.attach/sun.tools.attach=ALL-UNNAMED"},
                 {"--add-opens", "java.base/java.lang=ALL-UNNAMED"},
         };
         List<String> args = new ArrayList<>();

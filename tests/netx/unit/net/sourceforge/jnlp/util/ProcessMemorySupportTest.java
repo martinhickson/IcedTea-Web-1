@@ -3,6 +3,9 @@ package net.sourceforge.jnlp.util;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
+import java.io.BufferedReader;
+import java.io.File;
+import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 
 import org.junit.Test;
@@ -19,6 +22,52 @@ public class ProcessMemorySupportTest {
 
         assertEquals(28849L * 1024L, heap[0]);
         assertEquals(57344L * 1024L, heap[1]);
+    }
+
+    @Test
+    public void parseHeapFromHeapInfoReadsZgcOutput() {
+        String heapInfo = "3862302:\n"
+                + " ZHeap           used 2M, capacity 32M, max capacity 64M\n"
+                + " Metaspace       used 396K, committed 576K, reserved 1114112K\n"
+                + "  class space    used 22K, committed 128K, reserved 1048576K\n";
+
+        long[] heap = ProcessMemorySupport.parseHeapFromHeapInfo(heapInfo);
+
+        assertEquals(2L * 1024L * 1024L, heap[0]);
+        assertEquals(64L * 1024L * 1024L, heap[1]);
+    }
+
+    @Test
+    public void attachReadsHeapInfoWhenJcmdIsMissing() throws Exception {
+        String javaBin = System.getProperty("java.home") + File.separator + "bin" + File.separator + "java";
+        Process child = new ProcessBuilder(
+                javaBin,
+                "-classpath",
+                System.getProperty("java.class.path"),
+                ProcessMemorySupportTest.class.getName() + "$Hold")
+                .redirectErrorStream(true)
+                .start();
+        try {
+            BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(child.getInputStream(), StandardCharsets.UTF_8));
+            String line = reader.readLine();
+            assertTrue(line, line != null && line.startsWith("PID "));
+            int pid = Integer.parseInt(line.substring(4).trim());
+            String text = ProcessMemorySupport.captureDiagnostic(pid, "GC.heap_info", null);
+            long[] heap = ProcessMemorySupport.parseHeapFromHeapInfo(text);
+            assertTrue(text, heap[0] > 0);
+        } finally {
+            child.destroyForcibly();
+            child.waitFor();
+        }
+    }
+
+    public static final class Hold {
+        public static void main(String[] args) throws Exception {
+            System.out.println("PID " + ProcessHandle.current().pid());
+            System.out.flush();
+            Thread.sleep(20000);
+        }
     }
 
     @Test

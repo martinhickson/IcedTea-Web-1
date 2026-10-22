@@ -110,6 +110,8 @@ if [ "${major:-0}" -ge 9 ] 2>/dev/null; then
   add_module_access --add-exports java.desktop sun.swing
   add_module_access --add-exports java.desktop sun.swing.plaf
   add_module_access --add-exports java.naming com.sun.jndi.toolkit.url
+  add_module_access --add-exports jdk.attach com.sun.tools.attach
+  add_module_access --add-exports jdk.attach sun.tools.attach
   add_module_access --add-opens java.base java.lang
   case "$(uname -s)" in
     Linux)
