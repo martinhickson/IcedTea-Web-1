@@ -428,15 +428,13 @@
       <properties>
         <itw.distribution.platform>macos</itw.distribution.platform>
         <itw.dotnet.runtime.identifier>osx-x64</itw.dotnet.runtime.identifier>
-        <!-- Temurin JREs (macos x64) — Corretto 11 retired. macOS JRE
-             tarballs extract to a jdk-<ver> bundle with Contents/Home layout. -->
-        <itw.mac.temurin11.url>https://api.adoptium.net/v3/binary/latest/11/ga/mac/x64/jre/hotspot/normal/eclipse</itw.mac.temurin11.url>
+        <!-- Temurin JREs. Intel stays on mac/x64. Apple Silicon uses mac/aarch64
+             when Adoptium publishes that JRE, otherwise mac/x64. URLs are written
+             by scripts/resolve-macos-temurin-urls.sh because Ant cannot override
+             properties already set here. -->
         <itw.mac.temurin11.archive>${project.build.directory}/downloads/temurin-11-mac-jre.tar.gz</itw.mac.temurin11.archive>
-        <itw.mac.temurin17.url>https://api.adoptium.net/v3/binary/latest/17/ga/mac/x64/jre/hotspot/normal/eclipse</itw.mac.temurin17.url>
         <itw.mac.temurin17.archive>${project.build.directory}/downloads/temurin-17-mac-jre.tar.gz</itw.mac.temurin17.archive>
-        <itw.mac.temurin21.url>https://api.adoptium.net/v3/binary/latest/21/ga/mac/x64/jre/hotspot/normal/eclipse</itw.mac.temurin21.url>
         <itw.mac.temurin21.archive>${project.build.directory}/downloads/temurin-21-mac-jre.tar.gz</itw.mac.temurin21.archive>
-        <itw.mac.temurin25.url>https://api.adoptium.net/v3/binary/latest/25/ga/mac/x64/jre/hotspot/normal/eclipse</itw.mac.temurin25.url>
         <itw.mac.temurin25.archive>${project.build.directory}/downloads/temurin-25-mac-jre.tar.gz</itw.mac.temurin25.archive>
       </properties>
       <build>
@@ -483,6 +481,17 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-17"/>
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-21"/>
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
+
+                    <exec executable="bash" failonerror="true">
+                        <arg value="${project.basedir}/../scripts/resolve-macos-temurin-urls.sh"/>
+                        <arg value="${itw.dotnet.runtime.identifier}"/>
+                        <arg value="${project.build.directory}/macos-temurin-urls.properties"/>
+                    </exec>
+                    <property file="${project.build.directory}/macos-temurin-urls.properties"/>
+                    <echo message="macOS Temurin 11: ${itw.mac.temurin11.url}"/>
+                    <echo message="macOS Temurin 17: ${itw.mac.temurin17.url}"/>
+                    <echo message="macOS Temurin 21: ${itw.mac.temurin21.url}"/>
+                    <echo message="macOS Temurin 25: ${itw.mac.temurin25.url}"/>
 
                     <get src="${itw.mac.temurin11.url}" dest="${itw.mac.temurin11.archive}" skipexisting="true"/>
                     <get src="${itw.mac.temurin17.url}" dest="${itw.mac.temurin17.archive}" skipexisting="true"/>

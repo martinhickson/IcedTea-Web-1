@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.net.URL;
 import java.nio.file.Files;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -17,6 +18,7 @@ import net.sourceforge.jnlp.util.JnlpAssignmentLauncher;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
+import javax.swing.JList;
 import javax.swing.JTable;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -177,13 +179,69 @@ final class ControlPanelTestSupport {
     }
 
     private static void openSettingsTab(FrameFixture window, String tabLabel, String showingComponentName) {
-        window.list("controlPanelSettingsList").selectItem(tabLabel);
-        Object selected = window.list("controlPanelSettingsList").target().getSelectedValue();
-        if (selected == null || !tabLabel.equals(String.valueOf(selected))) {
-            throw new IllegalStateException(
-                    "Expected settings tab '" + tabLabel + "' but selected '" + selected + "'");
+        JList<?> list = window.list("controlPanelSettingsList").target();
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            selectSettingsTab(list, tabLabel);
+            if (tabLabel.equals(selectedSettingsTab(list))
+                    && isNamedComponentShowing(window, showingComponentName)) {
+                return;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException ex) {
+                Thread.currentThread().interrupt();
+                break;
+            }
         }
-        waitForNamedComponentShowing(window, showingComponentName, 10_000);
+        throw new IllegalStateException(
+                "Expected settings tab '" + tabLabel + "' but selected '" + selectedSettingsTab(list) + "'");
+    }
+
+    /**
+     * Sets the list selection on the EDT. A robot click can land on the
+     * neighbouring row, and reading the selection off the EDT can observe
+     * the previous tab.
+     */
+    private static void selectSettingsTab(JList<?> list, String tabLabel) {
+        onEdt(() -> {
+            for (int i = 0; i < list.getModel().getSize(); i++) {
+                if (tabLabel.equals(String.valueOf(list.getModel().getElementAt(i)))) {
+                    list.setSelectedIndex(i);
+                    list.ensureIndexIsVisible(i);
+                    return;
+                }
+            }
+            throw new IllegalStateException("Settings tab '" + tabLabel + "' is not in the list");
+        });
+    }
+
+    private static String selectedSettingsTab(JList<?> list) {
+        AtomicReference<String> selected = new AtomicReference<>();
+        onEdt(() -> {
+            Object value = list.getSelectedValue();
+            selected.set(value == null ? null : String.valueOf(value));
+        });
+        return selected.get();
+    }
+
+    private static void onEdt(Runnable action) {
+        if (SwingUtilities.isEventDispatchThread()) {
+            action.run();
+            return;
+        }
+        try {
+            SwingUtilities.invokeAndWait(action);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Interrupted while selecting a settings tab", ex);
+        } catch (InvocationTargetException ex) {
+            Throwable cause = ex.getCause() == null ? ex : ex.getCause();
+            if (cause instanceof RuntimeException) {
+                throw (RuntimeException) cause;
+            }
+            throw new IllegalStateException(cause);
+        }
     }
 
     private static void waitForNamedComponentShowing(FrameFixture window, String componentName, long timeoutMs) {
