@@ -21,15 +21,12 @@
     <itw.dotnet.framework>net8.0</itw.dotnet.framework>
     <itw.dotnet.selfContained>true</itw.dotnet.selfContained>
     <itw.launcher.extension></itw.launcher.extension>
-    <!-- Temurin JREs (linux) — Corretto 11 retired -->
-    <itw.linux.temurin11.url>https://api.adoptium.net/v3/binary/latest/11/ga/linux/x64/jre/hotspot/normal/eclipse</itw.linux.temurin11.url>
-    <itw.linux.temurin11.archive>${project.build.directory}/downloads/temurin-11-linux-jre.tar.gz</itw.linux.temurin11.archive>
-    <itw.linux.temurin17.url>https://api.adoptium.net/v3/binary/latest/17/ga/linux/x64/jre/hotspot/normal/eclipse</itw.linux.temurin17.url>
-    <itw.linux.temurin17.archive>${project.build.directory}/downloads/temurin-17-linux-jre.tar.gz</itw.linux.temurin17.archive>
-    <itw.linux.temurin21.url>https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jre/hotspot/normal/eclipse</itw.linux.temurin21.url>
-    <itw.linux.temurin21.archive>${project.build.directory}/downloads/temurin-21-linux-jre.tar.gz</itw.linux.temurin21.archive>
-    <itw.linux.temurin25.url>https://api.adoptium.net/v3/binary/latest/25/ga/linux/x64/jre/hotspot/normal/eclipse</itw.linux.temurin25.url>
-    <itw.linux.temurin25.archive>${project.build.directory}/downloads/temurin-25-linux-jre.tar.gz</itw.linux.temurin25.archive>
+    <!-- temurin (default) or bellsoft. URLs are resolved in antrun so Ant can set them. -->
+    <itw.jre.vendor>temurin</itw.jre.vendor>
+    <itw.linux.temurin11.archive>${project.build.directory}/downloads/${itw.jre.vendor}-11-linux-jre.tar.gz</itw.linux.temurin11.archive>
+    <itw.linux.temurin17.archive>${project.build.directory}/downloads/${itw.jre.vendor}-17-linux-jre.tar.gz</itw.linux.temurin17.archive>
+    <itw.linux.temurin21.archive>${project.build.directory}/downloads/${itw.jre.vendor}-21-linux-jre.tar.gz</itw.linux.temurin21.archive>
+    <itw.linux.temurin25.archive>${project.build.directory}/downloads/${itw.jre.vendor}-25-linux-jre.tar.gz</itw.linux.temurin25.archive>
     <itw.uberjar.classifier>uber</itw.uberjar.classifier>
     <itw.native.packages.skip>true</itw.native.packages.skip>
     <itw.native.package.formats>deb rpm</itw.native.package.formats>
@@ -248,17 +245,10 @@
         <itw.distribution.platform>windows</itw.distribution.platform>
         <itw.dotnet.runtime.identifier>win-x64</itw.dotnet.runtime.identifier>
         <itw.launcher.extension>.exe</itw.launcher.extension>
-        <!-- Temurin JREs for multi-JDK support. Corretto 11 is retired: the download
-             JVM must be a current JDK (modern TLS cipher suite support), and Temurin-11
-             JRE covers the app-side Java-11 requirement. -->
-        <itw.temurin11.url>https://api.adoptium.net/v3/binary/latest/11/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin11.url>
-        <itw.temurin11.archive>${project.build.directory}/downloads/temurin-11-jre.zip</itw.temurin11.archive>
-        <itw.temurin17.url>https://api.adoptium.net/v3/binary/latest/17/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin17.url>
-        <itw.temurin17.archive>${project.build.directory}/downloads/temurin-17-jre.zip</itw.temurin17.archive>
-        <itw.temurin21.url>https://api.adoptium.net/v3/binary/latest/21/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin21.url>
-        <itw.temurin21.archive>${project.build.directory}/downloads/temurin-21-jre.zip</itw.temurin21.archive>
-        <itw.temurin25.url>https://api.adoptium.net/v3/binary/latest/25/ga/windows/x64/jre/hotspot/normal/eclipse</itw.temurin25.url>
-        <itw.temurin25.archive>${project.build.directory}/downloads/temurin-25-jre.zip</itw.temurin25.archive>
+        <itw.temurin11.archive>${project.build.directory}/downloads/${itw.jre.vendor}-11-windows-jre.zip</itw.temurin11.archive>
+        <itw.temurin17.archive>${project.build.directory}/downloads/${itw.jre.vendor}-17-windows-jre.zip</itw.temurin17.archive>
+        <itw.temurin21.archive>${project.build.directory}/downloads/${itw.jre.vendor}-21-windows-jre.zip</itw.temurin21.archive>
+        <itw.temurin25.archive>${project.build.directory}/downloads/${itw.jre.vendor}-25-windows-jre.zip</itw.temurin25.archive>
       </properties>
       <build>
         <plugins>
@@ -295,6 +285,20 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-21"/>
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
                     <mkdir dir="${project.build.directory}/downloads"/>
+
+                    <exec executable="bash" failonerror="true">
+                        <arg value="${project.basedir}/../scripts/resolve-bundled-jre-urls.sh"/>
+                        <arg value="${itw.jre.vendor}"/>
+                        <arg value="windows"/>
+                        <arg value="x64"/>
+                        <arg value="itw.temurin"/>
+                        <arg value="${project.build.directory}/windows-jre-urls.properties"/>
+                    </exec>
+                    <property file="${project.build.directory}/windows-jre-urls.properties"/>
+                    <echo message="Windows JRE 11: ${itw.temurin11.url}"/>
+                    <echo message="Windows JRE 17: ${itw.temurin17.url}"/>
+                    <echo message="Windows JRE 21: ${itw.temurin21.url}"/>
+                    <echo message="Windows JRE 25: ${itw.temurin25.url}"/>
 
                     <!-- retries: Adoptium/GitHub occasionally returns 503 on GHA -->
                     <get src="${itw.temurin11.url}" dest="${itw.temurin11.archive}" skipexisting="true" retries="5"/>
@@ -381,6 +385,20 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-21"/>
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
 
+                    <exec executable="bash" failonerror="true">
+                        <arg value="${project.basedir}/../scripts/resolve-bundled-jre-urls.sh"/>
+                        <arg value="${itw.jre.vendor}"/>
+                        <arg value="linux"/>
+                        <arg value="x64"/>
+                        <arg value="itw.linux.temurin"/>
+                        <arg value="${project.build.directory}/linux-jre-urls.properties"/>
+                    </exec>
+                    <property file="${project.build.directory}/linux-jre-urls.properties"/>
+                    <echo message="Linux JRE 11: ${itw.linux.temurin11.url}"/>
+                    <echo message="Linux JRE 17: ${itw.linux.temurin17.url}"/>
+                    <echo message="Linux JRE 21: ${itw.linux.temurin21.url}"/>
+                    <echo message="Linux JRE 25: ${itw.linux.temurin25.url}"/>
+
                     <get src="${itw.linux.temurin11.url}" dest="${itw.linux.temurin11.archive}" skipexisting="true"/>
                     <get src="${itw.linux.temurin17.url}" dest="${itw.linux.temurin17.archive}" skipexisting="true"/>
                     <get src="${itw.linux.temurin21.url}" dest="${itw.linux.temurin21.archive}" skipexisting="true"/>
@@ -428,14 +446,10 @@
       <properties>
         <itw.distribution.platform>macos</itw.distribution.platform>
         <itw.dotnet.runtime.identifier>osx-x64</itw.dotnet.runtime.identifier>
-        <!-- Temurin JREs. Intel stays on mac/x64. Apple Silicon uses mac/aarch64
-             when Adoptium publishes that JRE, otherwise mac/x64. URLs are written
-             by scripts/resolve-macos-temurin-urls.sh because Ant cannot override
-             properties already set here. -->
-        <itw.mac.temurin11.archive>${project.build.directory}/downloads/temurin-11-mac-jre.tar.gz</itw.mac.temurin11.archive>
-        <itw.mac.temurin17.archive>${project.build.directory}/downloads/temurin-17-mac-jre.tar.gz</itw.mac.temurin17.archive>
-        <itw.mac.temurin21.archive>${project.build.directory}/downloads/temurin-21-mac-jre.tar.gz</itw.mac.temurin21.archive>
-        <itw.mac.temurin25.archive>${project.build.directory}/downloads/temurin-25-mac-jre.tar.gz</itw.mac.temurin25.archive>
+        <itw.mac.temurin11.archive>${project.build.directory}/downloads/${itw.jre.vendor}-11-mac-jre.tar.gz</itw.mac.temurin11.archive>
+        <itw.mac.temurin17.archive>${project.build.directory}/downloads/${itw.jre.vendor}-17-mac-jre.tar.gz</itw.mac.temurin17.archive>
+        <itw.mac.temurin21.archive>${project.build.directory}/downloads/${itw.jre.vendor}-21-mac-jre.tar.gz</itw.mac.temurin21.archive>
+        <itw.mac.temurin25.archive>${project.build.directory}/downloads/${itw.jre.vendor}-25-mac-jre.tar.gz</itw.mac.temurin25.archive>
       </properties>
       <build>
         <plugins>
@@ -483,11 +497,14 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
 
                     <exec executable="bash" failonerror="true">
-                        <arg value="${project.basedir}/../scripts/resolve-macos-temurin-urls.sh"/>
+                        <arg value="${project.basedir}/../scripts/resolve-bundled-jre-urls.sh"/>
+                        <arg value="${itw.jre.vendor}"/>
+                        <arg value="mac"/>
                         <arg value="${itw.dotnet.runtime.identifier}"/>
-                        <arg value="${project.build.directory}/macos-temurin-urls.properties"/>
+                        <arg value="itw.mac.temurin"/>
+                        <arg value="${project.build.directory}/macos-jre-urls.properties"/>
                     </exec>
-                    <property file="${project.build.directory}/macos-temurin-urls.properties"/>
+                    <property file="${project.build.directory}/macos-jre-urls.properties"/>
                     <echo message="macOS Temurin 11: ${itw.mac.temurin11.url}"/>
                     <echo message="macOS Temurin 17: ${itw.mac.temurin17.url}"/>
                     <echo message="macOS Temurin 21: ${itw.mac.temurin21.url}"/>

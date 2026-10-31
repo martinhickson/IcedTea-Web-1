@@ -138,7 +138,10 @@ public final class JvmDescriptor {
         }
         int major = JvmProbeSupport.readMajorFromReleaseFile(normalized);
         String version = major > 0 ? Integer.toString(major) : detectVersionFromPath(normalized);
-        String flavour = detectFlavourFromPath(normalized);
+        String flavour = detectFlavourFromReleaseFile(normalized);
+        if (flavour.isEmpty()) {
+            flavour = detectFlavourFromPath(normalized);
+        }
         if (flavour.isEmpty()) {
             flavour = "Java";
         }
@@ -161,9 +164,14 @@ public final class JvmDescriptor {
         // Probe fast-path may only emit synthetic `version "N"` without vendor tokens.
         String flavour = detectFlavour(combined);
         if (!isSpecificVendorFlavour(flavour)) {
-            String fromPath = detectFlavourFromPath(normalized);
-            if (!fromPath.isEmpty()) {
-                flavour = fromPath;
+            String fromRelease = detectFlavourFromReleaseFile(normalized);
+            if (!fromRelease.isEmpty()) {
+                flavour = fromRelease;
+            } else {
+                String fromPath = detectFlavourFromPath(normalized);
+                if (!fromPath.isEmpty()) {
+                    flavour = fromPath;
+                }
             }
         }
         String version = detectVersion(combined);
@@ -183,6 +191,8 @@ public final class JvmDescriptor {
         }
         String lower = flavour.toLowerCase(Locale.ROOT);
         return lower.contains("corretto")
+                || lower.contains("bellsoft")
+                || lower.contains("liberica")
                 || lower.contains("temurin")
                 || lower.contains("zulu")
                 || lower.contains("semeru")
@@ -192,6 +202,30 @@ public final class JvmDescriptor {
                 || lower.contains("microsoft")
                 || lower.contains("oracle")
                 || lower.contains("ibm");
+    }
+
+    /**
+     * Liberica's {@code release} file names BellSoft even when the install directory
+     * is still {@code runtime/temurin-*}.
+     */
+    static String detectFlavourFromReleaseFile(String homePath) {
+        if (homePath == null || homePath.isEmpty()) {
+            return "";
+        }
+        File release = new File(homePath, "release");
+        if (!release.isFile()) {
+            return "";
+        }
+        try {
+            byte[] bytes = java.nio.file.Files.readAllBytes(release.toPath());
+            String text = new String(bytes, java.nio.charset.StandardCharsets.UTF_8).toLowerCase(Locale.ROOT);
+            if (text.contains("bellsoft") || text.contains("liberica")) {
+                return "BellSoft Liberica";
+            }
+        } catch (java.io.IOException ex) {
+            return "";
+        }
+        return "";
     }
 
     /**
@@ -257,6 +291,9 @@ public final class JvmDescriptor {
         }
         if (versionOutput.contains("corretto")) {
             return "Amazon Corretto";
+        }
+        if (versionOutput.contains("bellsoft") || versionOutput.contains("liberica")) {
+            return "BellSoft Liberica";
         }
         if (versionOutput.contains("temurin") || versionOutput.contains("adoptium")) {
             return "Eclipse Temurin";

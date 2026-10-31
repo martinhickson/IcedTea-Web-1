@@ -35,6 +35,15 @@ public class JvmDescriptorTest {
     }
 
     @Test
+    public void releaseFileNamesBellSoftEvenWhenPathContainsTemurin() throws IOException {
+        File home = createTempDir("runtime-temurin-17");
+        java.nio.file.Files.write(new File(home, "release").toPath(),
+                "IMPLEMENTOR=\"BellSoft\"\nJAVA_VERSION=\"17.0.21.0.3\"\n".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+
+        assertEquals("BellSoft Liberica", JvmDescriptor.detectFlavourFromReleaseFile(home.getAbsolutePath()));
+    }
+
+    @Test
     public void describeCurrentRuntimeUsesToolsHome() {
         JvmDescriptor descriptor = JvmDescriptor.describeCurrentRuntime();
         assertNotNull(descriptor.getHomePath());

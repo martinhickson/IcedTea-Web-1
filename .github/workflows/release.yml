@@ -51,6 +51,14 @@ on:
         required: false
         default: false
         type: boolean
+      jre-vendor:
+        description: 'Bundled standard JRE vendor. bellsoft uses Liberica standard JREs (no JavaFX).'
+        required: true
+        default: temurin
+        type: choice
+        options:
+          - temurin
+          - bellsoft
 
 permissions:
   contents: write
@@ -129,6 +137,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if [ "${{ inputs['jre-vendor'] }}" = "bellsoft" ]; then
+            jre_note="BellSoft Liberica standard JREs (no JavaFX): 11.0.33.0.3+7, 17.0.21.0.3+5, 21.0.13.0.3+5, and 25.0.5.0.3+5."
+          else
+            jre_note="Eclipse Temurin JREs."
+          fi
           notes="$(cat <<EOF
           ## IcedTea-Web
 
@@ -152,7 +165,7 @@ jobs:
             Provides consistent execution of JNLP applications on Windows x64, Linux x64, and macOS (Intel and Apple Silicon).
 
           * **Bundled Java runtime option**
-            Supports distribution with a bundled Java runtime to ensure predictable execution environments across systems.
+            Supports distribution with a bundled Java runtime to ensure predictable execution environments across systems. This build bundles ${jre_note}
 
           * **Native packaging formats**
             Available as platform-native installers and archives for straightforward deployment in desktop and enterprise environments.
@@ -362,6 +375,7 @@ jobs:
             "-Djdk11.home=$env:JDK11_HOME",
             "-Ditw.dotnet.selfContained=$selfContained",
             "-Ditw.dotnet.runtime.identifier=${{ matrix.rid }}",
+            "-Ditw.jre.vendor=${{ github.event_name == 'workflow_dispatch' && inputs['jre-vendor'] || 'temurin' }}",
             "-Ditw.corretto.url=${{ matrix.corretto-url }}"
           )
           & mvn @mvnArgs
