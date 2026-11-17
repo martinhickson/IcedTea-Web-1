@@ -286,7 +286,7 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
                     <mkdir dir="${project.build.directory}/downloads"/>
 
-                    <exec executable="bash" failonerror="true">
+                    <exec executable="${bash.executable}" failonerror="true">
                         <arg value="${project.basedir}/../scripts/resolve-bundled-jre-urls.sh"/>
                         <arg value="${itw.jre.vendor}"/>
                         <arg value="windows"/>
@@ -385,7 +385,7 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-21"/>
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
 
-                    <exec executable="bash" failonerror="true">
+                    <exec executable="${bash.executable}" failonerror="true">
                         <arg value="${project.basedir}/../scripts/resolve-bundled-jre-urls.sh"/>
                         <arg value="${itw.jre.vendor}"/>
                         <arg value="linux"/>
@@ -496,7 +496,7 @@
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-21"/>
                     <mkdir dir="${itw.distribution.root}/runtime/temurin-25"/>
 
-                    <exec executable="bash" failonerror="true">
+                    <exec executable="${bash.executable}" failonerror="true">
                         <arg value="${project.basedir}/../scripts/resolve-bundled-jre-urls.sh"/>
                         <arg value="${itw.jre.vendor}"/>
                         <arg value="mac"/>
