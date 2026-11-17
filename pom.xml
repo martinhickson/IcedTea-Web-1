@@ -159,6 +159,19 @@
         <jdk11.home>C:/Program Files/Amazon Corretto/jdk11.0.21_9</jdk11.home>
       </properties>
     </profile>
+    <!-- Windows CreateProcess searches System32 before PATH, so a bare "bash"
+         is the WSL stub. Point Ant at Git Bash; -Dbash.executable still overrides. -->
+    <profile>
+      <id>windows-git-bash</id>
+      <activation>
+        <os>
+          <family>windows</family>
+        </os>
+      </activation>
+      <properties>
+        <bash.executable>C:/Program Files/Git/usr/bin/bash.exe</bash.executable>
+      </properties>
+    </profile>
     <profile>
       <id>coverage</id>
       <build>
